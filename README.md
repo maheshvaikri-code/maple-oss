@@ -12,7 +12,7 @@
 [![Test Success Rate](https://img.shields.io/badge/tests-100%25%20passing-brightgreen.svg)](#testing)
 [![Performance](https://img.shields.io/badge/performance-333k%2B%20msg/sec-green.svg)](#performance)
 
-> **Production-ready agent communication protocol with integrated resource management, type-safe error handling, secure link identification, and distributed state synchronization.**
+> **Production-ready multi agent communication protocol with integrated resource management, type-safe error handling, secure link identification, and distributed state synchronization.**
 
 ---
 
