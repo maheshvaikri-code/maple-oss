@@ -1,3 +1,7 @@
+<img width="358" height="358" alt="maple358" src="https://github.com/user-attachments/assets/299615b3-7c74-4344-9aff-5346b8f62c24" />
+
+<img width="358" height="358" alt="mapleagents-358" src="https://github.com/user-attachments/assets/e78a2d4f-837a-4f72-919a-366cbe4c3eb5" />
+
 # MAPLE - Multi Agent Protocol Language Engine
 
 **Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)**
@@ -8,7 +12,7 @@
 [![Test Success Rate](https://img.shields.io/badge/tests-100%25%20passing-brightgreen.svg)](#testing)
 [![Performance](https://img.shields.io/badge/performance-333k%2B%20msg/sec-green.svg)](#performance)
 
-> **Production-ready agent communication protocol with integrated resource management, type-safe error handling, secure link identification, and distributed state synchronization.**
+> **Production-ready multi agent communication protocol with integrated resource management, type-safe error handling, secure link identification, and distributed state synchronization.**
 
 ---
 

@@ -1,4 +1,8 @@
-# 🍁 MAPLE External Demo Package - Complete Build Summary
+<img width="358" height="358" alt="maple358" src="https://github.com/user-attachments/assets/299615b3-7c74-4344-9aff-5346b8f62c24" />
+
+<img width="358" height="358" alt="mapleagents-358" src="https://github.com/user-attachments/assets/e78a2d4f-837a-4f72-919a-366cbe4c3eb5" />
+
+# MAPLE External Demo Package - Complete Build Summary
 
 **Creator: Mahesh Vaikri**
 
