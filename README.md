@@ -1,4 +1,6 @@
-<img width="256" height="256" alt="maple256" src="https://github.com/user-attachments/assets/71e7bb28-b893-4eae-b83e-2cb18c3ea11a" />
+<img width="358" height="358" alt="maple358" src="https://github.com/user-attachments/assets/299615b3-7c74-4344-9aff-5346b8f62c24" />
+
+<img width="358" height="358" alt="mapleagents-358" src="https://github.com/user-attachments/assets/e78a2d4f-837a-4f72-919a-366cbe4c3eb5" />
 
 # MAPLE - Multi Agent Protocol Language Engine
 
