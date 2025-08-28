@@ -1,20 +1,6 @@
-```
-Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
 
-This file is part of MAPLE - Multi Agent Protocol Language Engine. 
-
-MAPLE - Multi Agent Protocol Language Engine is free software: you can redistribute it and/or 
-modify it under the terms of the GNU Affero General Public License as published by the Free Software 
-Foundation, either version 3 of the License, or (at your option) any later version. 
-MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that it will be useful, 
-but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A 
-PARTICULAR PURPOSE. See the GNU Affero General Public License for more details. You should have 
-received a copy of the GNU Affero General Public License along with MAPLE - Multi Agent Protocol 
-Language Engine. If not, see <https://www.gnu.org/licenses/>.
-```
-
-
-# MAPLE Multi Agent Communication Protocol Attribution and Creator Recognition
+# MAPLE Multi Agent Communication Protocol 
+# Attribution and Creator Recognition
 
 **Primary Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)**
 
@@ -23,7 +9,7 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 **Full Name:** Mahesh Vaijainthymala Krishnamoorthy  
 **Preferred Name:** Mahesh Vaikri  
 **Role:** Creator, Lead Architect, and Principal Developer of MAPLE  
-**Date of Creation:** December 2024  
+**Date of Creation:** August 2025  
 
 ## Creator Contributions
 
@@ -54,19 +40,19 @@ When using MAPLE in any form, the following attribution MUST be included:
 ```
 MAPLE (Multi-Agent Protocol Language Engine)
 Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
-Licensed under Apache 2.0
+Licensed under AGPL 3.0
 ```
 
 **For Academic/Research Use:**
 ```
 MAPLE: A Multi-Agent Protocol Language with Integrated Resource Management
 Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
-Year: 2024
+Year: 2025
 ```
 
 **For Commercial Use:**
 ```
-Powered by MAPLE Protocol
+Powered by MAPLE for Multi Agent Communication Protocol
 Created by Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
 ```
 
@@ -100,11 +86,45 @@ Created by Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
 - **Trademark**: MAPLE name and logo usage rights retained by creator
 - **Attribution Rights**: Creator has perpetual right to recognition as MAPLE's creator
 
-### License Terms
-- **Code License**: Apache 2.0 - permissive use with attribution requirement
-- **Documentation License**: Creative Commons Attribution 4.0
-- **Research Papers**: Academic use with proper citation
-- **Commercial Use**: Permitted under Apache 2.0 with attribution
+Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
+
+Software License
+Code License: GNU Affero General Public License v3.0 (AGPL-3.0)
+License Type: Copyleft (not permissive)
+Key Requirements:
+
+✅ Attribution: Must credit creator "Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)"
+✅ Source Disclosure: Must provide source code when distributing
+✅ Network Use: Must provide source code even for network/SaaS use
+✅ Same License: Derivative works must use AGPL-3.0
+✅ Copyright Notice: Must retain all copyright notices
+
+## Documentation License: GNU Affero General Public License v3.0 (AGPL-3.0)
+- Same terms as the code
+- Commercial use requires license purchase
+- Protects documentation from proprietary use
+
+Research & Academic Use
+
+## Research Papers: Free academic use with proper citation
+Citation Format:
+bibtex@software{maple_protocol_2025,
+  title={MAPLE: Multi Agent Protocol Language Engine},
+  author={Krishnamoorthy, Mahesh Vaijainthymala},
+  year={2025},
+  url={https://github.com/maheshvaikri-code/maple-oss},
+  license={AGPL-3.0}
+}
+
+
+## Commercial License (Recommended for Business)
+💼 Buy commercial license to avoid source code disclosure
+✅ Keep your service proprietary
+✅ No obligation to share your business logic
+💰 License fee applies
+
+Commercial SaaS/proprietary use: Must buy commercial license
+
 
 ## Recognition Guidelines
 
@@ -132,10 +152,10 @@ When writing about MAPLE:
 
 For questions about attribution, licensing, or collaboration:
 
-**Creator:** Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)  
-**GitHub:** https://github.com/maheshvaikri  
-**Project Repository:** https://github.com/maheshvaikri/maple-oss  
-**Issues:** https://github.com/maheshvaikri/maple-oss/issues  
+**Creator:** Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
+**GitHub:** https://github.com/maheshvaikri-code  
+**Project Repository:** https://github.com/maheshvaikri-code/maple-oss 
+**Issues:** https://github.com/maheshvaikri-code/maple-os/issues  
 
 ## Community Guidelines
 
@@ -183,14 +203,30 @@ For questions about attribution, licensing, or collaboration:
 
 ## Declaration
 
-This attribution document serves as the official record of Mahesh Vaijainthymala Krishnamoorthy's (Mahesh Vaikri) creation of MAPLE and establishes the requirements for proper recognition of his contributions to the field of multi-agent communication protocols.
+This attribution document serves as the official record of Mahesh Vaijainthymala Krishnamoorthy's (Mahesh Vaikri) creation of MAPLE 
+and establishes the requirements for proper recognition of his contributions to the field of multi-agent communication protocols.
 
 **Document Version:** 1.0  
-**Last Updated:** December 2024  
+**Last Updated:** August 2025  
 **Creator Signature:** Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)  
 
 ---
 
 **MAPLE MACP: Created by Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)**
 
+
+```
+Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
+
+This file is part of MAPLE - Multi Agent Protocol Language Engine. 
+
+MAPLE - Multi Agent Protocol Language Engine is free software: you can redistribute it and/or 
+modify it under the terms of the GNU Affero General Public License as published by the Free Software 
+Foundation, either version 3 of the License, or (at your option) any later version. 
+MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that it will be useful, 
+but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A 
+PARTICULAR PURPOSE. See the GNU Affero General Public License for more details. You should have 
+received a copy of the GNU Affero General Public License along with MAPLE - Multi Agent Protocol 
+Language Engine. If not, see <https://www.gnu.org/licenses/>.
+```
 

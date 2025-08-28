@@ -8,17 +8,14 @@
 [![Test Success Rate](https://img.shields.io/badge/tests-100%25%20passing-brightgreen.svg)](#testing)
 [![Performance](https://img.shields.io/badge/performance-333k%2B%20msg/sec-green.svg)](#performance)
 
-> **The world's first production-ready agent communication protocol with integrated resource management, type-safe error handling, secure link identification, and distributed state synchronization.**
+> **Production-ready agent communication protocol with integrated resource management, type-safe error handling, secure link identification, and distributed state synchronization.**
 
 ---
 
 ## 🚀 **ABSOLUTE SUPERIORITY OVER ALL EXISTING PROTOCOLS**
 
 
-
-MAPLE completely **dominates** every existing agent communication protocol with revolutionary features that no other protocol provides:
-
-### 🏆 **MAPLE vs. Industry Leaders - COMPLETE VICTORY**
+### 🏆 **MAPLE vs. Other Protocols **
 
 | Feature | **MAPLE** | Google A2A | FIPA ACL | MCP | AGENTCY | ACP |
 |---------|-----------|-----------|----------|-----|---------|-----|
@@ -294,7 +291,6 @@ state_mgr.watch("mission_state", on_state_change)
 # Google A2A: ❌ No state management
 # FIPA ACL: ❌ No state management
 # MCP: ❌ No state management  
-# AGENTCY: ❌ Limited academic state management
 ```
 
 ---
@@ -479,8 +475,6 @@ emergency_protocol = Message(
 
 ## 🧪 **SCIENTIFIC VALIDATION**
 
-
-
 ### **100% Test Success Rate**
 ```
 🎯 COMPREHENSIVE VALIDATION RESULTS:
@@ -488,7 +482,7 @@ emergency_protocol = Message(
 ✅ Core Components:           32/32 tests passed  (100%)
 ✅ Message System:            All scenarios validated
 ✅ Resource Management:       All edge cases handled  
-✅ Security Features:         Penetration tested
+✅ Security Features:         Simulation tested
 ✅ Error Handling:           All failure modes covered
 ✅ Performance:              Exceeds all benchmarks
 ✅ Integration:              Multi-protocol compatibility
@@ -507,13 +501,12 @@ python demo_package/examples/rigorous_benchmark_suite.py
 # Google A2A: 50,000 msg/sec, ~5ms latency, 95% reliability  
 # FIPA ACL:   5,000 msg/sec, ~50ms latency, 80% reliability
 # MCP:       25,000 msg/sec, ~10ms latency, 90% reliability
-# AGENTCY:    <1,000 msg/sec, ~100ms latency, 60% reliability
 ```
 
 ### **Academic Research Papers**
-- **"MAPLE: Revolutionary Multi-Agent Communication Protocol"** - Under review at top-tier conferences
-- **"Resource-Aware Agent Communication: A New Paradigm"** - Accepted for publication
-- **"Link Identification Mechanism for Secure Agent Networks"** - Patent pending
+- **"MAPLE: Revolutionary Multi-Agent Communication Protocol"** - to be published
+- **"Resource-Aware Agent Communication: A New Paradigm"** - to be published
+- **"Link Identification Mechanism for Secure Agent Networks"** 
 
 ---
 
@@ -556,13 +549,13 @@ python maple/monitoring/health_monitor.py --dashboard
 
 ---
 
-## 🤝 **JOIN THE REVOLUTION**
+## 🤝 **JOIN US**
 
 
 
 ### **Development Setup**
 ```bash
-git clone https://github.com/maheshvaikri/maple-oss.git
+git clone https://github.com/maheshvaikri-code/maple-oss.git
 cd maple-oss
 pip install -e .
 python -m pytest tests/ -v
@@ -574,13 +567,6 @@ python -m pytest tests/ -v
 - ⚡ **Performance**: Optimize for even higher throughput
 - 🌐 **Integrations**: Connect with more AI platforms
 - 📚 **Documentation**: Help spread MAPLE adoption
-
-### **Recognition & Impact**
-Contributors to MAPLE will be:
-- **Recognized** in all academic publications
-- **Featured** in industry case studies  
-- **Credited** in patent applications
-- **Invited** to present at conferences
 
 ---
 
@@ -606,15 +592,6 @@ See [LICENSE](LICENSE) for complete terms.
 ## 🌟 **WHY MAPLE WILL CHANGE EVERYTHING**
 
 **Created by Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)**
-
-We're not building just another protocol. **We're creating the foundation for the next generation of intelligent systems.**
-
-### **The Problem with Current Protocols**
-- **Google A2A**: Limited to Google ecosystem, no resource management
-- **FIPA ACL**: Ancient technology, poor performance, no modern features  
-- **MCP**: Platform-dependent, limited capabilities, no security
-- **AGENTCY**: Academic research, not production-ready
-- **ACP**: Legacy system, minimal features
 
 ### **The MAPLE Solution**
 - **🏆 Superior in Every Way**: Outperforms ALL existing protocols
@@ -659,9 +636,9 @@ agent = Agent.create_intelligent("your_revolutionary_agent")
 **Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)**
 
 *For support, collaboration, or licensing inquiries:*
-- 📧 Email: [Contact Creator]
-- 🐙 GitHub: [https://github.com/maheshvaikri/maple-oss](https://github.com/maheshvaikri/maple-oss)
-- 📝 Issues: [Report bugs or request features](https://github.com/maheshvaikri/maple-oss/issues)
-- 💬 Discussions: [Join the community](https://github.com/maheshvaikri/maple-oss/discussions)
+- 📧 Email: [mahesh.vaikri.ai@gmail.com]
+- 🐙 GitHub: [https://github.com/maheshvaikri/maple-oss](https://github.com/maheshvaikri-code/maple-oss)
+- 📝 Issues: [Report bugs or request features](https://github.com/maheshvaikri-code/maple-oss/issues)
+- 💬 Discussions: [Join the community](https://github.com/maheshvaikri-code/maple-oss/discussions)
 
 **🚀 MAPLE: The Protocol That Changes Everything 🚀**
