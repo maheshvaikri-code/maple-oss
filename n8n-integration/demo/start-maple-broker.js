@@ -195,7 +195,7 @@ class MAPLEBrokerStarter {
               {
                 title: 'MAPLE Protocol: Revolutionary Multi-Agent Communication',
                 snippet: 'MAPLE (Mahesh\'s Agent Protocol Language Engine) introduces breakthrough features in agent coordination...',
-                url: 'https://github.com/mahesh-vaikri/maple',
+                url: 'https://github.com/maheshvaikri-code/maple-oss',
                 relevance: 0.98,
                 source: 'Research Paper'
               },

@@ -77,7 +77,7 @@ class MAPLESetup {
     console.log('  🎯 Demo workflows and examples');
     console.log('  📊 Performance monitoring and validation');
     console.log('');
-    console.log('📚 For more information, visit: https://github.com/mahesh-vaikri/maple-n8n-nodes');
+    console.log('📚 For more information, visit: https://github.com/maheshvaikri-code/maple-oss');
     console.log('');
   }
 
@@ -543,14 +543,14 @@ class MAPLESetup {
     console.log('');
     
     console.log('📚 Documentation:');
-    console.log('   - README: https://github.com/mahesh-vaikri/maple-n8n-nodes');
+    console.log('   - README: https://github.com/maheshvaikri-code/maple-oss');
     console.log('   - API Docs: http://localhost:3000/docs');
     console.log('   - Examples: workflows/ directory');
     console.log('');
     
     console.log('🆘 Support:');
-    console.log('   - GitHub Issues: https://github.com/mahesh-vaikri/maple-n8n-nodes/issues');
-    console.log('   - Email: mahesh@maple.dev');
+    console.log('   - GitHub Issues: https://github.com/maheshvaikri-code/maple-oss/issues');
+    console.log('   - Email: mahesh@mapleagent.org');
     console.log('');
     
     console.log('👨‍💻 Created by: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)');

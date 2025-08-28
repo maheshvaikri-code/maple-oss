@@ -192,8 +192,8 @@ if link_result.is_ok():
 **Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)**
 
 - 📚 [Documentation](../README.md)
-- 🐛 [Issues](https://github.com/maheshvaikri/maple-oss/issues)
-- 💬 [Discussions](https://github.com/maheshvaikri/maple-oss/discussions)
-- 📧 [Contact Creator](mailto:contact@maple-protocol.org)
+- 🐛 [Issues](https://github.com/maheshvaikri-code/maple-oss/issues)
+- 💬 [Discussions](https://github.com/maheshvaikri-code/maple-oss/discussions)
+- 📧 [Contact Creator](mailto:mahesh@mapleagent.org)
 
 **MAPLE: The Protocol That Changes Everything 🚀**

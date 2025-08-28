@@ -283,9 +283,9 @@ class MAPLELauncher {
         console.log('   🎬 Videos: ./docs/videos/\n');
         
         console.log('🤝 Support:');
-        console.log('   🐛 Issues: https://github.com/mahesh-vaikri/maple-n8n-nodes/issues');
+        console.log('   🐛 Issues: https://github.com/maheshvaikri-code/maple-oss/issues');
         console.log('   💬 Discord: https://discord.gg/maple-protocol');
-        console.log('   📧 Email: support@maple.dev\n');
+        console.log('   📧 Email: mahesh@mapleagent.org\n');
         
         console.log('🏆 Performance Highlights:');
         console.log('   ⚡ 332K messages/sec processing');

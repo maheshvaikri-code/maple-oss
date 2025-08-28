@@ -40,8 +40,8 @@ This guide provides step-by-step instructions for launching the MAPLE n8n integr
 
 ```bash
 # Clone and setup
-git clone https://github.com/mahesh-vaikri/maple-n8n-nodes
-cd maple-n8n-nodes
+git clone https://github.com/maheshvaikri-code/maple-oss
+cd n8n-integration
 
 # Install and launch
 npm install
@@ -75,8 +75,8 @@ sudo usermod -aG sudo maple
 sudo su - maple
 
 # Clone repository
-git clone https://github.com/mahesh-vaikri/maple-n8n-nodes
-cd maple-n8n-nodes
+git clone https://github.com/maheshvaikri-code/maple-oss
+cd n8n-integration
 
 # Install dependencies
 npm install

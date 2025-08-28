@@ -10,7 +10,7 @@ import {
 export class MAPLEApi implements ICredentialType {
   name = 'mapleApi';
   displayName = 'MAPLE API';
-  documentationUrl = 'https://github.com/mahesh-vaikri/maple-n8n-nodes';
+  documentationUrl = 'https://github.com/maheshvaikri-code/maple-oss';
   properties: INodeProperties[] = [
     {
       displayName: 'Connection Type',

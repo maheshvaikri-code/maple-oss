@@ -531,8 +531,8 @@ async def run_detailed_performance_profile() -> Dict[str, Any]:
 **Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)**
 
 - 📚 **Documentation**: Comprehensive guides and API reference
-- 🐛 **Issues**: [GitHub Issues](https://github.com/maheshvaikri/maple-oss/issues)
-- 💬 **Discussions**: [Community Discussions](https://github.com/maheshvaikri/maple-oss/discussions)
+- 🐛 **Issues**: [GitHub Issues](https://github.com/maheshvaikri-code/maple-oss/issues)
+- 💬 **Discussions**: [Community Discussions](https://github.com/maheshvaikri-code/maple-oss/discussions)
 - 📧 **Direct Support**: contact@maple-protocol.org
 - 🎓 **Training**: Professional MAPLE training available
 

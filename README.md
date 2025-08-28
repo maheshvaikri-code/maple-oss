@@ -8,7 +8,7 @@
 
 [![License: AGPL 3.0](https://img.shields.io/badge/License-AGPL%203.0-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![Production Ready](https://img.shields.io/badge/status-production%20ready-green.svg)](https://github.com/maheshvaikri/maple)
+[![Production Ready](https://img.shields.io/badge/status-production%20ready-green.svg)](https://github.com/maheshvaikri-code/maple-oss)
 [![Test Success Rate](https://img.shields.io/badge/tests-100%25%20passing-brightgreen.svg)](#testing)
 [![Performance](https://img.shields.io/badge/performance-333k%2B%20msg/sec-green.svg)](#performance)
 
@@ -640,8 +640,8 @@ agent = Agent.create_intelligent("your_revolutionary_agent")
 **Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)**
 
 *For support, collaboration, or licensing inquiries:*
-- 📧 Email: [mahesh.vaikri.ai@gmail.com]
-- 🐙 GitHub: [https://github.com/maheshvaikri/maple-oss](https://github.com/maheshvaikri-code/maple-oss)
+- 📧 Email: [mahesh@mapleagent.org]
+- 🐙 GitHub: [https://github.com/maheshvaikri-code/maple-oss](https://github.com/maheshvaikri-code/maple-oss)
 - 📝 Issues: [Report bugs or request features](https://github.com/maheshvaikri-code/maple-oss/issues)
 - 💬 Discussions: [Join the community](https://github.com/maheshvaikri-code/maple-oss/discussions)
 

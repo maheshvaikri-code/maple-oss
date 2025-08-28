@@ -72,8 +72,8 @@ Build complex AI systems with simple drag-and-drop:
 
 ```bash
 # Clone the package
-git clone https://github.com/mahesh-vaikri/maple-n8n-nodes
-cd maple-n8n-nodes
+git clone https://github.com/maheshvaikri-code/maple-oss
+cd n8n-integration
 
 # Install dependencies
 npm install
@@ -259,9 +259,9 @@ node setup.js --regenerate-credentials
 
 ### **Community Resources**
 - 💬 [Discord Community](https://discord.gg/maple-protocol)
-- 🐛 [Issue Tracker](https://github.com/mahesh-vaikri/maple-n8n-nodes/issues)
-- 📧 [Email Support](mailto:support@maple.dev)
-- 🎯 [Feature Requests](https://github.com/mahesh-vaikri/maple-n8n-nodes/discussions)
+- 🐛 [Issue Tracker](https://github.com/maheshvaikri-code/maple-oss/issues)
+- 📧 [Email Support](mailto:support@mapleagent.org)
+- 🎯 [Feature Requests](https://github.com/maheshvaikri-code/maple-oss/discussions)
 
 ## 🛣️ **Roadmap**
 
