@@ -1,4 +1,4 @@
-<img width="512" height="512" alt="maple" src="https://github.com/user-attachments/assets/d30175e0-d2bb-459b-a035-3be280f1b38a" />
+<img width="256" height="256" alt="maple256" src="https://github.com/user-attachments/assets/54201e09-400f-4c76-8401-fb0ce554e456" />
 <img width="358" height="358" alt="mapleagents-358" src="https://github.com/user-attachments/assets/e78a2d4f-837a-4f72-919a-366cbe4c3eb5" />
 
 # 🚀 MAPLE LAUNCH PACKAGE - READY TO DOMINATE! 🚀
