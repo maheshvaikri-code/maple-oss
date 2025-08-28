@@ -1,5 +1,7 @@
-# <img width="1024" height="1024" alt="feb6cb29-0eef-4a1e-9f8e-13b833b64883" src="https://github.com/user-attachments/assets/016c80c5-c7c4-45c8-b472-1f37b8fd3166" />
- MAPLE - Multi Agent Protocol Language Engine
+<img width="1024" height="1024" alt="2716df03-43f8-4800-b3d4-1176320dac65" src="https://github.com/user-attachments/assets/3b4d0d1d-4b79-4557-81bd-f53bdc0e659e" />
+
+
+# MAPLE - Multi Agent Protocol Language Engine
 
 **Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)**
 
