@@ -1,3 +1,6 @@
+
+<img width="358" height="358" alt="mapleagents-358" src="https://github.com/user-attachments/assets/e78a2d4f-837a-4f72-919a-366cbe4c3eb5" />
+
 # 🚀 MAPLE LAUNCH PACKAGE - READY TO DOMINATE! 🚀
 
 **Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)**
