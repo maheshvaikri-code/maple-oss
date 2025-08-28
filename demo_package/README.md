@@ -351,7 +351,7 @@ python quick_demo.py
 ✅ **Cross-Platform**: Windows, macOS, Linux support
 
 **This demo package proves MAPLE's revolutionary capabilities and readiness for production deployment.**
-'''
+```
 Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
 
 This file is part of MAPLE - Multi Agent Protocol Language Engine. 
@@ -364,4 +364,4 @@ but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY o
 PARTICULAR PURPOSE. See the GNU Affero General Public License for more details. You should have 
 received a copy of the GNU Affero General Public License along with MAPLE - Multi Agent Protocol 
 Language Engine. If not, see <https://www.gnu.org/licenses/>.
-'''
+```
