@@ -1,5 +1,6 @@
 
-# MAPLE Multi Agent Communication Protocol Attribution and Creator Recognition
+# MAPLE Multi Agent Communication Protocol 
+# Attribution and Creator Recognition
 
 **Primary Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)**
 
@@ -98,14 +99,14 @@ Key Requirements:
 ✅ Same License: Derivative works must use AGPL-3.0
 ✅ Copyright Notice: Must retain all copyright notices
 
-Documentation License: GNU Affero General Public License v3.0 (AGPL-3.0)
+## Documentation License: GNU Affero General Public License v3.0 (AGPL-3.0)
 - Same terms as the code
 - Commercial use requires license purchase
 - Protects documentation from proprietary use
 
 Research & Academic Use
 
-Research Papers: Free academic use with proper citation
+## Research Papers: Free academic use with proper citation
 Citation Format:
 bibtex@software{maple_protocol_2025,
   title={MAPLE: Multi Agent Protocol Language Engine},
@@ -116,7 +117,7 @@ bibtex@software{maple_protocol_2025,
 }
 
 
-Commercial License (Recommended for Business)
+## Commercial License (Recommended for Business)
 💼 Buy commercial license to avoid source code disclosure
 ✅ Keep your service proprietary
 ✅ No obligation to share your business logic
@@ -151,9 +152,9 @@ When writing about MAPLE:
 
 For questions about attribution, licensing, or collaboration:
 
-**Creator:** Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)  
+**Creator:** Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
 **GitHub:** https://github.com/maheshvaikri-code  
-**Project Repository:** https://github.com/maheshvaikri-code/maple-os 
+**Project Repository:** https://github.com/maheshvaikri-code/maple-oss 
 **Issues:** https://github.com/maheshvaikri-code/maple-os/issues  
 
 ## Community Guidelines
@@ -202,7 +203,8 @@ For questions about attribution, licensing, or collaboration:
 
 ## Declaration
 
-This attribution document serves as the official record of Mahesh Vaijainthymala Krishnamoorthy's (Mahesh Vaikri) creation of MAPLE and establishes the requirements for proper recognition of his contributions to the field of multi-agent communication protocols.
+This attribution document serves as the official record of Mahesh Vaijainthymala Krishnamoorthy's (Mahesh Vaikri) creation of MAPLE 
+and establishes the requirements for proper recognition of his contributions to the field of multi-agent communication protocols.
 
 **Document Version:** 1.0  
 **Last Updated:** August 2025  
