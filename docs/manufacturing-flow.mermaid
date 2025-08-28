@@ -1,0 +1,52 @@
+sequenceDiagram
+    participant MA as Master Agent
+    participant PP as Production Planner
+    participant SC as Supply Chain
+    participant AL as Assembly Line
+    participant QA as Quality Agent
+    participant IN as Inventory
+
+    Note over MA,IN: Manufacturing Order Initiation
+    
+    MA->>PP: InitiateProduction(order_details)
+    PP->>SC: ValidateComponents(bom_list)
+    SC->>IN: CheckInventory(components)
+    IN-->>SC: InventoryStatus(available)
+    
+    par Production Planning
+        PP->>AL: ConfigureLines(product_specs)
+        PP->>QA: SetQualityParams(specs)
+        SC->>IN: ReserveComponents(order_id)
+    end
+
+    AL-->>PP: LineConfigured(status)
+    QA-->>PP: QualityConfigured(params)
+    
+    PP-->>MA: ProductionReady(plan)
+    
+    par Assembly Stages
+        MA->>AL: StartPCBAssembly(batch_1)
+        AL->>QA: InspectPCB(pcb_id)
+        QA-->>AL: PCBApproved(quality_data)
+        
+        AL->>MA: PCBComplete(status)
+        
+        MA->>AL: IntegrateCPU(batch_1)
+        AL->>QA: TestCPUIntegration(unit_id)
+        QA-->>AL: CPUApproved(test_results)
+        
+        AL->>MA: CPUComplete(status)
+        
+        MA->>AL: InstallMemory(batch_1)
+        AL->>QA: VerifyMemory(unit_id)
+        QA-->>AL: MemoryVerified(test_results)
+    end
+    
+    loop Quality Control
+        QA->>MA: QualityMetrics(stage_data)
+        MA->>AL: AdjustParameters(optimizations)
+    end
+    
+    AL-->>MA: AssemblyComplete(batch_1)
+    MA->>QA: FinalInspection(batch_1)
+    QA-->>MA: BatchApproved(quality_report)

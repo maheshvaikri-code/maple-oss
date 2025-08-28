@@ -1,0 +1,115 @@
+{
+    "messageFormat": {
+        "header": {
+            "messageId": "msg_uuid",
+            "timestamp": "ISO8601_timestamp",
+            "sender": {
+                "agentId": "agent_uuid",
+                "type": "AI_AGENT",
+                "capabilities": ["NLP", "VISION"]
+            },
+            "receiver": {
+                "agentId": "agent_uuid",
+                "type": "AI_AGENT",
+                "capabilities": ["REASONING"]
+            },
+            "security": {
+                "encryptionType": "AES256",
+                "signature": "digital_signature",
+                "certificate": "x509_cert"
+            }
+        },
+        "metadata": {
+            "priority": "HIGH",
+            "category": "TASK_EXECUTION",
+            "correlationId": "correlation_uuid",
+            "retry": {
+                "count": 0,
+                "maxAttempts": 3,
+                "backoff": "exponential"
+            }
+        },
+        "body": {
+            "type": "TASK_REQUEST",
+            "content": {
+                "task": "image_analysis",
+                "parameters": {
+                    "model": "vision_transformer",
+                    "config": {}
+                },
+                "data": "base64_encoded_data"
+            }
+        },
+        "trace": {
+            "path": ["agent_1", "broker", "agent_2"],
+            "timestamps": {
+                "created": "ISO8601",
+                "routed": "ISO8601",
+                "delivered": "ISO8601"
+            },
+            "performance": {
+                "routingTime": "10ms",
+                "processingTime": "150ms",
+                "totalLatency": "160ms"
+            }
+        }
+    },
+
+    "storageFormat": {
+        "messageStore": {
+            "collection": "messages",
+            "indexing": {
+                "primary": ["messageId"],
+                "secondary": [
+                    "timestamp",
+                    "sender.agentId",
+                    "receiver.agentId",
+                    "correlationId"
+                ]
+            },
+            "partitioning": {
+                "strategy": "time_based",
+                "interval": "1d"
+            },
+            "retention": {
+                "policy": "age_based",
+                "duration": "90d"
+            }
+        },
+        
+        "stateStore": {
+            "collection": "agent_states",
+            "structure": {
+                "agentId": "uuid",
+                "lastUpdate": "timestamp",
+                "currentState": "json_blob",
+                "activeTransactions": ["tx_ids"],
+                "metrics": {
+                    "messageCount": "integer",
+                    "errorRate": "float",
+                    "latency": "integer"
+                }
+            }
+        },
+
+        "analyticsStore": {
+            "collections": {
+                "metrics": {
+                    "type": "timeseries",
+                    "metrics": [
+                        "message_count",
+                        "latency",
+                        "error_rate"
+                    ]
+                },
+                "patterns": {
+                    "type": "graph",
+                    "relationships": [
+                        "agent_interactions",
+                        "message_flows"
+                    ]
+                }
+            }
+        }
+    }
+}

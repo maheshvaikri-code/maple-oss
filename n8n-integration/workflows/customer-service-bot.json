@@ -1,0 +1,360 @@
+{
+  "name": "Smart Customer Service Bot - MAPLE Demo",
+  "active": true,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "support",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "id": "customer-request",
+      "name": "Customer Support Request",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "customer-support-webhook"
+    },
+    {
+      "parameters": {
+        "operation": "executeTask",
+        "agentId": "classifier-agent-001",
+        "taskConfig": "{\"message\": \"{{$node['Customer Support Request'].json['message']}}\", \"customer_data\": \"{{$node['Customer Support Request'].json['customer']}}\", \"classify\": [\"technical\", \"billing\", \"general\", \"complaint\", \"urgent\"]}",
+        "priority": "HIGH",
+        "enableErrorRecovery": true,
+        "maxRetryAttempts": 2
+      },
+      "id": "classify-request",
+      "name": "Classify Customer Request",
+      "type": "@maple/n8n-nodes-maple.mapleAgent",
+      "typeVersion": 1,
+      "position": [440, 300],
+      "credentials": {
+        "mapleApi": {
+          "id": "maple-demo-creds",
+          "name": "MAPLE Demo Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$node['Classify Customer Request'].json['result']['category']}}",
+              "operation": "equal",
+              "value2": "technical"
+            }
+          ]
+        }
+      },
+      "id": "route-technical",
+      "name": "Route Technical Issues",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [640, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$node['Classify Customer Request'].json['result']['category']}}",
+              "operation": "equal",
+              "value2": "billing"
+            }
+          ]
+        }
+      },
+      "id": "route-billing",
+      "name": "Route Billing Issues",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [640, 350]
+    },
+    {
+      "parameters": {
+        "operation": "orchestrateAgents",
+        "coordinationStrategy": "sequential",
+        "errorHandling": "fallback",
+        "agents": {
+          "agent": [
+            {
+              "agentId": "technical-agent-001",
+              "taskType": "SOLVE_TECHNICAL",
+              "taskParameters": "{\"issue\": \"{{$node['Customer Support Request'].json['message']}}\", \"customer_context\": \"{{$node['Customer Support Request'].json['customer']}}\", \"classification\": \"{{$node['Classify Customer Request'].json['result']}}\"}",
+              "priority": "HIGH",
+              "timeout": "3m"
+            },
+            {
+              "agentId": "kb-search-agent-001",
+              "taskType": "SEARCH_KNOWLEDGE_BASE",
+              "taskParameters": "{\"query\": \"{{$node['Customer Support Request'].json['message']}}\", \"category\": \"technical\", \"customer_tier\": \"{{$node['Customer Support Request'].json['customer']['tier']}}\"}",
+              "priority": "MEDIUM",
+              "timeout": "1m"
+            }
+          ]
+        }
+      },
+      "id": "technical-workflow",
+      "name": "Technical Support Workflow",
+      "type": "@maple/n8n-nodes-maple.mapleCoordinator",
+      "typeVersion": 1,
+      "position": [840, 150],
+      "credentials": {
+        "mapleApi": {
+          "id": "maple-demo-creds",
+          "name": "MAPLE Demo Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "orchestrateAgents",
+        "coordinationStrategy": "parallel",
+        "errorHandling": "retry",
+        "agents": {
+          "agent": [
+            {
+              "agentId": "billing-agent-001",
+              "taskType": "HANDLE_BILLING",
+              "taskParameters": "{\"issue\": \"{{$node['Customer Support Request'].json['message']}}\", \"customer_id\": \"{{$node['Customer Support Request'].json['customer']['id']}}\", \"account_info\": \"{{$node['Customer Support Request'].json['customer']['account']}}\"}",
+              "priority": "HIGH",
+              "timeout": "2m"
+            },
+            {
+              "agentId": "payment-agent-001",
+              "taskType": "CHECK_PAYMENTS",
+              "taskParameters": "{\"customer_id\": \"{{$node['Customer Support Request'].json['customer']['id']}}\", \"period\": \"last_6_months\"}",
+              "priority": "MEDIUM",
+              "timeout": "1m"
+            }
+          ]
+        }
+      },
+      "id": "billing-workflow",
+      "name": "Billing Support Workflow",
+      "type": "@maple/n8n-nodes-maple.mapleCoordinator",
+      "typeVersion": 1,
+      "position": [840, 400],
+      "credentials": {
+        "mapleApi": {
+          "id": "maple-demo-creds",
+          "name": "MAPLE Demo Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeTask",
+        "agentId": "general-agent-001",
+        "taskConfig": "{\"message\": \"{{$node['Customer Support Request'].json['message']}}\", \"customer\": \"{{$node['Customer Support Request'].json['customer']}}\", \"type\": \"general_inquiry\"}",
+        "priority": "MEDIUM"
+      },
+      "id": "general-support",
+      "name": "General Support Agent",
+      "type": "@maple/n8n-nodes-maple.mapleAgent",
+      "typeVersion": 1,
+      "position": [840, 550],
+      "credentials": {
+        "mapleApi": {
+          "id": "maple-demo-creds",
+          "name": "MAPLE Demo Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeTask",
+        "agentId": "qa-agent-001",
+        "taskConfig": "{\"response\": \"{{$node['Technical Support Workflow'].json['result'] || $node['Billing Support Workflow'].json['result'] || $node['General Support Agent'].json['result']}}\", \"customer_request\": \"{{$node['Customer Support Request'].json['message']}}\", \"check\": [\"accuracy\", \"tone\", \"completeness\"]}",
+        "priority": "MEDIUM"
+      },
+      "id": "quality-check",
+      "name": "Quality Assurance Check",
+      "type": "@maple/n8n-nodes-maple.mapleAgent",
+      "typeVersion": 1,
+      "position": [1040, 300],
+      "credentials": {
+        "mapleApi": {
+          "id": "maple-demo-creds",
+          "name": "MAPLE Demo Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeTask",
+        "agentId": "satisfaction-agent-001",
+        "taskConfig": "{\"customer_id\": \"{{$node['Customer Support Request'].json['customer']['id']}}\", \"interaction\": \"{{$node['Quality Assurance Check'].json['result']}}\", \"create_followup\": true}",
+        "priority": "LOW"
+      },
+      "id": "satisfaction-tracking",
+      "name": "Track Customer Satisfaction",
+      "type": "@maple/n8n-nodes-maple.mapleAgent",
+      "typeVersion": 1,
+      "position": [1240, 200],
+      "credentials": {
+        "mapleApi": {
+          "id": "maple-demo-creds",
+          "name": "MAPLE Demo Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"success\": true,\n  \"ticket_id\": \"{{$execution.id}}\",\n  \"category\": \"{{$node['Classify Customer Request'].json['result']['category']}}\",\n  \"response\": \"{{$node['Quality Assurance Check'].json['result']['response']}}\",\n  \"resolution_time\": \"{{$node['Quality Assurance Check'].json['result']['processing_time']}}\",\n  \"satisfaction_survey\": \"{{$node['Track Customer Satisfaction'].json['result']['survey_link']}}\",\n  \"metadata\": {\n    \"processed_by\": \"MAPLE Customer Service Bot\",\n    \"creator\": \"Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)\",\n    \"protocol\": \"MAPLE (Multi Agent Protocol Language Engine)\",\n    \"timestamp\": \"{{$now}}\",\n    \"agents_used\": [\"classifier\", \"specialist\", \"qa\", \"satisfaction\"],\n    \"workflow_efficiency\": \"{{$node['Quality Assurance Check'].json['result']['efficiency_score']}}\"\n  }\n}"
+      },
+      "id": "customer-response",
+      "name": "Send Customer Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1440, 300]
+    }
+  ],
+  "connections": {
+    "Customer Support Request": {
+      "main": [
+        [
+          {
+            "node": "Classify Customer Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify Customer Request": {
+      "main": [
+        [
+          {
+            "node": "Route Technical Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Route Billing Issues",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Technical Issues": {
+      "main": [
+        [
+          {
+            "node": "Technical Support Workflow",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "General Support Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Billing Issues": {
+      "main": [
+        [
+          {
+            "node": "Billing Support Workflow",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "General Support Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Technical Support Workflow": {
+      "main": [
+        [
+          {
+            "node": "Quality Assurance Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Billing Support Workflow": {
+      "main": [
+        [
+          {
+            "node": "Quality Assurance Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "General Support Agent": {
+      "main": [
+        [
+          {
+            "node": "Quality Assurance Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Quality Assurance Check": {
+      "main": [
+        [
+          {
+            "node": "Track Customer Satisfaction",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Customer Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Track Customer Satisfaction": {
+      "main": [
+        [
+          {
+            "node": "Send Customer Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-12-13T15:30:00.000Z",
+      "updatedAt": "2024-12-13T15:30:00.000Z",
+      "id": "maple-support",
+      "name": "MAPLE Support"
+    }
+  ],
+  "triggerCount": 0,
+  "updatedAt": "2024-12-13T15:30:00.000Z",
+  "versionId": "1"
+}

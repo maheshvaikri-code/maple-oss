@@ -1,0 +1,256 @@
+{
+  "name": "Content Creation Pipeline - MAPLE Demo",
+  "active": true,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * 1-5"
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Daily Content Schedule",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "operation": "orchestrateAgents",
+        "coordinationStrategy": "pipeline",
+        "errorHandling": "retry",
+        "maxRetries": 2,
+        "agents": {
+          "agent": [
+            {
+              "agentId": "research-agent-001",
+              "taskType": "SEARCH_WEB",
+              "taskParameters": "{\"topic\": \"latest AI trends\", \"sources\": 10, \"depth\": \"comprehensive\"}",
+              "priority": "HIGH",
+              "timeout": "2m"
+            },
+            {
+              "agentId": "writer-agent-001",
+              "taskType": "GENERATE_CONTENT",
+              "taskParameters": "{\"type\": \"blog_post\", \"style\": \"professional\", \"length\": \"1500-2000_words\", \"research\": \"{{previous.result}}\"}",
+              "priority": "HIGH",
+              "timeout": "3m"
+            },
+            {
+              "agentId": "editor-agent-001",
+              "taskType": "EDIT_CONTENT",
+              "taskParameters": "{\"content\": \"{{previous.result}}\", \"style\": \"ap_style\", \"check\": [\"grammar\", \"clarity\", \"flow\"]}",
+              "priority": "MEDIUM",
+              "timeout": "2m"
+            },
+            {
+              "agentId": "seo-agent-001",
+              "taskType": "OPTIMIZE_SEO",
+              "taskParameters": "{\"content\": \"{{previous.result}}\", \"keywords\": \"AI, machine learning, technology\", \"meta\": true}",
+              "priority": "MEDIUM",
+              "timeout": "1m"
+            }
+          ]
+        },
+        "globalResources": {
+          "resourceRequirement": {
+            "compute": 8,
+            "memory": "16GB",
+            "timeout": "10m"
+          }
+        }
+      },
+      "id": "content-coordinator",
+      "name": "Content Pipeline Coordinator",
+      "type": "@maple/n8n-nodes-maple.mapleCoordinator",
+      "typeVersion": 1,
+      "position": [440, 300],
+      "credentials": {
+        "mapleApi": {
+          "id": "maple-demo-creds",
+          "name": "MAPLE Demo Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeTask",
+        "agentId": "image-agent-001",
+        "taskConfig": "{\"type\": \"generate_featured_image\", \"content\": \"{{$node['Content Pipeline Coordinator'].json['result']['finalResult']}}\", \"style\": \"modern_tech\", \"dimensions\": \"1200x630\"}",
+        "priority": "MEDIUM",
+        "resources": {
+          "resourceRequirement": {
+            "compute": 2,
+            "memory": "4GB",
+            "storage": "2GB"
+          }
+        }
+      },
+      "id": "image-generator",
+      "name": "Generate Featured Image",
+      "type": "@maple/n8n-nodes-maple.mapleAgent",
+      "typeVersion": 1,
+      "position": [640, 200],
+      "credentials": {
+        "mapleApi": {
+          "id": "maple-demo-creds",
+          "name": "MAPLE Demo Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeTask",
+        "agentId": "social-agent-001",
+        "taskConfig": "{\"content\": \"{{$node['Content Pipeline Coordinator'].json['result']['finalResult']}}\", \"platforms\": [\"twitter\", \"linkedin\", \"facebook\"], \"tone\": \"engaging\"}",
+        "priority": "LOW"
+      },
+      "id": "social-content",
+      "name": "Generate Social Posts",
+      "type": "@maple/n8n-nodes-maple.mapleAgent",
+      "typeVersion": 1,
+      "position": [640, 400],
+      "credentials": {
+        "mapleApi": {
+          "id": "maple-demo-creds",
+          "name": "MAPLE Demo Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "monitorUsage"
+      },
+      "id": "resource-monitor",
+      "name": "Monitor Pipeline Resources",
+      "type": "@maple/n8n-nodes-maple.mapleResourceManager",
+      "typeVersion": 1,
+      "position": [840, 300],
+      "credentials": {
+        "mapleApi": {
+          "id": "maple-demo-creds",
+          "name": "MAPLE Demo Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "webhook",
+        "operation": "post",
+        "url": "https://your-cms.com/api/publish",
+        "options": {
+          "headers": {
+            "Authorization": "Bearer YOUR_CMS_TOKEN",
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "title": "{{$node['Content Pipeline Coordinator'].json['result']['finalResult']['title']}}",
+            "content": "{{$node['Content Pipeline Coordinator'].json['result']['finalResult']['content']}}",
+            "featured_image": "{{$node['Generate Featured Image'].json['result']['image_url']}}",
+            "social_posts": "{{$node['Generate Social Posts'].json['result']}}",
+            "status": "draft",
+            "metadata": {
+              "created_by": "MAPLE Content Pipeline",
+              "creator": "Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)",
+              "pipeline_id": "{{$execution.id}}",
+              "generated_at": "{{$now}}"
+            }
+          }
+        }
+      },
+      "id": "publish-content",
+      "name": "Publish to CMS",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1040, 300]
+    }
+  ],
+  "connections": {
+    "Daily Content Schedule": {
+      "main": [
+        [
+          {
+            "node": "Content Pipeline Coordinator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Content Pipeline Coordinator": {
+      "main": [
+        [
+          {
+            "node": "Generate Featured Image",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Generate Social Posts",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Monitor Pipeline Resources",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Featured Image": {
+      "main": [
+        [
+          {
+            "node": "Publish to CMS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Social Posts": {
+      "main": [
+        [
+          {
+            "node": "Publish to CMS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Monitor Pipeline Resources": {
+      "main": [
+        [
+          {
+            "node": "Publish to CMS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-12-13T15:30:00.000Z",
+      "updatedAt": "2024-12-13T15:30:00.000Z",
+      "id": "maple-content",
+      "name": "MAPLE Content"
+    }
+  ],
+  "triggerCount": 0,
+  "updatedAt": "2024-12-13T15:30:00.000Z",
+  "versionId": "1"
+}

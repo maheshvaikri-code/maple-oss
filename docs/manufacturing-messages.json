@@ -1,0 +1,171 @@
+{
+    // 1. Production Order Initialization
+    "productionOrder": {
+        "messageType": "PRODUCTION_INIT",
+        "timestamp": "2024-12-13T08:00:00Z",
+        "payload": {
+            "orderId": "LPT_2024_12345",
+            "productSpecification": {
+                "model": "ProBook-X15",
+                "specifications": {
+                    "processor": "Intel i7-12700H",
+                    "memory": "32GB DDR5",
+                    "storage": "1TB NVMe SSD",
+                    "display": "15.6 QHD",
+                    "variants": ["standard", "gaming"]
+                },
+                "quantity": 1000,
+                "priority": "HIGH",
+                "deadline": "2024-12-14T20:00:00Z"
+            },
+            "billOfMaterials": {
+                "components": [
+                    {
+                        "id": "CPU_i7_12700",
+                        "quantity": 1000,
+                        "specifications": {
+                            "type": "processor",
+                            "supplier": "Intel",
+                            "qualityGrade": "A"
+                        }
+                    },
+                    {
+                        "id": "RAM_DDR5_32",
+                        "quantity": 1000,
+                        "specifications": {
+                            "type": "memory",
+                            "speed": "4800MHz",
+                            "qualityGrade": "A"
+                        }
+                    }
+                ]
+            }
+        }
+    },
+
+    // 2. Assembly Line Configuration
+    "lineConfiguration": {
+        "messageType": "LINE_CONFIG",
+        "payload": {
+            "lineId": "LINE_01",
+            "configuration": {
+                "stages": [
+                    {
+                        "id": "PCB_ASSEMBLY",
+                        "parameters": {
+                            "solderTemp": 315,
+                            "componentPlacement": {
+                                "precision": "0.1mm",
+                                "speed": "moderate"
+                            }
+                        },
+                        "qualityChecks": [
+                            "solder_inspection",
+                            "component_alignment"
+                        ]
+                    },
+                    {
+                        "id": "CPU_INTEGRATION",
+                        "parameters": {
+                            "insertionForce": "2.5N",
+                            "alignmentTolerance": "0.05mm"
+                        },
+                        "qualityChecks": [
+                            "pin_alignment",
+                            "thermal_paste"
+                        ]
+                    }
+                ],
+                "roboticSettings": {
+                    "speed": 80,
+                    "acceleration": 0.5,
+                    "precision": "high"
+                }
+            }
+        }
+    },
+
+    // 3. Quality Control Parameters
+    "qualityControl": {
+        "messageType": "QUALITY_PARAMS",
+        "payload": {
+            "productId": "ProBook-X15",
+            "stageChecks": {
+                "pcbAssembly": {
+                    "visualInspection": {
+                        "algorithm": "deep_learning_v2",
+                        "confidence": 0.98,
+                        "checkpoints": [
+                            "component_placement",
+                            "solder_quality",
+                            "trace_integrity"
+                        ]
+                    },
+                    "electricalTest": {
+                        "voltage": 19.5,
+                        "current": 3.33,
+                        "tolerance": "±0.1V"
+                    }
+                },
+                "finalTest": {
+                    "performanceMetrics": {
+                        "cpuStress": {
+                            "duration": "30m",
+                            "temperature": "max_95C"
+                        },
+                        "memoryTest": {
+                            "pattern": "random",
+                            "duration": "20m"
+                        }
+                    }
+                }
+            }
+        }
+    },
+
+    // 4. Production Monitoring
+    "productionStatus": {
+        "messageType": "PRODUCTION_METRICS",
+        "payload": {
+            "timestamp": "2024-12-13T10:30:00Z",
+            "lineMetrics": {
+                "throughput": {
+                    "current": 42,
+                    "target": 45,
+                    "unit": "units_per_hour"
+                },
+                "quality": {
+                    "firstPassYield": 0.985,
+                    "defectRate": 0.015,
+                    "criticalDefects": 0
+                },
+                "efficiency": {
+                    "oee": 0.92,
+                    "uptime": 0.98,
+                    "performance": 0.94
+                }
+            },
+            "resourceUtilization": {
+                "materials": {
+                    "cpu": {"used": 680, "remaining": 320},
+                    "memory": {"used": 675, "remaining": 325}
+                },
+                "equipment": {
+                    "pcbAssembly": 0.88,
+                    "cpuIntegration": 0.85,
+                    "testing": 0.90
+                }
+            },
+            "qualityMetrics": {
+                "pcbAssembly": {
+                    "defectRate": 0.005,
+                    "reworkRate": 0.002
+                },
+                "cpuIntegration": {
+                    "alignmentAccuracy": 0.999,
+                    "thermalPasteQuality": 0.998
+                }
+            }
+        }
+    }
+}

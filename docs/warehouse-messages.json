@@ -1,0 +1,157 @@
+{
+    // 1. Package Detection and Initial Planning
+    "packageDetection": {
+        "messageType": "PACKAGE_DETECTED",
+        "timestamp": "2024-12-13T10:00:00Z",
+        "payload": {
+            "packageId": "PKG_123456",
+            "location": {
+                "zone": "INBOUND",
+                "coordinates": {"x": 10.5, "y": 20.3, "z": 1.0},
+                "detector": "CAMERA_01"
+            },
+            "physicalProperties": {
+                "dimensions": {
+                    "length": 30,
+                    "width": 20,
+                    "height": 15,
+                    "unit": "cm"
+                },
+                "weight": {
+                    "value": 2.5,
+                    "unit": "kg"
+                }
+            },
+            "scanData": {
+                "barcode": "12345678901234",
+                "qrCode": "QR_98765",
+                "confidence": 0.99
+            }
+        }
+    },
+
+    // 2. Task Planning and Resource Allocation
+    "taskPlanning": {
+        "messageType": "EXECUTION_PLAN",
+        "priority": "HIGH",
+        "payload": {
+            "taskId": "TASK_789",
+            "package": "PKG_123456",
+            "requirements": {
+                "handling": {
+                    "type": "FRAGILE",
+                    "orientation": "THIS_WAY_UP",
+                    "maxAcceleration": "0.5g"
+                },
+                "timing": {
+                    "deadline": "2024-12-13T10:15:00Z",
+                    "priority": "STANDARD"
+                }
+            },
+            "resourceAllocation": {
+                "agv": {
+                    "type": "MEDIUM_LOAD",
+                    "id": "AGV_05",
+                    "capabilities": ["fragile_handling", "precise_positioning"]
+                },
+                "robot": {
+                    "type": "ARTICULATED_ARM",
+                    "id": "ROB_03",
+                    "endEffector": "SOFT_GRIPPER"
+                }
+            },
+            "route": {
+                "path": [
+                    {"point": "INBOUND_01", "action": "PICKUP"},
+                    {"point": "AISLE_03", "action": "TRAVERSE"},
+                    {"point": "RACK_B12", "action": "DELIVER"}
+                ],
+                "alternatives": [
+                    {
+                        "path": ["AISLE_04", "CROSS_LANE_02", "RACK_B12"],
+                        "conditions": "if_primary_blocked"
+                    }
+                ]
+            }
+        }
+    },
+
+    // 3. Real-time Operation Control
+    "operationControl": {
+        "messageType": "MOVEMENT_CONTROL",
+        "payload": {
+            "agvControl": {
+                "command": "MOVE",
+                "parameters": {
+                    "speed": 1.2,
+                    "acceleration": 0.3,
+                    "path": [
+                        {"x": 10.5, "y": 20.3, "heading": 90},
+                        {"x": 15.0, "y": 20.3, "heading": 90}
+                    ]
+                },
+                "constraints": {
+                    "maxSpeed": 2.0,
+                    "cornerSpeed": 0.8,
+                    "safetyDistance": 1.5
+                }
+            },
+            "robotControl": {
+                "command": "PICK",
+                "parameters": {
+                    "position": {"x": 10.5, "y": 20.3, "z": 1.0},
+                    "approach": {"vector": [0, 1, 0], "distance": 0.3},
+                    "grip": {
+                        "force": 10,
+                        "width": 0.15,
+                        "speed": 0.1
+                    }
+                }
+            }
+        }
+    },
+
+    // 4. Safety and Monitoring
+    "systemMonitoring": {
+        "messageType": "STATUS_UPDATE",
+        "payload": {
+            "systemState": {
+                "agv": {
+                    "id": "AGV_05",
+                    "status": "MOVING",
+                    "battery": 85,
+                    "load": 2.5,
+                    "position": {"x": 12.5, "y": 20.3},
+                    "sensors": {
+                        "proximity": [0.5, 1.2, 2.0, 1.8],
+                        "lidar": "CLEAR"
+                    }
+                },
+                "robot": {
+                    "id": "ROB_03",
+                    "status": "HOLDING",
+                    "position": {
+                        "joints": [1.2, 0.8, -0.3, 1.5, 0.0, 0.7],
+                        "endEffector": {"x": 10.5, "y": 20.3, "z": 1.0}
+                    },
+                    "grip": {
+                        "force": 10,
+                        "width": 0.15,
+                        "object_detected": true
+                    }
+                }
+            },
+            "environment": {
+                "obstacles": [
+                    {
+                        "type": "DYNAMIC",
+                        "position": {"x": 15.0, "y": 18.0},
+                        "velocity": {"x": 0.5, "y": 0.0}
+                    }
+                ],
+                "trafficDensity": "MEDIUM",
+                "zoneStatus": "NORMAL"
+            }
+        }
+    }
+}

@@ -1,0 +1,158 @@
+// 1. Session Initiation
+{
+    "id": "msg_001",
+    "type": "SessionControl",
+    "timestamp": "2024-12-12T10:00:00Z",
+    "sender": "client_agent_123",
+    "receiver": "broker_main",
+    "priority": "HIGH",
+    "payload": {
+        "action": "START",
+        "credentials": {
+            "type": "jwt",
+            "value": "eyJhbGciOiJIUzI1NiIs...",
+            "expiry": "2024-12-12T11:00:00Z"
+        },
+        "parameters": {
+            "session_timeout": "1h",
+            "required_resources": ["compute", "memory"]
+        }
+    }
+}
+
+// 2. Analytics Task Submission
+{
+    "id": "msg_002",
+    "type": "TaskAssignment",
+    "timestamp": "2024-12-12T10:00:05Z",
+    "sender": "client_agent_123",
+    "receiver": "broker_main",
+    "priority": "HIGH",
+    "payload": {
+        "taskId": "task_789",
+        "description": "Large Dataset Analysis",
+        "parameters": {
+            "dataset_size": 1000000,
+            "analysis_type": "clustering",
+            "algorithms": ["k-means", "dbscan"],
+            "output_format": "parquet"
+        },
+        "constraints": {
+            "deadline": "2024-12-12T10:30:00Z",
+            "max_memory": "16GB",
+            "min_accuracy": 0.95
+        }
+    },
+    "metadata": {
+        "retry_count": 0,
+        "source_system": "research_pipeline"
+    }
+}
+
+// 3. Task Distribution to Analytics Agent
+{
+    "id": "msg_003",
+    "type": "TaskAssignment",
+    "timestamp": "2024-12-12T10:00:06Z",
+    "sender": "broker_main",
+    "receiver": "analytics_agent_1",
+    "priority": "HIGH",
+    "payload": {
+        "taskId": "subtask_001",
+        "parentTask": "task_789",
+        "data_chunk": {
+            "start_index": 0,
+            "end_index": 500000,
+            "storage_location": "s3://data/chunk1"
+        },
+        "parameters": {
+            "algorithm": "k-means",
+            "batch_size": 10000
+        }
+    }
+}
+
+// 4. Progress Update
+{
+    "id": "msg_004",
+    "type": "TaskProgress",
+    "timestamp": "2024-12-12T10:15:00Z",
+    "sender": "analytics_agent_1",
+    "receiver": "broker_main",
+    "priority": "MEDIUM",
+    "payload": {
+        "taskId": "subtask_001",
+        "progress": 30,
+        "status": "ACTIVE",
+        "metrics": {
+            "processed_records": 150000,
+            "accuracy": 0.96,
+            "memory_usage": "8GB"
+        },
+        "timestamp": "2024-12-12T10:15:00Z"
+    }
+}
+
+// 5. Error Notification
+{
+    "id": "msg_005",
+    "type": "ErrorMessage",
+    "timestamp": "2024-12-12T10:20:00Z",
+    "sender": "analytics_agent_1",
+    "receiver": "broker_main",
+    "priority": "HIGH",
+    "payload": {
+        "code": "RESOURCE_EXCEEDED",
+        "description": "Memory usage exceeded allocated limit",
+        "severity": "HIGH",
+        "context": {
+            "taskId": "subtask_001",
+            "memory_usage": "15.8GB",
+            "memory_limit": "16GB",
+            "current_batch": 45
+        }
+    }
+}
+
+// 6. Recovery Instruction
+{
+    "id": "msg_006",
+    "type": "TaskControl",
+    "timestamp": "2024-12-12T10:20:01Z",
+    "sender": "broker_main",
+    "receiver": "analytics_agent_1",
+    "priority": "HIGH",
+    "payload": {
+        "action": "MODIFY",
+        "taskId": "subtask_001",
+        "parameters": {
+            "batch_size": 5000,
+            "checkpoint_frequency": "every_batch"
+        }
+    }
+}
+
+// 7. Task Result
+{
+    "id": "msg_007",
+    "type": "TaskResult",
+    "timestamp": "2024-12-12T10:29:00Z",
+    "sender": "analytics_agent_1",
+    "receiver": "broker_main",
+    "priority": "HIGH",
+    "payload": {
+        "taskId": "subtask_001",
+        "status": "COMPLETED",
+        "result": {
+            "clusters": 5,
+            "centroids": [[0.1, 0.2], [0.3, 0.4]],
+            "accuracy": 0.97,
+            "output_location": "s3://results/subtask_001"
+        },
+        "metrics": {
+            "processing_time": "1420s",
+            "peak_memory": "14.2GB",
+            "total_records": 500000
+        }
+    }
+}

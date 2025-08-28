@@ -1,0 +1,54 @@
+graph TB
+    subgraph WarehouseOS["Warehouse Operating System"]
+        subgraph CoreSystem["Core Control System"]
+            WMS["Warehouse Management System"]
+            TMS["Task Management System"]
+            RMS["Resource Management System"]
+        end
+
+        subgraph AIAgents["AI Agent Network"]
+            direction TB
+            MA["Master Agent - Orchestrator"]
+            PA["Planning Agent"]
+            RA["Route Optimization Agent"]
+            IA["Inventory Agent"]
+            SA["Safety Monitor Agent"]
+        end
+
+        subgraph Operators["Robotic Operators"]
+            AGV["AGV Fleet Manager"]
+            RPA["Robotic Picker Agent"]
+            CRA["Conveyor Route Agent"]
+            STA["Storage Agent"]
+        end
+
+        subgraph Sensors["Sensor Network"]
+            CV["Computer Vision System"]
+            PS["Position Sensors"]
+            LS["Load Sensors"]
+            ES["Environmental Sensors"]
+        end
+    end
+
+    subgraph Hardware["Physical Systems"]
+        AGVS["Autonomous Vehicles"]
+        RBT["Robotic Arms"]
+        CNV["Smart Conveyors"]
+        RAK["Dynamic Racks"]
+    end
+
+    MA --> PA
+    MA --> RA
+    MA --> IA
+    MA --> SA
+    
+    PA --> AGV
+    PA --> RPA
+    PA --> CRA
+    
+    AGV --> AGVS
+    RPA --> RBT
+    CRA --> CNV
+    STA --> RAK
+    
+    Sensors --> MA

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="60" height="60" viewBox="0 0 60 60" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- MAPLE Logo for n8n Integration -->
+  <!-- Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri) -->
+  
+  <!-- Background Circle -->
+  <circle cx="30" cy="30" r="28" fill="#FF6B6B" stroke="#FF4757" stroke-width="2"/>
+  
+  <!-- MAPLE Leaf Symbol -->
+  <path d="M30 10 L35 20 L45 18 L38 28 L48 32 L38 36 L45 46 L35 44 L30 54 L25 44 L15 46 L22 36 L12 32 L22 28 L15 18 L25 20 Z" 
+        fill="#FFFFFF" 
+        stroke="#FF4757" 
+        stroke-width="1"/>
+  
+  <!-- Agent Connection Lines -->
+  <line x1="30" y1="20" x2="30" y2="10" stroke="#FFF" stroke-width="2"/>
+  <line x1="30" y1="40" x2="30" y2="50" stroke="#FFF" stroke-width="2"/>
+  <line x1="20" y1="30" x2="10" y2="30" stroke="#FFF" stroke-width="2"/>
+  <line x1="40" y1="30" x2="50" y2="30" stroke="#FFF" stroke-width="2"/>
+  
+  <!-- Center M for MAPLE -->
+  <text x="30" y="35" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#FF4757">M</text>
+</svg>

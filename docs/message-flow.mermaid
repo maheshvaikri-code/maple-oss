@@ -1,0 +1,34 @@
+sequenceDiagram
+    participant Agent1 as AI Agent 1
+    participant Gateway as API Gateway
+    participant Auth as Auth Service
+    participant Router as Message Router
+    participant Queue as Message Queue
+    participant State as State Store
+    participant Log as Message Logger
+    participant Agent2 as AI Agent 2
+
+    Note over Agent1,Agent2: Secure Message Exchange Flow
+
+    Agent1->>Gateway: Send Message (Encrypted)
+    Gateway->>Auth: Validate Token
+    Auth-->>Gateway: Token Valid
+
+    par Message Processing
+        Gateway->>Router: Route Message
+        Router->>Queue: Queue Message
+        Router->>State: Update State
+        Router->>Log: Log Message
+    end
+
+    Queue->>Agent2: Deliver Message
+    Agent2-->>Queue: Acknowledge Receipt
+
+    par Message Recording
+        Queue->>State: Record Delivery
+        Queue->>Log: Log Delivery Status
+    end
+
+    State-->>Router: State Updated
+    Router-->>Gateway: Delivery Confirmed
+    Gateway-->>Agent1: Message Delivered

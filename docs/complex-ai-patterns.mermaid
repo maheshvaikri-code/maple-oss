@@ -1,0 +1,65 @@
+"""
+Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
+
+This file is part of MAPLE - Multi Agent Protocol Language Engine. 
+
+MAPLE - Multi Agent Protocol Language Engine is free software: you can redistribute it and/or 
+modify it under the terms of the GNU Affero General Public License as published by the Free Software 
+Foundation, either version 3 of the License, or (at your option) any later version. 
+MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that it will be useful, 
+but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A 
+PARTICULAR PURPOSE. See the GNU Affero General Public License for more details. You should have 
+received a copy of the GNU Affero General Public License along with MAPLE - Multi Agent Protocol 
+Language Engine. If not, see <https://www.gnu.org/licenses/>.
+"""
+
+
+sequenceDiagram
+    participant O as Orchestrator AI
+    participant S as Strategy Agent
+    participant K as Knowledge Agent
+    participant M1 as Model Agent 1
+    participant M2 as Model Agent 2
+    participant E as Ensemble Agent
+    participant L as Learning Agent
+    
+    rect rgb(200, 220, 240)
+        Note over O,L: Phase 1: Strategy Formation
+        O->>S: InitiateStrategy(problem_context)
+        S->>K: QueryKnowledge(domain_requirements)
+        K-->>S: DomainInsights(historical_patterns)
+        S-->>O: ProposedStrategy(execution_plan)
+    end
+
+    rect rgb(220, 240, 200)
+        Note over O,L: Phase 2: Dynamic Model Selection
+        par Parallel Model Evaluation
+            O->>M1: EvaluateCapability(task_subset_1)
+            O->>M2: EvaluateCapability(task_subset_2)
+        end
+        M1-->>O: CapabilityMetrics(model1_scores)
+        M2-->>O: CapabilityMetrics(model2_scores)
+        O->>E: OptimizeEnsemble(model_metrics)
+    end
+
+    rect rgb(240, 220, 220)
+        Note over O,L: Phase 3: Adaptive Execution
+        loop Continuous Learning
+            par Model Execution
+                E->>M1: ExecuteTask(optimized_params_1)
+                E->>M2: ExecuteTask(optimized_params_2)
+            end
+            M1-->>E: IntermediateResults(partial_1)
+            M2-->>E: IntermediateResults(partial_2)
+            E->>L: AnalyzePerformance(combined_results)
+            L-->>E: OptimizationFeedback(adjustments)
+        end
+    end
+
+    rect rgb(220, 200, 240)
+        Note over O,L: Phase 4: Knowledge Integration
+        E->>O: FinalResults(ensemble_output)
+        O->>L: ValidateResults(performance_metrics)
+        L->>K: UpdateKnowledge(learned_patterns)
+        K-->>O: KnowledgeConfirmation(update_status)
+    end

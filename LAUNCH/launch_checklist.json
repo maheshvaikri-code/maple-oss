@@ -1,0 +1,68 @@
+{
+  "launch_date": "2025-08-28T01:17:17.734363",
+  "creator": "Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)",
+  "project": "MAPLE - Multi Agent Protocol Language Engine",
+  "checklist": [
+    {
+      "task": "Record killer demo video",
+      "estimated_time": "30 minutes",
+      "completed": false,
+      "notes": "Use OBS Studio, 1080p, with audio commentary"
+    },
+    {
+      "task": "Upload video to YouTube",
+      "estimated_time": "15 minutes",
+      "completed": false,
+      "notes": "Title: 'MAPLE: The Agent Protocol That Changes Everything'"
+    },
+    {
+      "task": "Publish blog post on Medium",
+      "estimated_time": "15 minutes",
+      "completed": false,
+      "notes": "Use the provided blog post template"
+    },
+    {
+      "task": "Post Twitter thread",
+      "estimated_time": "10 minutes",
+      "completed": false,
+      "notes": "10-tweet thread with video link"
+    },
+    {
+      "task": "Submit to Hacker News",
+      "estimated_time": "5 minutes",
+      "completed": false,
+      "notes": "Show HN format with demo link"
+    },
+    {
+      "task": "Post on r/MachineLearning",
+      "estimated_time": "5 minutes",
+      "completed": false,
+      "notes": "Technical focus, performance numbers"
+    },
+    {
+      "task": "Share on LinkedIn",
+      "estimated_time": "5 minutes",
+      "completed": false,
+      "notes": "Professional network, enterprise angle"
+    },
+    {
+      "task": "Engage with early responses",
+      "estimated_time": "ongoing",
+      "completed": false,
+      "notes": "Reply to comments, answer questions"
+    }
+  ],
+  "success_metrics": {
+    "24_hour_targets": {
+      "github_stars": 100,
+      "youtube_views": 1000,
+      "twitter_impressions": 10000,
+      "hacker_news_points": 50
+    },
+    "1_week_targets": {
+      "github_stars": 500,
+      "early_adopters": 10,
+      "media_mentions": 3
+    }
+  }
+}

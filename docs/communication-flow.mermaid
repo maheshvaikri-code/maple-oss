@@ -1,0 +1,59 @@
+"""
+Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
+
+This file is part of MAPLE - Multi Agent Protocol Language Engine. 
+
+MAPLE - Multi Agent Protocol Language Engine is free software: you can redistribute it and/or 
+modify it under the terms of the GNU Affero General Public License as published by the Free Software 
+Foundation, either version 3 of the License, or (at your option) any later version. 
+MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that it will be useful, 
+but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A 
+PARTICULAR PURPOSE. See the GNU Affero General Public License for more details. You should have 
+received a copy of the GNU Affero General Public License along with MAPLE - Multi Agent Protocol 
+Language Engine. If not, see <https://www.gnu.org/licenses/>.
+"""
+
+
+sequenceDiagram
+    participant C as Client Agent
+    participant B as Broker
+    participant A1 as Analytics Agent 1
+    participant A2 as Analytics Agent 2
+    participant DB as State Store
+
+    Note over C,DB: Scenario: Complex Data Analysis Task
+    
+    C->>B: InitiateSession(auth_credentials)
+    B->>DB: ValidateAndStore(session)
+    DB-->>B: SessionConfirmed
+    B-->>C: SessionToken
+
+    C->>B: SubmitAnalyticsTask(large_dataset)
+    B->>DB: StoreTask(task_metadata)
+    
+    par Task Distribution
+        B->>A1: TaskAssignment(data_chunk_1)
+        B->>A2: TaskAssignment(data_chunk_2)
+    end
+
+    loop Processing Updates
+        A1-->>B: ProcessingProgress(30%)
+        B-->>C: AggregateProgress(A1: 30%)
+        A2-->>B: ProcessingProgress(45%)
+        B-->>C: AggregateProgress(A1: 30%, A2: 45%)
+    end
+
+    Note over A1,A2: Error Occurs in A1
+    A1-->>B: ErrorNotification(memory_overflow)
+    B->>A1: RecoveryInstruction(reduce_batch)
+    
+    par Continued Processing
+        A1->>B: TaskResult(chunk1_results)
+        A2->>B: TaskResult(chunk2_results)
+    end
+
+    B->>DB: StoreResults(combined_results)
+    B-->>C: AnalysisComplete(results_location)
+    
+    C->>B: EndSession
+    B->>DB: ArchiveSession

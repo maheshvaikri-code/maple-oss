@@ -1,0 +1,81 @@
+sequenceDiagram
+    participant I as Initiator Agent
+    participant B as Broker
+    participant LB as Load Balancer
+    participant R1 as Responder 1
+    participant R2 as Responder 2
+    participant Auth as Auth Service
+
+    note over I,Auth: Authentication & Security Layer
+    I->>Auth: AuthRequest(credentials)
+    Auth-->>I: AuthToken(jwt)
+    
+    note over I,R2: Session Establishment with Priority
+    I->>B: RegisterIntent(task_description, requirements, priority_level, auth_token)
+    B->>Auth: ValidateToken(auth_token)
+    Auth-->>B: TokenValid(true)
+    
+    note over B,LB: Load Balancing
+    B->>LB: GetOptimalAgents(requirements)
+    LB->>R1: HealthCheck()
+    LB->>R2: HealthCheck()
+    R1-->>LB: Status(load, health_metrics)
+    R2-->>LB: Status(load, health_metrics)
+    LB-->>B: AgentAllocation(selected_agents)
+
+    note over I,R2: Priority-based Task Assignment
+    B->>R1: DiscoveryPing(requirements, priority)
+    B->>R2: DiscoveryPing(requirements, priority)
+    
+    alt Normal Operation
+        R1-->>B: CapabilityResponse(abilities, availability)
+        R2-->>B: CapabilityResponse(abilities, availability)
+    else Agent Failure
+        R1--x B: ConnectionTimeout
+        note over B: Failover Procedure
+        B->>LB: RequestBackupAgent()
+    end
+
+    B-->>I: SessionConfirmation(matched_agents)
+
+    note over I,R2: Fault-Tolerant Execution
+    I->>B: InitiateTask(task_id, parameters)
+    
+    par Priority Queue Processing
+        B->>R1: TaskAssignment(sub_task_1, priority)
+        B->>R2: TaskAssignment(sub_task_2, priority)
+    end
+
+    loop Progress Monitoring
+        par Parallel Health Checks
+            R1-->>B: HeartBeat(status)
+            R2-->>B: HeartBeat(status)
+        end
+        
+        alt Agent Recovery Needed
+            B->>R1: DetectFailure()
+            B->>LB: InitiateRecovery(failed_agent_id)
+            LB->>R1: RestoreState(checkpoint_data)
+        end
+    end
+
+    note over I,R2: Error Handling & Recovery
+    alt Successful Execution
+        R1->>B: SubmitResults(task_output_1)
+        R2->>B: SubmitResults(task_output_2)
+        B->>I: FinalResults(merged_outputs)
+    else Partial Failure
+        R1->>B: SubmitResults(task_output_1)
+        R2--x B: ExecutionError
+        B->>LB: RequestRecovery(task_id, checkpoint)
+        LB->>R2: RestartTask(checkpoint_data)
+    end
+
+    note over I,R2: Graceful Termination
+    I->>B: CompleteSession(session_id)
+    B->>Auth: RevokeToken(auth_token)
+    par Cleanup
+        B->>R1: ReleaseAgent()
+        B->>R2: ReleaseAgent()
+        B->>LB: UpdateLoadMetrics()
+    end

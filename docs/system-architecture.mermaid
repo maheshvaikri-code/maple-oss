@@ -1,0 +1,63 @@
+graph TB
+    subgraph Platform["AI Communication Platform"]
+        direction TB
+        
+        subgraph MessageBroker["Message Broker Layer"]
+            MB["Message Router"]
+            QS["Queue Service"]
+            PS["Pub/Sub Service"]
+        end
+
+        subgraph Core["Core Services"]
+            direction LR
+            OR["Orchestrator"]
+            LB["Load Balancer"]
+            SC["State Controller"]
+        end
+
+        subgraph Security["Security Layer"]
+            AM["Auth Manager"]
+            CM["Crypto Module"]
+            ACL["Access Control"]
+        end
+
+        subgraph Storage["Storage Layer"]
+            MDB["Message Store"]
+            SDB["State Store"]
+            ADB["Analytics Store"]
+        end
+
+        subgraph Monitor["Monitoring System"]
+            MT["Metrics Tracker"]
+            LG["Logger"]
+            AL["Alert System"]
+        end
+    end
+
+    subgraph Agents["AI Agents"]
+        A1["Agent 1"]
+        A2["Agent 2"]
+        A3["Agent 3"]
+    end
+
+    subgraph External["External Systems"]
+        API["API Gateway"]
+        DS["Data Sources"]
+        ES["External Services"]
+    end
+
+    A1 --> API
+    A2 --> API
+    A3 --> API
+    API --> MB
+    MB --> QS
+    MB --> PS
+    QS --> OR
+    PS --> OR
+    OR --> LB
+    OR --> SC
+    LB --> Storage
+    SC --> Storage
+    MB --> Security
+    Security --> Storage
+    Storage --> Monitor

@@ -1,0 +1,53 @@
+// MAPLE - Multi Agent Protocol Language Engine - Specification
+
+// Top-level constructs
+Protocol        ::= Header Definitions Body
+
+// Header section
+Header          ::= "protocol" Identifier Version Requirements
+
+Version         ::= "version" Number "." Number "." Number
+Requirements    ::= "requires" "{" Capability* "}"
+Capability      ::= Identifier ":" Value
+
+// Definitions section
+Definitions     ::= "definitions" "{" (TypeDef | MessageDef | RoleDef)* "}"
+
+TypeDef         ::= "type" Identifier "{" Field* "}"
+Field           ::= Identifier ":" DataType ["=" DefaultValue]
+
+MessageDef      ::= "message" Identifier "{" 
+                    "sender" ":" RoleType
+                    "receiver" ":" RoleType
+                    "payload" ":" DataType
+                    "priority" ":" PriorityLevel
+                    ["timeout" ":" Duration]
+                    "}"
+
+RoleDef         ::= "role" Identifier "{" 
+                    "capabilities" ":" Capability*
+                    "states" ":" State*
+                    "}"
+
+// Body section
+Body            ::= "flow" "{" (Stage | Transaction)* "}"
+
+Stage           ::= "stage" Identifier "{" 
+                    "preconditions" ":" Condition*
+                    "actions" ":" Action*
+                    "postconditions" ":" Condition*
+                    "error" ":" ErrorHandler
+                    "}"
+
+Transaction     ::= "transaction" Identifier "{"
+                    "atomic" ":" Boolean
+                    "participants" ":" RoleType*
+                    "steps" ":" Step*
+                    "compensation" ":" Action*
+                    "}"
+
+// Data types and utilities
+DataType        ::= "String" | "Number" | "Boolean" | "Map" | "List" | CustomType
+PriorityLevel   ::= "HIGH" | "MEDIUM" | "LOW"
+State           ::= "INIT" | "ACTIVE" | "WAITING" | "COMPLETED" | "ERROR"
+ErrorHandler    ::= "retry" | "fail" | "compensate" | CustomHandler

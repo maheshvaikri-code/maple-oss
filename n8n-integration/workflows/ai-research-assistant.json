@@ -1,0 +1,166 @@
+{
+  "name": "AI Research Assistant - MAPLE Demo",
+  "active": true,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "research",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Research Request",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "research-webhook"
+    },
+    {
+      "parameters": {
+        "operation": "orchestrateAgents",
+        "coordinationStrategy": "sequential",
+        "errorHandling": "retry",
+        "maxRetries": 3,
+        "agents": {
+          "agent": [
+            {
+              "agentId": "search-agent-001",
+              "taskType": "SEARCH_WEB",
+              "taskParameters": "{\"query\": \"{{$node['Research Request'].json['query']}}\", \"sources\": 5}",
+              "priority": "HIGH",
+              "timeout": "60s"
+            },
+            {
+              "agentId": "analysis-agent-001", 
+              "taskType": "ANALYZE_CONTENT",
+              "taskParameters": "{\"content\": \"{{$node['MAPLE Coordinator'].json['result']['results'][0]['result']}}\", \"focus\": \"key_insights\"}",
+              "priority": "HIGH",
+              "timeout": "45s"
+            },
+            {
+              "agentId": "summary-agent-001",
+              "taskType": "GENERATE_SUMMARY", 
+              "taskParameters": "{\"analysis\": \"{{$node['MAPLE Coordinator'].json['result']['results'][1]['result']}}\", \"format\": \"executive_summary\"}",
+              "priority": "MEDIUM",
+              "timeout": "30s"
+            }
+          ]
+        },
+        "globalResources": {
+          "resourceRequirement": {
+            "compute": 6,
+            "memory": "12GB", 
+            "timeout": "3m"
+          }
+        }
+      },
+      "id": "maple-coordinator",
+      "name": "MAPLE Coordinator",
+      "type": "@maple/n8n-nodes-maple.mapleCoordinator",
+      "typeVersion": 1,
+      "position": [440, 300],
+      "credentials": {
+        "mapleApi": {
+          "id": "maple-demo-creds",
+          "name": "MAPLE Demo Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "monitorUsage",
+        "allocationId": "{{$node['MAPLE Coordinator'].json['result']['allocationId']}}"
+      },
+      "id": "resource-monitor",
+      "name": "Monitor Resources",
+      "type": "@maple/n8n-nodes-maple.mapleResourceManager",
+      "typeVersion": 1,
+      "position": [640, 400],
+      "credentials": {
+        "mapleApi": {
+          "id": "maple-demo-creds",
+          "name": "MAPLE Demo Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getStatus",
+        "agentId": "search-agent-001"
+      },
+      "id": "agent-status",
+      "name": "Check Agent Status",
+      "type": "@maple/n8n-nodes-maple.mapleAgent",
+      "typeVersion": 1,
+      "position": [640, 200],
+      "credentials": {
+        "mapleApi": {
+          "id": "maple-demo-creds",
+          "name": "MAPLE Demo Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"research_complete\": true,\n  \"query\": \"{{$node['Research Request'].json['query']}}\",\n  \"summary\": \"{{$node['MAPLE Coordinator'].json['result']['finalResult']}}\",\n  \"agent_performance\": {\n    \"search_agent\": \"{{$node['Check Agent Status'].json['result']['performance']}}\",\n    \"coordination_time\": \"{{$node['MAPLE Coordinator'].json['result']['executionTime']}}\",\n    \"resource_usage\": \"{{$node['Monitor Resources'].json['result']['usage']}}\"\n  },\n  \"timestamp\": \"{{$now}}\",\n  \"creator\": \"Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)\",\n  \"protocol\": \"MAPLE (Multi Agent Protocol Language Engine)\"\n}"
+      },
+      "id": "response",
+      "name": "Research Complete",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [840, 300]
+    }
+  ],
+  "connections": {
+    "Research Request": {
+      "main": [
+        [
+          {
+            "node": "MAPLE Coordinator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MAPLE Coordinator": {
+      "main": [
+        [
+          {
+            "node": "Monitor Resources",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Check Agent Status",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Research Complete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-12-13T15:30:00.000Z",
+      "updatedAt": "2024-12-13T15:30:00.000Z",
+      "id": "maple-demo",
+      "name": "MAPLE Demo"
+    }
+  ],
+  "triggerCount": 0,
+  "updatedAt": "2024-12-13T15:30:00.000Z",
+  "versionId": "1"
+}

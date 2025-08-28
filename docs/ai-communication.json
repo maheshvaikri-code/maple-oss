@@ -1,0 +1,167 @@
+{
+    // 1. Initial Task Assignment
+    "taskInitiation": {
+        "messageType": "TASK_ASSIGNMENT",
+        "timestamp": "2024-12-12T10:00:00Z",
+        "sender": "coordinator_ai",
+        "priority": "HIGH",
+        "payload": {
+            "taskId": "COMPLEX_ANALYSIS_001",
+            "type": "DATA_ANALYSIS",
+            "context": {
+                "domain": "financial_forecasting",
+                "requirements": {
+                    "accuracy": 0.95,
+                    "confidence_threshold": 0.85,
+                    "time_horizon": "7d"
+                },
+                "constraints": {
+                    "max_processing_time": "30m",
+                    "resource_limits": {
+                        "memory": "16GB",
+                        "compute_units": 4
+                    }
+                }
+            },
+            "input_data": {
+                "sources": [
+                    {
+                        "type": "time_series",
+                        "path": "s3://data/financial/",
+                        "format": "parquet"
+                    }
+                ],
+                "validation_rules": [
+                    {"rule": "no_missing_values", "action": "interpolate"},
+                    {"rule": "range_check", "bounds": [-1000, 1000]}
+                ]
+            }
+        }
+    },
+
+    // 2. Planning Agent Response
+    "planningResponse": {
+        "messageType": "EXECUTION_STRATEGY",
+        "correlationId": "COMPLEX_ANALYSIS_001",
+        "payload": {
+            "strategy": {
+                "phases": [
+                    {
+                        "name": "data_preparation",
+                        "agent": "preprocessing_ai",
+                        "operations": ["cleaning", "normalization"],
+                        "estimated_duration": "5m"
+                    },
+                    {
+                        "name": "feature_engineering",
+                        "agent": "feature_ai",
+                        "operations": ["extraction", "selection"],
+                        "dependencies": ["data_preparation"]
+                    },
+                    {
+                        "name": "model_application",
+                        "agent": "model_ai",
+                        "parallel": true,
+                        "models": [
+                            {
+                                "type": "lstm",
+                                "configuration": {
+                                    "layers": 3,
+                                    "units": 64
+                                }
+                            },
+                            {
+                                "type": "transformer",
+                                "configuration": {
+                                    "attention_heads": 8,
+                                    "depth": 6
+                                }
+                            }
+                        ]
+                    }
+                ],
+                "fallback_strategies": {
+                    "timeout": "reduce_complexity",
+                    "accuracy_miss": "ensemble_backup",
+                    "resource_exceeded": "degrade_gracefully"
+                }
+            }
+        }
+    },
+
+    // 3. Reasoning Agent Analysis
+    "reasoningAnalysis": {
+        "messageType": "PROGRESS_ANALYSIS",
+        "payload": {
+            "metrics": {
+                "accuracy": {
+                    "current": 0.93,
+                    "trend": "improving",
+                    "confidence": 0.89
+                },
+                "resource_utilization": {
+                    "memory": "78%",
+                    "compute": "65%"
+                },
+                "bottlenecks": [
+                    {
+                        "phase": "feature_engineering",
+                        "issue": "high_cardinality",
+                        "recommendation": {
+                            "action": "dimension_reduction",
+                            "parameters": {
+                                "method": "pca",
+                                "components": 10
+                            }
+                        }
+                    }
+                ]
+            },
+            "suggestions": [
+                {
+                    "type": "optimization",
+                    "target": "model_application",
+                    "change": "adjust_batch_size",
+                    "value": 256
+                }
+            ]
+        }
+    },
+
+    // 4. Execution Results
+    "executionResults": {
+        "messageType": "TASK_COMPLETION",
+        "payload": {
+            "taskId": "COMPLEX_ANALYSIS_001",
+            "status": "COMPLETED",
+            "results": {
+                "predictions": {
+                    "format": "array",
+                    "shape": [1000, 7],
+                    "location": "s3://results/predictions/",
+                    "metadata": {
+                        "mae": 0.12,
+                        "rmse": 0.18,
+                        "r2_score": 0.91
+                    }
+                },
+                "model_insights": {
+                    "feature_importance": {
+                        "price_momentum": 0.8,
+                        "volume_change": 0.6,
+                        "market_sentiment": 0.4
+                    },
+                    "confidence_intervals": {
+                        "method": "bootstrap",
+                        "intervals": [0.85, 0.95]
+                    }
+                },
+                "processing_stats": {
+                    "total_time": "22m",
+                    "data_processed": "1.2GB",
+                    "model_iterations": 150
+                }
+            }
+        }
+    }
+}

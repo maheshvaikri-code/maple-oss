@@ -1,0 +1,48 @@
+sequenceDiagram
+    participant OS as Orchestrator
+    participant PL as Planner
+    participant RT as Router
+    participant AG as AGV Controller
+    participant RB as Robot Controller
+    participant CV as Vision System
+    participant IN as Inventory
+
+    Note over OS,IN: Package Arrival & Distribution Flow
+    
+    CV->>OS: PackageDetected(entrance_point)
+    OS->>IN: ValidatePackage(package_data)
+    IN-->>OS: PackageValidated(destination)
+    
+    par Task Planning
+        OS->>PL: RequestPlan(package_details)
+        PL->>RT: OptimizeRoute(start, end)
+        PL->>AG: CheckAGVAvailability()
+        PL->>RB: CheckRobotAvailability()
+    end
+
+    RT-->>PL: RouteConfirmed(path)
+    AG-->>PL: AGVAssigned(agv_id)
+    RB-->>PL: RobotAssigned(robot_id)
+    
+    PL-->>OS: ExecutionPlan(tasks)
+    
+    par Task Execution
+        OS->>RB: PickPackage(location)
+        OS->>AG: MoveTo(pickup_point)
+    end
+
+    RB-->>OS: PackageGrasped
+    AG-->>OS: AtLocation
+    
+    OS->>RB: LoadToAGV(agv_id)
+    RB-->>OS: LoadComplete
+    
+    OS->>AG: TransportPackage(destination)
+    
+    loop Progress Monitoring
+        CV->>OS: TrackingUpdate(position)
+        OS->>RT: ValidatePath(position)
+    end
+    
+    AG-->>OS: DeliveryComplete
+    OS->>IN: UpdateLocation(package_id, location)

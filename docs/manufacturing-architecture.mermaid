@@ -1,0 +1,55 @@
+graph TB
+    subgraph ManufacturingOS["Manufacturing Operating System"]
+        subgraph CoreControl["Core Control System"]
+            MES["Manufacturing Execution System"]
+            PCS["Process Control System"]
+            QCS["Quality Control System"]
+            IMS["Inventory Management System"]
+        end
+
+        subgraph AIAgents["Manufacturing AI Agents"]
+            direction TB
+            MA["Master Orchestrator Agent"]
+            subgraph Planning["Planning Agents"]
+                PPA["Production Planning Agent"]
+                SCA["Supply Chain Agent"]
+                RMA["Resource Management Agent"]
+            end
+            subgraph Production["Production Agents"]
+                ALA["Assembly Line Agent"]
+                QAA["Quality Assurance Agent"]
+                PMA["Process Monitoring Agent"]
+            end
+            subgraph Logistics["Logistics Agents"]
+                INA["Inventory Agent"]
+                MTA["Material Transport Agent"]
+                PKA["Packaging Agent"]
+            end
+        end
+
+        subgraph Stations["Manufacturing Stations"]
+            PCB["PCB Assembly Control"]
+            CPU["CPU Integration"]
+            MEM["Memory Installation"]
+            DSP["Display Assembly"]
+            TST["Testing System"]
+            PKG["Packaging System"]
+        end
+
+        subgraph Sensors["Factory Sensors"]
+            TS["Thermal Sensors"]
+            VS["Vision Systems"]
+            QS["Quality Sensors"]
+            PS["Position Trackers"]
+        end
+    end
+
+    MA --> Planning
+    MA --> Production
+    MA --> Logistics
+    
+    Planning --> Stations
+    Production --> Stations
+    Logistics --> Stations
+    
+    Sensors --> Production

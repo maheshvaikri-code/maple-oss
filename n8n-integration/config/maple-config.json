@@ -1,0 +1,374 @@
+{
+  "package": {
+    "name": "@maple/n8n-nodes-maple",
+    "version": "1.0.0",
+    "creator": "Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)",
+    "description": "MAPLE - Multi Agent Protocol Language Engine for n8n"
+  },
+  
+  "environments": {
+    "development": {
+      "mapleServer": {
+        "host": "localhost",
+        "port": 8080,
+        "protocol": "ws",
+        "endpoints": {
+          "websocket": "ws://localhost:8080",
+          "http": "http://localhost:8080",
+          "health": "http://localhost:8080/health",
+          "metrics": "http://localhost:8080/metrics"
+        }
+      },
+      "demo": {
+        "host": "localhost", 
+        "port": 3000,
+        "autoStart": true
+      },
+      "logging": {
+        "level": "debug",
+        "console": true,
+        "file": "./logs/maple-dev.log"
+      },
+      "security": {
+        "enableSecurity": false,
+        "allowInsecureConnections": true,
+        "requireAuthentication": false
+      },
+      "performance": {
+        "maxAgents": 5,
+        "maxConcurrentRequests": 10,
+        "timeout": "30s"
+      }
+    },
+    
+    "production": {
+      "mapleServer": {
+        "host": "0.0.0.0",
+        "port": 8080,
+        "protocol": "wss",
+        "endpoints": {
+          "websocket": "wss://maple.yourdomain.com",
+          "http": "https://maple.yourdomain.com",
+          "health": "https://maple.yourdomain.com/health",
+          "metrics": "https://maple.yourdomain.com/metrics"
+        }
+      },
+      "demo": {
+        "host": "0.0.0.0",
+        "port": 3000,
+        "autoStart": false
+      },
+      "logging": {
+        "level": "info",
+        "console": false,
+        "file": "./logs/maple-prod.log",
+        "rotation": "daily",
+        "maxFiles": 30
+      },
+      "security": {
+        "enableSecurity": true,
+        "allowInsecureConnections": false,
+        "requireAuthentication": true,
+        "sslCertificate": "./ssl/cert.pem",
+        "sslKey": "./ssl/key.pem",
+        "jwtSecret": "${JWT_SECRET}",
+        "linkValidation": true
+      },
+      "performance": {
+        "maxAgents": 100,
+        "maxConcurrentRequests": 1000,
+        "timeout": "60s",
+        "enableCaching": true,
+        "cacheTimeout": "5m"
+      },
+      "monitoring": {
+        "enableMetrics": true,
+        "metricsPort": 9090,
+        "enableTracing": true,
+        "tracingEndpoint": "http://jaeger:14268/api/traces"
+      }
+    },
+    
+    "testing": {
+      "mapleServer": {
+        "host": "localhost",
+        "port": 8081,
+        "protocol": "ws",
+        "endpoints": {
+          "websocket": "ws://localhost:8081",
+          "http": "http://localhost:8081",
+          "health": "http://localhost:8081/health",
+          "metrics": "http://localhost:8081/metrics"
+        }
+      },
+      "demo": {
+        "host": "localhost",
+        "port": 3001,
+        "autoStart": false
+      },
+      "logging": {
+        "level": "debug",
+        "console": true,
+        "file": "./logs/maple-test.log"
+      },
+      "security": {
+        "enableSecurity": true,
+        "allowInsecureConnections": true,
+        "requireAuthentication": true,
+        "testMode": true
+      },
+      "performance": {
+        "maxAgents": 10,
+        "maxConcurrentRequests": 50,
+        "timeout": "10s"
+      }
+    }
+  },
+  
+  "features": {
+    "resourceManagement": {
+      "enabled": true,
+      "defaultLimits": {
+        "memory": "512MB",
+        "cpu": 2,
+        "timeout": "300s"
+      },
+      "optimization": {
+        "enableAutoOptimization": true,
+        "optimizationInterval": "60s",
+        "resourceThresholds": {
+          "memory": 0.8,
+          "cpu": 0.9
+        }
+      }
+    },
+    
+    "errorHandling": {
+      "enabled": true,
+      "retryPolicy": {
+        "maxAttempts": 3,
+        "backoffStrategy": "exponential",
+        "initialDelay": "1s",
+        "maxDelay": "30s"
+      },
+      "circuitBreaker": {
+        "enabled": true,
+        "failureThreshold": 5,
+        "resetTimeout": "60s"
+      },
+      "fallbackStrategies": [
+        "graceful-degradation",
+        "alternative-agent",
+        "cached-response"
+      ]
+    },
+    
+    "security": {
+      "authentication": {
+        "methods": ["jwt", "apikey", "certificate"],
+        "tokenExpiry": "24h",
+        "refreshThreshold": "2h"
+      },
+      "authorization": {
+        "enableRBAC": true,
+        "roles": ["admin", "agent", "viewer"],
+        "permissions": {
+          "admin": ["*"],
+          "agent": ["agent.register", "agent.communicate", "resource.request"],
+          "viewer": ["agent.view", "metrics.view"]
+        }
+      },
+      "linkSecurity": {
+        "enableLinkValidation": true,
+        "linkLifetime": "1h",
+        "autoKeyRotation": true,
+        "keyRotationInterval": "6h"
+      }
+    },
+    
+    "monitoring": {
+      "metrics": {
+        "enabled": true,
+        "exportFormat": "prometheus",
+        "customMetrics": [
+          "maple_agents_active",
+          "maple_messages_per_second",
+          "maple_resource_utilization",
+          "maple_error_rate"
+        ]
+      },
+      "logging": {
+        "structuredLogging": true,
+        "logFormat": "json",
+        "includeStackTrace": true,
+        "sensitiveDataMasking": true
+      },
+      "tracing": {
+        "enabled": false,
+        "samplingRate": 0.1,
+        "exporters": ["jaeger", "zipkin"]
+      }
+    }
+  },
+  
+  "n8nIntegration": {
+    "nodeCategories": [
+      "MAPLE",
+      "AI & Machine Learning", 
+      "Communication",
+      "Data Processing"
+    ],
+    "nodeIcons": {
+      "MAPLEAgent": "maple-logo.svg",
+      "MAPLECoordinator": "maple-coordinator.svg",
+      "MAPLEResourceManager": "maple-resource.svg"
+    },
+    "nodeColors": {
+      "primary": "#FF6B6B",
+      "secondary": "#FF4757",
+      "accent": "#FFA502"
+    },
+    "compatibility": {
+      "minN8nVersion": "0.200.0",
+      "maxN8nVersion": "*",
+      "nodeApiVersion": 1
+    }
+  },
+  
+  "deployment": {
+    "docker": {
+      "enabled": true,
+      "image": "maple/n8n-nodes",
+      "tag": "1.0.0",
+      "ports": {
+        "maple": 8080,
+        "demo": 3000,
+        "metrics": 9090
+      },
+      "volumes": [
+        "./config:/app/config",
+        "./logs:/app/logs",
+        "./ssl:/app/ssl"
+      ],
+      "environment": [
+        "NODE_ENV=production",
+        "MAPLE_CONFIG_PATH=/app/config"
+      ]
+    },
+    
+    "kubernetes": {
+      "enabled": true,
+      "namespace": "maple-system",
+      "replicas": 3,
+      "resources": {
+        "requests": {
+          "cpu": "100m",
+          "memory": "256Mi"
+        },
+        "limits": {
+          "cpu": "500m",
+          "memory": "1Gi"
+        }
+      },
+      "service": {
+        "type": "ClusterIP",
+        "ports": [
+          {"name": "maple", "port": 8080},
+          {"name": "metrics", "port": 9090}
+        ]
+      },
+      "ingress": {
+        "enabled": true,
+        "annotations": {
+          "kubernetes.io/ingress.class": "nginx",
+          "cert-manager.io/cluster-issuer": "letsencrypt"
+        },
+        "hosts": [
+          "maple.yourdomain.com"
+        ],
+        "tls": {
+          "secretName": "maple-tls"
+        }
+      }
+    },
+    
+    "cloudProviders": {
+      "aws": {
+        "region": "us-east-1",
+        "services": {
+          "ecs": {
+            "cluster": "maple-cluster",
+            "service": "maple-service"
+          },
+          "elb": {
+            "type": "application",
+            "scheme": "internet-facing"
+          },
+          "rds": {
+            "engine": "postgres",
+            "instanceClass": "db.t3.micro"
+          }
+        }
+      },
+      
+      "gcp": {
+        "project": "maple-project",
+        "region": "us-central1",
+        "services": {
+          "gke": {
+            "cluster": "maple-cluster",
+            "nodePool": "default-pool"
+          },
+          "cloudSQL": {
+            "tier": "db-f1-micro",
+            "version": "POSTGRES_13"
+          }
+        }
+      },
+      
+      "azure": {
+        "resourceGroup": "maple-rg",
+        "location": "East US",
+        "services": {
+          "aks": {
+            "cluster": "maple-cluster",
+            "nodeCount": 3
+          },
+          "sqlDatabase": {
+            "tier": "Basic",
+            "maxSize": "2GB"
+          }
+        }
+      }
+    }
+  },
+  
+  "support": {
+    "documentation": {
+      "apiDocs": "./docs/api.md",
+      "tutorials": "./docs/tutorials/",
+      "videos": "./docs/videos/",
+      "faq": "./docs/faq.md"
+    },
+    
+    "community": {
+      "discord": "https://discord.gg/maple-protocol",
+      "github": "https://github.com/mahesh-vaikri/maple-n8n-nodes",
+      "email": "support@maple.dev"
+    },
+    
+    "enterprise": {
+      "support": "enterprise@maple.dev",
+      "sla": "99.9%",
+      "responseTime": "4h"
+    }
+  },
+  
+  "creator": {
+    "name": "Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)",
+    "attribution": "Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)",
+    "contact": "mahesh@maple.dev",
+    "github": "https://github.com/mahesh-vaikri",
+    "linkedin": "https://linkedin.com/in/mahesh-vaikri"
+  }
+}

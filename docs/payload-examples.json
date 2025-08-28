@@ -1,0 +1,191 @@
+{
+  "examples": {
+    // 1. Task Assignment Payload
+    "taskAssignment": {
+      "taskId": "task_123",
+      "type": "DATA_PROCESSING",
+      "priority": "HIGH",
+      "input": {
+        "dataSource": {
+          "type": "stream",
+          "format": "avro",
+          "location": "kafka://topic/data-stream",
+          "schema": {
+            "fields": [
+              {"name": "user_id", "type": "string"},
+              {"name": "timestamp", "type": "long"},
+              {"name": "metrics", "type": "map<string, double>"}
+            ]
+          }
+        },
+        "parameters": {
+          "batch_size": 1000,
+          "window_size": "5m",
+          "aggregation_level": "user",
+          "filters": [
+            {"field": "metrics.cpu", "operator": ">=", "value": 90}
+          ]
+        },
+        "requirements": {
+          "memory": "4GB",
+          "cpu_cores": 2,
+          "gpu": false
+        }
+      },
+      "configuration": {
+        "timeout": "30m",
+        "retry_policy": {
+          "max_attempts": 3,
+          "backoff": "exponential",
+          "initial_delay": "1s"
+        },
+        "checkpoint_interval": "1m"
+      }
+    },
+
+    // 2. Agent Status Update Payload
+    "statusUpdate": {
+      "agentId": "agent_456",
+      "timestamp": "2024-12-12T10:15:30.123Z",
+      "status": "ACTIVE",
+      "metrics": {
+        "cpu_usage": 75.5,
+        "memory_usage": {
+          "total": "4GB",
+          "used": "2.8GB",
+          "free": "1.2GB"
+        },
+        "network": {
+          "bytes_in": 1024567,
+          "bytes_out": 897654,
+          "active_connections": 12
+        },
+        "task_metrics": {
+          "active_tasks": 3,
+          "completed_tasks": 45,
+          "failed_tasks": 1,
+          "average_processing_time": "2.3s"
+        }
+      },
+      "capabilities": {
+        "supported_tasks": ["DATA_PROCESSING", "ML_INFERENCE"],
+        "available_resources": {
+          "cpu_cores": 4,
+          "memory": "8GB",
+          "gpu_memory": "0GB"
+        }
+      }
+    },
+
+    // 3. Data Processing Result Payload
+    "processingResult": {
+      "taskId": "task_123",
+      "status": "COMPLETED",
+      "timestamp": "2024-12-12T10:20:45.789Z",
+      "results": {
+        "summary": {
+          "records_processed": 10000,
+          "filtered_records": 150,
+          "processing_time": "145.7s"
+        },
+        "aggregations": {
+          "by_user": {
+            "user_123": {
+              "avg_cpu": 95.5,
+              "peak_memory": "3.2GB",
+              "alert_count": 5
+            }
+          },
+          "by_time_window": [
+            {
+              "window_start": "2024-12-12T10:15:00Z",
+              "window_end": "2024-12-12T10:20:00Z",
+              "metrics": {
+                "avg_cpu": 82.3,
+                "max_cpu": 97.8,
+                "alert_count": 12
+              }
+            }
+          ]
+        },
+        "output_location": {
+          "type": "object_store",
+          "uri": "s3://results/task_123/",
+          "format": "parquet",
+          "partition_by": ["timestamp_hour", "user_id"]
+        }
+      },
+      "metadata": {
+        "version": "1.0",
+        "engine": "spark-3.4.1",
+        "checksum": "sha256:abc123..."
+      }
+    },
+
+    // 4. Error Payload
+    "errorReport": {
+      "errorId": "err_789",
+      "taskId": "task_123",
+      "timestamp": "2024-12-12T10:18:30.456Z",
+      "severity": "HIGH",
+      "error": {
+        "type": "RESOURCE_EXHAUSTED",
+        "message": "Memory limit exceeded during processing",
+        "code": "ERR_MEMORY_004",
+        "details": {
+          "memory_requested": "4GB",
+          "memory_available": "3.1GB",
+          "process_id": 12345,
+          "stack_trace": "...",
+          "affected_records": [
+            {"id": "rec_001", "error": "Failed to process"}
+          ]
+        }
+      },
+      "context": {
+        "operation": "data_aggregation",
+        "input_partition": "2024-12-12/hour_10",
+        "attempt": 2
+      },
+      "recovery_suggestion": {
+        "action": "REDUCE_BATCH_SIZE",
+        "parameters": {
+          "new_batch_size": 500,
+          "checkpoint_frequency": "every_batch"
+        }
+      }
+    },
+
+    // 5. Configuration Update Payload
+    "configUpdate": {
+      "updateId": "cfg_001",
+      "timestamp": "2024-12-12T10:00:00Z",
+      "scope": "GLOBAL",
+      "changes": {
+        "resource_limits": {
+          "max_memory_per_task": "6GB",
+          "max_cpu_cores": 4,
+          "max_concurrent_tasks": 5
+        },
+        "networking": {
+          "timeout": "30s",
+          "max_retries": 3,
+          "rate_limits": {
+            "requests_per_second": 100,
+            "burst_size": 150
+          }
+        },
+        "monitoring": {
+          "metrics_interval": "10s",
+          "health_check_interval": "30s",
+          "log_level": "INFO"
+        }
+      },
+      "validation_rules": {
+        "memory_check": "value <= 8GB",
+        "cpu_check": "value <= system_cores",
+        "rate_limit_check": "burst_size >= requests_per_second"
+      }
+    }
+  }
+}
