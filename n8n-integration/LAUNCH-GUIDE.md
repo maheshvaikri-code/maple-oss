@@ -450,12 +450,3 @@ pm2 start launch.js --name "maple-server" --max-memory-restart 2G
 **MAPLE - Multi Agent Protocol Language Engine**
 
 ---
-
-## 📞 Support Contacts
-
-- **Technical Issues**: support@maple.dev
-- **Enterprise Support**: enterprise@maple.dev  
-- **Community Discord**: https://discord.gg/maple-protocol
-- **GitHub Issues**: https://github.com/mahesh-vaikri/maple-n8n-nodes/issues
-
-**Available 24/7 for production support!** 🚀
