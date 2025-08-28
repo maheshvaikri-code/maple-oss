@@ -353,12 +353,12 @@
     
     "community": {
       "discord": "https://discord.gg/maple-protocol",
-      "github": "https://github.com/mahesh-vaikri/maple-n8n-nodes",
+      "github": "https://github.com/maheshvaikri-code/maple-oss",
       "email": "support@maple.dev"
     },
     
     "enterprise": {
-      "support": "enterprise@maple.dev",
+      "support": "enterprise@mapleagent.org",
       "sla": "99.9%",
       "responseTime": "4h"
     }
@@ -368,7 +368,7 @@
     "name": "Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)",
     "attribution": "Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)",
     "contact": "mahesh@maple.dev",
-    "github": "https://github.com/mahesh-vaikri",
-    "linkedin": "https://linkedin.com/in/mahesh-vaikri"
+    "github": "https://github.com/maheshvaikri-code",
+    "linkedin": "https://linkedin.com/in/maheshvaikri"
   }
 }

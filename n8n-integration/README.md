@@ -114,8 +114,8 @@ npx @maple/n8n-nodes-maple launch:production
 ### **Method 3: Developer Setup**
 
 ```bash
-git clone https://github.com/mahesh-vaikri/maple-n8n-nodes
-cd maple-n8n-nodes
+git clone https://github.com/maheshvaikri-code/maple-oss
+cd n8n-integration
 npm install
 npm run build
 npm run launch
@@ -307,9 +307,9 @@ curl http://localhost:9090/metrics
 
 ### **🌐 Community**
 - **💬 [Discord Community](https://discord.gg/maple-protocol)** - Real-time chat and support
-- **🐛 [GitHub Issues](https://github.com/mahesh-vaikri/maple-n8n-nodes/issues)** - Bug reports and feature requests
-- **📧 [Email Support](mailto:support@maple.dev)** - Direct technical support
-- **🎯 [Feature Requests](https://github.com/mahesh-vaikri/maple-n8n-nodes/discussions)** - Shape MAPLE's future
+- **🐛 [GitHub Issues](https://github.com/maheshvaikri-code/maple-oss/issues)** - Bug reports and feature requests
+- **📧 [Email Support](mailto:support@mapleagent.org)** - Direct technical support
+- **🎯 [Feature Requests](https://github.com/maheshvaikri-code/maple-oss/discussions)** - Shape MAPLE's future
 
 ### **🏢 Enterprise Support**
 - **📞 24/7 Support**: enterprise@maple.dev
@@ -363,7 +363,7 @@ This software was created by Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri
   title={MAPLE n8n Integration: Visual Multi-Agent AI Workflows},
   author={Krishnamoorthy, Mahesh Vaijainthymala},
   year={2024},
-  url={https://github.com/mahesh-vaikri/maple-n8n-nodes},
+  url={https://github.com/maheshvaikri-code/maple-oss},
   version={1.0.0}
 }
 ```
@@ -398,8 +398,8 @@ npm run launch:production
 - **🚀 Quick Start**: `npm install @maple/n8n-nodes-maple`
 - **📖 Documentation**: [Complete Guide](./docs/README-DETAILED.md)
 - **💬 Community**: [Discord](https://discord.gg/maple-protocol)
-- **🐛 Support**: [GitHub Issues](https://github.com/mahesh-vaikri/maple-n8n-nodes/issues)
-- **📧 Enterprise**: enterprise@maple.dev
+- **🐛 Support**: [GitHub Issues](https://github.com/maheshvaikri-code/maple-oss/issues)
+- **📧 Enterprise**: enterprise@mapleagent.org
 
 **Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)**  
 **MAPLE - Multi Agent Protocol Language Engine**  

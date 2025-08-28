@@ -482,7 +482,7 @@ ${Object.entries(report.healthChecks).map(([check, status]) =>
         console.log('   📖 Documentation: ./docs/');
         console.log('   🎬 Video Tutorials: ./docs/videos/');
         console.log('   💡 Examples: ./workflows/');
-        console.log('   🐛 Support: https://github.com/mahesh-vaikri/maple-n8n-nodes/issues\n');
+        console.log('   🐛 Support: https://github.com/maheshvaikri-code/maple-oss/issues\n');
         
         console.log('🏅 **Competitive Advantage**');
         console.log('   🥇 Resource Management: ✅ MAPLE | ❌ Google A2A | ❌ FIPA ACL');

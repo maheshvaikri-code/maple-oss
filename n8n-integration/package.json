@@ -14,19 +14,19 @@
     "visual-workflows",
     "automation"
   ],
-  "license": "Apache-2.0",
-  "homepage": "https://github.com/mahesh-vaikri/maple-n8n-nodes",
+  "license": "AGPL-3.0-only",
+  "homepage": "https://github.com/maheshvaikri-code/maple-oss",
   "author": {
     "name": "Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)",
     "email": "mahesh@maple.dev",
-    "url": "https://github.com/mahesh-vaikri"
+    "url": "https://github.com/maheshvaikri-code"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/mahesh-vaikri/maple-n8n-nodes.git"
+    "url": "https://github.com/maheshvaikri-code/maple-oss.git"
   },
   "bugs": {
-    "url": "https://github.com/mahesh-vaikri/maple-n8n-nodes/issues"
+    "url": "https://github.com/maheshvaikri-code/maple-oss/issues"
   },
   "main": "index.js",
   "scripts": {
@@ -132,7 +132,7 @@
   ],
   "funding": {
     "type": "github",
-    "url": "https://github.com/sponsors/mahesh-vaikri"
+    "url": "https://github.com/maheshvaikri-code"
   },
   "config": {
     "creator": "Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)",

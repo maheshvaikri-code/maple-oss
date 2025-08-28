@@ -467,7 +467,7 @@ class MAPLEDemoLauncher {
               <a href="/test/agents" class="btn">Test Agent Creation</a>
               <a href="/test/workflow" class="btn">Test Workflow</a>
               <a href="/workflows/ai-research-assistant.json" class="btn">Download Sample Workflow</a>
-              <a href="https://github.com/mahesh-vaikri/maple-n8n-nodes" class="btn" target="_blank">GitHub Repository</a>
+              <a href="https://github.com/maheshvaikri-code/maple-oss" class="btn" target="_blank">GitHub Repository</a>
             </div>
             
             <div class="section">

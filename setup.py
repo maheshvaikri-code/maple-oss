@@ -111,16 +111,16 @@ setup(
     name="maple-oss",
     version="1.0.0",
     author="Mahesh Vaikri",
-    author_email="mahesh.vaikri@example.com",
+    author_email="mahesh@mapleagent.org",
     description="MAPLE: Multi Agent Protocol Language Engine - Advanced multi-agent communication framework",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/mahesh-vaikri/maple",
+    url="https://github.com/maheshvaikri-code/maple-oss",
     project_urls={
-        "Bug Tracker": "https://github.com/mahesh-vaikri/maple/issues",
-        "Documentation": "https://maple-protocol.org/docs",
-        "Source Code": "https://github.com/mahesh-vaikri/maple",
-        "Research Paper": "https://maple-protocol.org/research"
+        "Bug Tracker": "https://github.com/maheshvaikri-code/maple/issues",
+        "Documentation": "https://mapleagent.org/docs",
+        "Source Code": "https://github.com/maheshvaikri-code/maple-oss",
+        "Research Paper": "https://mapleagent.org/research"
     },
     packages=find_packages(),
     classifiers=[
