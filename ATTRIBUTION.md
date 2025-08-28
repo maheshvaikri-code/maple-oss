@@ -8,7 +8,7 @@
 **Full Name:** Mahesh Vaijainthymala Krishnamoorthy  
 **Preferred Name:** Mahesh Vaikri  
 **Role:** Creator, Lead Architect, and Principal Developer of MAPLE  
-**Date of Creation:** December 2024  
+**Date of Creation:** August 2025  
 
 ## Creator Contributions
 
