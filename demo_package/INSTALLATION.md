@@ -45,7 +45,7 @@ python setup_demo.py
 ### Option 2: Production Installation
 ```bash
 # Install from PyPI (when available)
-pip install maple-agents
+pip install maple-oss
 
 # Or install from source
 pip install git+<repository-url>
@@ -133,13 +133,13 @@ pip install nats-py  # For NATS broker support
 #### Package Installation:
 ```bash
 # Core MAPLE installation
-pip install maple-agents
+pip install maple-oss
 
 # With optional features
-pip install maple-agents[full]  # All optional dependencies
-pip install maple-agents[crypto]  # Cryptography features
-pip install maple-agents[monitoring]  # System monitoring
-pip install maple-agents[nats]  # NATS broker support
+pip install maple-oss[full]  # All optional dependencies
+pip install maple-oss[crypto]  # Cryptography features
+pip install maple-oss[monitoring]  # System monitoring
+pip install maple-oss[nats]  # NATS broker support
 ```
 
 ### Step 3: Verification and Testing
@@ -269,7 +269,7 @@ python web_dashboard.py --port 9999
 pip install psutil cryptography nats-py
 
 # Or install all optional features
-pip install maple-agents[full]
+pip install maple-oss[full]
 ```
 
 #### Performance issues
@@ -336,7 +336,7 @@ export MAPLE_BROKER_URL=your-broker-cluster
 export MAPLE_SECURITY_LEVEL=MAXIMUM
 
 # Install production dependencies
-pip install maple-agents[production]
+pip install maple-oss[production]
 
 # Run health checks
 python -m maple.health_check
