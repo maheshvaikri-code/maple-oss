@@ -147,7 +147,7 @@ class MessageBroker:
         self._agent_queues[message.receiver].append(message)
         
         logger.debug(f"Message {message.message_id} queued for delivery to {message.receiver}")
-        return message.message_id
+        return str(message.message_id)  # Ensure we always return a string
     
     def publish(self, topic: str, message: Message) -> str:
         """Publish a message to a topic."""
@@ -180,7 +180,7 @@ class MessageBroker:
             self._agent_queues[subscriber].append(subscriber_message)
         
         logger.debug(f"Message {message.message_id} published to topic {topic} with {len(subscribers)} subscribers")
-        return message.message_id
+        return str(message.message_id)  # Ensure we always return a string
     
     def subscribe(self, agent_id: str, handler: Callable[[Message], None]) -> None:
         """Subscribe an agent to receive messages."""

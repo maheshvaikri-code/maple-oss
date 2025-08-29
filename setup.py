@@ -48,7 +48,7 @@ with open(os.path.join(here, "VERSION"), encoding="utf-8") as f:
     version = f.read().strip()
 
 setup(
-    name="maple",
+    name="maple-oss",
     version=version,
     author="Mahesh Vaijainthymala Krishnamoorthy",
     author_email="mahesh@mapleagent.com",
@@ -64,12 +64,12 @@ setup(
         "Discussions": "https://github.com/maheshvaikri-code/maple-oss/discussions",
         "Source Code": "https://github.com/maheshvaikri-codemaple-oss",
     },
-    packages=find_packages(exclude=["tests*", "docs*", "examples*"]),
+    packages=["maple"],
     classifiers=[
         "Development Status :: 5 - Production/Stable",
         "Intended Audience :: Developers",
         "Intended Audience :: Science/Research",
-        "License :: OSI Approved :: AGPL 3.0 License",
+        "License :: OSI Approved :: GNU Affero General Public License v3",
         "Operating System :: OS Independent",
         "Programming Language :: Python :: 3",
         "Programming Language :: Python :: 3.8",

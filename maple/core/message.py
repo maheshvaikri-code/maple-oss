@@ -192,6 +192,93 @@ class Message:
                 f"sender={self.sender}, "
                 f"receiver={self.receiver})")
     
+    def with_link(self, link_id: str) -> 'Message':
+        """Create a copy of this message with a link ID."""
+        new_message = Message(
+            message_id=str(self.message_id),
+            timestamp=self.timestamp,
+            sender=self.sender,
+            receiver=self.receiver,
+            priority=self.priority,
+            message_type=self.message_type,
+            payload=self.payload.copy(),
+            metadata={**self.metadata, 'linkId': link_id}
+        )
+        return new_message
+    
+    def get_link_id(self) -> Optional[str]:
+        """Get the link ID for this message, if any."""
+        return self.metadata.get('linkId')
+    
+    class Builder:
+        """Builder pattern for creating messages."""
+        
+        def __init__(self):
+            self._message_id = None
+            self._timestamp = None
+            self._sender = None
+            self._receiver = None
+            self._priority = Priority.MEDIUM
+            self._message_type = None
+            self._payload = {}
+            self._metadata = {}
+        
+        def message_id(self, message_id: str) -> 'Message.Builder':
+            self._message_id = message_id
+            return self
+        
+        def timestamp(self, timestamp: datetime) -> 'Message.Builder':
+            self._timestamp = timestamp
+            return self
+        
+        def sender(self, sender: str) -> 'Message.Builder':
+            self._sender = sender
+            return self
+        
+        def receiver(self, receiver: str) -> 'Message.Builder':
+            self._receiver = receiver
+            return self
+        
+        def priority(self, priority: Priority) -> 'Message.Builder':
+            self._priority = priority
+            return self
+        
+        def message_type(self, message_type: str) -> 'Message.Builder':
+            self._message_type = message_type
+            return self
+        
+        def payload(self, payload: Dict[str, Any]) -> 'Message.Builder':
+            self._payload = payload
+            return self
+        
+        def metadata(self, metadata: Dict[str, Any]) -> 'Message.Builder':
+            self._metadata = metadata
+            return self
+        
+        def correlation_id(self, correlation_id: str) -> 'Message.Builder':
+            self._metadata['correlationId'] = correlation_id
+            return self
+        
+        def build(self) -> 'Message':
+            if not self._message_type:
+                raise ValueError("Message type is required")
+            
+            return Message(
+                message_id=self._message_id,
+                timestamp=self._timestamp,
+                sender=self._sender,
+                receiver=self._receiver,
+                priority=self._priority,
+                message_type=self._message_type,
+                payload=self._payload,
+                metadata=self._metadata
+            )
+    
+    @classmethod
+    def builder(cls) -> Builder:
+        """Create a message builder."""
+        return cls.Builder()
+    
     def __eq__(self, other) -> bool:
         if not isinstance(other, Message):
             return False
