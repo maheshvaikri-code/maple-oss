@@ -1,0 +1,139 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "maple"
+description = "Multi Agent Protocol Language Engine - Advanced Multi-Agent Communication Protocol Framework"
+authors = [
+    {name = "Mahesh Vaijainthymala Krishnamoorthy", email = "mahesh@mapleagent.org"}
+]
+maintainers = [
+    {name = "Mahesh Vaikri", email = "mahesh@mapleagent.org"}
+]
+license = {text = "AGPL-3.0"}
+readme = "README.md"
+keywords = [
+    "multi-agent",
+    "agent-communication", 
+    "distributed-systems",
+    "ai-agents",
+    "protocol",
+    "maple",
+    "automation",
+    "resource-management",
+    "error-handling",
+    "security"
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: System :: Distributed Computing",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
+    "Topic :: System :: Networking"
+]
+requires-python = ">=3.8"
+dependencies = [
+    "asyncio-mqtt>=0.11.0",
+    "cryptography>=41.0.0",
+    "websockets>=11.0.0",
+    "pydantic>=2.0.0",
+    "python-dateutil>=2.8.0",
+    "typing-extensions>=4.0.0;python_version<'3.10'"
+]
+dynamic = ["version"]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.0.0",
+    "black>=23.0.0",
+    "flake8>=6.0.0",
+    "mypy>=1.0.0",
+    "isort>=5.12.0",
+    "bandit>=1.7.0",
+    "pre-commit>=3.0.0"
+]
+docs = [
+    "sphinx>=6.0.0",
+    "sphinx-rtd-theme>=1.3.0",
+    "myst-parser>=2.0.0"
+]
+performance = [
+    "uvloop>=0.17.0;platform_system!='Windows'",
+    "orjson>=3.8.0",
+    "msgpack>=1.0.0"
+]
+security = [
+    "cryptography[ssh]>=41.0.0",
+    "pyjwt>=2.8.0"
+]
+
+[project.urls]
+Homepage = "https://github.com/maheshvaikri-code/maple-oss"
+Documentation = "https://mapleagent.org/docs"
+Repository = "https://github.com/maheshvaikri-code/maple-oss"
+Issues = "https://github.com/maheshvaikri-code/maple-oss/issues"
+Discussions = "https://github.com/maheshvaikri-code/maple-oss/discussions"
+Changelog = "https://github.com/maheshvaikri-code/maple-oss/CHANGELOG.md"
+
+[project.scripts]
+maple = "maple.cli:main"
+maple-agent = "maple.agent:cli_main"
+maple-broker = "maple.broker:cli_main"
+
+[tool.setuptools]
+packages = ["maple"]
+
+[tool.setuptools.dynamic]
+version = {attr = "maple.__version__"}
+
+[tool.setuptools.package-data]
+maple = ["py.typed"]
+
+[tool.black]
+line-length = 88
+target-version = ["py38"]
+include = '\.pyi?$'
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --cov=maple --cov-report=term-missing --cov-report=html"
+asyncio_mode = "auto"
+
+[tool.coverage.run]
+source = ["maple"]
+omit = ["tests/*", "examples/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError"
+]

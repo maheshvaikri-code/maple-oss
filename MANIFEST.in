@@ -1,0 +1,34 @@
+# Include important files in distribution
+include README.md
+include LICENSE
+include CHANGELOG.md
+include VERSION
+include requirements.txt
+include requirements-dev.txt
+include pyproject.toml
+
+# Include package data
+include maple/py.typed
+recursive-include maple *.py
+recursive-include maple *.pyi
+
+# Include documentation
+recursive-include docs *.rst *.md *.py *.bat
+recursive-include docs *.png *.jpg *.svg
+
+# Include examples
+recursive-include examples *.py *.md *.json
+recursive-include examples *.yaml *.yml
+
+# Include tests for development installs
+recursive-include tests *.py
+
+# Exclude unnecessary files
+exclude .gitignore
+exclude .pre-commit-config.yaml
+exclude tox.ini
+exclude .coverage
+exclude .pytest_cache
+recursive-exclude * __pycache__
+recursive-exclude * *.py[co]
+recursive-exclude * .DS_Store
