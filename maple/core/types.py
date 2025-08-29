@@ -11,6 +11,28 @@ from datetime import datetime
 import uuid
 import re
 
+# Primitive type validators
+class Boolean:
+    @staticmethod
+    def validate(value: Any) -> bool:
+        if not isinstance(value, bool):
+            raise TypeError(f"Expected boolean, got {type(value).__name__}")
+        return value
+
+class Integer:
+    @staticmethod
+    def validate(value: Any) -> int:
+        if not isinstance(value, int) or isinstance(value, bool):
+            raise TypeError(f"Expected integer, got {type(value).__name__}")
+        return value
+
+class String:
+    @staticmethod
+    def validate(value: Any) -> str:
+        if not isinstance(value, str):
+            raise TypeError(f"Expected string, got {type(value).__name__}")
+        return value
+
 class Priority(Enum):
     """Message priority levels."""
     HIGH = "HIGH"
@@ -125,31 +147,43 @@ class Size:
     """Size parser and validator."""
     
     @staticmethod
-    def parse(size_str: str) -> int:
+    def parse(size_str: Union[str, int, float]) -> int:
         """Parse a size string like '4GB' into bytes."""
         units = {
-            'B': 1,
-            'KB': 1024,
-            'MB': 1024 * 1024,
+            'TB': 1024 * 1024 * 1024 * 1024,
             'GB': 1024 * 1024 * 1024,
-            'TB': 1024 * 1024 * 1024 * 1024
+            'MB': 1024 * 1024,
+            'KB': 1024,
+            'B': 1
         }
         
         if isinstance(size_str, (int, float)):
             return int(size_str)
-            
+        
+        if not isinstance(size_str, str):
+            raise ValueError(f"Invalid size format: {size_str}")
+        
+        size_str = size_str.strip().upper()
+        
+        # Check each unit (ordered by length descending to match TB before B)
         for unit, multiplier in units.items():
             if size_str.endswith(unit):
                 try:
-                    value = float(size_str[:-len(unit)])
+                    value_str = size_str[:-len(unit)].strip()
+                    value = float(value_str)
                     return int(value * multiplier)
-                except ValueError:
+                except (ValueError, IndexError):
                     raise ValueError(f"Invalid size format: {size_str}")
         
-        raise ValueError(f"Unknown size unit in: {size_str}")
+        # If no unit found, try to parse as raw number
+        try:
+            return int(float(size_str))
+        except ValueError:
+            raise ValueError(f"Unknown size unit in: {size_str}")
     
     @staticmethod
     def validate(value: Any) -> int:
+        """Validate and convert a size value to bytes."""
         if isinstance(value, (int, float)):
             return int(value)
         if isinstance(value, str):

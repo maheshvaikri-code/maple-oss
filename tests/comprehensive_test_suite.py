@@ -624,13 +624,15 @@ class MAPLETestSuite:
             # Test message sending
             msg = Message(
                 message_type="TEST",
-                receiver="test_receiver",
+                receiver="test_receiver", 
+                sender="test_sender",  # Add sender to avoid validation issues
                 priority=Priority.MEDIUM,
                 payload={"test": "data"}
             )
             
             message_id = broker.send(msg)
             assert isinstance(message_id, str)
+            assert len(message_id) > 0  # Should have a valid message ID
             
             broker.disconnect()
             
