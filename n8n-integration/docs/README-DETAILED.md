@@ -282,7 +282,7 @@ node setup.js --regenerate-credentials
 
 ## 📄 **License**
 
-Apache License 2.0 - See [LICENSE](./LICENSE) for details.
+AGPL License 3.0 - See [LICENSE](./LICENSE) for details.
 
 **Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)**
 
