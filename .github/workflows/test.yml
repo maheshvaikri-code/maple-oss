@@ -72,4 +72,4 @@ jobs:
         # Verify 32/32 tests still pass
         pytest tests/ -v
         # Verify performance maintains 33x improvement
-        python test/test_load_performance.py
+        python test/comprehensive_test_suite.py
