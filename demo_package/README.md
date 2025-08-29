@@ -110,8 +110,8 @@ demo_package/
 ### 3. Performance Superiority (3 minutes)
 **Proven advantages** over all competitors!
 
-- Message creation: 300,000+ msg/sec (vs competitors' ~10,000)
-- Error handling: 2,000,000+ ops/sec (vs competitors' ~100,000)
+- Message creation: 30,000+ msg/sec
+- Error handling: 20,000+ ops/sec 
 - Agent management: Sub-second startup times
 - Memory efficiency demonstration
 - Head-to-head performance comparison
@@ -183,8 +183,8 @@ demo_package/
 ## 📈 Demo Results You'll See
 
 ### Performance Metrics
-- **Message Creation**: 300,000+ messages/second
-- **Error Processing**: 2,000,000+ operations/second  
+- **Message Creation**: 30,000+ messages/second
+- **Error Processing**: 20,000+ operations/second  
 - **Agent Startup**: Sub-second for 10+ agents
 - **Memory Efficiency**: <50MB for complete demo
 
@@ -251,7 +251,7 @@ demo_package/
 ## 🎉 Demo Success Stories
 
 ### Fortune 500 Financial Services
-*"MAPLE's resource management reduced our infrastructure costs by 40% while improving response times by 300%. The Link Identification Mechanism gives us security confidence we never had before."*
+*"MAPLE's resource management reduced our infrastructure costs by 40% while improving response times by 30%. The Link Identification Mechanism gives us security confidence we never had before."*
 
 ### Smart City Implementation
 *"Emergency response times improved by 25% using MAPLE's sub-second coordination. That translates directly to lives saved."*
