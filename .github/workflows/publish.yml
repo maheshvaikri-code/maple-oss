@@ -86,7 +86,7 @@ jobs:
     
     - name: Test fresh install
       run: |
-        pip install maple-agents
+        pip install maple
         python -c "
         from maple import Agent, Message, Config;
         print('✅ MAPLE installed successfully from PyPI!');
