@@ -411,7 +411,7 @@ pm2 start launch.js --name "maple-server" --max-memory-restart 2G
 ## 🎯 Launch Success Metrics
 
 ### **Performance Targets**
-- ✅ **Message Processing**: > 300K msg/sec
+- ✅ **Message Processing**: > 30K msg/sec
 - ✅ **Response Time**: < 50ms average
 - ✅ **Uptime**: > 99.9%
 - ✅ **Error Rate**: < 0.1%

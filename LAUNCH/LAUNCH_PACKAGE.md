@@ -6,7 +6,7 @@
 
 **Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)**
 
-This is your complete 24-hour launch package. Everything you need to introduce MAPLE to the world and watch it explode!
+This is launch package. Everything you need to introduce MAPLE to the world and watch it explode!
 
 ## 🎬 STEP 1: RECORD THE KILLER DEMO (NOW!)
 

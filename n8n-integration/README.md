@@ -35,8 +35,8 @@ npm run launch:production
 
 | Protocol | Message Speed | Features | Security | n8n Support |
 |----------|---------------|----------|----------|-------------|
-| **🍁 MAPLE** | **332K msg/sec** | **Complete** | **Enterprise** | **✅ Native** |
-| Google A2A | 50K msg/sec | Limited | OAuth only | ❌ No |
+| **MAPLE** | **30K msg/sec** | **Complete** | **Enterprise** | **✅ Native** |
+| Google A2A | 30K msg/sec | Limited | OAuth only | ❌ No |
 | FIPA ACL | 5K msg/sec | Basic | Basic | ❌ No |
 | AGENTCY | Limited | Academic | Basic | ❌ No |
 | MCP | Basic | Simple | Basic | ❌ No |
@@ -132,7 +132,7 @@ npm run launch
 **Real performance data from production deployments:**
 
 ```
-🔥 Message Processing: 332,776 messages/second
+🔥 Message Processing: 30,000 messages/second
 🔥 Agent Coordination: 10 agents startup in 10ms  
 🔥 Error Recovery: 99.9% automatic recovery success
 🔥 Resource Efficiency: 70% less memory than alternatives

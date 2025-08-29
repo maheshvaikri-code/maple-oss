@@ -1,21 +1,7 @@
-```
-Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
 
-This file is part of MAPLE - Multi Agent Protocol Language Engine. 
+# Understanding the Result<T,E> Type in MAPLE
 
-MAPLE - Multi Agent Protocol Language Engine is free software: you can redistribute it and/or 
-modify it under the terms of the GNU Affero General Public License as published by the Free Software 
-Foundation, either version 3 of the License, or (at your option) any later version. 
-MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that it will be useful, 
-but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A 
-PARTICULAR PURPOSE. See the GNU Affero General Public License for more details. You should have 
-received a copy of the GNU Affero General Public License along with MAPLE - Multi Agent Protocol 
-Language Engine. If not, see <https://www.gnu.org/licenses/>.
-```
-
-# Understanding the Result<T,E> Type in MAPL
-
-The `Result<T,E>` type in MAPL is a powerful concept borrowed from functional programming languages that provides a structured approach to handling operations that might fail. Let me explain it in detail by breaking down its components, use cases, and advantages.
+The `Result<T,E>` type in MAPLE is a powerful concept borrowed from functional programming languages that provides a structured approach to handling operations that might fail. Let me explain it in detail by breaking down its components, use cases, and advantages.
 
 ## Core Concept
 
@@ -27,10 +13,10 @@ This structure forces developers to explicitly handle both success and failure p
 
 ## How It Works
 
-In MAPL, when an agent performs an operation that might fail (like processing data, retrieving information, or executing a task), instead of using traditional error handling approaches like exceptions or error codes, it returns a `Result<T,E>` that encapsulates both potential outcomes:
+In MAPLE, when an agent performs an operation that might fail (like processing data, retrieving information, or executing a task), instead of using traditional error handling approaches like exceptions or error codes, it returns a `Result<T,E>` that encapsulates both potential outcomes:
 
 ```
-// Conceptual representation in MAPL
+// Conceptual representation in MAPLE
 Function ProcessData(data) -> Result<ProcessedData, ProcessingError>
 {
     if (validData(data)) {
@@ -144,9 +130,9 @@ The error type `E` can include suggested recovery strategies, allowing the syste
 }
 ```
 
-## Implementation in MAPL
+## Implementation in MAPLE
 
-In MAPL, the `Result<T,E>` type is a fundamental part of the type system, used throughout the protocol for:
+In MAPLE, the `Result<T,E>` type is a fundamental part of the type system, used throughout the protocol for:
 
 1. Task execution results
 2. Query responses
@@ -154,7 +140,7 @@ In MAPL, the `Result<T,E>` type is a fundamental part of the type system, used t
 4. State synchronization operations
 5. Authentication and authorization checks
 
-MAPL provides standard operations for working with Result types:
+MAPLE provides standard operations for working with Result types:
 
 - `unwrap()`: Extract the success value (with failure if it's an error)
 - `unwrapOr(default)`: Extract the success value or use a default
@@ -243,6 +229,21 @@ The `Result<T,E>` type has its roots in functional programming languages:
 - Swift's `Result<Success, Failure>` type
 - Scala's `Either[L, R]` type
 
-MAPL adapts this powerful concept specifically for agent communication, enhancing it with protocol-specific semantics for coordination, resource management, and error recovery.
+MAPLE adapts this powerful concept specifically for agent communication, enhancing it with protocol-specific semantics for coordination, resource management, and error recovery.
 
-By incorporating this pattern into the foundational type system of MAPL, the protocol ensures that error handling becomes a first-class concern in agent communication, leading to more resilient and self-healing multi-agent systems.
+By incorporating this pattern into the foundational type system of MAPLE, the protocol ensures that error handling becomes a first-class concern in agent communication, leading to more resilient and self-healing multi-agent systems.
+
+```
+Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
+
+This file is part of MAPLE - Multi Agent Protocol Language Engine. 
+
+MAPLE - Multi Agent Protocol Language Engine is free software: you can redistribute it and/or 
+modify it under the terms of the GNU Affero General Public License as published by the Free Software 
+Foundation, either version 3 of the License, or (at your option) any later version. 
+MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that it will be useful, 
+but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A 
+PARTICULAR PURPOSE. See the GNU Affero General Public License for more details. You should have 
+received a copy of the GNU Affero General Public License along with MAPLE - Multi Agent Protocol 
+Language Engine. If not, see <https://www.gnu.org/licenses/>.
+```

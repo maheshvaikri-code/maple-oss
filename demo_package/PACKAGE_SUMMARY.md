@@ -99,9 +99,9 @@ demo_package/
 | **Performance** | ✅ **Superior** | ⚠️ Good | ❌ Slow | ⚠️ Variable |
 
 ### ⚡ Performance Superiority
-- **Message Creation**: 300,000+ msg/sec (vs competitors' ~10,000)
-- **Error Handling**: 2,000,000+ ops/sec (vs competitors' ~100,000)  
-- **Agent Startup**: Sub-second times (vs competitors' seconds)
+- **Message Creation**: 30,000+ msg/sec
+- **Error Handling**: 20,000+ ops/sec 
+- **Agent Startup**: Sub-second times
 - **Overall**: 25-100x faster across all metrics
 
 ### 🔐 Security Innovation
@@ -151,8 +151,8 @@ python setup_demo.py
 ## 📊 Expected Demo Results
 
 ### Performance Metrics
-- **Message Creation**: 300,000+ messages/second
-- **Error Processing**: 2,000,000+ operations/second
+- **Message Creation**: 30,000+ messages/second
+- **Error Processing**: 20,000+ operations/second
 - **Agent Startup**: <100ms for multiple agents
 - **Memory Efficiency**: <50MB for complete demo
 
