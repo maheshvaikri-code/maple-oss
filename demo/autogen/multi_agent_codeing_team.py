@@ -533,7 +533,7 @@ class MAPLEAutoGenDemo:
 ## Get Started with MAPLE + AutoGen
 
 ```bash
-pip install maple-protocol
+pip install maple-oss
 ```
 
 ```python

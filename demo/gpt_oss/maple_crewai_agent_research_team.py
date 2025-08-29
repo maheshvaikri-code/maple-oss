@@ -576,7 +576,7 @@ class MAPLECrewAIDemo:
 ## Get Started
 
 ```bash
-pip install maple-protocol
+pip install maple-oss
 ```
 
 ```python
