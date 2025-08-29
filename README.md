@@ -606,7 +606,7 @@ See [LICENSE](LICENSE) for complete terms.
 - **🔮 Future-Proof**: Designed for next-generation AI systems
 - **🌍 Universal**: Works with any AI platform, language, or framework
 - **🛡️ Secure**: Industry-leading security with LIM
-- **⚡ Fast**: 300,000+ messages per second  
+- **⚡ Fast**: 30,000+ messages per second  
 - **🔧 Smart**: Built-in resource management and optimization
 
 ### **Industry Transformation**
