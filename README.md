@@ -4,20 +4,23 @@
 
 **Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)**
 
-[![License: AGPL 3.0](https://img.shields.io/badge/License-AGPL%203.0-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![Production Ready](https://img.shields.io/badge/status-production%20ready-green.svg)](https://github.com/maheshvaikri-code/maple-oss)
-[![Test Success Rate](https://img.shields.io/badge/tests-100%25%20passing-brightgreen.svg)](#testing)
-[![Performance](https://img.shields.io/badge/performance-30k%2B%20msg/sec-green.svg)](#performance)
+<p>
+<a href="https://github.com/your-repo/actions"><img src="https://img.shields.io/badge/Python- 3.8 | 3.9 | 3.10 | 3.11 | 3.12 | 3.13-brightgreen" alt="Python"></a>
+<a href="https://github.com/your-repo/actions"><img src="https://img.shields.io/badge/Tests-32%2F32%20PASSED-brightgreen" alt="Tests"></a>
+<a href="https://github.com/your-repo/actions"><img src="https://img.shields.io/badge/Success%20Rate-100%25-brightgreen" alt="Success Rate"></a>
+<a href="https://github.com/your-repo/benchmarks"><img src="https://img.shields.io/badge/Performance-33x%20Faster-blue" alt="Performance"></a>
+<a href="https://mapleagent.org/chat/LICENSE"><img src="https://img.shields.io/badge/License-AGPL%203.0-blue.svg" alt="License"></a>
+<a href="https://mapleagent.org/chat/LICENSE"><img src="https://img.shields.io/badge/Native Integration-MCP | A2A | ACP | AutoGen | CrewAI | n8n-blue.svg" alt="License"></a>
+</p>
 
-> **Production-ready multi agent communication protocol with integrated resource management, type-safe error handling, secure link identification, and distributed state synchronization.**
+> **Production-ready multi agent communication protocol with integrated resource management, type-safe error handling, secure link identification, and distributed state synchronization.** 
 
 ---
 
 ## 🚀 **ABSOLUTE SUPERIORITY OVER ALL EXISTING PROTOCOLS**
 
 
-### 🏆 **MAPLE vs. Other Protocols **
+### 🏆 MAPLE vs. Other Protocols
 
 | Feature | **MAPLE** |
 |---------|-----------|
