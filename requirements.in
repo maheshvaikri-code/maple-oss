@@ -1,0 +1,6 @@
+# MAPLE Core Dependencies
+asyncio-mqtt>=0.11.0
+cryptography>=41.0.0
+websockets>=11.0.0
+pydantic>=2.0.0
+python-dateutil>=2.8.0
