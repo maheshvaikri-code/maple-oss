@@ -957,7 +957,7 @@ class MAPLEFullDemo {
       timestamp: new Date().toISOString(),
       creator: 'Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)',
       protocol: 'MAPLE (Mahesh\'s Agent Protocol Language Engine)',
-      version: '1.0.0',
+      version: '1.1.0',
       demo: 'n8n-integration-full',
       summary: this.generateSummary(),
       results: this.results

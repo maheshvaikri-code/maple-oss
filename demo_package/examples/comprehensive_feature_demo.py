@@ -57,7 +57,7 @@ def comprehensive_feature_demo():
         )
         from maple.resources import ResourceManager, ResourceNegotiator
         from maple.error import CircuitBreaker, retry, RetryOptions
-        from maple.state import StateManager, ConsistencyLevel
+        from maple.state import StateStore, ConsistencyLevel
         from maple.security import LinkManager
         
         # Demo 1: Resource-Aware Communication (UNIQUE TO MAPLE)

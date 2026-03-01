@@ -203,13 +203,16 @@ class HealthMonitor:
         else:
             score_factors.append(1.0)
         
-        # Calculate overall health score
-        base_score = sum(score_factors) / len(score_factors)
-        
-        # Determine status
+        # Calculate overall health score using multiplicative approach
+        # This penalizes multiple issues more heavily than averaging
+        base_score = 1.0
+        for factor in score_factors:
+            base_score *= factor
+
+        # Determine status based on score and issues
         if base_score >= 0.8 and not issues:
             status = "healthy"
-        elif base_score >= 0.6:
+        elif base_score >= 0.5:
             status = "degraded"
         else:
             status = "unhealthy"

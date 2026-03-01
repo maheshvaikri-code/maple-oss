@@ -76,7 +76,7 @@ class KeyPair:
         if not CRYPTO_AVAILABLE:
             return "CRYPTO_NOT_AVAILABLE"
         
-        pem = self.public_key.public_key_bytes(
+        pem = self.public_key.public_bytes(
             encoding=serialization.Encoding.PEM,
             format=serialization.PublicFormat.SubjectPublicKeyInfo
         )
@@ -91,7 +91,7 @@ class KeyPair:
         if password:
             encryption = serialization.BestAvailableEncryption(password)
         
-        pem = self.private_key.private_key_bytes(
+        pem = self.private_key.private_bytes(
             encoding=serialization.Encoding.PEM,
             format=serialization.PrivateFormat.PKCS8,
             encryption_algorithm=encryption
@@ -306,7 +306,9 @@ class CryptographyManager:
             if isinstance(data, str):
                 data = data.encode('utf-8')
             
-            if hasattr(private_key, 'sign'):  # RSA key
+            if isinstance(private_key, ec.EllipticCurvePrivateKey):
+                signature = private_key.sign(data, ec.ECDSA(hashes.SHA256()))
+            else:  # RSA key
                 signature = private_key.sign(
                     data,
                     padding.PSS(
@@ -315,8 +317,6 @@ class CryptographyManager:
                     ),
                     hashes.SHA256()
                 )
-            else:  # ECDSA key
-                signature = private_key.sign(data, ec.ECDSA(hashes.SHA256()))
             
             return Result.ok(base64.b64encode(signature).decode('utf-8'))
             
@@ -346,7 +346,9 @@ class CryptographyManager:
             
             signature_bytes = base64.b64decode(signature)
             
-            if hasattr(public_key, 'verify'):  # RSA key
+            if isinstance(public_key, ec.EllipticCurvePublicKey):
+                public_key.verify(signature_bytes, data, ec.ECDSA(hashes.SHA256()))
+            else:  # RSA key
                 public_key.verify(
                     signature_bytes,
                     data,
@@ -356,8 +358,6 @@ class CryptographyManager:
                     ),
                     hashes.SHA256()
                 )
-            else:  # ECDSA key
-                public_key.verify(signature_bytes, data, ec.ECDSA(hashes.SHA256()))
             
             return Result.ok(True)
             

@@ -2,53 +2,32 @@
 
 **Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)**
 
-MAPLE features the most comprehensive type system in agent communication, providing unprecedented type safety and validation capabilities that are impossible with Google A2A, FIPA ACL, MCP, AGENTCY, or any other protocol.
+MAPLE uses a type system designed to prevent common errors in agent communication through structured types and the Result\<T,E\> pattern.
 
-## Revolutionary Result<T,E> Pattern
+## Result\<T,E\> Pattern
 
-The Result<T,E> type is MAPLE's breakthrough innovation that **eliminates ALL silent failures** in agent communication.
+The Result type is the core of MAPLE's error handling. Every operation that can fail returns a `Result` instead of raising exceptions, ensuring that errors are always handled explicitly.
 
 ### Core Concept
 
 ```python
-from maple.core import Result
+from maple.core.result import Result
 
-# Every operation returns Result<T,E> - success or structured error
-def process_data(data) -> Result[ProcessedData, ProcessingError]:
-    if not validate_input(data):
+# Every operation returns Result - success or structured error
+def process_data(data) -> Result:
+    if not data:
         return Result.err({
             "errorType": "VALIDATION_ERROR",
-            "message": "Invalid input format",
-            "details": {
-                "expected": "JSON with timestamp",
-                "received": type(data).__name__,
-                "missing_fields": ["timestamp", "agent_id"]
-            },
-            "severity": "HIGH",
-            "recoverable": True,
-            "suggestion": {
-                "action": "REFORMAT_DATA",
-                "parameters": {
-                    "add_timestamp": True,
-                    "validate_schema": True
-                }
-            }
+            "message": "Empty data provided",
+            "recoverable": True
         })
-    
+
     try:
-        processed = advanced_processing(data)
-        return Result.ok({
-            "data": processed,
-            "confidence": 0.98,
-            "processing_time": "1.2s",
-            "resource_usage": {
-                "cpu": "45%",
-                "memory": "2.1GB"
-            }
-        })
+        processed = transform(data)
+        return Result.ok({"data": processed, "count": len(data)})
     except Exception as e:
         return Result.err({
-            "errorType": "PROCESSING_ERROR", 
+            "errorType": "PROCESSING_ERROR",
             "message": str(e),
             "recoverable": False
         })
@@ -57,376 +36,277 @@ def process_data(data) -> Result[ProcessedData, ProcessingError]:
 ### Result Operations
 
 ```python
-# Chain operations safely - NO SILENT FAILURES
+# Chain operations safely
 result = (
     load_data(source)
-    .and_then(lambda data: validate_schema(data))
-    .map(lambda valid_data: process_ai_analysis(valid_data))
-    .and_then(lambda analysis: generate_insights(analysis))
-    .map(lambda insights: format_output(insights))
+    .and_then(lambda data: validate(data))
+    .map(lambda valid: process(valid))
+    .map_err(lambda err: log_error(err))
 )
 
 if result.is_ok():
-    final_output = result.unwrap()
-    print(f"Success: {final_output}")
+    output = result.unwrap()
 else:
     error = result.unwrap_err()
-    print(f"Pipeline failed: {error['message']}")
-    
-    # Intelligent error recovery
     if error.get('recoverable'):
-        recovery_strategy = error.get('suggestion', {})
-        apply_recovery_strategy(recovery_strategy)
+        # Handle recoverable error
+        pass
 ```
 
-## Comprehensive Type System
+### Available Methods
 
-### Primitive Types
+| Method | Description |
+| ------ | ----------- |
+| `Result.ok(value)` | Create a success result |
+| `Result.err(error)` | Create an error result |
+| `is_ok()` | Check if successful |
+| `is_err()` | Check if error |
+| `unwrap()` | Get success value (raises on error) |
+| `unwrap_or(default)` | Get success value or default |
+| `unwrap_err()` | Get error value (raises on success) |
+| `map(fn)` | Transform success value |
+| `map_err(fn)` | Transform error value |
+| `and_then(fn)` | Chain fallible operations |
+| `or_else(fn)` | Provide recovery alternative |
+| `to_dict()` | Serialize to dictionary |
 
-```python
-from maple.core.types import (
-    Boolean, Integer, Float, String, 
-    Timestamp, UUID, Byte, Size, Duration
-)
+## Core Types
 
-# Type validation with detailed error information
-try:
-    memory_size = Size.validate("16GB")  # Returns bytes
-    duration = Duration.validate("30s")  # Returns seconds
-    agent_id = UUID.validate("550e8400-e29b-41d4-a716-446655440000")
-except ValueError as e:
-    print(f"Type validation failed: {e}")
-```
-
-### Collection Types
-
-```python
-from maple.core.types import Array, Map, Set, Option
-
-# Strongly typed collections
-AgentList = Array(String)
-ResourceMap = Map(String, Integer) 
-CapabilitySet = Set(String)
-OptionalConfig = Option(Map(String, String))
-
-# Validation ensures type safety
-agent_list = AgentList.validate(["agent_1", "agent_2", "agent_3"])
-resources = ResourceMap.validate({"cpu": 8, "memory": 16, "gpu": 2})
-```
-
-### Protocol-Specific Types
+### Priority
 
 ```python
-from maple.core.types import Priority, AgentID, MessageID
+from maple.core.types import Priority
 
 class Priority(Enum):
-    CRITICAL = "CRITICAL"      # Life-critical systems
-    HIGH = "HIGH"              # High-priority tasks  
-    MEDIUM = "MEDIUM"          # Standard priority
-    LOW = "LOW"                # Background tasks
-    BATCH = "BATCH"            # Batch processing
-
-# Usage in messages
-message = Message(
-    message_type="EMERGENCY_ALERT",
-    priority=Priority.CRITICAL,  # Type-safe priority
-    payload={
-        "alert_type": "SYSTEM_FAILURE",
-        "affected_agents": AgentList.validate([...]),
-        "response_time": Duration.validate("30s")
-    }
-)
+    HIGH = "HIGH"
+    MEDIUM = "MEDIUM"
+    LOW = "LOW"
 ```
 
-## Resource Types (UNIQUE TO MAPLE)
+### Size
 
-### Resource Specifications
+Parse human-readable size strings:
 
 ```python
-from maple.resources import ResourceRequest, ResourceRange
+from maple.core.types import Size
 
-# Define resource requirements with precision
-resource_spec = ResourceRequest(
-    # Computational resources
-    compute=ResourceRange(min=4, preferred=8, max=16),
-    memory=ResourceRange(min="8GB", preferred="16GB", max="32GB"),
-    gpu_memory=ResourceRange(min="4GB", preferred="8GB", max="24GB"),
-    
-    # Network resources  
-    network_bandwidth=ResourceRange(min="100Mbps", preferred="1Gbps", max="10Gbps"),
-    network_latency=ResourceRange(max="10ms", preferred="1ms"),
-    
-    # Storage resources
-    storage=ResourceRange(min="100GB", preferred="1TB", max="10TB"),
-    iops=ResourceRange(min=1000, preferred=10000, max=100000),
-    
-    # Time constraints
-    deadline="2024-12-25T18:00:00Z",
-    timeout="30s",
-    
-    # Optimization preferences
-    priority="HIGH",
-    cost_optimization=False,
-    energy_efficiency=True
-)
+bytes_val = Size.parse("4GB")     # 4294967296
+bytes_val = Size.parse("1KB")     # 1024
+bytes_val = Size.parse("2MB")     # 2097152
+bytes_val = Size.parse("100B")    # 100
+bytes_val = Size.parse("1024")    # 1024 (plain number)
 ```
 
-### Resource Negotiation Types
+### Duration
+
+Parse human-readable duration strings:
 
 ```python
-from maple.resources import ResourceOffer, ResourceAllocation
+from maple.core.types import Duration
 
-# Structured resource negotiation
-class ResourceOffer:
-    def __init__(self, resources, conditions, alternatives):
-        self.resources = resources          # What's being offered
-        self.conditions = conditions        # Requirements/constraints
-        self.alternatives = alternatives    # Fallback options
-        self.expiry = "2024-12-13T16:00:00Z"
-        
-# Resource allocation tracking
-class ResourceAllocation:
-    def __init__(self, allocation_id, resources, duration):
-        self.allocation_id = allocation_id
-        self.resources = resources
-        self.allocated_at = datetime.utcnow()
-        self.expires_at = allocated_at + duration
-        self.usage_tracking = ResourceUsageTracker()
+seconds = Duration.parse("30s")   # 30.0
+seconds = Duration.parse("5m")    # 300.0
+seconds = Duration.parse("1h")    # 3600.0
 ```
 
-## Message Type System
+### AgentID and MessageID
 
-### Structured Message Types
+Type aliases for agent and message identifiers:
+
+```python
+from maple.core.types import AgentID, MessageID
+
+agent_id: AgentID = "agent_001"
+msg_id: MessageID = "msg_abc123"
+```
+
+## Message Types
+
+### Message Construction
 
 ```python
 from maple.core.message import Message
-from maple.core.types import MessageType, Payload
+from maple.core.types import Priority
 
-# Type-safe message construction
-class TaskAssignment:
-    @staticmethod
-    def validate(payload):
-        required_fields = ["task_id", "task_type", "parameters", "deadline"]
-        for field in required_fields:
-            if field not in payload:
-                raise ValueError(f"Missing required field: {field}")
-        return payload
-
-# Usage with type validation
-assignment_message = Message(
+message = Message(
     message_type="TASK_ASSIGNMENT",
-    payload=TaskAssignment.validate({
+    receiver="worker_agent",
+    priority=Priority.HIGH,
+    payload={
         "task_id": "TASK_001",
         "task_type": "DATA_ANALYSIS",
         "parameters": {
-            "algorithm": "deep_learning",
-            "dataset_size": "1TB",
-            "accuracy_threshold": 0.95
-        },
-        "deadline": "2024-12-20T10:00:00Z",
-        "resources": resource_spec.to_dict()
-    })
+            "algorithm": "clustering",
+            "dataset": "sales_data"
+        }
+    },
+    metadata={"correlation_id": "req_123"}
+)
+
+# Fluent methods
+message = message.with_receiver("other_agent")
+message = message.with_link("link_id_abc")
+
+# Serialization
+msg_dict = message.to_dict()
+msg_json = message.to_json()
+
+# Deserialization
+restored = Message.from_dict(msg_dict)
+restored = Message.from_json(msg_json)
+```
+
+### Error Messages
+
+```python
+error_msg = Message.error(
+    error_type="VALIDATION_ERROR",
+    message="Invalid input format",
+    details={"missing_fields": ["timestamp"]},
+    severity="HIGH",
+    recoverable=True,
+    receiver="sender_agent"
 )
 ```
 
-### Error Type Hierarchy
+## Resource Types
+
+### ResourceRequest
+
+Define resource requirements for tasks:
+
+```python
+from maple.resources.specification import ResourceRequest, ResourceRange, TimeConstraint
+
+request = ResourceRequest(
+    compute=ResourceRange(min=4, preferred=8, max=16),
+    memory=ResourceRange(min="8GB", preferred="16GB", max="32GB"),
+    bandwidth=ResourceRange(min="100Mbps"),
+    time=TimeConstraint(timeout="120s"),
+    priority="HIGH"
+)
+
+# Serialize for inclusion in message payloads
+resource_dict = request.to_dict()
+
+# Deserialize
+restored = ResourceRequest.from_dict(resource_dict)
+```
+
+### ResourceRange
+
+Specify minimum, preferred, and maximum resource values:
+
+```python
+from maple.resources.specification import ResourceRange
+
+cpu_range = ResourceRange(min=4, preferred=8, max=16)
+memory_range = ResourceRange(min="8GB", preferred="16GB", max="32GB")
+```
+
+## Error Types
+
+### ErrorType Enum
 
 ```python
 from maple.error.types import ErrorType, Severity
 
-class MAPLEError:
-    def __init__(self, error_type, message, details=None, severity=Severity.MEDIUM):
-        self.error_type = error_type
-        self.message = message
-        self.details = details or {}
-        self.severity = severity
-        self.timestamp = datetime.utcnow()
-        self.recoverable = self._determine_recoverability()
-        self.suggestion = self._generate_recovery_suggestion()
-
-# Hierarchical error types
 class ErrorType(Enum):
-    # Communication errors
     NETWORK_ERROR = "NETWORK_ERROR"
     TIMEOUT = "TIMEOUT"
     ROUTING_ERROR = "ROUTING_ERROR"
-    
-    # Processing errors
-    VALIDATION_ERROR = "VALIDATION_ERROR"
-    RESOURCE_ERROR = "RESOURCE_ERROR" 
-    LOGIC_ERROR = "LOGIC_ERROR"
-    
-    # Security errors
+    MESSAGE_VALIDATION_ERROR = "MESSAGE_VALIDATION_ERROR"
+    RESOURCE_UNAVAILABLE = "RESOURCE_UNAVAILABLE"
+    RESOURCE_EXHAUSTED = "RESOURCE_EXHAUSTED"
     AUTHENTICATION_ERROR = "AUTHENTICATION_ERROR"
     AUTHORIZATION_ERROR = "AUTHORIZATION_ERROR"
-    ENCRYPTION_ERROR = "ENCRYPTION_ERROR"
     LINK_VERIFICATION_FAILED = "LINK_VERIFICATION_FAILED"
-    
-    # System errors
-    AGENT_UNAVAILABLE = "AGENT_UNAVAILABLE"
-    SERVICE_DEGRADED = "SERVICE_DEGRADED"
-    RESOURCE_EXHAUSTED = "RESOURCE_EXHAUSTED"
+    ENCRYPTION_ERROR = "ENCRYPTION_ERROR"
+
+class Severity(Enum):
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
+    CRITICAL = "CRITICAL"
 ```
 
-## State Types (REVOLUTIONARY DISTRIBUTED STATE)
+## State Types
 
-### State Management Types
+### StateStore and ConsistencyLevel
 
 ```python
-from maple.state import StateManager, ConsistencyLevel, ConflictResolution
+from maple.state import StateStore, ConsistencyLevel, StorageBackend
 
-# Distributed state with type safety
-class DistributedState:
-    def __init__(self, state_id, initial_value, consistency_level):
-        self.state_id = state_id
-        self.value = initial_value
-        self.version = 0
-        self.consistency_level = consistency_level
-        self.last_updated = datetime.utcnow()
-        self.replicas = {}
-        
-# Complex state operations
-global_mission_state = StateManager.create_distributed_state(
-    state_id="mission_control",
-    initial_value={
-        "mission_status": "ACTIVE",
-        "agent_assignments": {},
-        "resource_allocation": {},
-        "security_status": "GREEN"
-    },
-    consistency_level=ConsistencyLevel.STRONG,
-    conflict_resolution=ConflictResolution.LAST_WRITER_WINS
+class ConsistencyLevel(Enum):
+    EVENTUAL = "eventual"
+    STRONG = "strong"
+    CAUSAL = "causal"
+
+class StorageBackend(Enum):
+    MEMORY = "memory"
+    FILE = "file"
+    REDIS = "redis"
+    DATABASE = "database"
+
+# Usage
+store = StateStore(
+    backend=StorageBackend.MEMORY,
+    consistency=ConsistencyLevel.STRONG
 )
+
+# Set with version tracking
+store.set("key", {"value": 42})
+
+# Get returns Result
+result = store.get("key")
+if result.is_ok():
+    value = result.unwrap()
 ```
 
-## Validation and Error Reporting
+## Type Safety in Practice
 
-### Comprehensive Validation
+### Example: Type-Safe Agent Communication
 
 ```python
-from maple.core.types import TypeValidator
+from maple import Agent, Message, Priority, Config, Result
 
-class ComprehensiveValidator:
-    @staticmethod
-    def validate_complex_message(message_data):
-        """Validate complex multi-layered message structure"""
-        errors = []
-        
-        # Header validation
-        if 'header' not in message_data:
-            errors.append(ValidationError("Missing header"))
-        else:
-            header_errors = validate_header(message_data['header'])
-            errors.extend(header_errors)
-            
-        # Payload validation  
-        if 'payload' not in message_data:
-            errors.append(ValidationError("Missing payload"))
-        else:
-            payload_errors = validate_payload_by_type(
-                message_data.get('messageType'), 
-                message_data['payload']
-            )
-            errors.extend(payload_errors)
-            
-        # Resource validation
-        if 'resources' in message_data['payload']:
-            resource_errors = ResourceRequest.validate(
-                message_data['payload']['resources']
-            )
-            errors.extend(resource_errors)
-        
-        if errors:
-            return Result.err({
-                "errorType": "VALIDATION_ERROR",
-                "message": "Message validation failed",
-                "details": {
-                    "validation_errors": [e.to_dict() for e in errors],
-                    "error_count": len(errors),
-                    "message_id": message_data.get('messageId', 'unknown')
-                },
-                "suggestion": {
-                    "action": "FIX_VALIDATION_ERRORS",
-                    "fix_suggestions": generate_fix_suggestions(errors)
-                }
-            })
-        
-        return Result.ok(message_data)
+config = Config(agent_id="typed_agent", broker_url="memory://local")
+agent = Agent(config)
+agent.start()
+
+# All operations return Result - no silent failures
+send_result: Result = agent.send(Message(
+    message_type="TYPED_TASK",
+    receiver="worker",
+    priority=Priority.HIGH,
+    payload={"data": [1, 2, 3]}
+))
+
+# Must handle both cases
+if send_result.is_ok():
+    msg_id = send_result.unwrap()
+    print(f"Sent successfully: {msg_id}")
+elif send_result.is_err():
+    error = send_result.unwrap_err()
+    print(f"Error type: {error.get('errorType')}")
+    print(f"Message: {error.get('message')}")
+
+# Chain operations
+processed = (
+    send_result
+    .map(lambda mid: {"message_id": mid, "status": "sent"})
+    .map_err(lambda err: {"error": err, "action": "retry"})
+)
+
+agent.stop()
 ```
 
-## Type System Advantages Over Competitors
-
-### MAPLE vs Other Protocols
-
-| Feature | **MAPLE** | Google A2A | FIPA ACL | MCP | AGENTCY |
-|---------|-----------|------------|----------|-----|---------|
-| **Result<T,E> Pattern** | ✅ **REVOLUTIONARY** | ❌ None | ❌ None | ❌ None | ❌ None |
-| **Resource Types** | ✅ **FIRST-IN-INDUSTRY** | ❌ None | ❌ None | ❌ None | ❌ None |
-| **Error Hierarchy** | ✅ **COMPREHENSIVE** | ⚠️ Basic | ❌ None | ⚠️ Limited | ❌ None |
-| **Type Validation** | ✅ **RUNTIME + COMPILE** | ⚠️ JSON Schema | ❌ Legacy | ⚠️ Interface | ❌ None |
-| **State Types** | ✅ **DISTRIBUTED** | ❌ External | ❌ None | ❌ None | ❌ Academic |
-| **Generic Types** | ✅ **FULL SUPPORT** | ⚠️ Limited | ❌ None | ⚠️ Basic | ❌ None |
-
-**MAPLE's type system is literally years ahead of any competitor.**
-
-## API Reference
-
-### Core Type Classes
-
-```python
-# Import all type system components
-from maple.core.types import (
-    # Primitive types
-    Boolean, Integer, Float, String, Timestamp, UUID, Byte,
-    
-    # Size and duration types
-    Size, Duration,
-    
-    # Collection types  
-    Array, Map, Set, Option,
-    
-    # Protocol types
-    Priority, AgentID, MessageID,
-    
-    # Validation utilities
-    TypeValidator
-)
-
-# Import resource types
-from maple.resources import (
-    ResourceRequest, ResourceRange, ResourceOffer, 
-    ResourceAllocation, TimeConstraint
-)
-
-# Import error types
-from maple.error.types import (
-    ErrorType, Severity, MAPLEError
-)
-
-# Import state types
-from maple.state import (
-    StateManager, DistributedState, ConsistencyLevel, 
-    ConflictResolution
-)
-```
+---
 
 **Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)**
 
-MAPLE's type system represents the most significant advancement in agent communication since the field began. No other protocol provides this level of type safety, error prevention, and structured validation.
-
-**🚀 MAPLE: The Protocol That Changes Everything 🚀**
-
-```
+```text
 Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
-
-This file is part of MAPLE - Multi Agent Protocol Language Engine. 
-
-MAPLE - Multi Agent Protocol Language Engine is free software: you can redistribute it and/or 
-modify it under the terms of the GNU Affero General Public License as published by the Free Software 
-Foundation, either version 3 of the License, or (at your option) any later version. 
-MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that it will be useful, 
-but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A 
-PARTICULAR PURPOSE. See the GNU Affero General Public License for more details. You should have 
-received a copy of the GNU Affero General Public License along with MAPLE - Multi Agent Protocol 
-Language Engine. If not, see <https://www.gnu.org/licenses/>.
+Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0)
+See LICENSE for details.
 ```

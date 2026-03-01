@@ -521,7 +521,7 @@ def show_completion_summary():
     print(f"\nMAPLE Thank you for exploring MAPLE!")
     print(f"Creator: Mahesh Vaikri")
     print(f"Ready to revolutionize your multi-agent systems!")
-    print(f"Version: 1.0.0 | License: AGPL 3.0 | Status: Production Ready")
+    print(f"Version: 1.1.0 | License: AGPL 3.0 | Status: Production Ready")
 
 def main():
     """Main function for complete MAPLE experience."""
@@ -572,7 +572,7 @@ def main():
             "success": success,
             "experience_type": "complete_package",
             "creator": "Mahesh Vaikri",
-            "version": "1.0.0"
+            "version": "1.1.0"
         }
         
         import json

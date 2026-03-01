@@ -22,6 +22,7 @@ from typing import Dict, List, Callable, Optional, Set
 from dataclasses import dataclass, field
 from enum import Enum
 from ..core.result import Result
+from ..error.circuit_breaker import CircuitBreaker, CircuitState
 from .registry import AgentRegistry, AgentInfo
 from .health_monitor import HealthMonitor, HealthStatus
 
@@ -34,6 +35,8 @@ class FailureType(Enum):
     ERROR_THRESHOLD_EXCEEDED = "error_threshold_exceeded"
     RESOURCE_EXHAUSTION = "resource_exhaustion"
     CRASH_DETECTED = "crash_detected"
+    NETWORK_ERROR = "network_error"
+    VALIDATION_ERROR = "validation_error"
 
 
 @dataclass
@@ -58,18 +61,48 @@ class RecoveryAction:
     timeout_seconds: int = 60
 
 
+class CircuitBreakerState:
+    """Wrapper around shared CircuitBreaker for backwards compatibility."""
+    def __init__(self, agent_id: str, threshold: int = 5):
+        self.agent_id = agent_id
+        self._cb = CircuitBreaker(failure_threshold=threshold, reset_timeout=30.0)
+
+    @property
+    def failure_count(self):
+        return self._cb.failure_count
+
+    @property
+    def last_failure_time(self):
+        return self._cb.last_failure_time
+
+    @property
+    def state(self):
+        return self._cb.state.value.lower()
+
+    @property
+    def threshold(self):
+        return self._cb.failure_threshold
+
+
 class FailureDetector:
     """Detects and manages agent failures with recovery capabilities."""
-    
+
     def __init__(self, registry: AgentRegistry, health_monitor: HealthMonitor):
         self.registry = registry
         self.health_monitor = health_monitor
-        
+
         # Failure tracking
         self.failure_history: Dict[str, List[FailureEvent]] = {}
         self.recovery_attempts: Dict[str, Dict[FailureType, int]] = {}
         self.failure_callbacks: List[Callable[[FailureEvent], None]] = []
-        
+
+        # Circuit breaker state per agent
+        self._circuit_breakers: Dict[str, CircuitBreakerState] = {}
+        self._circuit_breaker_threshold = 5
+
+        # Custom recovery handlers
+        self._custom_recovery_handlers: Dict[FailureType, Callable] = {}
+
         # Recovery actions
         self.recovery_actions: Dict[FailureType, RecoveryAction] = {
             FailureType.HEARTBEAT_TIMEOUT: RecoveryAction(
@@ -377,7 +410,41 @@ class FailureDetector:
     def configure_recovery_action(self, failure_type: FailureType, action: RecoveryAction):
         """Configure a custom recovery action for a failure type."""
         self.recovery_actions[failure_type] = action
-    
+
+    def register_recovery_handler(self, failure_type: FailureType, handler: Callable):
+        """Register a custom recovery handler for a failure type."""
+        self._custom_recovery_handlers[failure_type] = handler
+
+    def _update_circuit_breaker(self, agent_id: str):
+        """Update circuit breaker state for an agent after a failure."""
+        with self._lock:
+            if agent_id not in self._circuit_breakers:
+                self._circuit_breakers[agent_id] = CircuitBreakerState(
+                    agent_id=agent_id,
+                    threshold=self._circuit_breaker_threshold,
+                )
+
+            self._circuit_breakers[agent_id]._cb.record_failure()
+
+    def get_circuit_breaker_status(self, agent_id: str) -> Result:
+        """Get the circuit breaker status for an agent."""
+        with self._lock:
+            if agent_id not in self._circuit_breakers:
+                return Result.ok(CircuitBreakerState(agent_id=agent_id))
+            return Result.ok(self._circuit_breakers[agent_id])
+
+    def reset_circuit_breaker(self, agent_id: str) -> Result:
+        """Reset the circuit breaker for an agent."""
+        with self._lock:
+            if agent_id in self._circuit_breakers:
+                self._circuit_breakers[agent_id]._cb.reset()
+            else:
+                self._circuit_breakers[agent_id] = CircuitBreakerState(
+                    agent_id=agent_id,
+                    threshold=self._circuit_breaker_threshold,
+                )
+            return Result.ok(None)
+
     def _detection_loop(self):
         """Main failure detection loop."""
         

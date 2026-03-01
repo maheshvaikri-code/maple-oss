@@ -368,7 +368,7 @@ This software was created by Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri
   author={Krishnamoorthy, Mahesh Vaijainthymala},
   year={2024},
   url={https://github.com/maheshvaikri-code/maple-oss},
-  version={1.0.0}
+  version={1.1.0}
 }
 ```
 

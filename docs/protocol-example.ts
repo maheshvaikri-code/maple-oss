@@ -1,4 +1,4 @@
-protocol TaskExecution v1.0.0
+protocol TaskExecution v1.1.0
 requires {
     authentication: "jwt"
     encryption: "aes256"

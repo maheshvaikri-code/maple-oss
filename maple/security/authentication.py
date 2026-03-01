@@ -23,7 +23,12 @@ Provides enterprise-grade authentication with multiple methods
 """
 
 import time
-import jwt
+try:
+    import jwt
+    JWT_AVAILABLE = True
+except ImportError:
+    jwt = None
+    JWT_AVAILABLE = False
 import base64
 import hashlib
 from typing import Dict, Any, Optional, Union
@@ -306,7 +311,7 @@ class AuthenticationManager:
                 key_info = self.api_keys[api_key]
                 
                 # Check if key has expired
-                if 'expires_at' in key_info and time.time() > key_info['expires_at']:
+                if key_info.get('expires_at') is not None and time.time() > key_info['expires_at']:
                     return Result.err({
                         'errorType': 'API_KEY_EXPIRED',
                         'message': 'API key has expired'

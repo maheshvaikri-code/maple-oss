@@ -80,6 +80,14 @@ security = [
     "cryptography[ssh]>=41.0.0",
     "pyjwt>=2.8.0"
 ]
+llm = [
+    "openai>=1.0.0",
+    "anthropic>=0.20.0"
+]
+autonomy = [
+    "openai>=1.0.0",
+    "anthropic>=0.20.0"
+]
 
 [project.urls]
 Homepage = "https://github.com/maheshvaikri-code/maple-oss"
@@ -91,11 +99,10 @@ Changelog = "https://github.com/maheshvaikri-code/maple-oss/CHANGELOG.md"
 
 [project.scripts]
 maple = "maple.cli:main"
-maple-agent = "maple.agent:cli_main"
-maple-broker = "maple.broker:cli_main"
 
-[tool.setuptools]
-packages = ["maple"]
+[tool.setuptools.packages.find]
+include = ["maple*"]
+exclude = ["tests*", "demo_package*", "LAUNCH*"]
 
 [tool.setuptools.dynamic]
 version = {attr = "maple.__version__"}
@@ -128,7 +135,7 @@ asyncio_mode = "auto"
 
 [tool.coverage.run]
 source = ["maple"]
-omit = ["tests/*", "examples/*"]
+omit = ["tests/*", "examples/*", "maple/broker/nats_broker.py", "maple/cli.py", "maple/llm/openai_provider.py", "maple/llm/anthropic_provider.py"]
 
 [tool.coverage.report]
 exclude_lines = [

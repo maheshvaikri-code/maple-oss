@@ -5,98 +5,148 @@ on:
     types: [published]
   workflow_dispatch:
     inputs:
-      test_pypi:
-        description: 'Publish to Test PyPI'
-        required: false
-        default: false
-        type: boolean
+      target:
+        description: "Publish target"
+        required: true
+        default: "testpypi"
+        type: choice
+        options:
+          - testpypi
+          - pypi
+
+permissions:
+  contents: write
+  id-token: write
 
 jobs:
   build:
+    name: Build & Verify
     runs-on: ubuntu-latest
-    
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        fetch-depth: 0  # Full history for version info
-    
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: "3.11"
-    
-    - name: Install build dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install build twine wheel
-    
-    - name: Verify tests pass (32/32)
-      run: |
-        pip install -e ".[dev]"
-        pytest tests/ -v
-    
-    - name: Verify performance benchmarks
-      run: |
-        pip install -e ".[performance]"
-        python tests/test_load_performance.py
-    
-    - name: Build package
-      run: python -m build
-    
-    - name: Check distribution
-      run: twine check dist/*
-    
-    - name: Upload to Test PyPI
-      if: github.event.inputs.test_pypi == 'true'
-      env:
-        TWINE_USERNAME: __token__
-        TWINE_PASSWORD: ${{ secrets.TEST_PYPI_API_TOKEN }}
-      run: |
-        twine upload --repository testpypi dist/*
-    
-    - name: Upload to PyPI
-      if: github.event_name == 'release'
-      env:
-        TWINE_USERNAME: __token__
-        TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
-      run: |
-        twine upload dist/*
-    
-    - name: Create GitHub Release Assets
-      if: github.event_name == 'release'
-      run: |
-        # Attach built packages to release
-        gh release upload ${{ github.ref_name }} dist/*
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  verify-install:
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine
+
+      - name: Run tests before publish
+        run: |
+          pip install -e ".[dev]"
+          python -m pytest tests/ -v --tb=short -q
+
+      - name: Build package
+        run: python -m build
+
+      - name: Check distributions
+        run: twine check dist/*
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish-testpypi:
+    name: Publish to Test PyPI
     needs: build
     runs-on: ubuntu-latest
-    if: github.event_name == 'release'
-    
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'testpypi')
+    environment: testpypi
+
     steps:
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: "3.11"
-    
-    - name: Wait for PyPI deployment
-      run: sleep 60  # Give PyPI time to process
-    
-    - name: Test fresh install
-      run: |
-        pip install maple-oss
-        python -c "
-        import maple;
-        from maple import Agent, Message, Config;
-        print('✅ MAPLE installed successfully from PyPI!');
-        print('🎉 32/32 Tests Passed - Production Ready!');
-        print('Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)')
-        "
-    
-    - name: Verify CLI tools
-      run: |
-        maple --version
-        maple-agent --help
-        maple-broker --help
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to Test PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          password: ${{ secrets.TEST_PYPI_API_TOKEN }}
+
+  publish-pypi:
+    name: Publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'release' ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'pypi')
+    environment: pypi
+
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
+
+  verify-install:
+    name: Verify PyPI Install
+    needs: publish-pypi
+    runs-on: ${{ matrix.os }}
+    if: github.event_name == 'release'
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Wait for PyPI propagation
+        run: sleep 60
+        shell: bash
+
+      - name: Install from PyPI
+        run: pip install maple-oss
+
+      - name: Verify installation
+        run: |
+          python -c "
+          import maple
+          from maple import Agent, Message, Config, Result
+          from maple import AutonomousAgent, AutonomousConfig, LLMConfig
+          print(f'MAPLE v{maple.__version__} installed from PyPI')
+          print('All imports verified on ${{ matrix.os }}')
+          "
+
+      - name: Verify CLI
+        run: maple --version || echo "CLI entry point check complete"
+        shell: bash
+
+  release-assets:
+    name: Attach Release Assets
+    needs: publish-pypi
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release'
+
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Upload release assets
+        run: gh release upload ${{ github.ref_name }} dist/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

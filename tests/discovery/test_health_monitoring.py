@@ -94,26 +94,26 @@ class TestHealthMonitoringHeartbeat(unittest.TestCase):
         """Test health status evaluation for degraded agent."""
         # Send heartbeat with moderate issues
         metrics = {
-            "cpu_usage": 85.0,  # High CPU
+            "cpu_usage": 85.0,  # High CPU (threshold: 80)
             "memory_usage": 70.0,
             "active_tasks": 8,
-            "response_time": 2000.0,  # High response time
+            "response_time": 6000.0,  # High response time (threshold: 5000)
             "error_rate": 5.0,
             "uptime": 3600.0
         }
-        
+
         self.monitor.record_heartbeat("degraded_agent", metrics)
-        
+
         # Get health status
         result = self.monitor.get_agent_health("degraded_agent")
         self.assertTrue(result.is_ok())
-        
+
         health = result.unwrap()
         self.assertEqual(health.status, "degraded")
         self.assertLess(health.score, 0.8)
         self.assertGreater(health.score, 0.5)
         self.assertGreater(len(health.issues), 0)
-        
+
         # Check for expected issues
         issue_text = " ".join(health.issues)
         self.assertIn("High CPU usage", issue_text)

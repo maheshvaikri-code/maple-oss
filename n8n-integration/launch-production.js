@@ -19,7 +19,7 @@ class MAPLEProductionLauncher {
     constructor() {
         this.config = {
             packageName: '@maple/n8n-nodes-maple',
-            version: '1.0.0',
+            version: '1.1.0',
             creator: 'Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)',
             projectName: 'MAPLE - Mahesh\'s Agent Protocol Language Engine',
             description: 'Visual Multi-Agent AI Workflows for n8n'

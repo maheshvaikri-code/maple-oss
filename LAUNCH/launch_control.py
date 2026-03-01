@@ -7,7 +7,7 @@ Your mission control for launching MAPLE to the world!
 This script helps you execute the perfect launch sequence.
 
 MAPLE - Multi Agent Protocol Language Engine
-The protocol that changes everything!
+A multi-agent communication protocol.
 """
 
 import os
@@ -199,7 +199,7 @@ def create_launch_checklist():
                 "task": "Upload video to YouTube",
                 "estimated_time": "15 minutes", 
                 "completed": False,
-                "notes": "Title: 'MAPLE: The Agent Protocol That Changes Everything'"
+                "notes": "Title: 'MAPLE: A Multi-Agent Communication Protocol'"
             },
             {
                 "task": "Publish blog post on Medium",

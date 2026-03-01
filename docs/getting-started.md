@@ -2,132 +2,89 @@
 
 **Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)**
 
-MAPLE (Multi Agent Protocol Language Extensible) revolutionizes multi-agent communication with unprecedented capabilities that are impossible with Google A2A, FIPA ACL, MCP, AGENTCY, or any existing protocol.
+MAPLE (Multi Agent Protocol Language Engine) is a Python framework for multi-agent communication with built-in resource management, type-safe error handling, and secure link identification.
 
-## Quick Installation
+## Installation
 
-### Python
 ```bash
 # Install MAPLE
 pip install maple-oss
 
-# Verify installation
-python -c "import maple; print('🍁 MAPLE ready!')"
-```
-
-### Node.js
-```bash
-# Install MAPLE for Node.js
-npm install maple-protocol
+# Or install from source
+git clone https://github.com/maheshvaikri-code/maple-oss.git
+cd maple-oss
+pip install -e .
 
 # Verify installation
-node -e "const maple = require('maple-protocol'); console.log('🍁 MAPLE ready!');"
-```
-
-### Java
-```xml
-<!-- Maven dependency -->
-<dependency>
-    <groupId>org.maple</groupId>
-    <artifactId>maple-core</artifactId>
-    <version>1.0.0</version>
-</dependency>
+python -c "from maple import Agent, Message, Config; print('MAPLE ready')"
 ```
 
 ## Your First MAPLE Agent
 
-Experience MAPLE's revolutionary capabilities in minutes:
-
 ```python
-#!/usr/bin/env python3
-"""
-MAPLE Quick Start - Revolutionary Agent Communication
-Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
-"""
-
 from maple import Agent, Message, Priority, Config
-from maple.resources import ResourceRequest, ResourceRange
-import asyncio
 
-async def create_revolutionary_agents():
-    print("🍁 MAPLE Revolutionary Multi-Agent System")
-    print("Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)")
-    print("=" * 60)
-    
-    # Create agent with MAPLE's advanced configuration
-    config = Config(
-        agent_id="intelligent_agent",
-        broker_url="memory://localhost"
-    )
-    
-    agent = Agent(config)
-    await agent.start()
-    
-    # Demonstrate MAPLE's resource-aware messaging
-    message = Message(
-        message_type="INTELLIGENT_TASK",
-        receiver="worker_agent",
-        priority=Priority.HIGH,
-        payload={
-            "task": "complex_analysis",
-            "data": list(range(10000)),
-            "resources": ResourceRequest(
-                memory=ResourceRange(min="4GB", preferred="8GB", max="16GB"),
-                compute=ResourceRange(min=4, preferred=8, max=16),
-                deadline="2024-12-25T18:00:00Z"
-            ).to_dict()
-        }
-    )
-    
-    # Send with MAPLE's Result<T,E> error handling
-    result = agent.send(message)
-    
-    if result.is_ok():
-        message_id = result.unwrap()
-        print(f"✅ Message sent successfully: {message_id}")
-        print("🔍 Features demonstrated:")
-        print("   - Resource-aware communication")
-        print("   - Type-safe error handling")
-        print("   - Priority-based routing")
-    else:
-        error = result.unwrap_err()
-        print(f"❌ Send failed: {error['message']}")
-        # MAPLE's intelligent error recovery
-        if error.get('recoverable', False):
-            suggestion = error.get('suggestion', {})
-            print(f"💡 Recovery suggestion: {suggestion}")
-    
-    await agent.stop()
-    print("🎉 MAPLE demonstration complete!")
+# Create an agent
+config = Config(
+    agent_id="my_agent",
+    broker_url="memory://local"
+)
 
-# Run the demonstration
-if __name__ == "__main__":
-    asyncio.run(create_revolutionary_agents())
+agent = Agent(config)
+agent.start()
+
+# Send a message with Result<T,E> error handling
+message = Message(
+    message_type="GREETING",
+    receiver="other_agent",
+    priority=Priority.HIGH,
+    payload={"text": "Hello from MAPLE"}
+)
+
+result = agent.send(message)
+
+if result.is_ok():
+    message_id = result.unwrap()
+    print(f"Sent: {message_id}")
+else:
+    error = result.unwrap_err()
+    print(f"Failed: {error['message']}")
+
+agent.stop()
 ```
 
-## Revolutionary Features
+## Key Features
 
-### 🔧 Resource-Aware Communication (INDUSTRY FIRST)
+### Resource-Aware Communication
+
+Include resource requirements in your messages:
+
 ```python
-# Specify resource requirements directly in messages
-resource_message = Message(
+from maple.resources.specification import ResourceRequest, ResourceRange, TimeConstraint
+
+message = Message(
     message_type="HEAVY_COMPUTATION",
+    receiver="compute_agent",
+    priority=Priority.HIGH,
     payload={
-        "data": large_dataset,
+        "task": "model_training",
         "resources": ResourceRequest(
-            memory=ResourceRange(min="16GB", preferred="32GB", max="64GB"),
-            compute=ResourceRange(min=16, preferred=32, max=64),
-            gpu_memory=ResourceRange(min="8GB", preferred="24GB"),
-            network_bandwidth=ResourceRange(min="1Gbps", preferred="10Gbps"),
-            deadline="2024-12-25T15:30:00Z"
+            compute=ResourceRange(min=4, preferred=8, max=16),
+            memory=ResourceRange(min="8GB", preferred="16GB"),
+            time=TimeConstraint(timeout="120s"),
+            priority="HIGH"
         ).to_dict()
     }
 )
 ```
 
-### 🛡️ Result<T,E> Error Handling (ELIMINATES SILENT FAILURES)
+### Result\<T,E\> Error Handling
+
+Type-safe results that prevent silent failures:
+
 ```python
-# Type-safe communication that prevents all silent failures
+from maple import Result
+
 result = agent.send(message)
 
 if result.is_ok():
@@ -136,78 +93,78 @@ if result.is_ok():
 else:
     error = result.unwrap_err()
     print(f"Error: {error['message']}")
-    
-    # Automatic recovery suggestions
-    if error.get('recoverable'):
-        recovery = error.get('suggestion', {})
-        print(f"Recovery: {recovery}")
+
+# Chain operations
+processed = (
+    agent.send(message)
+    .map(lambda mid: f"processed_{mid}")
+    .map_err(lambda err: log_error(err))
+)
 ```
 
-### 🔒 Link Identification Mechanism (PATENT-WORTHY SECURITY)
+### Secure Links (LIM)
+
+Establish cryptographically verified channels:
+
 ```python
-# Establish cryptographically verified communication channels
-link_result = agent.establish_link(
-    target_agent="secure_processor",
-    security_level="MAXIMUM",
-    encryption="AES-256-GCM"
+from maple import Config, SecurityConfig
+
+config = Config(
+    agent_id="secure_agent",
+    broker_url="memory://local",
+    security=SecurityConfig(
+        auth_type="token",
+        credentials="my_token",
+        require_links=True
+    )
 )
+
+agent = Agent(config)
+agent.start()
+
+# Establish secure link
+link_result = agent.establish_link("partner_agent", lifetime_seconds=3600)
 
 if link_result.is_ok():
     link_id = link_result.unwrap()
-    
-    # Send sensitive data through secure channel
-    secure_message = Message(
-        message_type="CONFIDENTIAL_DATA",
-        payload={"sensitive_info": classified_data}
-    ).with_link(link_id)  # EXCLUSIVE MAPLE FEATURE
-    
-    agent.send(secure_message)
+    secure_msg = Message(
+        message_type="SENSITIVE_DATA",
+        receiver="partner_agent",
+        payload={"data": "confidential"}
+    ).with_link(link_id)
+
+    agent.send_with_link(secure_msg, "partner_agent")
 ```
 
 ## Next Steps
 
-1. **Explore Examples**: Run the comprehensive demo
+1. **Explore Examples**:
    ```bash
    python demo_package/examples/comprehensive_feature_demo.py
    ```
 
-2. **Compare Performance**: See MAPLE's superiority
+2. **Run Tests**:
    ```bash
-   python demo_package/examples/performance_comparison_example_fixed.py
+   python -m pytest tests/ -v
    ```
 
-3. **Production Setup**: Deploy enterprise-grade systems
-   ```bash
-   python maple/broker/production_broker.py --port 8080
-   ```
-
-4. **Learn Advanced Features**: 
+3. **Read the Docs**:
    - [Type System](type-system.md)
-   - [Resource Management](resource-management.md) 
-   - [Security Model](security-model.md)
+   - [Protocol Comparison](protocol-comparison.md)
+   - [Best Practices](best-practices.md)
    - [API Reference](api-reference.md)
 
 ## Support
 
 **Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)**
 
-- 📚 [Documentation](../README.md)
-- 🐛 [Issues](https://github.com/maheshvaikri-code/maple-oss/issues)
-- 💬 [Discussions](https://github.com/maheshvaikri-code/maple-oss/discussions)
-- 📧 [Contact Creator](mailto:mahesh@mapleagent.org)
+- [Documentation](../README.md)
+- [Issues](https://github.com/maheshvaikri-code/maple-oss/issues)
+- [Discussions](https://github.com/maheshvaikri-code/maple-oss/discussions)
+- [Contact](mailto:mahesh@mapleagent.org)
 
-**MAPLE: The Protocol That Changes Everything 🚀**
-```
+```text
 Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
-
-This file is part of MAPLE - Multi Agent Protocol Language Engine. 
-
-MAPLE - Multi Agent Protocol Language Engine is free software: you can redistribute it and/or 
-modify it under the terms of the GNU Affero General Public License as published by the Free Software 
-Foundation, either version 3 of the License, or (at your option) any later version. 
-MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that it will be useful, 
-but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A 
-PARTICULAR PURPOSE. See the GNU Affero General Public License for more details. You should have 
-received a copy of the GNU Affero General Public License along with MAPLE - Multi Agent Protocol 
-Language Engine. If not, see <https://www.gnu.org/licenses/>.
+Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0)
+See LICENSE for details.
 ```

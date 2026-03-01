@@ -23,11 +23,10 @@ MAPLE - Multi Agent Protocol Language Engine
 Created by: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
 
 The most advanced multi-agent communication protocol with:
-- 32/32 Tests Passed (100% Success Rate)
-- 33x Performance Improvement
 - Advanced Resource Management
-- Military-grade Security
-- Production Ready
+- Type-safe Result<T,E> Error Handling
+- Link Identification Security
+- Multi-Agent Communication
 """
 
 from setuptools import setup, find_packages
@@ -51,9 +50,9 @@ setup(
     name="maple-oss",
     version=version,
     author="Mahesh Vaijainthymala Krishnamoorthy",
-    author_email="mahesh@mapleagent.com",
+    author_email="mahesh@mapleagent.org",
     maintainer="Mahesh Vaikri",
-    maintainer_email="mahesh@mapleagent.com",
+    maintainer_email="mahesh@mapleagent.org",
     description="Multi Agent Protocol Language Engine - Advanced multi-agent communication framework",
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -62,9 +61,9 @@ setup(
         "Documentation": "https://mapleagent.org/docs",
         "Issue Tracker": "https://github.com/maheshvaikri-code/maple-oss/issues",
         "Discussions": "https://github.com/maheshvaikri-code/maple-oss/discussions",
-        "Source Code": "https://github.com/maheshvaikri-codemaple-oss",
+        "Source Code": "https://github.com/maheshvaikri-code/maple-oss",
     },
-    packages=["maple"],
+    packages=find_packages(exclude=["tests*", "demo_package*", "LAUNCH*"]),
     classifiers=[
         "Development Status :: 5 - Production/Stable",
         "Intended Audience :: Developers",
@@ -116,12 +115,18 @@ setup(
             "cryptography[ssh]>=41.0.0",
             "pyjwt>=2.8.0",
         ],
+        "llm": [
+            "openai>=1.0.0",
+            "anthropic>=0.20.0",
+        ],
+        "autonomy": [
+            "openai>=1.0.0",
+            "anthropic>=0.20.0",
+        ],
     },
     entry_points={
         "console_scripts": [
             "maple=maple.cli:main",
-            "maple-agent=maple.agent:cli_main",
-            "maple-broker=maple.broker:cli_main",
         ],
     },
     include_package_data=True,

@@ -2,11 +2,11 @@ name: Security Scan
 
 on:
   push:
-    branches: [ main, development ]
+    branches: [main, development]
   pull_request:
-    branches: [ main ]
+    branches: [main]
   schedule:
-    - cron: '0 2 * * 0'  # Weekly security scan on Sundays
+    - cron: "0 2 * * 0" # Weekly on Sundays
 
 jobs:
   security:
@@ -14,51 +14,43 @@ jobs:
     permissions:
       contents: read
       security-events: write
-      
+
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: "3.11"
-    
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -e ".[dev,security]"
-        pip install safety pip-audit
-    
-    - name: Run safety check for known vulnerabilities
-      run: |
-        safety check --json --output safety-report.json || true
-        safety check --output safety-report.txt || true
-    
-    - name: Run pip-audit for dependency vulnerabilities
-      run: |
-        pip-audit --format=json --output=audit-report.json || true
-        pip-audit --output=audit-report.txt || true
-    
-    - name: Run bandit security scan
-      run: |
-        bandit -r maple/ -f json -o bandit-report.json || true
-        bandit -r maple/ -o bandit-report.txt || true
-    
-    - name: Upload security reports
-      uses: actions/upload-artifact@v3
-      if: always()
-      with:
-        name: security-reports
-        path: |
-          safety-report.*
-          audit-report.*
-          bandit-report.*
-    
-    - name: Security summary
-      if: always()
-      run: |
-        echo "## Security Scan Results" >> $GITHUB_STEP_SUMMARY
-        echo "- ✅ Safety check completed" >> $GITHUB_STEP_SUMMARY  
-        echo "- ✅ Dependency audit completed" >> $GITHUB_STEP_SUMMARY
-        echo "- ✅ Static security analysis completed" >> $GITHUB_STEP_SUMMARY
-        echo "- 🔒 MAPLE maintains high security standards" >> $GITHUB_STEP_SUMMARY
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,security]"
+          pip install pip-audit
+
+      - name: Run pip-audit for dependency vulnerabilities
+        run: |
+          pip-audit --format=json --output=audit-report.json || true
+          pip-audit || true
+
+      - name: Run bandit security scan
+        run: |
+          bandit -r maple/ -f json -o bandit-report.json || true
+          bandit -r maple/ -ll || true
+
+      - name: Upload security reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-reports
+          path: |
+            audit-report.json
+            bandit-report.json
+
+      - name: Security summary
+        if: always()
+        run: |
+          echo "## Security Scan Results" >> $GITHUB_STEP_SUMMARY
+          echo "- Dependency audit completed" >> $GITHUB_STEP_SUMMARY
+          echo "- Static security analysis completed" >> $GITHUB_STEP_SUMMARY

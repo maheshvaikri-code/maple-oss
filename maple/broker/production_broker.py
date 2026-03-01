@@ -39,13 +39,18 @@ class ProductionBrokerManager:
     @staticmethod
     def get_available_brokers() -> Dict[BrokerType, bool]:
         """Get available broker types."""
-        return {
+        available = {
             BrokerType.IN_MEMORY: True,
-            BrokerType.NATS: False,  # Would check for nats-py
-            BrokerType.REDIS: False,  # Would check for redis-py
-            BrokerType.RABBITMQ: False  # Would check for pika
+            BrokerType.REDIS: False,
+            BrokerType.RABBITMQ: False,
         }
-    
+        try:
+            import nats  # noqa: F401
+            available[BrokerType.NATS] = True
+        except ImportError:
+            available[BrokerType.NATS] = False
+        return available
+
     @staticmethod
     def create_broker(config, preferred_type: BrokerType = BrokerType.IN_MEMORY) -> Result[Any, Dict[str, Any]]:
         """Create a broker instance."""
@@ -54,6 +59,18 @@ class ProductionBrokerManager:
                 from .broker import MessageBroker
                 broker = MessageBroker(config)
                 return Result.ok(broker)
+            elif preferred_type == BrokerType.NATS:
+                try:
+                    from .nats_broker import NATSBrokerSync, NATSConfig
+                    servers = [config.broker_url] if config.broker_url.startswith("nats://") else ["nats://localhost:4222"]
+                    nats_config = NATSConfig(servers=servers)
+                    broker = NATSBrokerSync(config, nats_config)
+                    return Result.ok(broker)
+                except ImportError:
+                    return Result.err({
+                        'errorType': 'BROKER_DEPENDENCY_MISSING',
+                        'message': 'NATS broker requires nats-py. Install with: pip install nats-py'
+                    })
             else:
                 return Result.err({
                     'errorType': 'BROKER_UNAVAILABLE',

@@ -89,6 +89,31 @@ class MessageBroker:
                 logger.warning(
                     "Link manager not available - security features disabled"
                 )
+        # Initialize MessageQueue for priority-based delivery
+        self._message_queue = None
+        try:
+            from .queue import MessageQueue, QueueType
+            self._message_queue = MessageQueue(queue_type=QueueType.PRIORITY, max_size=10000)
+        except Exception:
+            logger.debug("MessageQueue not available, using basic queue")
+
+        # Initialize MessageRouter for routing strategies
+        self._message_router = None
+        try:
+            from .routing import MessageRouter
+            self._message_router = MessageRouter()
+        except Exception:
+            logger.debug("MessageRouter not available, using direct routing")
+
+        # Initialize AuthorizationManager for message authorization
+        self._auth_manager = None
+        if self.security_config:
+            try:
+                from ..security.authorization import AuthorizationManager
+                self._auth_manager = AuthorizationManager()
+            except Exception:
+                logger.debug("AuthorizationManager not available")
+
         self._initialized = True
         logger.info("MessageBroker initialized")
 
@@ -163,12 +188,26 @@ class MessageBroker:
                             f"Link validation failed: {error['message']}"
                         )
 
-        # Check if the receiver exists
-        if message.receiver not in self._agent_queues:
-            self._agent_queues[message.receiver] = []
+        # Authorization check
+        if self._auth_manager:
+            try:
+                auth_result = self._auth_manager.authorize_message(message)
+                if auth_result.is_ok() and not auth_result.unwrap():
+                    raise SecurityError("Message authorization denied")
+            except SecurityError:
+                raise
+            except Exception as e:
+                logger.debug(f"Authorization check skipped: {e}")
 
-        # Add the message to the receiver's queue
-        self._agent_queues[message.receiver].append(message)
+        # Add the message to the receiver's queue (thread-safe)
+        with self._lock:
+            if message.receiver not in self._agent_queues:
+                self._agent_queues[message.receiver] = []
+            self._agent_queues[message.receiver].append(message)
+
+        # Also enqueue in priority MessageQueue for ordered delivery
+        if self._message_queue:
+            self._message_queue.enqueue(message, priority=message.priority)
 
         logger.debug(
             f"Message {message.message_id} queued for delivery to {message.receiver}"
@@ -185,15 +224,11 @@ class MessageBroker:
         if not message.message_id:
             message.message_id = str(uuid.uuid4())
 
-        # Get subscribers for this topic
-        subscribers = self._topic_subscribers.get(topic, [])
+        # Send the message to all subscribers (thread-safe)
+        with self._lock:
+            subscribers = list(self._topic_subscribers.get(topic, []))
 
-        # Send the message to all subscribers
         for subscriber in subscribers:
-            if subscriber not in self._agent_queues:
-                self._agent_queues[subscriber] = []
-
-            # Create a copy of the message for each subscriber
             subscriber_message = Message(
                 message_id=message.message_id,
                 timestamp=message.timestamp,
@@ -205,7 +240,10 @@ class MessageBroker:
                 metadata={**message.metadata, "topic": topic},
             )
 
-            self._agent_queues[subscriber].append(subscriber_message)
+            with self._lock:
+                if subscriber not in self._agent_queues:
+                    self._agent_queues[subscriber] = []
+                self._agent_queues[subscriber].append(subscriber_message)
 
         logger.debug(
             f"Message {message.message_id} published to topic {topic} with {len(subscribers)} subscribers"
@@ -226,6 +264,13 @@ class MessageBroker:
 
             # Add the handler
             self._agent_handlers[agent_id].append(handler)
+
+        # Auto-assign 'agent' role for authorization
+        if self._auth_manager:
+            try:
+                self._auth_manager.assign_role(agent_id, "agent")
+            except Exception:
+                pass  # Role assignment is best-effort
 
         logger.debug(f"Agent {agent_id} subscribed to receive messages")
 
@@ -340,7 +385,22 @@ class MessageBroker:
                 # Sleep briefly to avoid spinning
                 time.sleep(0.01)
 
-                # Make a copy of the queue state to avoid holding the lock during delivery
+                # Drain from MessageQueue first (priority-ordered)
+                if self._message_queue:
+                    while True:
+                        dequeue_result = self._message_queue.dequeue(timeout=0)
+                        if dequeue_result.is_err():
+                            break
+                        message = dequeue_result.unwrap()
+                        if message and message.receiver:
+                            self._deliver_message(message.receiver, message)
+                            # Update router health tracking
+                            if self._message_router:
+                                self._message_router.update_agent_health(
+                                    message.receiver, True
+                                )
+
+                # Also drain basic queues (fallback path + publish messages)
                 with self._lock:
                     queues = {
                         agent_id: list(queue)

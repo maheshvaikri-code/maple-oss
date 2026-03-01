@@ -241,7 +241,7 @@ def show_documentation():
     print("   MAPLE MAPLE: Multi Agent Protocol Language Engine")
     print("   👤 Creator: Mahesh Vaikri")
     print("   📜 License: AGPL 3.0 (Open Source)")
-    print("   🌐 Status: Production Ready v1.0.0")
+    print("   🌐 Status: Production Ready v1.1.0")
     
     print("\n[TARGET] UNIQUE FEATURES (Not in any other protocol):")
     print("   [PASS] Resource-Aware Communication")

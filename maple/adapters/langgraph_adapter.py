@@ -18,8 +18,15 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 
 import time
 from typing import Dict, Any, Optional, List, TypedDict
-from langgraph.graph import StateGraph, END
-from langchain.schema import BaseMessage
+try:
+    from langgraph.graph import StateGraph, END
+    from langchain.schema import BaseMessage
+    LANGGRAPH_AVAILABLE = True
+except ImportError:
+    StateGraph = None
+    END = None
+    BaseMessage = None
+    LANGGRAPH_AVAILABLE = False
 from ..core.message import Message
 from ..core.result import Result
 

@@ -18,7 +18,14 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 
 import time
 from typing import Dict, Any, Optional, List
-from crewai import Agent as CrewAgent, Task as CrewTask, Crew
+try:
+    from crewai import Agent as CrewAgent, Task as CrewTask, Crew
+    CREWAI_AVAILABLE = True
+except ImportError:
+    CrewAgent = None
+    CrewTask = None
+    Crew = None
+    CREWAI_AVAILABLE = False
 from ..core.message import Message
 from ..core.result import Result
 

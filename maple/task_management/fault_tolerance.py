@@ -23,6 +23,7 @@ from typing import Dict, List, Optional, Callable, Any
 from dataclasses import dataclass, field
 from enum import Enum
 from ..core.result import Result
+from ..error.circuit_breaker import CircuitBreaker, CircuitState
 from .task_queue import TaskQueue, Task, TaskStatus
 from .scheduler import TaskScheduler
 
@@ -73,14 +74,27 @@ class FailureRecord:
     recovery_action: Optional[str] = None
 
 
-@dataclass
 class CircuitBreakerState:
-    """State of a circuit breaker for an agent."""
-    agent_id: str
-    failure_count: int = 0
-    last_failure_time: float = 0.0
-    state: str = "closed"  # closed, open, half_open
-    next_attempt_time: float = 0.0
+    """Wrapper around shared CircuitBreaker for backwards compatibility."""
+    def __init__(self, agent_id: str, threshold: int = 5, timeout: float = 60.0):
+        self.agent_id = agent_id
+        self._cb = CircuitBreaker(failure_threshold=threshold, reset_timeout=timeout)
+
+    @property
+    def failure_count(self):
+        return self._cb.failure_count
+
+    @property
+    def last_failure_time(self):
+        return self._cb.last_failure_time
+
+    @property
+    def state(self):
+        return self._cb.state.value.lower()
+
+    @property
+    def next_attempt_time(self):
+        return self._cb.last_failure_time + self._cb.reset_timeout
 
 
 class FaultTolerantExecutor:
@@ -469,39 +483,23 @@ class FaultTolerantExecutor:
     
     def _update_circuit_breaker(self, agent_id: str):
         """Update circuit breaker state for an agent."""
-        
+
         with self._lock:
             if agent_id not in self.agent_circuit_breakers:
-                self.agent_circuit_breakers[agent_id] = CircuitBreakerState(agent_id=agent_id)
-            
-            cb_state = self.agent_circuit_breakers[agent_id]
-            current_time = time.time()
-            
-            if cb_state.state == "closed":
-                cb_state.failure_count += 1
-                cb_state.last_failure_time = current_time
-                
-                # Open circuit if threshold reached
-                if cb_state.failure_count >= self.policy.circuit_breaker_threshold:
-                    cb_state.state = "open"
-                    cb_state.next_attempt_time = current_time + self.policy.circuit_breaker_timeout
-            
-            elif cb_state.state == "half_open":
-                # Failure in half-open state reopens the circuit
-                cb_state.state = "open"
-                cb_state.failure_count += 1
-                cb_state.last_failure_time = current_time
-                cb_state.next_attempt_time = current_time + self.policy.circuit_breaker_timeout
+                self.agent_circuit_breakers[agent_id] = CircuitBreakerState(
+                    agent_id=agent_id,
+                    threshold=self.policy.circuit_breaker_threshold,
+                    timeout=self.policy.circuit_breaker_timeout,
+                )
+
+            self.agent_circuit_breakers[agent_id]._cb.record_failure()
     
     def reset_circuit_breaker(self, agent_id: str) -> Result[None, str]:
         """Manually reset a circuit breaker for an agent."""
-        
+
         with self._lock:
             if agent_id in self.agent_circuit_breakers:
-                cb_state = self.agent_circuit_breakers[agent_id]
-                cb_state.state = "closed"
-                cb_state.failure_count = 0
-                cb_state.next_attempt_time = 0.0
+                self.agent_circuit_breakers[agent_id]._cb.reset()
                 return Result.ok(None)
             else:
                 return Result.err(f"No circuit breaker found for agent {agent_id}")

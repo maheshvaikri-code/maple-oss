@@ -138,7 +138,7 @@ def demo_unique_features():
             manager.release(allocation)
             print("[PASS] Resources released automatically")
         
-        print("[RESULT] NO OTHER PROTOCOL HAS THIS!")
+        print("[RESULT] Built into MAPLE's protocol layer")
         
         # Link Identification Mechanism (UNIQUE to MAPLE)
         print("\n[SECURE] 2. Link Identification Mechanism (ONLY in MAPLE)")
@@ -161,7 +161,7 @@ def demo_unique_features():
             link_manager.terminate_link(link.link_id)
             print("[PASS] Link terminated securely")
         
-        print("[RESULT] NO OTHER PROTOCOL HAS AGENT-LEVEL SECURITY!")
+        print("[RESULT] Built-in agent-level security")
         
         # Performance comparison
         print("\n[FAST] 3. Performance Superiority")
@@ -222,7 +222,7 @@ def main():
     print_header()
     
     print("\n[STAR] Welcome to MAPLE Quick Demo!")
-    print("In just 2 minutes, you'll see why MAPLE is revolutionary!")
+    print("In just 2 minutes, you'll see MAPLE's key features!")
     
     # Run demo sections
     demos = [

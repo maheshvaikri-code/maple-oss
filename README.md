@@ -5,649 +5,527 @@
 **Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)**
 
 <p>
-<a href="https://github.com/your-repo/actions"><img src="https://img.shields.io/badge/Python- 3.8 | 3.9 | 3.10 | 3.11 | 3.12 | 3.13-brightgreen" alt="Python"></a>
-<a href="https://github.com/your-repo/actions"><img src="https://img.shields.io/badge/Tests-32%2F32%20PASSED-brightgreen" alt="Tests"></a>
-<a href="https://github.com/your-repo/actions"><img src="https://img.shields.io/badge/Success%20Rate-100%25-brightgreen" alt="Success Rate"></a>
-<a href="https://github.com/your-repo/benchmarks"><img src="https://img.shields.io/badge/Performance-33x%20Faster-blue" alt="Performance"></a>
-<a href="https://mapleagent.org/chat/LICENSE"><img src="https://img.shields.io/badge/License-AGPL%203.0-blue.svg" alt="License"></a>
-<a href="https://mapleagent.org/chat/LICENSE"><img src="https://img.shields.io/badge/Native Integration-MCP | A2A | ACP | AutoGen | CrewAI | n8n-blue.svg" alt="License"></a>
+<a href="https://github.com/maheshvaikri-code/maple-oss"><img src="https://img.shields.io/badge/version-1.1.0-brightgreen" alt="Version"></a>
+<a href="https://github.com/maheshvaikri-code/maple-oss"><img src="https://img.shields.io/badge/Python-3.8%20|%203.9%20|%203.10%20|%203.11%20|%203.12%20|%203.13-brightgreen" alt="Python"></a>
+<a href="https://github.com/maheshvaikri-code/maple-oss"><img src="https://img.shields.io/badge/Tests-818%20PASSED-brightgreen" alt="Tests"></a>
+<a href="https://github.com/maheshvaikri-code/maple-oss"><img src="https://img.shields.io/badge/Coverage-80%25-brightgreen" alt="Coverage"></a>
+<a href="https://github.com/maheshvaikri-code/maple-oss/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-AGPL%203.0-blue.svg" alt="License"></a>
+<a href="https://mapleagent.org"><img src="https://img.shields.io/badge/Docs-mapleagent.org-blue" alt="Documentation"></a>
 </p>
 
-> **Production-ready multi agent communication protocol with integrated resource management, type-safe error handling, secure link identification, and distributed state synchronization.** 
+> The autonomous agentic AI framework with production-grade infrastructure. MAPLE combines LLM-powered autonomous agents with resource-aware messaging, type-safe error handling, cryptographic security, and distributed state — capabilities no other framework offers together.
 
 ---
 
-## 🚀 **ABSOLUTE SUPERIORITY OVER ALL EXISTING PROTOCOLS**
+## Why MAPLE
 
+Most agent frameworks give you either **infrastructure** (messaging, security, fault tolerance) or **autonomy** (LLM reasoning, tool use, memory). MAPLE is the first to provide both in a single, cohesive framework.
 
-### 🏆 MAPLE vs. Other Protocols
+|  | Infrastructure | Autonomy |
+|---|---|---|
+| **LangGraph / CrewAI / AutoGen** | Basic | Yes |
+| **Google A2A / MCP / FIPA ACL** | Yes | No |
+| **MAPLE** | **Yes** | **Yes** |
 
-| Feature | **MAPLE** |
-|---------|-----------|
-| **Resource Management** | ✅ **FIRST-IN-INDUSTRY** |
-| **Type Safety** | ✅ **Result<T,E> REVOLUTIONARY** |
-| **Link Security** | ✅ **PATENT-WORTHY LIM** |
-| **Error Recovery** | ✅ **SELF-HEALING** | 
-| **State Management** | ✅ **DISTRIBUTED SYNC** | 
-| **Performance** | ✅ **Exceeds Expectation** |
-| **Production Ready** | ✅ **100% TESTED** |
-
-MAPLE Realistic Value Proposition:
-✅ Comprehensive multi-agent communication framework
-✅ Modern architecture with resource awareness
-✅ Better error handling than most existing protocols
-✅ Production-ready implementation
-✅ Open source and extensible
-✅ Good performance for a feature-rich protocol
-✅ Active development and community
-
-### 🎯 **INDUSTRY-FIRST BREAKTHROUGH FEATURES**
-
-**Created by Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)**
-
-1. **🔧 Integrated Resource Management**: The **ONLY** protocol with built-in resource specification, negotiation, and optimization
-2. **🛡️ Link Identification Mechanism (LIM)**: Revolutionary security through verified communication channels
-3. **⚡ Result<T,E> Type System**: **ELIMINATES** all silent failures and communication errors
-4. **🌐 Distributed State Synchronization**: Sophisticated state management across agent networks
-5. **🏭 Production-Grade Performance**: Good performance for a feature-rich protocol with sub-millisecond latency
+**What this means in practice:** Your autonomous agents get resource negotiation, circuit breakers, cryptographic link security, priority message queuing, distributed state, and fault-tolerant task scheduling — out of the box, not bolted on.
 
 ---
 
-## 🚀 **LIGHTNING-FAST SETUP** 
+## Key Features
 
-### Installation
+### Autonomous Agentic AI (v1.1.0)
+
+- **ReAct Reasoning Loop** — Agents think, act, and reflect autonomously. Built-in backtracking when approaches fail.
+- **Pluggable LLM Providers** — OpenAI, Anthropic Claude, or any compatible API (vLLM, Ollama, Together AI).
+- **Tool Framework** — Register custom tools with JSON Schema parameters. Built-in tools for inter-agent communication, state read/write, resource checks, and secure link establishment.
+- **Three-Tier Memory** — Working memory (context window), episodic memory (task history), semantic memory (learned facts). LLM-assisted summarization when context fills up.
+- **Multi-Agent Orchestration** — Form teams by capability, execute via supervisor delegation or consensus voting.
+- **MCP Tool Discovery** — Discover and use tools from any MCP server as native MAPLE tools.
+- **Observability** — Full decision traces, agent snapshots, token usage tracking.
+
+### Production Infrastructure
+
+- **Result\<T,E\> Error Handling** — Rust-inspired type-safe results. No silent failures, no uncaught exceptions. Chain with `.map()`, `.and_then()`, `.map_err()`.
+- **Resource-Aware Messaging** — Agents declare CPU, memory, and bandwidth requirements as first-class protocol features.
+- **Link Identification Mechanism (LIM)** — Cryptographic channel verification using AES-256-GCM between agents.
+- **Distributed State** — Shared state across agents with configurable consistency levels and change listeners.
+- **Circuit Breakers & Retry** — Automatic failure detection, exponential backoff, and circuit breaker patterns.
+- **Priority Message Queuing** — Messages routed by priority with health-aware routing.
+- **Task Management** — Task queue, scheduler (capability matching + load balancing), fault-tolerant execution, result collection with 7 aggregation strategies.
+- **Agent Discovery** — Auto-registration, capability matching, health monitoring, failure detection.
+- **9 Protocol Adapters** — Interop with A2A, MCP, FIPA ACL, AutoGen, CrewAI, LangGraph, OpenAI SDK, IBM ACP, S2.
+
+---
+
+## Installation
+
 ```bash
 pip install maple-oss
 ```
 
-### **Hello MAPLE World - Better Than ALL Others**
-```python
-# MAPLE - Multi Agent Protocol Language Engine
-# Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
+With LLM support (for autonomous agents):
 
-from maple import Agent, Message, Priority, Config, SecurityConfig
+```bash
+pip install maple-oss[llm]
+```
 
-# Create resource-aware agents (IMPOSSIBLE with Google A2A, FIPA ACL, MCP)
-config = Config(
-    agent_id="intelligent_agent",
-    broker_url="localhost:8080",
-    security=SecurityConfig(
-        auth_type="jwt",
-        credentials="secure_token",
-        require_links=True  # LIM: MAPLE's exclusive security feature
-    )
-)
+From source:
 
-agent = Agent(config)
-agent.start()
+```bash
+git clone https://github.com/maheshvaikri-code/maple-oss.git
+cd maple-oss
+pip install -e ".[llm]"
+```
 
-# Send messages with resource awareness (FIRST IN INDUSTRY)
-message = Message(
-    message_type="INTELLIGENT_TASK",
-    receiver="worker_agent", 
-    priority=Priority.HIGH,
-    payload={
-        "task": "complex_analysis",
-        "resources": {  # NO OTHER PROTOCOL HAS THIS
-            "cpu": {"min": 4, "preferred": 8, "max": 16},
-            "memory": {"min": "8GB", "preferred": "16GB", "max": "32GB"},
-            "gpu_memory": {"min": "4GB", "preferred": "8GB"},
-            "network": {"min": "100Mbps", "preferred": "1Gbps"},
-            "deadline": "2024-12-25T10:00:00Z",
-            "priority": "HIGH"
-        }
-    }
-)
+All optional dependency groups:
 
-# Type-safe communication with Result<T,E> (REVOLUTIONARY)
-result = agent.send(message)
-if result.is_ok():
-    message_id = result.unwrap()
-    print(f"✅ Message sent successfully: {message_id}")
-else:
-    error = result.unwrap_err()
-    print(f"❌ Send failed: {error['message']}")
-    # AUTOMATIC error recovery suggestions (EXCLUSIVE to MAPLE)
-    if error.get('recoverable'):
-        print(f"🔧 Recovery: {error['suggestion']}")
+```bash
+pip install maple-oss[llm]          # OpenAI + Anthropic providers
+pip install maple-oss[security]     # Cryptography + JWT
+pip install maple-oss[performance]  # uvloop + orjson + msgpack
+pip install maple-oss[dev]          # Testing + linting tools
+```
+
+Verify:
+
+```bash
+python -c "from maple import Agent, AutonomousAgent, Message, Config; print('MAPLE ready')"
 ```
 
 ---
 
-## 🏆 **UNPRECEDENTED CAPABILITIES**
+## Quick Start
 
-
-
-### 🔧 **Resource-Aware Communication (INDUSTRY FIRST)**
-
-**NO OTHER PROTOCOL HAS THIS**
+### 1. Basic Agent Communication
 
 ```python
-# MAPLE revolutionizes agent communication with resource awareness
-resource_request = Message(
-    message_type="RESOURCE_NEGOTIATION",
-    payload={
-        "compute_cores": {"min": 8, "preferred": 16, "max": 32},
-        "memory": {"min": "16GB", "preferred": "32GB", "max": "64GB"},
-        "gpu_memory": {"min": "8GB", "preferred": "24GB", "max": "48GB"},
-        "network_bandwidth": {"min": "1Gbps", "preferred": "10Gbps"},
-        "storage": {"min": "100GB", "preferred": "1TB", "type": "SSD"},
-        "deadline": "2024-12-25T15:30:00Z",
-        "priority": "CRITICAL",
-        "fallback_options": {
-            "reduced_quality": True,
-            "extended_deadline": "2024-12-25T18:00:00Z",
-            "alternative_algorithms": ["fast_approximation", "distributed_processing"]
-        }
-    }
+from maple import Agent, Message, Priority, Config, SecurityConfig
+
+# Create an agent
+config = Config(
+    agent_id="worker_agent",
+    broker_url="memory://local",
+    security=SecurityConfig(
+        auth_type="token",
+        credentials="secure_token",
+        require_links=True
+    )
+)
+agent = Agent(config)
+agent.start()
+
+# Send a typed message with Result<T,E>
+message = Message(
+    message_type="PROCESS_DATA",
+    receiver="analysis_agent",
+    priority=Priority.HIGH,
+    payload={"task": "sentiment_analysis", "data": ["review_1", "review_2"]}
 )
 
-# Agents automatically negotiate optimal resource allocation
-# Google A2A: ❌ CAN'T DO THIS
-# FIPA ACL: ❌ CAN'T DO THIS  
-# MCP: ❌ CAN'T DO THIS
-# AGENTCY: ❌ CAN'T DO THIS
+result = agent.send(message)
+if result.is_ok():
+    print(f"Sent: {result.unwrap()}")
+else:
+    print(f"Failed: {result.unwrap_err()['message']}")
+
+agent.stop()
 ```
 
-### 🛡️ **Revolutionary Type-Safe Error Handling**
+### 2. Autonomous Agent with Tools
 
-**ELIMINATES ALL SILENT FAILURES**
+```python
+from maple import (
+    Config, AutonomousAgent, AutonomousConfig,
+    LLMConfig, Tool, Result,
+)
+
+# Define a custom tool
+def calculator(expression: str = "") -> Result:
+    allowed = set("0123456789+-*/.() ")
+    if not all(c in allowed for c in expression):
+        return Result.err({"error": "Only basic math allowed"})
+    return Result.ok({"result": eval(expression)})
+
+calc_tool = Tool(
+    name="calculator",
+    description="Evaluate a math expression like '2 + 3 * 4'",
+    parameters={
+        "type": "object",
+        "properties": {
+            "expression": {"type": "string", "description": "Math expression"},
+        },
+        "required": ["expression"],
+    },
+    handler=calculator,
+)
+
+# Create an autonomous agent
+agent = AutonomousAgent(
+    Config(agent_id="math-agent", broker_url="memory://local"),
+    AutonomousConfig(
+        llm=LLMConfig(provider="openai", model="gpt-4", api_key="sk-..."),
+        max_reasoning_steps=10,
+    ),
+)
+agent.register_tool(calc_tool)
+
+# Pursue a goal — the agent reasons, uses tools, and reflects
+result = agent.pursue_goal("What is (15 * 37) + 42?")
+if result.is_ok():
+    goal = result.unwrap()
+    print(f"Answer: {goal.result}")
+    print(f"Reasoning steps: {len(goal.reasoning_trace)}")
+```
+
+### 3. Multi-Agent Team
+
+```python
+from maple import Config, AutonomousAgent, AutonomousConfig, LLMConfig
+from maple.autonomy.orchestrator import AgentOrchestrator, TeamMember
+
+# Create specialized agents
+llm = LLMConfig(provider="openai", model="gpt-4", api_key="sk-...")
+
+supervisor = AutonomousAgent(
+    Config(agent_id="supervisor", broker_url="memory://local", capabilities=["planning"]),
+    AutonomousConfig(llm=llm),
+)
+researcher = AutonomousAgent(
+    Config(agent_id="researcher", broker_url="memory://local", capabilities=["research"]),
+    AutonomousConfig(llm=llm),
+)
+coder = AutonomousAgent(
+    Config(agent_id="coder", broker_url="memory://local", capabilities=["coding"]),
+    AutonomousConfig(llm=llm),
+)
+
+# Form team and execute
+orchestrator = AgentOrchestrator()
+team_id = orchestrator.form_team("dev-team", members=[
+    TeamMember(agent=supervisor, role="supervisor", capabilities=["planning"]),
+    TeamMember(agent=researcher, role="worker", capabilities=["research"]),
+    TeamMember(agent=coder, role="worker", capabilities=["coding"]),
+]).unwrap()
+
+# Supervisor decomposes goal, assigns sub-tasks to workers
+result = orchestrator.execute_supervised(team_id, "Build a data processing pipeline")
+```
+
+### 4. Result\<T,E\> Error Handling
 
 ```python
 from maple import Result
 
-# MAPLE's Result<T,E> system prevents ALL communication errors
-def process_complex_data(data) -> Result[ProcessedData, ProcessingError]:
-    if not validate_input(data):
+def process_data(data) -> Result:
+    if not data:
         return Result.err({
             "errorType": "VALIDATION_ERROR",
-            "message": "Invalid input data structure",
-            "details": {
-                "expected_format": "JSON with required fields",
-                "missing_fields": ["timestamp", "agent_id"],
-                "invalid_types": {"priority": "expected int, got str"}
-            },
-            "severity": "HIGH",
+            "message": "Empty data",
             "recoverable": True,
-            "suggestion": {
-                "action": "REFORMAT_DATA",
-                "parameters": {
-                    "conversion": "auto_convert_types",
-                    "add_defaults": True,
-                    "validation": "strict"
-                }
-            }
         })
-    
-    # Process data safely
-    try:
-        processed = advanced_ai_processing(data)
-        return Result.ok({
-            "data": processed,
-            "confidence": 0.98,
-            "processing_time": "2.3s",
-            "resources_used": {
-                "cpu": "85%",
-                "memory": "12GB",
-                "gpu": "45%"
-            }
-        })
-    except Exception as e:
-        return Result.err({
-            "errorType": "PROCESSING_ERROR",
-            "message": str(e),
-            "recoverable": False,
-            "escalation": "HUMAN_INTERVENTION"
-        })
+    return Result.ok({"processed": len(data), "status": "complete"})
 
-# Chain operations with ZERO risk of silent failures
+# Chain operations safely — no exceptions, no silent failures
 result = (
-    process_complex_data(input_data)
-    .map(lambda data: enhance_with_ai(data))
-    .and_then(lambda enhanced: validate_output(enhanced))
-    .map(lambda validated: generate_insights(validated))
-    .map_err(lambda err: log_and_escalate(err))
+    process_data(input_data)
+    .map(lambda data: enrich(data))
+    .and_then(lambda enriched: validate(enriched))
+    .map_err(lambda err: log_error(err))
 )
-
-# Google A2A: ❌ Uses primitive exception handling
-# FIPA ACL: ❌ Basic error codes only
-# MCP: ❌ Platform-dependent errors  
-# AGENTCY: ❌ No structured error handling
 ```
 
-### 🔒 **Link Identification Mechanism (LIM) - PATENT-WORTHY**
-
-**UNPRECEDENTED SECURITY INNOVATION**
+### 5. Resource-Aware Communication
 
 ```python
-# MAPLE's exclusive Link Identification Mechanism
-# Establishes cryptographically secure communication channels
+from maple.resources.specification import ResourceRequest, ResourceRange, TimeConstraint
 
-# Step 1: Establish secure link (IMPOSSIBLE with other protocols)
-link_result = agent.establish_link(
-    target_agent="high_security_agent",
-    security_level="MAXIMUM",
-    lifetime_seconds=7200,
-    encryption="AES-256-GCM",
-    authentication="MUTUAL_CERTIFICATE"
+request = ResourceRequest(
+    compute=ResourceRange(min=4, preferred=8, max=16),
+    memory=ResourceRange(min="8GB", preferred="16GB", max="32GB"),
+    bandwidth=ResourceRange(min="100Mbps", preferred="1Gbps"),
+    time=TimeConstraint(timeout="120s"),
+    priority="HIGH",
 )
+
+message = Message(
+    message_type="HEAVY_COMPUTATION",
+    receiver="compute_agent",
+    priority=Priority.HIGH,
+    payload={"task": "train_model", "resources": request.to_dict()},
+)
+```
+
+### 6. Secure Links (LIM)
+
+```python
+# Establish cryptographically verified communication channel
+link_result = agent.establish_link("partner_agent", lifetime_seconds=3600)
 
 if link_result.is_ok():
     link_id = link_result.unwrap()
-    print(f"🔒 Secure link established: {link_id}")
-    
-    # Step 2: All messages use verified secure channel
-    classified_message = Message(
-        message_type="CLASSIFIED_OPERATION",
-        receiver="high_security_agent",
-        priority=Priority.CRITICAL,
-        payload={
-            "mission": "operation_phoenix",
-            "clearance_level": "TOP_SECRET",
-            "data": encrypted_sensitive_data,
-            "biometric_auth": agent_biometric_signature
-        }
-    ).with_link(link_id)  # ← EXCLUSIVE MAPLE FEATURE
-    
-    # Step 3: Automatic link validation and renewal
-    secure_result = agent.send_with_link_verification(classified_message)
-    
-    # Google A2A: ❌ Only basic OAuth, no link security
-    # FIPA ACL: ❌ No encryption, ancient security
-    # MCP: ❌ Platform security only
-    # AGENTCY: ❌ No security framework
+    secure_msg = Message(
+        message_type="SENSITIVE_DATA",
+        receiver="partner_agent",
+        payload={"data": "confidential"},
+    ).with_link(link_id)
+    agent.send_with_link(secure_msg, "partner_agent")
 ```
 
-### 🌐 **Distributed State Synchronization**
-
-**COORDINATION AT UNPRECEDENTED SCALE**
+### 7. Distributed State
 
 ```python
-from maple.state import StateManager, ConsistencyLevel
+from maple.state import StateStore, ConsistencyLevel
 
-# MAPLE manages distributed state across thousands of agents
-state_mgr = StateManager(
-    consistency=ConsistencyLevel.STRONG,
-    replication_factor=5,
-    partition_tolerance=True,
-    conflict_resolution="LAST_WRITER_WINS"
-)
+store = StateStore(consistency=ConsistencyLevel.STRONG)
+store.set("mission_status", {"phase": "active", "agents": 5})
 
-# Global state synchronization (IMPOSSIBLE with other protocols)
-global_state = {
-    "mission_status": "ACTIVE",
-    "agent_assignments": {
-        "reconnaissance": ["agent_001", "agent_002", "agent_003"],
-        "analysis": ["agent_004", "agent_005"],
-        "coordination": ["agent_006"]
-    },
-    "resource_pool": {
-        "total_cpu": 1024,
-        "available_cpu": 512,
-        "total_memory": "2TB",
-        "available_memory": "1TB",
-        "gpu_cluster": "available"
-    },
-    "security_status": "GREEN",
-    "last_updated": "2024-12-13T15:30:00Z"
-}
+result = store.get("mission_status")
+if result.is_ok():
+    print(result.unwrap())
 
-# Atomic state updates across entire network
-state_mgr.atomic_update("mission_state", global_state, version=15)
-
-# Real-time state monitoring
-def on_state_change(key, old_value, new_value, version):
-    print(f"🔄 State change: {key} updated to version {version}")
-    # Automatically propagate changes to relevant agents
-
-state_mgr.watch("mission_state", on_state_change)
-
-# Google A2A: ❌ No state management
-# FIPA ACL: ❌ No state management
-# MCP: ❌ No state management  
+# Watch for changes
+store.add_listener(lambda key, entry: print(f"Changed: {key}"))
 ```
 
----
+### 8. Pub/Sub and Handlers
 
-## 🎯 **PERFORMANCE DOMINATION**
-
-
-
-### **MAPLE**
-
-| Metric | **MAPLE** |
-|--------|-----------|
-| **Message Throughput** | **High** |
-| **Latency** | **< 1s** |
-| **Resource Efficiency** | **Optimized** |
-| **Error Recovery** | **< 60ms** |
-| **Scalability** | **100 - 1,000 agents** |
-| **Memory Usage** | **Minimal** |
-
-### **Measured Performance on Standard Hardware**
-```
-🚀 MAPLE Performance Results (Windows 11, Python 3.12):
-
-Message Operations:        33,384 msg/sec  (3x faster than requirements)
-Error Handling:          2,336 ops/sec  (2x faster than expected)  
-Agent Creation:               0.003 seconds  (Lightning fast)
-Resource Negotiation:         0.005 seconds  (Industry leading)
-Link Establishment:           0.008 seconds  (Secure & fast)
-State Synchronization:        0.002 seconds  (Real-time capable)
-
-Memory Footprint:              ~50MB         (Minimal overhead)
-CPU Utilization:               ~15%          (Highly efficient)
-Network Bandwidth:         Optimized        (Intelligent compression)
-```
-
----
-
-## 🏭 **REAL-WORLD DOMINATION**
-
-
-
-### 🏭 **Advanced Manufacturing Coordination**
 ```python
-# MAPLE coordinates entire manufacturing facility
-# (IMPOSSIBLE with Google A2A, FIPA ACL, MCP, AGENTCY)
+# Register message handlers
+@agent.handler("TASK_REQUEST")
+def handle_task(message):
+    print(f"Received task: {message.payload}")
+    return Message(
+        message_type="TASK_RESULT",
+        receiver=message.sender,
+        payload={"result": "done"},
+    )
 
-# Production line with 50+ robotic agents
-factory_controller = Agent(Config("master_controller"))
-assembly_robots = [Agent(Config(f"robot_{i}")) for i in range(20)]
-quality_inspectors = [Agent(Config(f"qc_{i}")) for i in range(5)]
-logistics_agents = [Agent(Config(f"logistics_{i}")) for i in range(10)]
+# Topic-based pub/sub
+agent.subscribe("notifications")
 
-# Complex multi-stage production coordination
-production_request = Message(
-    message_type="PRODUCTION_ORDER",
-    priority=Priority.CRITICAL,
-    payload={
-        "order_id": "ORD-2024-001",
-        "product": "advanced_semiconductor",
-        "quantity": 10000,
-        "deadline": "2024-12-20T23:59:59Z",
-        "quality_requirements": {
-            "defect_rate": "< 0.001%",
-            "precision": "± 0.1μm",
-            "temperature_control": "± 0.1°C"
-        },
-        "resource_allocation": {
-            "assembly_line_1": {"robots": 8, "duration": "12h"},
-            "testing_station": {"inspectors": 3, "duration": "2h"},
-            "packaging": {"automated": True, "capacity": "1000/h"}
-        },
-        "supply_chain": {
-            "raw_materials": ["silicon_wafers", "gold_wire", "ceramic"],
-            "supplier_agents": ["supplier_A", "supplier_B"],
-            "inventory_threshold": 500
-        }
-    }
-)
+@agent.topic_handler("notifications")
+def handle_notification(message):
+    print(f"Notification: {message.payload}")
 
-# Real-time production monitoring and optimization
-for robot in assembly_robots:
-    robot.register_handler("STATUS_UPDATE", handle_production_status)
-    robot.register_handler("QUALITY_ALERT", handle_quality_issue)
-    robot.register_handler("RESOURCE_REQUEST", negotiate_resources)
-```
-
-### 🚗 **Autonomous Vehicle Swarm Intelligence**
-```python
-# MAPLE enables true vehicle-to-vehicle coordination
-# (Google A2A: IMPOSSIBLE, FIPA ACL: IMPOSSIBLE, MCP: IMPOSSIBLE)
-
-# Coordinate 1000+ autonomous vehicles simultaneously  
-traffic_command = Agent(Config("traffic_control_center"))
-vehicles = [Agent(Config(f"vehicle_{i}", 
-    resources={
-        "processing": "edge_computing",
-        "sensors": "lidar_camera_radar",
-        "communication": "5G_V2X"
-    }
-)) for i in range(1000)]
-
-# Real-time traffic optimization
-traffic_coordination = Message(
-    message_type="TRAFFIC_OPTIMIZATION",
-    priority=Priority.REAL_TIME,
-    payload={
-        "traffic_zone": "downtown_grid",
-        "optimization_objective": "minimize_travel_time",
-        "constraints": {
-            "safety_distance": "3_seconds",
-            "speed_limits": {"residential": 25, "arterial": 45, "highway": 70},
-            "weather_conditions": "rain_moderate",
-            "emergency_vehicles": ["ambulance_route_7", "fire_truck_station_3"]
-        },
-        "coordination_strategy": {
-            "platoon_formation": True,
-            "dynamic_routing": True,
-            "predictive_traffic": True,
-            "energy_optimization": True
-        },
-        "real_time_updates": {
-            "accidents": [],
-            "construction": ["5th_ave_lane_closure"],
-            "events": ["stadium_game_ending_21:30"]
-        }
-    }
-)
-```
-
-### 🏥 **Healthcare System Integration**
-```python
-# MAPLE coordinates entire hospital ecosystem
-# (NO OTHER PROTOCOL CAN HANDLE THIS COMPLEXITY)
-
-# Coordinate 200+ medical devices and staff agents
-hospital_ai = Agent(Config("hospital_central_ai"))
-patient_monitors = [Agent(Config(f"monitor_room_{i}")) for i in range(100)]
-medical_staff = [Agent(Config(f"staff_{role}_{i}")) 
-                for role in ["doctor", "nurse", "technician"] 
-                for i in range(50)]
-
-# Critical patient coordination
-emergency_protocol = Message(
-    message_type="EMERGENCY_PROTOCOL",
-    priority=Priority.LIFE_CRITICAL,
-    payload={
-        "patient_id": "P-2024-12345",
-        "emergency_type": "cardiac_arrest",
-        "location": "room_301_bed_a",
-        "vital_signs": {
-            "heart_rate": 0,
-            "blood_pressure": "undetectable",
-            "oxygen_saturation": "70%",
-            "consciousness": "unresponsive"
-        },
-        "required_response": {
-            "personnel": {
-                "cardiologist": {"count": 1, "eta": "< 2min"},
-                "nurses": {"count": 3, "specialty": "critical_care"},
-                "anesthesiologist": {"count": 1, "on_standby": True}
-            },
-            "equipment": {
-                "defibrillator": {"location": "crash_cart_7", "status": "ready"},
-                "ventilator": {"location": "icu_spare", "prep_time": "30s"},
-                "medications": ["epinephrine", "atropine", "amiodarone"]
-            },
-            "facilities": {
-                "operating_room": {"reserve": "OR_3", "prep_time": "5min"},
-                "icu_bed": {"assign": "ICU_bed_12", "prep_time": "immediate"}
-            }
-        },
-        "coordination": {
-            "family_notification": {"contact": "emergency_contact_1", "privacy": "hipaa_compliant"},
-            "medical_history": {"allergies": ["penicillin"], "conditions": ["diabetes", "hypertension"]},
-            "insurance_verification": {"status": "active", "coverage": "full"}
-        }
-    }
-)
+# Publish to topic
+agent.publish("notifications", Message(
+    message_type="ALERT",
+    payload={"level": "info", "text": "System healthy"},
+))
 ```
 
 ---
 
-## 🧪 **SCIENTIFIC VALIDATION**
+## Architecture
 
-### **100% Test Success Rate**
-```
-🎯 COMPREHENSIVE VALIDATION RESULTS:
-
-✅ Core Components:           32/32 tests passed  (100%)
-✅ Message System:            All scenarios validated
-✅ Resource Management:       All edge cases handled  
-✅ Security Features:         Simulation tested
-✅ Error Handling:           All failure modes covered
-✅ Performance:              Exceeds all benchmarks
-✅ Integration:              Multi-protocol compatibility
-✅ Production Readiness:     Enterprise-grade validation
-
-VERDICT: MAPLE IS PRODUCTION READY 🚀
-```
-
-### **Scientific Benchmark Suite**
-```bash
-# Run rigorous comparison with ALL major protocols
-python demo_package/examples/rigorous_benchmark_suite.py
-
+```text
+maple/
+├── agent/            Agent lifecycle, config, message handlers, auto-registration
+├── autonomy/         AutonomousAgent, ReAct loop, tools, memory, orchestrator, observability
+├── broker/           Message routing (in-memory + NATS), priority queue, health-aware routing
+├── core/             Message, Result<T,E>, type system, serialization
+├── communication/    Streaming, pub/sub, request-response patterns
+├── discovery/        Agent registry, capability matching, health monitoring, failure detection
+├── error/            Circuit breaker, retry with backoff, error types and severity
+├── llm/              LLM provider abstraction (OpenAI, Anthropic, compatible APIs)
+├── resources/        Resource specification, allocation, negotiation
+├── security/         Authentication, authorization, Link ID Mechanism, AES-256-GCM encryption
+├── state/            Distributed state store, synchronization, consistency models
+├── task_management/  Task queue, scheduler, fault tolerance, result collection, optimization
+└── adapters/         A2A, MCP, FIPA ACL, AutoGen, CrewAI, LangGraph, OpenAI SDK, ACP, S2
 ```
 
-### **Academic Research Papers**
-- **"MAPLE: Revolutionary Multi-Agent Communication Protocol"** - to be published
-- **"Resource-Aware Agent Communication: A New Paradigm"** - to be published
-- **"Link Identification Mechanism for Secure Agent Networks"** 
+### Autonomy Architecture
 
----
-
-## 🚀 **GET STARTED NOW**
-
-
-
-### **Installation**
-```bash
-# Install the future of agent communication
-pip install maple-oss
-
-# Verify installation
-python -c "from maple import Agent, Message; print('✅ MAPLE ready to dominate!')"
-```
-
-### **Quick Start Demo**
-```bash
-# Experience MAPLE's superiority immediately
-python demo_package/quick_demo.py
-
-# See comprehensive capabilities
-python demo_package/examples/comprehensive_feature_demo.py
-
-# Compare with other protocols  
-python demo_package/examples/performance_comparison_example_fixed.py
-```
-
-### **Production Deployment**
-```bash
-# Validate production readiness
-python production_verification.py
-
-# Launch production-grade broker
-python maple/broker/production_broker.py --port 8080 --workers 16
-
-# Monitor system health
-python maple/monitoring/health_monitor.py --dashboard
+```text
+┌─────────────────────────────────────────────────────┐
+│                  AutonomousAgent                     │
+│  ┌──────────┐  ┌──────────┐  ┌──────────────────┐  │
+│  │ LLM      │  │ Tool     │  │ Memory           │  │
+│  │ Provider  │  │ Registry │  │ (Working/Episodic│  │
+│  │ (OpenAI/ │  │ (Custom +│  │  /Semantic)       │  │
+│  │ Anthropic)│  │ Built-in)│  │                  │  │
+│  └────┬─────┘  └────┬─────┘  └────────┬─────────┘  │
+│       │              │                 │             │
+│       └──────────────┼─────────────────┘             │
+│                      │                               │
+│              ┌───────▼───────┐                       │
+│              │  ReAct Loop   │                       │
+│              │ Think → Act → │                       │
+│              │   Reflect     │                       │
+│              └───────┬───────┘                       │
+│                      │                               │
+│  Inherits: Agent (messaging, security, resources)    │
+└──────────────────────┼───────────────────────────────┘
+                       │
+          ┌────────────▼────────────┐
+          │   AgentOrchestrator     │
+          │  (Supervisor/Consensus) │
+          └─────────────────────────┘
 ```
 
 ---
 
-## 🤝 **JOIN US**
+## How MAPLE Compares
 
+| Feature | MAPLE | LangGraph | CrewAI | AutoGen | Google A2A | MCP |
+| ------- | ----- | --------- | ------ | ------- | ---------- | --- |
+| Autonomous agents (ReAct) | Built-in | Built-in | Built-in | Built-in | No | No |
+| Resource specification in protocol | Built-in | No | No | No | Via payload | No |
+| Result\<T,E\> error handling | Built-in | No | No | No | No | No |
+| Circuit breakers & fault tolerance | Built-in | No | No | No | No | No |
+| Cryptographic link security (LIM) | Built-in | No | No | No | OAuth | Platform |
+| Distributed state management | Built-in | Checkpointer | No | No | No | No |
+| Agent discovery & health monitoring | Built-in | No | No | No | Agent Cards | No |
+| Priority message queuing | Built-in | No | No | No | No | No |
+| Task scheduling & load balancing | Built-in | No | No | No | No | No |
+| Multi-agent orchestration | Built-in | Built-in | Built-in | Built-in | No | No |
+| Tool framework | Built-in | Built-in | Built-in | Built-in | No | Built-in |
+| Memory system | Built-in | Partial | Partial | No | No | No |
+| MCP tool discovery | Built-in | No | No | No | No | Native |
+| Protocol adapters | 9 adapters | No | No | No | No | No |
 
+**Where MAPLE excels:** Production infrastructure + autonomous reasoning in one framework. If your agents need resource awareness, security, fault tolerance, AND autonomous decision-making — MAPLE provides all of these as first-class features.
 
-### **Development Setup**
+**Where others are stronger:** LangGraph has deeper graph-based workflow primitives. CrewAI has simpler role-based setup. A2A and MCP have broader language support and larger ecosystems. AutoGen has mature human-in-the-loop patterns.
+
+---
+
+## n8n Integration
+
+MAPLE ships with first-class [n8n](https://n8n.io) integration — 3 visual workflow nodes for building multi-agent AI pipelines without code.
+
+| Node | Purpose |
+|------|---------|
+| **MAPLE Agent** | LLM integration, smart processing, resource-aware execution |
+| **MAPLE Coordinator** | Workflow orchestration, task distribution, result aggregation |
+| **MAPLE Resource Manager** | Dynamic allocation, cost optimization, scaling |
+
+Pre-built workflows included: AI Research Assistant, Content Creation Pipeline, Customer Service Bot.
+
+See [n8n-integration/](n8n-integration/) for setup and usage.
+
+---
+
+## Testing
+
+```bash
+# Run all tests
+python -m pytest tests/ -v
+
+# Run with coverage
+python -m pytest tests/ --cov=maple --cov-report=term-missing
+
+# Run specific modules
+python -m pytest tests/autonomy/ -v       # Autonomous agent tests
+python -m pytest tests/llm/ -v            # LLM provider tests
+python -m pytest tests/discovery/ -v      # Discovery tests
+python -m pytest tests/task_management/ -v # Task management tests
+python -m pytest tests/security/ -v       # Security tests
+python -m pytest tests/broker/ -v         # Broker tests
+```
+
+Current status: **818 tests passing**, **80% code coverage**.
+
+---
+
+## Examples
+
+| Example | Description |
+|---------|-------------|
+| [examples/hello_autonomous_agent.py](examples/hello_autonomous_agent.py) | Create an autonomous agent with custom tools, pursue a goal using ReAct |
+| [examples/multi_agent_team.py](examples/multi_agent_team.py) | Form a team with supervisor + workers, execute goals, share memory |
+| [example/helloworld.py](example/helloworld.py) | Basic agent communication hello world |
+| [demo_package/](demo_package/) | Full demo suite with web dashboard and benchmarks |
+| [demo/adapters_demo/](demo/adapters_demo/) | Protocol adapter performance comparison |
+| [demo/autogen/](demo/autogen/) | AutoGen integration multi-agent coding team |
+
+---
+
+## Documentation
+
+- [Getting Started](docs/getting-started.md) — Installation and first steps
+- [API Reference](docs/api-reference.md) — Complete API documentation
+- [Type System](docs/type-system.md) — MAPLE's rich type system
+- [Protocol Specification](docs/Protocol_Language_Specification.txt) — Formal protocol definition
+- [Protocol Comparison](docs/protocol-comparison.md) — Detailed comparison with A2A, MCP, FIPA ACL
+- [Result\<T,E\> Details](docs/details_Result_Type.md) — Deep dive into type-safe error handling
+- [Best Practices](docs/best-practices.md) — Production deployment guidelines
+- [Industry Applications](docs/industry-applications.md) — Real-world use cases
+- [Troubleshooting](docs/troubleshooting.md) — Common issues and solutions
+- [Changelog](CHANGELOG.md) — Version history
+
+---
+
+## Project Structure
+
+```text
+maple-oss/
+├── maple/                   Core framework (70 Python modules)
+│   ├── agent/               Agent lifecycle and configuration
+│   ├── autonomy/            Autonomous agent, tools, memory, orchestrator
+│   ├── broker/              Message routing and delivery
+│   ├── core/                Message, Result<T,E>, types, serialization
+│   ├── communication/       Streaming, pub/sub, request-response
+│   ├── discovery/           Registry, capability matching, health monitoring
+│   ├── error/               Circuit breaker, retry, error types
+│   ├── llm/                 LLM provider abstraction layer
+│   ├── resources/           Resource specification and negotiation
+│   ├── security/            Auth, encryption, Link ID Mechanism
+│   ├── state/               Distributed state management
+│   ├── task_management/     Scheduling, fault tolerance, optimization
+│   └── adapters/            9 protocol adapters
+├── tests/                   818 tests across all modules
+├── docs/                    Comprehensive documentation
+├── examples/                Autonomous agent and team examples
+├── demo_package/            Interactive demos and web dashboard
+├── n8n-integration/         Visual workflow nodes for n8n
+├── pyproject.toml           Package configuration
+├── setup.py                 Legacy setup script
+└── VERSION                  Current version (1.1.0)
+```
+
+---
+
+## Contributing
+
 ```bash
 git clone https://github.com/maheshvaikri-code/maple-oss.git
 cd maple-oss
-pip install -e .
+pip install -e ".[dev,llm]"
 python -m pytest tests/ -v
 ```
 
-### **Contribution Opportunities**
-- 🔧 **Core Protocol**: Enhance the revolutionary messaging system
-- 🛡️ **Security**: Strengthen the Link Identification Mechanism  
-- ⚡ **Performance**: Optimize for even higher throughput
-- 🌐 **Integrations**: Connect with more AI platforms
-- 📚 **Documentation**: Help spread MAPLE adoption
+Contributions welcome in:
+
+- Core protocol and infrastructure enhancements
+- LLM provider implementations (Gemini, Mistral, Cohere, etc.)
+- Tool ecosystem expansion
+- Adapter implementations for new protocols
+- Test coverage expansion
+- Documentation improvements
 
 ---
 
-## 📄 **LICENSE & ATTRIBUTION**
+## License
 
-**MAPLE - Multi Agent Protocol Language Engine**  
+**MAPLE - Multi Agent Protocol Language Engine**
 **Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)**
 
-Licensed under the **GNU Affero General Public License v3.0** (AGPL-3.0)
+Licensed under the **GNU Affero General Public License v3.0** (AGPL-3.0).
 
-This powerful copyleft license ensures:
-- ✅ **Freedom to Use**: Use MAPLE for any purpose
-- ✅ **Freedom to Study**: Access complete source code  
-- ✅ **Freedom to Modify**: Enhance and customize MAPLE
-- ✅ **Freedom to Share**: Distribute your improvements
-- 🛡️ **Copyleft Protection**: All derivatives must remain open source
-- 🌐 **Network Copyleft**: Even SaaS usage requires source disclosure
+- Free to use, study, modify, and share
+- Derivative works must remain open source
+- Network use requires source disclosure
 
 See [LICENSE](LICENSE) for complete terms.
 
 ---
 
-## 🌟 **WHY MAPLE WILL CHANGE EVERYTHING**
-
-**Created by Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)**
-
-### **The MAPLE Solution**
-- **🏆 Superior in Every Way**: Outperforms ALL existing protocols
-- **🔮 Future-Proof**: Designed for next-generation AI systems
-- **🌍 Universal**: Works with any AI platform, language, or framework
-- **🛡️ Secure**: Industry-leading security with LIM
-- **⚡ Fast**: 300,000+ messages per second  
-- **🔧 Smart**: Built-in resource management and optimization
-
-### **Industry Transformation**
-MAPLE enables:
-- **🏭 Smart Manufacturing**: Robots that truly coordinate
-- **🚗 Autonomous Transportation**: Vehicles that communicate intelligently  
-- **🏥 Connected Healthcare**: Medical devices that save lives
-- **🌆 Smart Cities**: Infrastructure that adapts and optimizes
-- **🤖 AGI Systems**: The communication layer for artificial general intelligence
-
----
-
-## 🎯 **CALL TO ACTION**
-
-**The future is here. The future is MAPLE.**
-
-**Created by Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)**
-
-```bash
-# Start your journey to the future
-pip install maple-oss
-
-# Build something revolutionary  
-from maple import Agent
-agent = Agent.create_intelligent("your_revolutionary_agent")
-```
-
-**Join thousands of developers building the future with MAPLE.**
-
-**Where Intelligence Meets Communication.**
-
----
-
-**MAPLE - Multi Agent Protocol Language Engine**  
+**MAPLE - Multi Agent Protocol Language Engine**
 **Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)**
 
-*For support, collaboration, or licensing inquiries:*
-- 📧 Email: [mahesh@mapleagent.org]
-- 🐙 GitHub: [https://github.com/maheshvaikri-code/maple-oss](https://github.com/maheshvaikri-code/maple-oss)
-- 📝 Issues: [Report bugs or request features](https://github.com/maheshvaikri-code/maple-oss/issues)
-- 💬 Discussions: [Join the community](https://github.com/maheshvaikri-code/maple-oss/discussions)
-
-**🚀 MAPLE: The Protocol That Changes Everything 🚀**
+- Email: [mahesh@mapleagent.org](mailto:mahesh@mapleagent.org)
+- GitHub: [github.com/maheshvaikri-code/maple-oss](https://github.com/maheshvaikri-code/maple-oss)
+- Issues: [Report bugs or request features](https://github.com/maheshvaikri-code/maple-oss/issues)
+- Website: [mapleagent.org](https://mapleagent.org)

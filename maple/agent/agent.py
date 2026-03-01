@@ -48,10 +48,26 @@ class Agent:
     Base class for MAPLE agents.
     """
 
+    # Shared agent registry singleton
+    _shared_registry = None
+
     def __init__(self, config: Config, broker: Optional[MessageBroker] = None):
         self.config = config
         self.agent_id = config.agent_id
-        self.broker = broker or MessageBroker(config)
+        self.capabilities = getattr(config, 'capabilities', [])
+        self.registry = None
+        self._crypto_manager = None
+
+        # Auto-detect broker type from broker_url
+        if broker:
+            self.broker = broker
+        elif hasattr(config, 'broker_url') and config.broker_url and config.broker_url.startswith("nats://"):
+            from ..broker.production_broker import ProductionBrokerManager, BrokerType
+            result = ProductionBrokerManager.create_broker(config, BrokerType.NATS)
+            self.broker = result.unwrap() if result.is_ok() else MessageBroker(config)
+        else:
+            self.broker = MessageBroker(config)
+
         self.running = False
         self.message_queue = queue.Queue()
         self.handler_thread = None
@@ -60,16 +76,45 @@ class Agent:
         self.stream_handlers = {}
         self.executor = ThreadPoolExecutor(max_workers=10)
 
+        # Agent metrics
+        self.messages_sent = 0
+        self.messages_received = 0
+        self.messages_failed = 0
+
     def start(self) -> None:
         """Start the agent."""
         logger.info(f"Starting agent {self.agent_id}")
         self.running = True
         self.broker.connect()
         self.broker.subscribe(self.agent_id, self._handle_message)
+
+        # Auto-register with AgentRegistry
+        self._auto_register()
+
         self.handler_thread = threading.Thread(target=self._message_handler_loop)
         self.handler_thread.daemon = True
         self.handler_thread.start()
         logger.info(f"Agent {self.agent_id} started")
+
+    def _auto_register(self) -> None:
+        """Auto-register this agent in the global AgentRegistry."""
+        try:
+            from ..discovery.registry import AgentRegistry
+            if Agent._shared_registry is None:
+                Agent._shared_registry = AgentRegistry()
+            self.registry = Agent._shared_registry
+            result = self.registry.register_agent(
+                agent_id=self.agent_id,
+                name=self.agent_id,
+                capabilities=self.capabilities,
+                metadata={'broker_url': self.config.broker_url}
+            )
+            if result.is_ok():
+                logger.info(f"Agent {self.agent_id} auto-registered in AgentRegistry")
+            else:
+                logger.debug(f"Agent {self.agent_id} registration note: {result.unwrap_err()}")
+        except Exception as e:
+            logger.debug(f"Auto-registration skipped: {e}")
 
     def stop(self) -> None:
         """Stop the agent."""
@@ -77,6 +122,12 @@ class Agent:
         self.running = False
         if self.handler_thread:
             self.handler_thread.join(timeout=5.0)
+        # Deregister from AgentRegistry
+        if self.registry:
+            try:
+                self.registry.deregister_agent(self.agent_id)
+            except Exception:
+                pass
         self.broker.disconnect()
         self.executor.shutdown(wait=False)
         logger.info(f"Agent {self.agent_id} stopped")
@@ -89,8 +140,10 @@ class Agent:
 
         try:
             message_id = self.broker.send(message)
+            self.messages_sent += 1
             return Result.ok(message_id)
         except Exception as e:
+            self.messages_failed += 1
             error = {
                 "errorType": "SEND_ERROR",
                 "message": str(e),
@@ -292,7 +345,7 @@ class Agent:
                 receiver=agent_id,
                 priority=Priority.HIGH,
                 payload={
-                    "publicKey": getattr(security_config, "public_key", "demo_key"),
+                    "publicKey": getattr(security_config, "public_key", ""),
                     "nonce": nonce_a,
                     "supportedCiphers": ["AES256-GCM", "ChaCha20-Poly1305"],
                 },
@@ -435,33 +488,64 @@ class Agent:
         # Send the message
         return self.send(linked_message)
 
+    def _get_crypto_manager(self):
+        """Get or create a CryptographyManager for this agent."""
+        if self._crypto_manager is None:
+            try:
+                from ..security.cryptography_impl import CryptographyManager, CRYPTO_AVAILABLE
+                if CRYPTO_AVAILABLE:
+                    self._crypto_manager = CryptographyManager()
+            except (ImportError, Exception):
+                pass
+        return self._crypto_manager
+
     def _verify_nonce(self, encrypted_nonce: str, original_nonce: str) -> bool:
-        """Verify that encrypted nonce matches original."""
-        # Simplified verification for demo purposes
-        # In production, use proper cryptographic verification
+        """Verify that encrypted nonce matches original using real crypto when available."""
+        crypto = self._get_crypto_manager()
+        if crypto is not None:
+            try:
+                security_config = getattr(self.config, 'security', None)
+                if security_config and security_config.private_key:
+                    result = crypto.decrypt_data(encrypted_nonce, security_config.private_key)
+                    if result.is_ok():
+                        return result.unwrap() == original_nonce
+            except Exception:
+                pass
+        # Fallback to base64 for compatibility
         try:
-            # This is a placeholder - implement proper decryption
-            return len(encrypted_nonce) > 0 and len(original_nonce) > 0
+            import base64
+            decoded = base64.b64decode(encrypted_nonce.encode()).decode()
+            return decoded == original_nonce
         except Exception:
             return False
 
     def _encrypt_nonce(self, nonce: str) -> str:
-        """Encrypt a nonce for link establishment."""
-        # Simplified encryption for demo purposes
-        # In production, use proper cryptographic encryption
+        """Encrypt a nonce for link establishment using real crypto when available."""
+        crypto = self._get_crypto_manager()
+        if crypto is not None:
+            try:
+                security_config = getattr(self.config, 'security', None)
+                if security_config and security_config.public_key:
+                    result = crypto.encrypt_data(nonce, security_config.public_key)
+                    if result.is_ok():
+                        return result.unwrap()
+            except Exception:
+                pass
+        # Fallback to base64 for compatibility
         try:
             import base64
-
             return base64.b64encode(nonce.encode()).decode()
         except Exception:
             return nonce
 
     def _verify_link_params(self, encrypted_params: str, params: dict) -> bool:
-        """Verify link parameters."""
-        # Simplified verification for demo purposes
-        # In production, use proper cryptographic verification
+        """Verify link parameters by decrypting and comparing."""
         try:
-            return len(encrypted_params) > 0 and len(params) > 0
+            import base64
+            import json
+            decoded = base64.b64decode(encrypted_params.encode()).decode()
+            decoded_params = json.loads(decoded)
+            return decoded_params == params
         except Exception:
             return False
 
@@ -579,6 +663,7 @@ class Agent:
 
     def _handle_message(self, message: Message) -> None:
         """Handle a message received from the broker."""
+        self.messages_received += 1
         # Put the message in the queue for processing
         self.message_queue.put(message)
 

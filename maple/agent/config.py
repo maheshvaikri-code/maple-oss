@@ -18,7 +18,7 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 # Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
 
 from typing import List, Dict, Any, Optional
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from ..core.types import Priority
 
@@ -71,6 +71,7 @@ class Config:
     """Configuration for an agent."""
     agent_id: str
     broker_url: str
+    capabilities: List[str] = field(default_factory=list)
     security: Optional[SecurityConfig] = None
     performance: Optional[PerformanceConfig] = None
     metrics: Optional[MetricsConfig] = None

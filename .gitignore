@@ -159,6 +159,9 @@ cython_debug/
 #  https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
 .idea/
 
+# Internal docs (not for distribution)
+.docs/
+
 # MAPLE specific ignores
 _development_archive/
 *.log

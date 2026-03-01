@@ -6,6 +6,43 @@
 
 **Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)**
 
+## Version 1.1.0 - Autonomous Agentic AI (March 2026)
+
+### Major Additions
+
+- **LLM Provider Layer**: Pluggable provider system supporting OpenAI, Anthropic, and compatible APIs (vLLM, Ollama, Together)
+- **Autonomous Agent**: ReAct-loop powered `AutonomousAgent` with goal pursuit, multi-step reasoning, reflection, and backtracking
+- **Tool Framework**: Extensible `Tool` and `ToolRegistry` with built-in MAPLE tools (send_message, query_agents, read/write state, check resources, establish links)
+- **Memory System**: Three-tier memory — `WorkingMemory` (context window), `EpisodicMemory` (task history), `SemanticMemory` (learned facts) — backed by existing `StateStore`
+- **Multi-Agent Orchestrator**: `AgentOrchestrator` with supervisor and consensus execution patterns, capability-based team formation
+- **MCP Tool Discovery**: Discover and register external MCP server tools as native MAPLE tools via `MCPAdapter`
+- **Observability**: `DecisionLogger` and `AgentSnapshot` for full decision tracing and agent state inspection
+
+### Infrastructure Improvements
+
+- **Broker Wiring**: NATS broker auto-detection from `broker_url`, `ProductionBrokerManager` integration
+- **Authorization Enforcement**: `AuthorizationManager` auto-initialized in `MessageBroker` when security config present
+- **Message Queue & Router**: `MessageQueue` (priority ordering) and `MessageRouter` integrated into broker delivery loop
+- **Agent Auto-Registration**: Agents auto-register/deregister in `AgentRegistry` on start/stop
+- **Cryptographic Handshake**: Agent handshake uses real `CryptographyManager` (AES-256-GCM) with graceful fallback
+- **Circuit Breaker Consolidation**: `TaskScheduler` and `FailureDetector` now use shared `error.circuit_breaker.CircuitBreaker`
+- **Agent Metrics**: Built-in counters for messages sent/received/failed, handler errors, processing time
+
+### Testing & Quality
+
+- **818 tests passing**, 0 failures
+- **80% code coverage** across all modules
+- New test suites: LLM providers, autonomous agent, tools, memory, orchestrator, observability, performance optimizer, scheduler, result collector, security init
+
+### New Dependencies (optional)
+
+```toml
+[project.optional-dependencies]
+llm = ["openai>=1.0.0", "anthropic>=0.20.0"]
+```
+
+---
+
 ## Version 1.0.0 - Initial Release (December 2024)
 
 ### Major Changes

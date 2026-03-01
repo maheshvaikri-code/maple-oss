@@ -19,7 +19,7 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 MAPLE External Demo Package
 Creator: Mahesh Vaikri
 
-A comprehensive demonstration package showcasing MAPLE's revolutionary 
+A comprehensive demonstration package showcasing MAPLE's notable
 multi-agent communication capabilities and advantages over existing protocols.
 
 This demo package includes:
@@ -98,9 +98,9 @@ class Scenario1_ResourceManagement:
         
     def run(self):
         """Run the resource management demonstration."""
-        self.demo.print_section("Scenario 1: Revolutionary Resource Management")
+        self.demo.print_section("Scenario 1: Built-in Resource Management")
         self.demo.print_info("Demonstrating MAPLE's UNIQUE resource-aware communication")
-        self.demo.print_info("[STATS] NO OTHER PROTOCOL HAS THIS CAPABILITY!")
+        self.demo.print_info("[STATS] Built into MAPLE's protocol layer")
         
         print("\n🎬 Setting up AI trading system with resource constraints...")
         
@@ -273,9 +273,9 @@ class Scenario2_SecureLinkDemo:
         
     def run(self):
         """Run the secure link demonstration."""
-        self.demo.print_section("Scenario 2: Revolutionary Link Identification Mechanism")
+        self.demo.print_section("Scenario 2: Link Identification Mechanism")
         self.demo.print_info("Demonstrating MAPLE's UNIQUE secure agent-to-agent channels")
-        self.demo.print_info("[SECURE] NO OTHER PROTOCOL HAS LINK-LEVEL SECURITY!")
+        self.demo.print_info("[SECURE] Built-in link-level security")
         
         try:
             from maple import (
@@ -1270,8 +1270,8 @@ def main():
     )
     
     print("\n[STAR] Welcome to the MAPLE Demonstration!")
-    print("This interactive demo showcases revolutionary capabilities that")
-    print("NO OTHER agent communication protocol can provide.")
+    print("This interactive demo showcases key capabilities")
+    print("built into MAPLE's protocol layer.")
     print("\nFeatures you'll see:")
     print("  [TARGET] Resource-aware communication (UNIQUE to MAPLE)")
     print("  [SECURE] Link Identification Mechanism (UNIQUE to MAPLE)")
@@ -1319,7 +1319,7 @@ def main():
             "demo_duration_seconds": time.time() - demo.start_time,
             "results": demo.demo_results,
             "creator": "Mahesh Vaikri",
-            "protocol": "MAPLE v1.0.0"
+            "protocol": "MAPLE v1.1.0"
         }
         
         with open("maple_demo_results.json", "w") as f:

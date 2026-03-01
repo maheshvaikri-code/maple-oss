@@ -157,6 +157,46 @@ class CircuitBreaker(Generic[T, E]):
         """Check if the circuit is half-open."""
         return self.state == CircuitState.HALF_OPEN
     
+    def record_failure(self) -> None:
+        """Record a failure without executing a function."""
+        with self._lock:
+            self.failure_count += 1
+            self.last_failure_time = time.time()
+            if self.state == CircuitState.CLOSED and self.failure_count >= self.failure_threshold:
+                logger.warning(f"Failure threshold reached ({self.failure_count}), opening circuit")
+                self.state = CircuitState.OPEN
+            elif self.state == CircuitState.HALF_OPEN:
+                logger.info("Failure in half-open state, reopening circuit")
+                self.state = CircuitState.OPEN
+
+    def record_success(self) -> None:
+        """Record a success without executing a function."""
+        with self._lock:
+            if self.state == CircuitState.HALF_OPEN:
+                logger.info("Service recovered, closing circuit")
+                self.state = CircuitState.CLOSED
+                self.failure_count = 0
+            elif self.state == CircuitState.CLOSED:
+                self.failure_count = 0
+
+    def should_allow(self) -> bool:
+        """Check if a request should be allowed through the circuit breaker."""
+        with self._lock:
+            if self.state == CircuitState.CLOSED:
+                return True
+            elif self.state == CircuitState.OPEN:
+                if time.time() - self.last_failure_time >= self.reset_timeout:
+                    self.state = CircuitState.HALF_OPEN
+                    self.half_open_calls = 1  # This transition counts as the first allowed call
+                    return True
+                return False
+            elif self.state == CircuitState.HALF_OPEN:
+                if self.half_open_calls < self.half_open_max_calls:
+                    self.half_open_calls += 1
+                    return True
+                return False
+            return False
+
     def reset(self) -> None:
         """Reset the circuit breaker to closed state."""
         with self._lock:

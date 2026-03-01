@@ -561,7 +561,7 @@ The diagnostic report includes:
 
 **MAPLE's comprehensive diagnostics and automatic resolution capabilities make troubleshooting faster and more effective than any other agent communication protocol.**
 
-**🚀 MAPLE: The Protocol That Changes Everything 🚀**
+**MAPLE: Multi Agent Protocol Language Engine**
 
 ```
 Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)

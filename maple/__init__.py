@@ -17,12 +17,11 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 MAPLE - Multi Agent Protocol Language Engine
 Created by: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
 
-The most advanced multi-agent communication protocol with:
-- 32/32 Tests Passed (100% Success Rate)
-- 33x Performance Improvement over industry standards
+Multi-agent communication protocol with:
 - Advanced Resource Management
-- Military-grade Security
-- Production Ready Architecture
+- Type-safe Result<T,E> Error Handling
+- Link Identification Security
+- Multi-Agent Communication
 
 Copyright 2024 Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
 Licensed under the AGPL License, Version 3.0
@@ -50,22 +49,25 @@ from .resources.manager import ResourceAllocation, ResourceManager
 from .resources.negotiation import ResourceNegotiator
 from .resources.specification import ResourceRange, ResourceRequest, TimeConstraint
 
-__version__ = "1.0.0"
+# Autonomy layer (LLM + autonomous agents)
+from .autonomy.agent import AutonomousAgent, AutonomousConfig, Goal
+from .autonomy.tools import Tool, ToolRegistry
+from .autonomy.memory import MemoryManager
+from .autonomy.orchestrator import AgentOrchestrator
+from .llm.types import LLMConfig, ChatMessage, ChatRole
+from .llm.registry import LLMProviderRegistry
+
+__version__ = "1.1.0"
 __author__ = "Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)"
-__email__ = "mahesh.vaikri@mapleagent.org"
+__email__ = "mahesh@mapleagent.org"
 __license__ = "AGPL 3.0"
 
-# Performance and success metrics
-__test_success_rate__ = "32/32 (100%)"
-__performance_improvement__ = "33x faster than industry standards"
-__message_throughput__ = "333,384 msg/sec"
-__operation_speed__ = "2,000,336 ops/sec"
-
 # Package metadata
+__status__ = "Active Development"
+
 __title__ = "maple"
 __description__ = "Multi Agent Protocol Language Engine - Advanced Multi-Agent Communication Protocol Framework"
 __url__ = "https://github.com/maheshvaikri-code/maple-oss"
-__status__ = "Production/Stable"
 
 # All public APIs
 __all__ = [
@@ -105,12 +107,22 @@ __all__ = [
     # Communication patterns
     "Stream",
     "StreamOptions",
+    # Autonomy layer
+    "AutonomousAgent",
+    "AutonomousConfig",
+    "Goal",
+    "Tool",
+    "ToolRegistry",
+    "MemoryManager",
+    "AgentOrchestrator",
+    "LLMConfig",
+    "ChatMessage",
+    "ChatRole",
+    "LLMProviderRegistry",
     # Package metadata
     "__version__",
     "__author__",
     "__license__",
-    "__test_success_rate__",
-    "__performance_improvement__",
 ]
 
 
@@ -128,8 +140,6 @@ def validate_installation():
         return {
             "status": "SUCCESS",
             "version": __version__,
-            "test_score": __test_success_rate__,
-            "performance": __performance_improvement__,
             "ready": True,
         }
 
@@ -149,21 +159,12 @@ if __debug__:
 
 # Package banner for CLI tools
 def print_banner():
-    """Print MAPLE banner with key achievements."""
+    """Print MAPLE banner."""
     print(
         f"""
-🍁 MAPLE v{__version__} - Multi Agent Protocol Language Engine
+MAPLE v{__version__} - Multi Agent Protocol Language Engine
 
 Created by: {__author__}
-
-🏆 Perfect Validation: {__test_success_rate__}
-⚡ Performance: {__performance_improvement__}
-📈 Throughput: {__message_throughput__}
-🚀 Operations: {__operation_speed__}
-
-Status: {__status__}
 License: {__license__}
-
-Ready to revolutionize multi-agent communication! 🚀
 """
     )

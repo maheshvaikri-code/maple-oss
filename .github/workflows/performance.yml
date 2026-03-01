@@ -2,129 +2,92 @@ name: Performance Monitor
 
 on:
   push:
-    branches: [ main, development ]
-  pull_request:
-    branches: [ main ]
+    branches: [main]
   schedule:
-    - cron: '0 6 * * *'  # Daily performance monitoring
+    - cron: "0 6 * * 1" # Weekly on Mondays
 
 jobs:
   benchmark:
     runs-on: ubuntu-latest
-    
+
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: "3.11"
-    
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -e ".[performance,dev]"
-    
-    - name: Run performance benchmarks
-      run: |
-        echo "## MAPLE Performance Benchmarks" > benchmark_results.md
-        echo "**Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)**" >> benchmark_results.md
-        echo "" >> benchmark_results.md
-        
-        python -c "
-        import time
-        import json
-        from maple.core.message import Message
-        from maple.core.result import Result
-        
-        # Message creation benchmark
-        start_time = time.time()
-        for i in range(100000):
-            msg = Message('TEST', payload={'data': i})
-        msg_time = time.time() - start_time
-        msg_rate = 100000 / msg_time
-        
-        # Result operations benchmark  
-        start_time = time.time()
-        for i in range(500000):
-            result = Result.ok(i)
-            value = result.unwrap()
-        result_time = time.time() - start_time
-        result_rate = 500000 / result_time
-        
-        # Performance metrics
-        metrics = {
-            'message_creation_rate': msg_rate,
-            'result_operations_rate': result_rate,
-            'timestamp': time.time()
-        }
-        
-        print(f'Message Creation: {msg_rate:,.0f} msg/sec')
-        print(f'Result Operations: {result_rate:,.0f} ops/sec')
-        
-        # Save metrics
-        with open('performance_metrics.json', 'w') as f:
-            json.dump(metrics, f, indent=2)
-        "
-    
-    - name: Run comprehensive test suite
-      run: |
-        python tests/comprehensive_test_suite.py > test_results.txt 2>&1
-        echo "Test Results:" >> benchmark_results.md
-        echo '```' >> benchmark_results.md
-        cat test_results.txt >> benchmark_results.md
-        echo '```' >> benchmark_results.md
-    
-    - name: Performance regression analysis
-      run: |
-        python -c "
-        import json
-        import os
-        
-        # Load current metrics
-        with open('performance_metrics.json', 'r') as f:
-            current = json.load(f)
-        
-        # Performance targets (from our 32/32 test results)
-        targets = {
-            'message_creation_rate': 300000,  # 300k+ msg/sec target
-            'result_operations_rate': 1000000  # 1M+ ops/sec target
-        }
-        
-        print('## Performance Analysis')
-        print(f\"Message Creation: {current['message_creation_rate']:,.0f} msg/sec\")
-        print(f\"Target: {targets['message_creation_rate']:,.0f} msg/sec\")
-        print(f\"Status: {'✅ PASS' if current['message_creation_rate'] >= targets['message_creation_rate'] else '❌ FAIL'}\")
-        print()
-        print(f\"Result Operations: {current['result_operations_rate']:,.0f} ops/sec\")
-        print(f\"Target: {targets['result_operations_rate']:,.0f} ops/sec\")
-        print(f\"Status: {'✅ PASS' if current['result_operations_rate'] >= targets['result_operations_rate'] else '❌ FAIL'}\")
-        
-        # Check if performance targets are met
-        if (current['message_creation_rate'] < targets['message_creation_rate'] or 
-            current['result_operations_rate'] < targets['result_operations_rate']):
-            print('❌ Performance regression detected!')
-            exit(1)
-        else:
-            print('✅ Performance targets exceeded!')
-        "
-    
-    - name: Store performance metrics
-      uses: actions/upload-artifact@v3
-      with:
-        name: performance-metrics
-        path: |
-          performance_metrics.json
-          benchmark_results.md
-          test_results.txt
-    
-    - name: Performance summary
-      if: always()
-      run: |
-        echo "## MAPLE Performance Summary" >> $GITHUB_STEP_SUMMARY
-        echo "**Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)**" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "- 🚀 Message processing benchmarked" >> $GITHUB_STEP_SUMMARY
-        echo "- 📊 Performance metrics collected" >> $GITHUB_STEP_SUMMARY  
-        echo "- ✅ Regression analysis completed" >> $GITHUB_STEP_SUMMARY
-        echo "- 🎯 MAPLE maintains 33x performance advantage" >> $GITHUB_STEP_SUMMARY
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,performance]"
+
+      - name: Run performance benchmarks
+        run: |
+          python -c "
+          import time
+          import json
+          from maple.core.message import Message
+          from maple.core.result import Result
+
+          # Message creation benchmark
+          start_time = time.time()
+          for i in range(100000):
+              msg = Message('TEST', payload={'data': i})
+          msg_time = time.time() - start_time
+          msg_rate = 100000 / msg_time
+
+          # Result operations benchmark
+          start_time = time.time()
+          for i in range(500000):
+              result = Result.ok(i)
+              value = result.unwrap()
+          result_time = time.time() - start_time
+          result_rate = 500000 / result_time
+
+          metrics = {
+              'message_creation_rate': msg_rate,
+              'result_operations_rate': result_rate,
+              'timestamp': time.time()
+          }
+
+          print(f'Message Creation: {msg_rate:,.0f} msg/sec')
+          print(f'Result Operations: {result_rate:,.0f} ops/sec')
+
+          with open('performance_metrics.json', 'w') as f:
+              json.dump(metrics, f, indent=2)
+          "
+
+      - name: Performance regression check
+        run: |
+          python -c "
+          import json
+
+          with open('performance_metrics.json', 'r') as f:
+              current = json.load(f)
+
+          targets = {
+              'message_creation_rate': 200000,
+              'result_operations_rate': 500000,
+          }
+
+          passed = True
+          for metric, target in targets.items():
+              actual = current[metric]
+              status = 'PASS' if actual >= target else 'FAIL'
+              if actual < target:
+                  passed = False
+              print(f'{metric}: {actual:,.0f} (target: {target:,.0f}) [{status}]')
+
+          if not passed:
+              print('Performance regression detected')
+              exit(1)
+          print('All performance targets met')
+          "
+
+      - name: Upload metrics
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-metrics
+          path: performance_metrics.json

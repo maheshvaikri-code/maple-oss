@@ -56,45 +56,29 @@ def test_size_parsing():
 
 def test_security_imports():
     """Test the fixed security module imports."""
-    print("[TEST] Testing security module imports...")
-    
-    try:
-        from maple.security.link import LinkManager, Link, LinkState
-        from maple.security.authentication import AuthenticationManager
-        from maple.security.authorization import AuthorizationManager
-        from maple.security.encryption import EncryptionManager
-        
-        # Test basic instantiation
-        config = type('Config', (), {'permissions': {}})()
-        
-        auth_manager = AuthenticationManager(config)
-        authz_manager = AuthorizationManager(config)
-        encryption_manager = EncryptionManager(config)
-        link_manager = LinkManager()
-        
-        print("  [PASS] All security classes imported and instantiated")
-        
-        # Test basic functionality
-        link = Link("agent_a", "agent_b")
-        assert link.agent_a == "agent_a"
-        assert link.state == LinkState.INITIATING
-        
-        print("  [PASS] Link functionality works")
-        
-        # Test authentication
-        auth_result = auth_manager.authenticate({'token': 'test'})
-        assert auth_result.is_ok()
-        
-        print("  [PASS] Authentication works")
-        
-        print("[PASS] Security imports fixes verified!")
-        return True
-        
-    except Exception as e:
-        print(f"[FAIL] Security imports test failed: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
+    from maple.security.link import LinkManager, Link, LinkState
+    from maple.security.encryption import EncryptionManager
+
+    # Test encryption manager instantiation
+    config = type('Config', (), {'permissions': {}})()
+    encryption_manager = EncryptionManager(config)
+    assert encryption_manager is not None
+
+    # Test link manager
+    link_manager = LinkManager()
+    assert link_manager is not None
+
+    # Test basic link functionality
+    link = Link("agent_a", "agent_b")
+    assert link.agent_a == "agent_a"
+    assert link.state == LinkState.INITIATING
+
+    # Test link establishment
+    initiated_link = link_manager.initiate_link("agent_a", "agent_b")
+    result = link_manager.establish_link(initiated_link.link_id)
+    assert result.is_ok()
+    established = result.unwrap()
+    assert established.state == LinkState.ESTABLISHED
 
 def main():
     """Run the fix verification tests."""

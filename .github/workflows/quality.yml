@@ -2,89 +2,81 @@ name: Code Quality
 
 on:
   push:
-    branches: [ main, development ]
+    branches: [main, development]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
   quality:
     runs-on: ubuntu-latest
-    
+
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: "3.11"
-    
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -e ".[dev]"
-    
-    - name: Code formatting check
-      run: |
-        black --check --diff maple/
-        isort --check-only --diff maple/
-    
-    - name: Lint check
-      run: |
-        flake8 maple/ --max-line-length=88 --extend-ignore=E203,W503
-    
-    - name: Type checking
-      run: |
-        mypy maple/ --ignore-missing-imports
-    
-    - name: Security check
-      run: |
-        bandit -r maple/ -ll
-    
-    - name: Import sorting check  
-      run: |
-        isort --check-only maple/
-    
-    - name: License header check
-      run: |
-        # Check that key files have license headers
-        python -c "
-        import os
-        files_to_check = []
-        for root, dirs, files in os.walk('maple'):
-            for file in files:
-                if file.endswith('.py'):
-                    files_to_check.append(os.path.join(root, file))
-        
-        missing_license = []
-        for file in files_to_check:
-            with open(file, 'r') as f:
-                content = f.read()
-                if 'Mahesh Vaijainthymala Krishnamoorthy' not in content:
-                    missing_license.append(file)
-        
-        if missing_license:
-            print(f'Files missing license header: {missing_license}')
-            exit(1)
-        else:
-            print('All files have proper license headers')
-        "
-    
-    - name: Performance regression check
-      run: |
-        python tests/comprehensive_test_suite.py
-        echo "Performance targets maintained: 32/32 tests pass with 33x improvement"
-    
-    - name: Documentation check
-      run: |
-        # Verify README exists and has key sections
-        python -c "
-        with open('README.md', 'r') as f:
-            content = f.read()
-            required_sections = ['MAPLE', 'Installation', 'Usage', 'Mahesh Vaikri']
-            missing = [s for s in required_sections if s not in content]
-            if missing:
-                print(f'README missing sections: {missing}')
-                exit(1)
-            else:
-                print('README has all required sections')
-        "
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Code formatting check
+        run: |
+          black --check --diff maple/
+
+      - name: Import sorting check
+        run: |
+          isort --check-only --diff maple/
+
+      - name: Lint check
+        run: |
+          flake8 maple/ --max-line-length=88 --extend-ignore=E203,W503
+
+      - name: Type checking
+        run: |
+          mypy maple/ --ignore-missing-imports
+
+      - name: Security check
+        run: |
+          bandit -r maple/ -ll -q
+
+      - name: License header check
+        run: |
+          python -c "
+          import os
+          files_to_check = []
+          for root, dirs, files in os.walk('maple'):
+              for file in files:
+                  if file.endswith('.py'):
+                      files_to_check.append(os.path.join(root, file))
+
+          missing_license = []
+          for file in files_to_check:
+              with open(file, 'r') as f:
+                  content = f.read()
+                  if 'Mahesh Vaijainthymala Krishnamoorthy' not in content:
+                      missing_license.append(file)
+
+          if missing_license:
+              print(f'Files missing license header: {missing_license}')
+              exit(1)
+          else:
+              print(f'All {len(files_to_check)} files have proper license headers')
+          "
+
+      - name: Documentation check
+        run: |
+          python -c "
+          with open('README.md', 'r') as f:
+              content = f.read()
+              required = ['MAPLE', 'Installation', 'Quick Start', 'Mahesh Vaikri', 'AutonomousAgent']
+              missing = [s for s in required if s not in content]
+              if missing:
+                  print(f'README missing sections: {missing}')
+                  exit(1)
+              else:
+                  print('README has all required sections')
+          "

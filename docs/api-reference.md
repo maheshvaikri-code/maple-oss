@@ -2,28 +2,23 @@
 
 **Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)**
 
-Complete API reference for MAPLE (Multi Agent Protocol Language Extensible), the world's most advanced agent communication protocol.
+API reference for MAPLE (Multi Agent Protocol Language Engine).
 
 ## Core Classes
 
 ### Agent Class
 
-The central class for creating and managing intelligent agents with MAPLE's revolutionary capabilities.
+The central class for creating and managing agents.
 
 ```python
 class Agent:
-    """
-    MAPLE Agent with resource awareness, type safety, and security features
-    
-    Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
-    """
-    
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, broker: Optional[MessageBroker] = None):
         """
-        Initialize agent with configuration
-        
+        Initialize agent with configuration.
+
         Args:
             config (Config): Agent configuration including security and resources
+            broker (MessageBroker, optional): Custom broker instance
         """
 ```
 
@@ -32,140 +27,102 @@ class Agent:
 ##### Core Communication
 
 ```python
-async def start(self) -> None:
-    """Start the agent and establish broker connections"""
-    
+def start(self) -> None:
+    """Start the agent and establish broker connections."""
+
+def stop(self) -> None:
+    """Stop the agent and clean up connections."""
+
 def send(self, message: Message) -> Result[str, Dict[str, Any]]:
     """
-    Send message with MAPLE's Result<T,E> error handling
-    
+    Send a message with Result<T,E> error handling.
+
     Args:
         message (Message): Message to send
-        
+
     Returns:
         Result[str, Dict]: Success with message_id or detailed error
     """
-    
+
 def request(self, message: Message, timeout: str = "30s") -> Result[Message, Dict[str, Any]]:
     """
-    Send message and wait for response with timeout
-    
+    Send message and wait for response with timeout.
+
     Args:
         message (Message): Request message
         timeout (str): Timeout duration (e.g., "30s", "5m")
-        
+
     Returns:
         Result[Message, Dict]: Response message or timeout error
     """
+
+def receive(self, timeout: Optional[str] = None) -> Result[Message, Dict[str, Any]]:
+    """
+    Receive a message from the agent's queue.
+
+    Args:
+        timeout (str, optional): Timeout duration
+
+    Returns:
+        Result[Message, Dict]: Received message or timeout/error
+    """
+
+def broadcast(self, recipients: List[str], message: Message) -> Dict[str, Result[str, Dict[str, Any]]]:
+    """
+    Send a message to multiple recipients.
+
+    Args:
+        recipients: List of agent IDs
+        message: Message to broadcast
+
+    Returns:
+        Dict mapping agent_id to send Result
+    """
 ```
 
-##### Resource-Aware Communication (UNIQUE TO MAPLE)
+##### Pub/Sub Communication
 
 ```python
-def send_with_resource_awareness(
-    self, 
-    message: Message, 
-    resources: ResourceRequest
-) -> Result[str, Dict[str, Any]]:
-    """
-    Send message with explicit resource requirements
-    
-    Args:
-        message (Message): Message to send
-        resources (ResourceRequest): Resource requirements and preferences
-        
-    Returns:
-        Result with allocation details or resource constraint errors
-    """
-    
-def negotiate_resources(
-    self, 
-    target_agent: str, 
-    requirements: ResourceRequest
-) -> Result[ResourceAllocation, Dict[str, Any]]:
-    """
-    Negotiate optimal resource allocation with target agent
-    
-    Args:
-        target_agent (str): Agent to negotiate with
-        requirements (ResourceRequest): Desired resources
-        
-    Returns:
-        Result with negotiated allocation or negotiation failure
-    """
+def publish(self, topic: str, message: Message) -> Result[str, Dict[str, Any]]:
+    """Publish a message to a topic."""
+
+def subscribe(self, topic: str) -> Result[None, Dict[str, Any]]:
+    """Subscribe to a topic."""
 ```
 
-##### Secure Communication (UNIQUE TO MAPLE)
+##### Secure Communication (Link Identification)
 
 ```python
 def establish_link(
-    self, 
-    agent_id: str, 
-    security_level: str = "HIGH",
+    self,
+    agent_id: str,
     lifetime_seconds: int = 3600
 ) -> Result[str, Dict[str, Any]]:
     """
-    Establish cryptographically verified secure communication link
-    
+    Establish a cryptographically verified secure communication link.
+
     Args:
         agent_id (str): Target agent identifier
-        security_level (str): Security level ("LOW", "MEDIUM", "HIGH", "MAXIMUM")
         lifetime_seconds (int): Link validity duration
-        
+
     Returns:
         Result with link_id or establishment failure details
     """
-    
+
 def send_with_link(
-    self, 
-    message: Message, 
-    link_id: str
+    self,
+    message: Message,
+    agent_id: str
 ) -> Result[str, Dict[str, Any]]:
     """
-    Send message through established secure link
-    
-    Args:
-        message (Message): Message to send securely
-        link_id (str): Established link identifier
-        
-    Returns:
-        Result with transmission confirmation or link validation error
-    """
-```
+    Send message through an established secure link.
 
-##### State Management (UNIQUE TO MAPLE)
+    Args:
+        message (Message): Message to send (should have link via .with_link())
+        agent_id (str): Target agent identifier
 
-```python
-def synchronize_state(
-    self, 
-    state_id: str, 
-    state_data: Dict[str, Any],
-    consistency_level: ConsistencyLevel = ConsistencyLevel.STRONG
-) -> Result[None, Dict[str, Any]]:
-    """
-    Synchronize distributed state across agent network
-    
-    Args:
-        state_id (str): Unique state identifier
-        state_data (Dict): State data to synchronize
-        consistency_level (ConsistencyLevel): Desired consistency level
-        
     Returns:
-        Result with synchronization confirmation or conflict details
-    """
-    
-def get_shared_state(
-    self, 
-    state_id: str
-) -> Result[Dict[str, Any], Dict[str, Any]]:
-    """
-    Retrieve current shared state
-    
-    Args:
-        state_id (str): State identifier
-        
-    Returns:
-        Result with current state data or access error
+        Result with message_id or link validation error
     """
 ```
 
@@ -173,33 +130,47 @@ def get_shared_state(
 
 ```python
 def register_handler(
-    self, 
-    message_type: str, 
+    self,
+    message_type: str,
     handler: Callable[[Message], Optional[Message]]
 ) -> None:
-    """
-    Register handler for specific message type
-    
-    Args:
-        message_type (str): Message type to handle
-        handler (Callable): Handler function
-    """
-    
+    """Register handler for a specific message type."""
+
+def register_topic_handler(
+    self,
+    topic: str,
+    handler: Callable[[Message], Optional[Message]]
+) -> None:
+    """Register handler for a topic."""
+
+# Decorator forms
 @agent.handler("MESSAGE_TYPE")
-def handle_message_type(message: Message) -> Optional[Message]:
-    """Decorator for registering message handlers"""
+def handle_message(message: Message) -> Optional[Message]:
+    """Decorator for registering message handlers."""
+
+@agent.topic_handler("topic_name")
+def handle_topic(message: Message) -> Optional[Message]:
+    """Decorator for registering topic handlers."""
+```
+
+##### Streaming
+
+```python
+def create_stream(self, name: str) -> Result[Stream, Dict[str, Any]]:
+    """Create a new message stream."""
+
+def connect_stream(self, name: str) -> Result[Stream, Dict[str, Any]]:
+    """Connect to an existing message stream."""
+
+@agent.stream_handler("stream_name")
+def handle_stream(message: Message) -> None:
+    """Decorator for registering stream handlers."""
 ```
 
 ### Message Class
 
 ```python
 class Message:
-    """
-    MAPLE Message with comprehensive metadata and type safety
-    
-    Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
-    """
-    
     def __init__(
         self,
         message_type: str,
@@ -216,18 +187,35 @@ class Message:
 #### Message Methods
 
 ```python
-def with_resource_requirements(
-    self, 
-    resources: ResourceRequest
-) -> 'Message':
-    """Add resource requirements to message (UNIQUE TO MAPLE)"""
-    
 def with_link(self, link_id: str) -> 'Message':
-    """Associate message with secure link (UNIQUE TO MAPLE)"""
-    
-def with_priority(self, priority: Priority) -> 'Message':
-    """Set message priority for intelligent routing"""
-    
+    """Associate message with a secure link."""
+
+def with_receiver(self, receiver: str) -> 'Message':
+    """Set the message receiver."""
+
+def get_link_id(self) -> Optional[str]:
+    """Get the associated link ID, if any."""
+
+def add_metadata(self, key: str, value: Any) -> None:
+    """Add metadata to the message."""
+
+def get_metadata(self, key: str, default: Any = None) -> Any:
+    """Get metadata by key."""
+
+def to_dict(self) -> Dict[str, Any]:
+    """Serialize to dictionary."""
+
+def to_json(self) -> str:
+    """Serialize to JSON string."""
+
+@classmethod
+def from_dict(cls, data: Dict[str, Any]) -> 'Message':
+    """Deserialize from dictionary."""
+
+@classmethod
+def from_json(cls, json_str: str) -> 'Message':
+    """Deserialize from JSON string."""
+
 @classmethod
 def error(
     cls,
@@ -236,251 +224,220 @@ def error(
     details: Optional[Dict[str, Any]] = None,
     severity: str = "HIGH",
     recoverable: bool = False,
-    suggestion: Optional[Dict[str, Any]] = None
+    receiver: Optional[str] = None,
+    correlation_id: Optional[str] = None
 ) -> 'Message':
-    """Create structured error message with recovery suggestions"""
+    """Create a structured error message."""
+
+@classmethod
+def ack(cls, correlation_id: str, receiver: Optional[str] = None) -> 'Message':
+    """Create an acknowledgement message."""
+
+def builder() -> 'Message.Builder':
+    """Get a builder for fluent message construction."""
 ```
 
-### Result<T,E> Type (REVOLUTIONARY)
+### Result\<T,E\> Type
+
+Rust-inspired type-safe error handling.
 
 ```python
 class Result[T, E]:
-    """
-    Type-safe error handling that eliminates silent failures
-    
-    Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
-    
-    This revolutionary pattern ensures NO operation can fail silently
-    """
-    
     @classmethod
     def ok(cls, value: T) -> 'Result[T, E]':
-        """Create successful result"""
-        
+        """Create successful result."""
+
     @classmethod
     def err(cls, error: E) -> 'Result[T, E]':
-        """Create error result with detailed information"""
-        
+        """Create error result."""
+
     def is_ok(self) -> bool:
-        """Check if result is successful"""
-        
+        """Check if result is successful."""
+
     def is_err(self) -> bool:
-        """Check if result contains error"""
-        
+        """Check if result contains error."""
+
     def unwrap(self) -> T:
-        """Extract success value or raise exception"""
-        
+        """Extract success value. Raises if Err."""
+
     def unwrap_or(self, default: T) -> T:
-        """Extract success value or return default"""
-        
+        """Extract success value or return default."""
+
     def unwrap_err(self) -> E:
-        """Extract error value"""
-        
+        """Extract error value. Raises if Ok."""
+
     def map(self, f: Callable[[T], U]) -> 'Result[U, E]':
-        """Transform success value"""
-        
+        """Transform success value."""
+
+    def map_err(self, f: Callable[[E], F]) -> 'Result[T, F]':
+        """Transform error value."""
+
     def and_then(self, f: Callable[[T], 'Result[U, E]']) -> 'Result[U, E]':
-        """Chain operations with automatic error propagation"""
-        
+        """Chain operations with automatic error propagation."""
+
     def or_else(self, f: Callable[[E], 'Result[T, F]']) -> 'Result[T, F]':
-        """Provide error recovery alternative"""
+        """Provide error recovery alternative."""
+
+    def to_dict(self) -> dict:
+        """Serialize to dictionary."""
+
+    @classmethod
+    def from_dict(cls, data: dict) -> 'Result[Any, Any]':
+        """Deserialize from dictionary."""
 ```
 
-## Resource Management (UNIQUE TO MAPLE)
+## Resource Management
 
 ### ResourceRequest Class
 
 ```python
+@dataclass
 class ResourceRequest:
-    """
-    Specify resource requirements with precision
-    
-    NO OTHER PROTOCOL HAS THIS CAPABILITY
-    """
-    
-    def __init__(
-        self,
-        compute: Optional[ResourceRange] = None,
-        memory: Optional[ResourceRange] = None,
-        gpu_memory: Optional[ResourceRange] = None,
-        network_bandwidth: Optional[ResourceRange] = None,
-        storage: Optional[ResourceRange] = None,
-        deadline: Optional[str] = None,
-        timeout: Optional[str] = None,
-        priority: str = "MEDIUM"
-    ):
+    compute: Optional[ResourceRange] = None
+    memory: Optional[ResourceRange] = None
+    bandwidth: Optional[ResourceRange] = None
+    time: Optional[TimeConstraint] = None
+    priority: str = "MEDIUM"
+
+    def to_dict(self) -> Dict[str, Any]: ...
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'ResourceRequest': ...
 ```
 
 ### ResourceRange Class
 
 ```python
+@dataclass
 class ResourceRange:
-    """
-    Define resource range with min, preferred, and max values
-    """
-    
-    def __init__(self, min: Any, preferred: Any = None, max: Any = None):
-        """
-        Args:
-            min: Minimum acceptable resource amount
-            preferred: Optimal resource amount
-            max: Maximum usable resource amount
-        """
+    min: Any
+    preferred: Optional[Any] = None
+    max: Optional[Any] = None
 ```
 
 ### ResourceManager Class
 
 ```python
 class ResourceManager:
-    """
-    Manage resource allocation and optimization across agents
-    """
-    
     def allocate_resources(
-        self, 
+        self,
         request: ResourceRequest
     ) -> Result[ResourceAllocation, Dict[str, Any]]:
-        """
-        Allocate resources based on request and availability
-        
-        Returns:
-            Result with allocation details or constraint violations
-        """
-        
-    def optimize_allocation(
-        self, 
-        requests: List[ResourceRequest],
-        optimization_goal: str = "efficiency"
-    ) -> Result[Dict[str, ResourceAllocation], Dict[str, Any]]:
-        """
-        Optimize multiple resource allocations simultaneously
-        
-        Args:
-            requests: List of resource requests to optimize
-            optimization_goal: "efficiency", "performance", "cost", or "fairness"
-            
-        Returns:
-            Result with optimized allocations or optimization failure
-        """
+        """Allocate resources based on request and availability."""
+
+    def release_resources(self, allocation_id: str) -> Result[None, Dict[str, Any]]:
+        """Release a previous allocation."""
 ```
 
-## Security Framework (UNIQUE TO MAPLE)
+## Security Framework
 
 ### LinkManager Class
 
 ```python
 class LinkManager:
-    """
-    Manage cryptographically verified communication links
-    
-    PATENT-WORTHY INNOVATION - NO COMPETITOR HAS THIS
-    """
-    
+    def initiate_link(self, agent_a: str, agent_b: str) -> Link:
+        """Initiate a new link between two agents."""
+
     def establish_link(
-        self, 
-        agent_a: str, 
-        agent_b: str,
-        security_level: str = "HIGH",
-        encryption: str = "AES-256-GCM"
-    ) -> Result[str, Dict[str, Any]]:
-        """
-        Establish secure link with cryptographic verification
-        
-        Args:
-            agent_a: First agent identifier
-            agent_b: Second agent identifier  
-            security_level: Required security level
-            encryption: Encryption algorithm
-            
-        Returns:
-            Result with link_id or establishment failure
-        """
-        
+        self,
+        link_id: str,
+        lifetime_seconds: int = 3600
+    ) -> Result[Link, Dict[str, Any]]:
+        """Establish a previously initiated link."""
+
     def validate_link(
-        self, 
-        link_id: str, 
-        sender: str, 
+        self,
+        link_id: str,
+        sender: str,
         receiver: str
-    ) -> Result[bool, Dict[str, Any]]:
-        """
-        Validate link authenticity and authorization
-        
-        Returns:
-            Result with validation status or security violation details
-        """
+    ) -> Result[Link, Dict[str, Any]]:
+        """Validate link authenticity and authorization."""
+
+    def terminate_link(self, link_id: str) -> Result[None, Dict[str, Any]]:
+        """Terminate an established link."""
+
+    def get_links_for_agent(self, agent_id: str) -> Result[list, Dict[str, Any]]:
+        """Get all links for a specific agent."""
 ```
 
 ### SecurityConfig Class
 
 ```python
+@dataclass
 class SecurityConfig:
-    """
-    Configure comprehensive security settings
-    """
-    
+    auth_type: str
+    credentials: str
+    public_key: Optional[str] = None
+    private_key: Optional[str] = None
+    permissions: Optional[List[Dict[str, Any]]] = None
+    require_links: bool = False
+    strict_link_policy: bool = False
+    link_config: Optional[LinkConfig] = None
+```
+
+## State Management
+
+### StateStore Class
+
+```python
+class StateStore:
     def __init__(
         self,
-        auth_type: str = "jwt",
-        credentials: str = "",
-        require_links: bool = False,
-        strict_link_policy: bool = False,
-        encryption: str = "AES-256-GCM",
-        key_rotation_interval: str = "1h"
+        backend: StorageBackend = StorageBackend.MEMORY,
+        consistency: ConsistencyLevel = ConsistencyLevel.EVENTUAL,
+        config: Optional[Dict[str, Any]] = None
     ):
+
+    def get(self, key: str) -> Result[Optional[Any], Dict[str, Any]]:
+        """Get state value by key."""
+
+    def set(
+        self,
+        key: str,
+        value: Any,
+        metadata: Optional[Dict[str, Any]] = None,
+        expected_version: Optional[int] = None
+    ) -> Result[StateEntry, Dict[str, Any]]:
+        """Set state value with optional version checking."""
+
+    def delete(
+        self,
+        key: str,
+        expected_version: Optional[int] = None
+    ) -> Result[bool, Dict[str, Any]]:
+        """Delete a state entry."""
+
+    def list_keys(self, prefix: Optional[str] = None) -> Result[List[str], Dict[str, Any]]:
+        """List state keys, optionally filtered by prefix."""
+
+    def add_listener(self, listener: Callable[[str, StateEntry], None]) -> None:
+        """Register a listener for state changes."""
+
+    def remove_listener(self, listener: Callable[[str, StateEntry], None]) -> None:
+        """Remove a state change listener."""
+
+    def get_statistics(self) -> Dict[str, Any]:
+        """Get store statistics."""
 ```
 
-## State Management (REVOLUTIONARY)
-
-### StateManager Class
+### Enums
 
 ```python
-class StateManager:
-    """
-    Manage distributed state across agent networks
-    
-    FIRST-IN-INDUSTRY DISTRIBUTED STATE FOR AGENT COMMUNICATION
-    """
-    
-    def create_distributed_state(
-        self,
-        state_id: str,
-        initial_value: Dict[str, Any],
-        consistency_level: ConsistencyLevel = ConsistencyLevel.STRONG
-    ) -> Result[DistributedState, Dict[str, Any]]:
-        """
-        Create new distributed state with consistency guarantees
-        """
-        
-    def atomic_update(
-        self,
-        state_id: str,
-        update_function: Callable[[Dict], Dict],
-        retry_count: int = 3
-    ) -> Result[Dict[str, Any], Dict[str, Any]]:
-        """
-        Perform atomic update across all replicas
-        
-        Args:
-            state_id: State identifier
-            update_function: Pure function to transform state
-            retry_count: Number of retry attempts on conflicts
-            
-        Returns:
-            Result with updated state or conflict resolution failure
-        """
-```
+class StorageBackend(Enum):
+    MEMORY = "memory"
+    FILE = "file"
+    REDIS = "redis"
+    DATABASE = "database"
 
-### ConsistencyLevel Enum
-
-```python
 class ConsistencyLevel(Enum):
-    """
-    Distributed consistency levels
-    """
-    STRONG = "STRONG"          # All replicas consistent immediately
-    EVENTUAL = "EVENTUAL"      # Eventual consistency with conflict resolution
-    CAUSAL = "CAUSAL"          # Causally consistent ordering
-    WEAK = "WEAK"              # Best-effort consistency
+    EVENTUAL = "eventual"
+    STRONG = "strong"
+    CAUSAL = "causal"
+
+class Priority(Enum):
+    HIGH = "HIGH"
+    MEDIUM = "MEDIUM"
+    LOW = "LOW"
 ```
 
 ## Configuration Classes
@@ -488,39 +445,14 @@ class ConsistencyLevel(Enum):
 ### Config Class
 
 ```python
+@dataclass
 class Config:
-    """
-    Agent configuration with comprehensive options
-    """
-    
-    def __init__(
-        self,
-        agent_id: str,
-        broker_url: str,
-        security: Optional[SecurityConfig] = None,
-        performance: Optional[PerformanceConfig] = None,
-        resources: Optional[ResourceConfig] = None,
-        monitoring: Optional[MonitoringConfig] = None
-    ):
-```
-
-### PerformanceConfig Class
-
-```python
-class PerformanceConfig:
-    """
-    Performance optimization settings
-    """
-    
-    def __init__(
-        self,
-        target_throughput: str = "100K_messages_per_second",
-        max_latency: str = "10ms",
-        connection_pool_size: int = 50,
-        message_compression: bool = True,
-        adaptive_routing: bool = True,
-        load_balancing: bool = True
-    ):
+    agent_id: str
+    broker_url: str
+    security: Optional[SecurityConfig] = None
+    performance: Optional[PerformanceConfig] = None
+    metrics: Optional[MetricsConfig] = None
+    tracing: Optional[TracingConfig] = None
 ```
 
 ## Error Handling
@@ -529,189 +461,104 @@ class PerformanceConfig:
 
 ```python
 class ErrorType(Enum):
-    """
-    Comprehensive error type hierarchy
-    """
-    # Communication errors
     NETWORK_ERROR = "NETWORK_ERROR"
     TIMEOUT = "TIMEOUT"
     ROUTING_ERROR = "ROUTING_ERROR"
     MESSAGE_VALIDATION_ERROR = "MESSAGE_VALIDATION_ERROR"
-    
-    # Resource errors
     RESOURCE_UNAVAILABLE = "RESOURCE_UNAVAILABLE"
     RESOURCE_EXHAUSTED = "RESOURCE_EXHAUSTED"
-    RESOURCE_NEGOTIATION_FAILED = "RESOURCE_NEGOTIATION_FAILED"
-    
-    # Security errors
     AUTHENTICATION_ERROR = "AUTHENTICATION_ERROR"
     AUTHORIZATION_ERROR = "AUTHORIZATION_ERROR"
     LINK_VERIFICATION_FAILED = "LINK_VERIFICATION_FAILED"
     ENCRYPTION_ERROR = "ENCRYPTION_ERROR"
-    
-    # State errors
     STATE_CONFLICT = "STATE_CONFLICT"
-    STATE_SYNCHRONIZATION_FAILED = "STATE_SYNCHRONIZATION_FAILED"
-    CONSISTENCY_VIOLATION = "CONSISTENCY_VIOLATION"
 ```
 
 ### Recovery Utilities
 
 ```python
-def retry_with_backoff(
-    operation: Callable[[], Result[T, E]],
-    max_attempts: int = 3,
-    backoff_factor: float = 2.0,
-    retryable_errors: Optional[List[str]] = None
-) -> Result[T, E]:
-    """
-    Retry operation with exponential backoff
-    
-    Args:
-        operation: Function to retry
-        max_attempts: Maximum retry attempts
-        backoff_factor: Backoff multiplication factor
-        retryable_errors: List of retryable error types
-        
-    Returns:
-        Result of final attempt or accumulated error information
-    """
+def retry(
+    operation: Callable,
+    options: RetryOptions
+) -> Result:
+    """Retry an operation with configurable backoff."""
+
+def exponential_backoff(attempt: int, base_delay: float = 1.0) -> float:
+    """Calculate exponential backoff delay."""
 
 class CircuitBreaker:
-    """
-    Circuit breaker pattern for preventing cascading failures
-    """
-    
     def __init__(
         self,
         failure_threshold: int = 5,
-        recovery_timeout: str = "60s",
+        recovery_timeout: float = 60.0,
         half_open_max_calls: int = 3
     ):
+        """Circuit breaker pattern for preventing cascading failures."""
 ```
 
-## Usage Examples
-
-### Complete Agent Setup
+## Usage Example
 
 ```python
-from maple import Agent, Message, Priority, Config, SecurityConfig, PerformanceConfig
-from maple.resources import ResourceRequest, ResourceRange
+from maple import Agent, Message, Priority, Config, SecurityConfig, Result
 
-# Configure high-performance secure agent
+# Configure agent
 config = Config(
-    agent_id="production_agent_001",
-    broker_url="nats://prod-cluster:4222",
+    agent_id="my_agent",
+    broker_url="memory://local",
     security=SecurityConfig(
-        auth_type="mutual_tls_jwt",
-        require_links=True,
-        strict_link_policy=True,
-        encryption="AES-256-GCM"
-    ),
-    performance=PerformanceConfig(
-        target_throughput="300K_messages_per_second",
-        max_latency="1ms",
-        adaptive_routing=True,
-        load_balancing=True
+        auth_type="token",
+        credentials="my_token",
+        require_links=True
     )
 )
 
 # Create and start agent
 agent = Agent(config)
-await agent.start()
+agent.start()
 
-# Register intelligent message handler
-@agent.handler("COMPLEX_ANALYSIS")
-def handle_complex_analysis(message: Message) -> Optional[Message]:
-    # Extract resource requirements
-    resources = message.payload.get('resources', {})
-    data = message.payload.get('data')
-    
-    # Process with resource awareness
-    processing_result = analyze_with_resources(data, resources)
-    
-    if processing_result.is_ok():
-        result_data = processing_result.unwrap()
-        return Message(
-            message_type="ANALYSIS_COMPLETE",
-            payload={
-                "results": result_data,
-                "performance_metrics": {
-                    "processing_time": "2.3s",
-                    "resource_efficiency": 0.95,
-                    "accuracy": 0.98
-                }
-            }
-        )
-    else:
-        error = processing_result.unwrap_err()
-        return Message.error(
-            error_type="ANALYSIS_FAILED",
-            message=error['message'],
-            details=error.get('details', {}),
-            recoverable=error.get('recoverable', False),
-            suggestion=error.get('suggestion', {})
-        )
+# Register handler
+@agent.handler("TASK")
+def handle_task(message):
+    data = message.payload.get("data")
+    return Message(
+        message_type="TASK_RESULT",
+        receiver=message.sender,
+        payload={"result": f"processed {data}"}
+    )
 
-# Send resource-aware message
-message = Message(
-    message_type="COMPLEX_ANALYSIS",
-    receiver="analysis_worker",
+# Send a message
+result = agent.send(Message(
+    message_type="TASK",
+    receiver="other_agent",
     priority=Priority.HIGH,
-    payload={
-        "data": large_dataset,
-        "algorithm": "deep_learning",
-        "resources": ResourceRequest(
-            compute=ResourceRange(min=16, preferred=32, max=64),
-            memory=ResourceRange(min="32GB", preferred="64GB", max="128GB"),
-            gpu_memory=ResourceRange(min="16GB", preferred="48GB"),
-            deadline="2024-12-25T15:00:00Z"
-        ).to_dict()
-    }
-)
-
-# Send with comprehensive error handling
-result = agent.send_with_resource_awareness(message, message.payload['resources'])
+    payload={"data": "input"}
+))
 
 if result.is_ok():
-    message_id = result.unwrap()
-    print(f"✅ Analysis request sent: {message_id}")
+    print(f"Sent: {result.unwrap()}")
 else:
-    error = result.unwrap_err()
-    print(f"❌ Request failed: {error['message']}")
-    
-    # Apply intelligent recovery
-    if error.get('recoverable'):
-        recovery = error.get('suggestion', {})
-        if recovery.get('action') == 'REDUCE_RESOURCE_REQUIREMENTS':
-            # Automatically retry with reduced resources
-            reduced_resources = optimize_resource_requirements(
-                original_resources, 
-                constraints=error['details']
-            )
-            retry_result = agent.send_with_resource_awareness(
-                message.with_resource_requirements(reduced_resources),
-                reduced_resources
-            )
+    print(f"Error: {result.unwrap_err()}")
+
+# Establish secure link
+link_result = agent.establish_link("other_agent", lifetime_seconds=3600)
+if link_result.is_ok():
+    link_id = link_result.unwrap()
+    secure_msg = Message(
+        message_type="SECURE_TASK",
+        receiver="other_agent",
+        payload={"sensitive": "data"}
+    ).with_link(link_id)
+    agent.send_with_link(secure_msg, "other_agent")
+
+agent.stop()
 ```
+
+---
 
 **Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)**
 
-**This API reference covers MAPLE's revolutionary capabilities that are literally impossible with any other agent communication protocol. MAPLE sets a new standard for intelligent, secure, and efficient agent coordination.**
-
-**🚀 MAPLE: The Protocol That Changes Everything 🚀**
-
-```
+```text
 Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
-
-This file is part of MAPLE - Multi Agent Protocol Language Engine. 
-
-MAPLE - Multi Agent Protocol Language Engine is free software: you can redistribute it and/or 
-modify it under the terms of the GNU Affero General Public License as published by the Free Software 
-Foundation, either version 3 of the License, or (at your option) any later version. 
-MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that it will be useful, 
-but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A 
-PARTICULAR PURPOSE. See the GNU Affero General Public License for more details. You should have 
-received a copy of the GNU Affero General Public License along with MAPLE - Multi Agent Protocol 
-Language Engine. If not, see <https://www.gnu.org/licenses/>.
+Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0)
+See LICENSE for details.
 ```

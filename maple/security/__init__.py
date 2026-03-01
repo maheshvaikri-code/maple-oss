@@ -31,10 +31,10 @@ try:
         AuthToken
     )
     AUTH_AVAILABLE = True
-except ImportError as e:
+except ImportError as e:  # pragma: no cover
     print(f"Warning: Authentication not fully available: {e}")
     AUTH_AVAILABLE = False
-    
+
     # Provide fallback classes for testing
     class AuthMethod:
         JWT = "jwt"
@@ -124,9 +124,9 @@ except ImportError as e:
 try:
     from .authorization import AuthorizationManager
     AUTHZ_AVAILABLE = True
-except ImportError:
+except ImportError:  # pragma: no cover
     AUTHZ_AVAILABLE = False
-    
+
     class AuthorizationManager:
         def authorize_message(self, message):
             from ..core.result import Result
@@ -135,9 +135,9 @@ except ImportError:
 try:
     from .link import LinkManager, Link, LinkState
     LINK_AVAILABLE = True
-except ImportError:
+except ImportError:  # pragma: no cover
     LINK_AVAILABLE = False
-    
+
     class LinkState:
         INITIATING = "INITIATING"
         ESTABLISHED = "ESTABLISHED"

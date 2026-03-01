@@ -18,7 +18,12 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 
 import time
 from typing import Dict, Any, Optional, List, Union
-import autogen
+try:
+    import autogen
+    AUTOGEN_AVAILABLE = True
+except ImportError:
+    autogen = None
+    AUTOGEN_AVAILABLE = False
 from ..core.message import Message
 from ..core.result import Result
 

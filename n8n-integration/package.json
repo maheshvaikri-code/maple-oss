@@ -1,6 +1,6 @@
 {
   "name": "@maple/n8n-nodes-maple",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "MAPLE (Multi Agent Protocol Language Engine) nodes for n8n - Visual Multi-Agent AI Workflows",
   "keywords": [
     "n8n-community-node-package",

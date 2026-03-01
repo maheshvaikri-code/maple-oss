@@ -249,21 +249,24 @@ class TestTaskSubmissionQueuing(unittest.TestCase):
         for i in range(5):
             result = self.task_queue.submit_task(f"task_{i}", {"index": i})
             task_ids.append(result.unwrap())
-        
-        # Process some tasks
+
+        # Process some tasks by pulling from queue
+        completed_ids = set()
         for i in range(2):
             task = self.task_queue.get_next_task().unwrap()
             if task:
                 self.task_queue.update_task_status(task.task_id, TaskStatus.RUNNING)
                 self.task_queue.update_task_status(task.task_id, TaskStatus.COMPLETED)
-        
-        # Fail one task
-        if len(task_ids) > 2:
-            self.task_queue.update_task_status(task_ids[2], TaskStatus.FAILED)
-        
+                completed_ids.add(task.task_id)
+
+        # Pull and fail one more task from the queue
+        fail_task = self.task_queue.get_next_task().unwrap()
+        if fail_task:
+            self.task_queue.update_task_status(fail_task.task_id, TaskStatus.FAILED)
+
         # Get statistics
         stats = self.task_queue.get_queue_stats()
-        
+
         self.assertEqual(stats.total_tasks, 5)
         self.assertEqual(stats.completed_tasks, 2)
         self.assertEqual(stats.failed_tasks, 1)

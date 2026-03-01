@@ -373,7 +373,7 @@ class MAPLEDashboardHandler(BaseHTTPRequestHandler):
         <div class="header">
             <h1>MAPLE MAPLE Dashboard</h1>
             <div class="creator">Creator: Mahesh Vaikri</div>
-            <div class="tagline">Revolutionary Multi-Agent Communication Protocol</div>
+            <div class="tagline">Multi-Agent Communication Protocol</div>
         </div>
         
         <div class="dashboard">
@@ -405,11 +405,11 @@ class MAPLEDashboardHandler(BaseHTTPRequestHandler):
                 <h3>💎 Unique Features</h3>
                 <div class="unique-feature">
                     [TARGET] Resource Management
-                    <br><small>ONLY in MAPLE - no other protocol has this!</small>
+                    <br><small>Built into MAPLE's protocol layer</small>
                 </div>
                 <div class="unique-feature">
                     [SECURE] Link Identification
-                    <br><small>ONLY in MAPLE - revolutionary security!</small>
+                    <br><small>Cryptographic channel verification</small>
                 </div>
                 <div class="unique-feature">
                     🛡️ Type-Safe Error Handling
@@ -478,7 +478,7 @@ class MAPLEDashboardHandler(BaseHTTPRequestHandler):
         <div class="card">
             <h3>[LAUNCH] Experience MAPLE</h3>
             <div style="margin-bottom: 20px;">
-                Choose how you'd like to explore MAPLE's revolutionary capabilities:
+                Choose how you'd like to explore MAPLE's capabilities:
             </div>
             <div class="demo-buttons">
                 <button class="demo-button" onclick="runQuickDemo()">
@@ -504,8 +504,8 @@ class MAPLEDashboardHandler(BaseHTTPRequestHandler):
         
         <div class="footer">
             <p>MAPLE MAPLE: Multi Agent Protocol Language Engine</p>
-            <p>Creator: Mahesh Vaikri | Version 1.0.0 | AGPL 3.0 License</p>
-            <p>Revolutionary Multi-Agent Communication for the Modern World</p>
+            <p>Creator: Mahesh Vaikri | Version 1.1.0 | AGPL 3.0 License</p>
+            <p>Multi-Agent Communication for the Modern World</p>
         </div>
     </div>
     
@@ -518,7 +518,7 @@ class MAPLEDashboardHandler(BaseHTTPRequestHandler):
                     if (data.maple_available) {
                         document.getElementById('maple-status').innerHTML = 
                             '<span class="status-indicator status-online"></span>Online';
-                        document.getElementById('maple-version').textContent = data.version || '1.0.0';
+                        document.getElementById('maple-version').textContent = data.version || '1.1.0';
                     } else {
                         document.getElementById('maple-status').innerHTML = 
                             '<span class="status-indicator status-offline"></span>Offline';
@@ -565,15 +565,15 @@ class MAPLEDashboardHandler(BaseHTTPRequestHandler):
         }
         
         function showResources() {
-            alert('[TARGET] Resource Management Demo\\n\\nUNIQUE TO MAPLE!\\n\\nTo see resource management:\\n1. Run: python examples/resource_management_example.py\\n\\nThis demonstrates intelligent resource allocation that NO OTHER protocol has!');
+            alert('[TARGET] Resource Management Demo\\n\\nTo see resource management:\\n1. Run: python examples/resource_management_example.py\\n\\nThis demonstrates MAPLE\\'s resource-aware messaging.');
         }
         
         function showSecurity() {
-            alert('[SECURE] Secure Link Demo\\n\\nUNIQUE TO MAPLE!\\n\\nTo see secure links:\\n1. Run: python examples/secure_link_example.py\\n\\nThis shows agent-to-agent security that NO OTHER protocol provides!');
+            alert('[SECURE] Secure Link Demo\\n\\nTo see secure links:\\n1. Run: python examples/secure_link_example.py\\n\\nThis demonstrates MAPLE\\'s Link Identification Mechanism.');
         }
         
         function showPerformance() {
-            alert('[FAST] Performance Benchmarks\\n\\nTo see performance comparisons:\\n1. Run: python examples/performance_comparison_example.py\\n\\nThis proves MAPLE is 25-100x faster than competitors!');
+            alert('[FAST] Performance Benchmarks\\n\\nTo see performance comparisons:\\n1. Run: python examples/performance_comparison_example.py\\n\\nThis runs MAPLE\\'s internal performance benchmarks.');
         }
         
         function showDocumentation() {
@@ -590,7 +590,7 @@ class MAPLEDashboardHandler(BaseHTTPRequestHandler):
         
         console.log('MAPLE MAPLE Dashboard Loaded');
         console.log('Creator: Mahesh Vaikri');
-        console.log('Ready to explore revolutionary agent communication!');
+        console.log('Ready to explore MAPLE agent communication!');
     </script>
 </body>
 </html>
