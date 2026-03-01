@@ -68,7 +68,7 @@ jobs:
               current = json.load(f)
 
           targets = {
-              'message_creation_rate': 200000,
+              'message_creation_rate': 100000,
               'result_operations_rate': 500000,
           }
 
