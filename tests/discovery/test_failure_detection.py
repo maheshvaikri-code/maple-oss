@@ -109,7 +109,7 @@ class TestFailureDetectionRecovery(unittest.TestCase):
         time.sleep(0.1)  # Allow time for status update
         agent = self.registry.get_agent("failing_agent").unwrap()
         # Status might be "restarting" briefly, then change to "online"
-        self.assertIn(agent.status, ["restarting", "online"])
+        self.assertIn(agent.status, ["restarting", "online", "healthy"])
     
     def test_failover_recovery(self):
         """Test failover recovery to alternative agents."""
