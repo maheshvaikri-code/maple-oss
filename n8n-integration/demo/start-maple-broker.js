@@ -138,7 +138,7 @@ class MAPLEBrokerStarter {
       res.json({ 
         status: 'ok', 
         service: 'maple-fallback-bridge',
-        version: '1.1.0',
+        version: '1.1.1',
         creator: 'Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)',
         timestamp: new Date().toISOString()
       });
@@ -349,7 +349,7 @@ class MAPLEBrokerStarter {
           retryPolicy: 'exponential_backoff'
         },
         metadata: {
-          version: '1.1.0',
+          version: '1.1.1',
           creator: 'Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)',
           lastUpdated: new Date().toISOString()
         }
@@ -431,7 +431,7 @@ class MAPLEBrokerStarter {
         createdAt: new Date().toISOString(),
         metadata: {
           creator: 'Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)',
-          version: '1.1.0'
+          version: '1.1.1'
         }
       });
     });

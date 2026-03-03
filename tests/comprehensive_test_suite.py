@@ -1137,7 +1137,7 @@ class MAPLETestSuite:
             "performance_metrics": self.performance_metrics,
             "failed_tests": self.failed_tests,
             "system_info": self._get_system_info(),
-            "maple_version": "1.1.0",
+            "maple_version": "1.1.1",
             "creator": "Mahesh Vaikri"
         }
         

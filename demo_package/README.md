@@ -292,7 +292,7 @@ MAPLE (Multi Agent Protocol Language Engine) represents the next generation of m
 **Creator: Mahesh Vaikri**  
 **License: AGPL 3.0**  
 **Status: Production Ready**  
-**Version: 1.1.0**
+**Version: 1.1.1**
 
 Ready to experience the future of multi-agent communication? **Start now!**
 
@@ -338,7 +338,7 @@ python quick_demo.py
 ### 📧 Contact
 **Creator: Mahesh Vaikri**  
 **MAPLE: Revolutionary Multi-Agent Communication**  
-**Status: Production Ready v1.1.0**  
+**Status: Production Ready v1.1.1**  
 **License: AGPL 3.0 (Open Source)**
 
 ---

@@ -65,6 +65,10 @@ class Agent:
             from ..broker.production_broker import ProductionBrokerManager, BrokerType
             result = ProductionBrokerManager.create_broker(config, BrokerType.NATS)
             self.broker = result.unwrap() if result.is_ok() else MessageBroker(config)
+        elif hasattr(config, 'broker_url') and config.broker_url and config.broker_url.startswith("s2://"):
+            from ..broker.production_broker import ProductionBrokerManager, BrokerType
+            result = ProductionBrokerManager.create_broker(config, BrokerType.S2)
+            self.broker = result.unwrap() if result.is_ok() else MessageBroker(config)
         else:
             self.broker = MessageBroker(config)
 

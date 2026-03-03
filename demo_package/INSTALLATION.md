@@ -422,7 +422,7 @@ config = Config(
 - **Creator**: Mahesh Vaikri
 - **Project**: MAPLE (Multi Agent Protocol Language Engine)
 - **License**: AGPL 3.0
-- **Status**: Production Ready v1.1.0
+- **Status**: Production Ready v1.1.1
 
 ---
 
@@ -442,7 +442,7 @@ config = Config(
 
 🎉 **Installation Complete!** You're ready to explore MAPLE's revolutionary capabilities!
 
-**Creator: Mahesh Vaikri | MAPLE v1.1.0 | Revolutionary Multi-Agent Communication**
+**Creator: Mahesh Vaikri | MAPLE v1.1.1 | Revolutionary Multi-Agent Communication**
 
 ```
 Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)

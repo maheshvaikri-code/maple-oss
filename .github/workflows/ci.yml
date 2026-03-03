@@ -151,7 +151,7 @@ jobs:
       - name: CI Summary
         run: |
           echo "## CI Results" >> $GITHUB_STEP_SUMMARY
-          echo "**MAPLE v1.1.0 - Multi Agent Protocol Language Engine**" >> $GITHUB_STEP_SUMMARY
+          echo "**MAPLE v1.1.1 - Multi Agent Protocol Language Engine**" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY

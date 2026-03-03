@@ -1319,7 +1319,7 @@ def main():
             "demo_duration_seconds": time.time() - demo.start_time,
             "results": demo.demo_results,
             "creator": "Mahesh Vaikri",
-            "protocol": "MAPLE v1.1.0"
+            "protocol": "MAPLE v1.1.1"
         }
         
         with open("maple_demo_results.json", "w") as f:

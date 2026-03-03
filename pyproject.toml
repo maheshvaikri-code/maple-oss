@@ -88,6 +88,9 @@ autonomy = [
     "openai>=1.0.0",
     "anthropic>=0.20.0"
 ]
+s2 = [
+    "streamstore>=5.0.0"
+]
 
 [project.urls]
 Homepage = "https://github.com/maheshvaikri-code/maple-oss"
@@ -135,7 +138,7 @@ asyncio_mode = "auto"
 
 [tool.coverage.run]
 source = ["maple"]
-omit = ["tests/*", "examples/*", "maple/broker/nats_broker.py", "maple/cli.py", "maple/llm/openai_provider.py", "maple/llm/anthropic_provider.py"]
+omit = ["tests/*", "examples/*", "maple/broker/nats_broker.py", "maple/cli.py", "maple/llm/openai_provider.py", "maple/llm/anthropic_provider.py", "maple/adapters/s2_adapter.py"]
 
 [tool.coverage.report]
 exclude_lines = [

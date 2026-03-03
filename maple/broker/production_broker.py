@@ -30,6 +30,7 @@ class BrokerType(Enum):
     """Available broker types."""
     IN_MEMORY = "in_memory"
     NATS = "nats"
+    S2 = "s2"
     REDIS = "redis"
     RABBITMQ = "rabbitmq"
 
@@ -49,6 +50,11 @@ class ProductionBrokerManager:
             available[BrokerType.NATS] = True
         except ImportError:
             available[BrokerType.NATS] = False
+        try:
+            import streamstore  # noqa: F401
+            available[BrokerType.S2] = True
+        except ImportError:
+            available[BrokerType.S2] = False
         return available
 
     @staticmethod
@@ -70,6 +76,19 @@ class ProductionBrokerManager:
                     return Result.err({
                         'errorType': 'BROKER_DEPENDENCY_MISSING',
                         'message': 'NATS broker requires nats-py. Install with: pip install nats-py'
+                    })
+            elif preferred_type == BrokerType.S2:
+                try:
+                    from ..adapters.s2_adapter import S2Broker, S2Config
+                    basin = config.broker_url.replace("s2://", "") if config.broker_url.startswith("s2://") else "maple-agents"
+                    access_token = getattr(config, 's2_access_token', None) or __import__('os').environ.get('S2_ACCESS_TOKEN', '')
+                    s2_config = S2Config(access_token=access_token, basin_name=basin)
+                    broker = S2Broker(s2_config)
+                    return Result.ok(broker)
+                except ImportError:
+                    return Result.err({
+                        'errorType': 'BROKER_DEPENDENCY_MISSING',
+                        'message': 'S2 broker requires streamstore. Install with: pip install maple-oss[s2]'
                     })
             else:
                 return Result.err({

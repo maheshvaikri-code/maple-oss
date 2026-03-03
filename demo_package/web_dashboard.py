@@ -504,7 +504,7 @@ class MAPLEDashboardHandler(BaseHTTPRequestHandler):
         
         <div class="footer">
             <p>MAPLE MAPLE: Multi Agent Protocol Language Engine</p>
-            <p>Creator: Mahesh Vaikri | Version 1.1.0 | AGPL 3.0 License</p>
+            <p>Creator: Mahesh Vaikri | Version 1.1.1 | AGPL 3.0 License</p>
             <p>Multi-Agent Communication for the Modern World</p>
         </div>
     </div>
@@ -518,7 +518,7 @@ class MAPLEDashboardHandler(BaseHTTPRequestHandler):
                     if (data.maple_available) {
                         document.getElementById('maple-status').innerHTML = 
                             '<span class="status-indicator status-online"></span>Online';
-                        document.getElementById('maple-version').textContent = data.version || '1.1.0';
+                        document.getElementById('maple-version').textContent = data.version || '1.1.1';
                     } else {
                         document.getElementById('maple-status').innerHTML = 
                             '<span class="status-indicator status-offline"></span>Offline';

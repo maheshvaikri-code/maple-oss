@@ -1,7 +1,7 @@
 {
   "package": {
     "name": "@maple/n8n-nodes-maple",
-    "version": "1.1.0",
+    "version": "1.1.1",
     "creator": "Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)",
     "description": "MAPLE - Multi Agent Protocol Language Engine for n8n"
   },
@@ -239,7 +239,7 @@
     "docker": {
       "enabled": true,
       "image": "maple/n8n-nodes",
-      "tag": "1.1.0",
+      "tag": "1.1.1",
       "ports": {
         "maple": 8080,
         "demo": 3000,

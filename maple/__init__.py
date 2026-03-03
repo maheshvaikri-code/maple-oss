@@ -57,7 +57,13 @@ from .autonomy.orchestrator import AgentOrchestrator
 from .llm.types import LLMConfig, ChatMessage, ChatRole
 from .llm.registry import LLMProviderRegistry
 
-__version__ = "1.1.0"
+# S2.dev durable streaming integration (optional)
+try:
+    from .adapters.s2_adapter import S2Broker, S2StateBackend, S2Config  # noqa: F401
+except ImportError:  # pragma: no cover
+    pass
+
+__version__ = "1.1.1"
 __author__ = "Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)"
 __email__ = "mahesh@mapleagent.org"
 __license__ = "AGPL 3.0"
@@ -119,6 +125,10 @@ __all__ = [
     "ChatMessage",
     "ChatRole",
     "LLMProviderRegistry",
+    # S2.dev integration (optional)
+    "S2Broker",
+    "S2StateBackend",
+    "S2Config",
     # Package metadata
     "__version__",
     "__author__",

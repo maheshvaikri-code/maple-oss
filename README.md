@@ -5,7 +5,7 @@
 **Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)**
 
 <p>
-<a href="https://github.com/maheshvaikri-code/maple-oss"><img src="https://img.shields.io/badge/version-1.1.0-brightgreen" alt="Version"></a>
+<a href="https://github.com/maheshvaikri-code/maple-oss"><img src="https://img.shields.io/badge/version-1.1.1-brightgreen" alt="Version"></a>
 <a href="https://github.com/maheshvaikri-code/maple-oss"><img src="https://img.shields.io/badge/Python-3.8%20|%203.9%20|%203.10%20|%203.11%20|%203.12%20|%203.13-brightgreen" alt="Python"></a>
 <a href="https://github.com/maheshvaikri-code/maple-oss"><img src="https://img.shields.io/badge/Tests-818%20PASSED-brightgreen" alt="Tests"></a>
 <a href="https://github.com/maheshvaikri-code/maple-oss"><img src="https://img.shields.io/badge/Coverage-80%25-brightgreen" alt="Coverage"></a>
@@ -33,7 +33,7 @@ Most agent frameworks give you either **infrastructure** (messaging, security, f
 
 ## Key Features
 
-### Autonomous Agentic AI (v1.1.0)
+### Autonomous Agentic AI (v1.1.1)
 
 - **ReAct Reasoning Loop** — Agents think, act, and reflect autonomously. Built-in backtracking when approaches fail.
 - **Pluggable LLM Providers** — OpenAI, Anthropic Claude, or any compatible API (vLLM, Ollama, Together AI).
@@ -53,7 +53,28 @@ Most agent frameworks give you either **infrastructure** (messaging, security, f
 - **Priority Message Queuing** — Messages routed by priority with health-aware routing.
 - **Task Management** — Task queue, scheduler (capability matching + load balancing), fault-tolerant execution, result collection with 7 aggregation strategies.
 - **Agent Discovery** — Auto-registration, capability matching, health monitoring, failure detection.
-- **9 Protocol Adapters** — Interop with A2A, MCP, FIPA ACL, AutoGen, CrewAI, LangGraph, OpenAI SDK, IBM ACP, S2.
+- **10 Protocol Adapters** — Native interop with A2A, MCP, FIPA ACL, AutoGen, CrewAI, LangGraph, OpenAI SDK, IBM ACP, S2.dev, n8n.
+
+---
+
+## Integrations
+
+MAPLE ships with 10 adapters in `maple/adapters/` for bridging to external protocols and frameworks.
+
+| Adapter | File | What It Does |
+|---------|------|-------------|
+| **Google A2A** | `a2a_adapter.py` | Translate MAPLE messages to/from A2A Agent-to-Agent protocol. Maps MAPLE resources to A2A task metadata, bridges agent discovery via A2A Agent Cards. |
+| **Anthropic MCP** | `mcp_adapter.py` | Bridge MCP tool servers into MAPLE. Discover MCP tools and register them as native MAPLE `Tool` objects. MAPLE agents call MCP tools via the ReAct loop. |
+| **FIPA ACL** | `fipa_acl_adapter.py` | Convert MAPLE messages to FIPA Agent Communication Language format. Supports performatives (inform, request, propose) and maps MAPLE priority to FIPA protocol fields. |
+| **AutoGen** | `autogen_adapter.py` | Wrap MAPLE agents as AutoGen-compatible participants. Run AutoGen group chats backed by MAPLE's broker, security, and resource management. |
+| **CrewAI** | `crewai_adapter.py` | Register MAPLE agents as CrewAI crew members. Map CrewAI tasks to MAPLE's task scheduler with fault tolerance and result collection. |
+| **LangGraph** | `langgraph_adapter.py` | Expose MAPLE agents as LangGraph nodes. Run LangGraph state machines over MAPLE's message broker with distributed state sync. |
+| **OpenAI SDK** | `openai_sdk_adapter.py` | Make MAPLE agents callable via OpenAI's Assistants/Chat API format. Translates tool calls and function results between OpenAI and MAPLE conventions. |
+| **IBM ACP** | `acp_adapter.py` | Bridge to IBM Agent Communication Protocol. Maps MAPLE resource specifications to ACP capabilities and translates message formats. |
+| **S2.dev** | `s2_adapter.py` | Durable streaming via [s2.dev](https://s2.dev). `S2Broker` provides persistent message delivery (per-agent and per-topic streams). `S2StateBackend` provides append-only state with full audit history. Install: `pip install maple-oss[s2]` |
+| **n8n** | `n8n-integration/` | 3 visual workflow nodes (Agent, Coordinator, Resource Manager) for building multi-agent AI pipelines in [n8n](https://n8n.io) without code. |
+
+All adapters follow MAPLE's `Result<T,E>` pattern and work with the existing security, resource, and broker infrastructure.
 
 ---
 
@@ -81,6 +102,7 @@ All optional dependency groups:
 
 ```bash
 pip install maple-oss[llm]          # OpenAI + Anthropic providers
+pip install maple-oss[s2]           # S2.dev durable streaming
 pip install maple-oss[security]     # Cryptography + JWT
 pip install maple-oss[performance]  # uvloop + orjson + msgpack
 pip install maple-oss[dev]          # Testing + linting tools
@@ -482,7 +504,7 @@ maple-oss/
 ├── n8n-integration/         Visual workflow nodes for n8n
 ├── pyproject.toml           Package configuration
 ├── setup.py                 Legacy setup script
-└── VERSION                  Current version (1.1.0)
+└── VERSION                  Current version (1.1.1)
 ```
 
 ---

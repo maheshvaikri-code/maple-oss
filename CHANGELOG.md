@@ -6,6 +6,24 @@
 
 **Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)**
 
+## Version 1.1.1 - S2.dev Integration (March 2026)
+
+### Additions
+
+- **S2.dev Durable Streaming**: `S2Broker` and `S2StateBackend` for durable message transport and state persistence via [s2.dev](https://s2.dev)
+- **S2 Broker Type**: `BrokerType.S2` registered in `ProductionBrokerManager` with auto-detection from `s2://` broker URLs
+- **Adapters Package**: New `maple/adapters/__init__.py` with conditional S2 exports
+- **834 tests passing**, 16 new S2 adapter tests
+
+### New Dependencies (optional)
+
+```toml
+[project.optional-dependencies]
+s2 = ["streamstore>=5.0.0"]
+```
+
+---
+
 ## Version 1.1.0 - Autonomous Agentic AI (March 2026)
 
 ### Major Additions
@@ -27,6 +45,7 @@
 - **Cryptographic Handshake**: Agent handshake uses real `CryptographyManager` (AES-256-GCM) with graceful fallback
 - **Circuit Breaker Consolidation**: `TaskScheduler` and `FailureDetector` now use shared `error.circuit_breaker.CircuitBreaker`
 - **Agent Metrics**: Built-in counters for messages sent/received/failed, handler errors, processing time
+- **S2.dev Integration**: `S2Broker` and `S2StateBackend` for durable streaming via [s2.dev](https://s2.dev), auto-detected from `s2://` broker URLs
 
 ### Testing & Quality
 
@@ -39,6 +58,7 @@
 ```toml
 [project.optional-dependencies]
 llm = ["openai>=1.0.0", "anthropic>=0.20.0"]
+s2 = ["streamstore>=5.0.0"]
 ```
 
 ---

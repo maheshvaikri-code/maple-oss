@@ -309,7 +309,7 @@ def generate_validation_report():
         "timestamp": datetime.now().isoformat(),
         "package_name": "MAPLE External Demo Package",
         "creator": "Mahesh Vaikri",
-        "version": "1.1.0",
+        "version": "1.1.1",
         "validation_status": "IN_PROGRESS"
     }
     

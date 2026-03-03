@@ -18,7 +18,7 @@ class MAPLELauncher {
     constructor() {
         this.config = {
             packageName: '@maple/n8n-nodes-maple',
-            version: '1.1.0',
+            version: '1.1.1',
             creator: 'Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)',
             brokerPort: 8080,
             demoPort: 3000
