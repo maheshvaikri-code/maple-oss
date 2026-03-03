@@ -1,6 +1,9 @@
 name: Release
 
 on:
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
     inputs:
       version_type:
@@ -19,7 +22,72 @@ on:
         type: boolean
 
 jobs:
-  create-release:
+  # Job 1: When triggered by a tag push, create a GitHub Release from the tag
+  release-from-tag:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,security]"
+          pip install build twine
+
+      - name: Run tests
+        run: python -m pytest tests/ -v --tb=short -q
+
+      - name: Build package
+        run: |
+          python -m build
+          twine check dist/*
+
+      - name: Extract version from tag
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
+
+      - name: Generate release notes
+        run: |
+          cat > release_notes.md << EOF
+          # MAPLE v${{ env.VERSION }}
+
+          **Multi Agent Protocol Language Engine**
+          **Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)**
+
+          ## Installation
+
+          \`\`\`bash
+          pip install maple-oss==${{ env.VERSION }}
+          \`\`\`
+
+          ## What's Changed
+
+          See [CHANGELOG.md](https://github.com/maheshvaikri-code/maple-oss/blob/main/CHANGELOG.md) for detailed changes.
+          EOF
+
+      - name: Create GitHub Release
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --title "MAPLE v${{ env.VERSION }}" \
+            --notes-file release_notes.md \
+            --latest \
+            dist/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Job 2: When triggered manually, bump version, tag, push, and release
+  release-manual:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -78,7 +146,7 @@ jobs:
 
       - name: Generate release notes
         run: |
-          cat > release_notes.md << 'RELEASE_EOF'
+          cat > release_notes.md << EOF
           # MAPLE v${{ env.NEW_VERSION }}
 
           **Multi Agent Protocol Language Engine**
@@ -86,20 +154,21 @@ jobs:
 
           ## Installation
 
-          ```bash
+          \`\`\`bash
           pip install maple-oss==${{ env.NEW_VERSION }}
-          ```
+          \`\`\`
 
           ## What's Changed
 
-          See [CHANGELOG.md](CHANGELOG.md) for detailed changes.
-          RELEASE_EOF
+          See [CHANGELOG.md](https://github.com/maheshvaikri-code/maple-oss/blob/main/CHANGELOG.md) for detailed changes.
+          EOF
 
       - name: Create GitHub Release
         run: |
           gh release create "v$NEW_VERSION" \
             --title "MAPLE v$NEW_VERSION" \
             --notes-file release_notes.md \
+            --latest \
             ${{ github.event.inputs.pre_release == 'true' && '--prerelease' || '' }} \
             dist/*
         env:
