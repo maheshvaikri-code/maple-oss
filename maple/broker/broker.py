@@ -70,14 +70,25 @@ class MessageBroker:
 
     def __init__(self, config: Config):
         """Initialize the broker."""
-        # Only initialize once
+        # Only initialize once. The broker is a process-wide singleton, so
+        # every Agent constructs it with its own Config. Honor a newly
+        # supplied separation-of-duties policy even on re-init, otherwise the
+        # guarantee would depend on construction order (only the first
+        # agent's config would ever attach one).
         if self._initialized:
+            self._refresh_separation_policy(config)
             return
 
         self.config = config
         self.running = False
         self.delivery_thread = None
         self.security_config = getattr(config, "security", None)
+        # Separation-of-duties policy (fresh-context verifier preset), if any.
+        # When set, send() enforces its sender allowlist + artifact-ref-only
+        # payload policy as a runtime guarantee.
+        self._separation_policy = getattr(
+            self.security_config, "separation_policy", None
+        )
         # Initialize link manager if security is enabled
         self.link_manager = None
         if self.security_config:
@@ -117,6 +128,31 @@ class MessageBroker:
         self._initialized = True
         logger.info("MessageBroker initialized")
 
+    def _refresh_separation_policy(self, config: Config) -> None:
+        """Adopt a separation policy from a later config on the singleton.
+
+        Only ever *adds* or *replaces* with a non-None policy; never clears an
+        existing one (a policy-less config must not silently disable an active
+        guarantee). Logs when replacing a different policy.
+        """
+        new_policy = getattr(
+            getattr(config, "security", None), "separation_policy", None
+        )
+        if new_policy is not None and new_policy is not self._separation_policy:
+            if self._separation_policy is not None:
+                logger.warning(
+                    "Replacing separation-of-duties policy on shared broker singleton"
+                )
+            self._separation_policy = new_policy
+
+    def set_separation_policy(self, policy: Any) -> None:
+        """Attach or replace the separation-of-duties policy on this broker.
+
+        Explicit escape hatch for callers holding an already-initialized
+        singleton (see ``_refresh_separation_policy`` for the automatic path).
+        """
+        self._separation_policy = policy
+
     def connect(self) -> None:
         """Connect to the broker."""
         logger.info(f"Connecting to broker at {self.config.broker_url}")
@@ -134,6 +170,21 @@ class MessageBroker:
             self.delivery_thread.join(timeout=5.0)
         logger.info("Disconnected from broker")
 
+    def is_routable(self, agent_id: str) -> bool:
+        """Whether a receiver is currently reachable (has a live subscription).
+
+        A message can be enqueued for *any* name, but only a subscribed agent
+        will ever process it — so ``send()`` returning Ok means "enqueued",
+        not "delivered". This lets a caller distinguish the two before/at send
+        time: ``is_routable`` is True once the receiver has called
+        ``subscribe`` (which every started ``Agent`` does). It reflects
+        reachability at check time, not a post-delivery acknowledgement.
+        """
+        if not agent_id:
+            return False
+        with self._lock:
+            return bool(self._agent_handlers.get(agent_id))
+
     def send(self, message: Message) -> str:
         """Send a message to a specific agent with optional link validation."""
         logger.debug(
@@ -143,6 +194,16 @@ class MessageBroker:
         # Ensure the message has an ID
         if not message.message_id:
             message.message_id = str(uuid.uuid4())
+
+        # Separation-of-duties enforcement (fresh-context verifier preset):
+        # broker-enforced sender allowlist + artifact-ref-only payloads.
+        if self._separation_policy is not None:
+            sod_result = self._separation_policy.authorize_send(message)
+            if sod_result.is_err():
+                error = sod_result.unwrap_err()
+                raise SecurityError(
+                    f"Separation-of-duties denied: {error['message']}"
+                )
 
         # Check if link validation is required
         if self.security_config and getattr(
@@ -199,15 +260,22 @@ class MessageBroker:
             except Exception as e:
                 logger.debug(f"Authorization check skipped: {e}")
 
-        # Add the message to the receiver's queue (thread-safe)
-        with self._lock:
-            if message.receiver not in self._agent_queues:
-                self._agent_queues[message.receiver] = []
-            self._agent_queues[message.receiver].append(message)
-
-        # Also enqueue in priority MessageQueue for ordered delivery
-        if self._message_queue:
-            self._message_queue.enqueue(message, priority=message.priority)
+        # Enqueue for delivery in exactly ONE queue. Prefer the priority
+        # MessageQueue (ordered delivery); fall back to the basic per-agent
+        # queue only when the priority queue is unavailable or full. The
+        # delivery loop drains both queues, so writing a direct message to
+        # both would deliver it twice.
+        enqueued = False
+        if self._message_queue is not None:
+            enq_result = self._message_queue.enqueue(
+                message, priority=message.priority
+            )
+            enqueued = enq_result.is_ok()
+        if not enqueued:
+            with self._lock:
+                if message.receiver not in self._agent_queues:
+                    self._agent_queues[message.receiver] = []
+                self._agent_queues[message.receiver].append(message)
 
         logger.debug(
             f"Message {message.message_id} queued for delivery to {message.receiver}"
@@ -227,6 +295,20 @@ class MessageBroker:
         # Send the message to all subscribers (thread-safe)
         with self._lock:
             subscribers = list(self._topic_subscribers.get(topic, []))
+
+        # Separation-of-duties enforcement also covers topic fan-out: a topic
+        # is not an escape hatch around the sender allowlist. Validate the
+        # sender against every subscriber (and the payload policy) up front,
+        # and reject the whole publish if any recipient is disallowed.
+        if self._separation_policy is not None:
+            for subscriber in subscribers:
+                probe = message.with_receiver(subscriber)
+                sod_result = self._separation_policy.authorize_send(probe)
+                if sod_result.is_err():
+                    error = sod_result.unwrap_err()
+                    raise SecurityError(
+                        f"Separation-of-duties denied: {error['message']}"
+                    )
 
         for subscriber in subscribers:
             subscriber_message = Message(

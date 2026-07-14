@@ -137,3 +137,47 @@ class TestRelease:
     def test_release_nonexistent(self, manager):
         fake_alloc = ResourceAllocation("fake_id", {"compute": 4})
         manager.release(fake_alloc)  # Should not raise
+
+
+class TestTokensAllocation:
+    """Regression tests for `tokens` as an allocatable resource type (#5)."""
+
+    @pytest.fixture
+    def token_manager(self):
+        rm = ResourceManager()
+        rm.register_resource("compute", 16)
+        rm.register_resource("tokens", 8000)  # LLM token budget
+        return rm
+
+    def test_allocate_tokens(self, token_manager):
+        request = ResourceRequest(tokens=ResourceRange(min=1000, preferred=4000))
+        result = token_manager.allocate(request)
+        assert result.is_ok()
+        alloc = result.unwrap()
+        assert alloc.resources['tokens'] == 4000
+        assert token_manager.get_available_resources()['tokens'] == 4000
+
+    def test_tokens_shortfall(self, token_manager):
+        request = ResourceRequest(tokens=ResourceRange(min=10000))  # > 8000 available
+        result = token_manager.allocate(request)
+        assert result.is_err()
+        err = result.unwrap_err()
+        assert err['errorType'] == 'RESOURCE_UNAVAILABLE'
+        assert 'tokens' in err['details']['shortfall']
+
+    def test_release_restores_tokens(self, token_manager):
+        alloc = token_manager.allocate(
+            ResourceRequest(tokens=ResourceRange(min=1000, preferred=4000))
+        ).unwrap()
+        before = token_manager.get_available_resources()['tokens']
+        token_manager.release(alloc)
+        assert token_manager.get_available_resources()['tokens'] == before + 4000
+
+    def test_tokens_and_compute_allocated_together(self, token_manager):
+        request = ResourceRequest(
+            compute=ResourceRange(min=2, preferred=4),
+            tokens=ResourceRange(min=1000, preferred=2000),
+        )
+        alloc = token_manager.allocate(request).unwrap()
+        assert alloc.resources['compute'] == 4
+        assert alloc.resources['tokens'] == 2000

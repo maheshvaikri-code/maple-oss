@@ -189,3 +189,36 @@ class TestResourceRequest:
         tc = ResourceRequest.TimeConstraint(timeout="30s")
         assert isinstance(tc, TimeConstraint)
         assert tc.timeout == "30s"
+
+
+class TestTokensResource:
+    """Regression tests for `tokens` as a first-class resource type (#5)."""
+
+    def test_default_is_none(self):
+        assert ResourceRequest().tokens is None
+
+    def test_tokens_in_to_dict(self):
+        rr = ResourceRequest(tokens=ResourceRange(min=1000, preferred=4000, max=8000))
+        d = rr.to_dict()
+        assert d['tokens'] == {'min': 1000, 'preferred': 4000, 'max': 8000}
+
+    def test_tokens_omitted_when_unset(self):
+        assert 'tokens' not in ResourceRequest(compute=ResourceRange(min=4)).to_dict()
+
+    def test_tokens_from_dict(self):
+        rr = ResourceRequest.from_dict({'tokens': {'min': 500, 'preferred': 2000}})
+        assert isinstance(rr.tokens, ResourceRange)
+        assert rr.tokens.min == 500
+        assert rr.tokens.preferred == 2000
+
+    def test_tokens_roundtrip(self):
+        original = ResourceRequest(
+            compute=ResourceRange(min=2),
+            tokens=ResourceRange(min=1000, preferred=4000, max=8000),
+            priority="HIGH",
+        )
+        restored = ResourceRequest.from_dict(original.to_dict())
+        assert restored.tokens.min == 1000
+        assert restored.tokens.preferred == 4000
+        assert restored.tokens.max == 8000
+        assert restored.compute.min == 2

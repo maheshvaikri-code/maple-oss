@@ -94,8 +94,30 @@ class TestSend:
             payload={}
         )
         broker.send(msg)
-        assert "agent_b" in MessageBroker._agent_queues
-        assert len(MessageBroker._agent_queues["agent_b"]) == 1
+        # Enqueued exactly once (in the priority queue), not duplicated into
+        # the basic queue — otherwise the delivery loop delivers it twice.
+        assert broker._message_queue is not None
+        assert broker._message_queue.size() == 1
+        assert len(MessageBroker._agent_queues.get("agent_b", [])) == 0
+
+    def test_direct_message_delivered_exactly_once(self):
+        """Regression: a direct send fires the receiver's handler once, not twice."""
+        _reset_broker_singleton()
+        config = Config(agent_id="delivery_test", broker_url="memory://local")
+        broker = MessageBroker(config)
+        calls = []
+        broker.subscribe("agent_b", lambda m: calls.append(m.message_id))
+        broker.connect()
+        try:
+            broker.send(Message(message_type="TEST", sender="agent_a", receiver="agent_b"))
+            deadline = time.time() + 2.0
+            while not calls and time.time() < deadline:
+                time.sleep(0.02)
+            time.sleep(0.1)  # allow any (erroneous) second delivery to land
+            assert len(calls) == 1
+        finally:
+            broker.disconnect()
+            _reset_broker_singleton()
 
 
 class TestSubscribe:
@@ -261,3 +283,23 @@ class TestMessageDelivery:
         time.sleep(0.2)
         assert len(received) >= 1
         assert received[0][0] == "events"
+
+
+class TestIsRoutable:
+    """Routability check — distinguishes 'enqueued' from 'deliverable' (#2)."""
+
+    def test_unsubscribed_not_routable(self, broker):
+        assert broker.is_routable("nobody") is False
+
+    def test_subscribed_is_routable(self, broker):
+        broker.subscribe("worker", lambda m: None)
+        assert broker.is_routable("worker") is True
+
+    def test_empty_or_none_not_routable(self, broker):
+        assert broker.is_routable("") is False
+        assert broker.is_routable(None) is False
+
+    def test_after_unsubscribe_not_routable(self, broker):
+        broker.subscribe("worker", lambda m: None)
+        broker.unsubscribe("worker")
+        assert broker.is_routable("worker") is False

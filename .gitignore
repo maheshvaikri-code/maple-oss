@@ -170,6 +170,9 @@ test_results/
 maple_demo_results.json
 maple_test_report.json
 
+# Website (hosted separately)
+website/
+
 # OS generated files
 .DS_Store
 .DS_Store?
@@ -179,3 +182,10 @@ maple_test_report.json
 ehthumbs.db
 Thumbs.db
 .claude/
+
+# doctrine state plane (machine-local only)
+.doctrine-state/local/
+
+# Doctrine framework (local operating system, not distributed)
+.Doctrine/
+.Doctrine.md

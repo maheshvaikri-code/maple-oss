@@ -42,7 +42,7 @@ class MCPAdapter:
         """
         mcp_server_config = {
             "name": f"maple-{self.maple_agent.agent_id}",
-            "version": "1.1.1",
+            "version": "1.1.2",
             "description": "MAPLE-powered MCP server with advanced agent capabilities",
             "tools": [
                 {

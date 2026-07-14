@@ -258,3 +258,90 @@ class TestEstablishLink:
         assert result.is_err()
         assert result.unwrap_err()['errorType'] == 'NO_SECURITY_CONFIG'
         a.stop()
+
+
+class TestHandlerKeyNormalization:
+    """Regression tests for the handler-key case trap.
+
+    ``Message`` upper-cases every ``message_type``; ``register_handler`` must
+    key handlers the same way, or a lower-case registration silently never
+    fires for the (upper-cased) incoming message.
+    """
+
+    def test_lowercase_registration_stored_uppercase(self, config):
+        a = Agent(config)
+        a.register_handler("work.package", lambda m: None)
+        assert "WORK.PACKAGE" in a.message_handlers
+        assert "work.package" not in a.message_handlers
+
+    def test_lowercase_handler_fires_for_uppercase_message(self, config):
+        a = Agent(config)
+        seen = []
+        a.register_handler("work.package", lambda m: seen.append(m.message_type) or None)
+        # Message upper-cases the type; dispatch must still find the handler.
+        a._process_message(
+            Message(message_type="work.package", sender="x", receiver="test_agent")
+        )
+        assert seen == ["WORK.PACKAGE"]
+
+    def test_mixed_case_registration_fires(self, config):
+        a = Agent(config)
+        seen = []
+        a.register_handler("Gate.Result", lambda m: seen.append(m.message_type) or None)
+        a._process_message(
+            Message(message_type="GATE.RESULT", sender="x", receiver="test_agent")
+        )
+        assert seen == ["GATE.RESULT"]
+
+    def test_decorator_path_normalizes(self, config):
+        a = Agent(config)
+        seen = []
+
+        @a.handler("work.package")
+        def _on_work(m):
+            seen.append(m.message_type)
+            return None
+
+        a._process_message(
+            Message(message_type="WORK.PACKAGE", sender="x", receiver="test_agent")
+        )
+        assert seen == ["WORK.PACKAGE"]
+
+    def test_uppercase_registration_still_works(self, config):
+        a = Agent(config)
+        seen = []
+        a.register_handler("PING", lambda m: seen.append(m.message_type) or None)
+        a._process_message(
+            Message(message_type="PING", sender="x", receiver="test_agent")
+        )
+        assert seen == ["PING"]
+
+
+class TestRequireRoutable:
+    """Opt-in routability on Agent.send (#2 — Ok should mean more than enqueued)."""
+
+    def test_send_to_unsubscribed_is_unroutable(self, config):
+        a = Agent(config)
+        a.start()
+        res = a.send(Message(message_type="PING", receiver="ghost"), require_routable=True)
+        assert res.is_err()
+        assert res.unwrap_err()["errorType"] == "UNROUTABLE"
+        a.stop()
+
+    def test_send_to_subscribed_is_ok(self, config):
+        a = Agent(config)
+        b = Agent(Config(agent_id="peer", broker_url="memory://local"))
+        a.start()
+        b.start()
+        res = a.send(Message(message_type="PING", receiver="peer"), require_routable=True)
+        assert res.is_ok()
+        a.stop()
+        b.stop()
+
+    def test_default_send_still_enqueues_to_nonexistent(self, config):
+        # Backward compatibility: without the flag, Ok-on-enqueue is preserved.
+        a = Agent(config)
+        a.start()
+        res = a.send(Message(message_type="PING", receiver="ghost"))
+        assert res.is_ok()
+        a.stop()

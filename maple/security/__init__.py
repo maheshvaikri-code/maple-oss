@@ -192,8 +192,27 @@ except ImportError:  # pragma: no cover
                 'message': 'Link validation failed'
             })
 
+try:
+    from .separation import (
+        SeparationOfDutiesPolicy,
+        ArtifactRef,
+        is_artifact_ref,
+        fresh_context_verifier_preset,
+        attach_to_config,
+        WORK_PACKAGE,
+        GATE_RESULT,
+    )
+    SEPARATION_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    # No permissive fallback: separation of duties is a security guarantee,
+    # so a failed import must surface loudly rather than silently allow sends.
+    SEPARATION_AVAILABLE = False
+
 __all__ = [
     'AuthenticationManager', 'AuthMethod', 'AuthCredentials', 'AuthToken',
     'AuthorizationManager', 'LinkManager', 'Link', 'LinkState',
-    'AUTH_AVAILABLE', 'AUTHZ_AVAILABLE', 'LINK_AVAILABLE'
+    'SeparationOfDutiesPolicy', 'ArtifactRef', 'is_artifact_ref',
+    'fresh_context_verifier_preset', 'attach_to_config',
+    'WORK_PACKAGE', 'GATE_RESULT',
+    'AUTH_AVAILABLE', 'AUTHZ_AVAILABLE', 'LINK_AVAILABLE', 'SEPARATION_AVAILABLE'
 ]

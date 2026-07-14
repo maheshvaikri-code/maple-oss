@@ -41,6 +41,10 @@ class SecurityConfig:
     require_links: bool = False  # Whether links are required for communication
     strict_link_policy: bool = False  # Whether to reject messages without links
     link_config: Optional[LinkConfig] = None  # Link configuration
+    # Optional SeparationOfDutiesPolicy (maple.security.separation). Typed as
+    # Any to keep this module free of a security-layer import. When set, the
+    # broker enforces its sender allowlist + artifact-ref-only payload policy.
+    separation_policy: Optional[Any] = None
 
 @dataclass
 class PerformanceConfig:

@@ -26,3 +26,8 @@ try:
     S2_AVAILABLE = True
 except ImportError:  # pragma: no cover
     S2_AVAILABLE = False
+
+# The doctrine profile (WORK.PACKAGE / GATE.RESULT schemas) lives in
+# .doctrine_adapter. Like the a2a/mcp/crewai adapters it is imported
+# explicitly — `from maple.adapters.doctrine_adapter import DoctrineAdapter` —
+# so `import maple` does not pull in the security layer.

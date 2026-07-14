@@ -6,6 +6,85 @@
 
 **Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)**
 
+## Version 1.1.2 - Doctrine wishlist + broker/task fixes (July 2026)
+
+### Fixes
+
+- **Broker double-delivery**: `MessageBroker.send()` enqueued every direct
+  message into *both* the basic per-agent queue and the priority
+  `MessageQueue`, and the delivery loop drains both — so each message was
+  delivered (and each handler fired) twice. `send()` now enqueues into exactly
+  one queue (priority queue, with the basic queue as fallback when it is
+  unavailable/full). Added a delivered-exactly-once regression test.
+- **`TaskQueue` unresponsive shutdown**: the cleanup thread slept with
+  `time.sleep(300)`, so `stop()` blocked on its `join(timeout=5.0)` for the
+  full 5 s every time — making test teardowns pile up until the suite looked
+  hung. The loop now waits on a `threading.Event` that `stop()` sets, so
+  shutdown returns promptly.
+- **Handler-key case trap** (`Agent.register_handler`): handler keys are now
+  normalized to upper-case, matching `Message` (which upper-cases every
+  `message_type`). Previously a handler registered as `"work.package"`
+  silently never fired for an incoming `WORK.PACKAGE`. Covers the
+  `@agent.handler(...)` decorator path too. 5 regression tests. Implements
+  enhancement ask #1 from `.Doctrine/integrations/maple.md`.
+
+### Additions
+
+- **Doctrine profile — `WORK.PACKAGE` / `GATE.RESULT` schemas**
+  (`maple.adapters.doctrine_adapter`): typed builders + validators for the two
+  doctrine protocol message types, beside the a2a/mcp/crewai adapters.
+  `build_work_package` / `build_gate_result` return `Result[Message]`;
+  `validate_work_package` / `validate_gate_result` check an incoming message;
+  `DoctrineAdapter(agent)` dispatches them. Payloads carry artifact hashedrefs
+  (via `ArtifactRef`) not prose, so they satisfy the fresh-context verifier
+  preset; verdicts are validated against `GATE_VERDICTS`
+  (`PASS`/`FAIL`/`BLOCKED`/`WAIVED`). Imported explicitly like the other
+  adapters, so `import maple` stays free of the security layer. 34 tests, 100%
+  coverage. Implements enhancement ask #4 from `.Doctrine/integrations/maple.md`.
+- **Routability / opt-in delivery check** (`MessageBroker.is_routable`,
+  `Agent.send(..., require_routable=True)`): `send()` returning `Ok` means
+  *enqueued*, not delivered — a message to a nonexistent agent still enqueues.
+  `is_routable(agent_id)` reports whether a receiver has a live subscription,
+  and `require_routable=True` makes `Agent.send` return `Result.err` with
+  `errorType` `UNROUTABLE` instead of a misleading `Ok`. Opt-in — the default
+  `send()` behavior is unchanged. 7 regression tests. Implements enhancement
+  ask #2 from `.Doctrine/integrations/maple.md`. (Reachability is checked at
+  send time; a post-delivery acknowledgement receipt remains future work.)
+- **`tokens` resource type** (`ResourceRequest`): LLM token budget is now a
+  first-class resource alongside `compute`/`memory`/`bandwidth` — carried
+  through `to_dict`/`from_dict` (so it survives negotiation) and handled by
+  `ResourceManager` satisfy/allocate/release (numeric, like compute). Lets
+  LLM budget negotiation map to loop-engineering caps. 9 regression tests.
+  Implements enhancement ask #5 from `.Doctrine/integrations/maple.md`.
+- **Fresh-Context Verifier Preset** (`maple.security.separation`): separation
+  of duties as a broker-enforced runtime guarantee instead of a convention.
+  - `SeparationOfDutiesPolicy` — a per-agent **sender allowlist** (fail-closed
+    by default) plus an **artifact-ref-only payload policy** for guarded
+    message types (`WORK.PACKAGE`, `GATE.RESULT`), exposed as
+    `authorize_send(message) -> Result`.
+  - `fresh_context_verifier_preset(orchestrator, builders, verifiers)` — wires
+    orchestrator → everyone and each builder/verifier → orchestrator only, so
+    a verifier can never route a review back to the author it is judging.
+  - `ArtifactRef(path, sha256)` with `of()` / `for_file()` / `to_dict()` and
+    the `is_artifact_ref()` validator — content-pinned artifact pointers so a
+    builder's prose never travels into a verifier's context.
+  - `MessageBroker.send()` **and** `publish()` enforce an attached policy
+    (via new optional `SecurityConfig.separation_policy`), raising
+    `SecurityError` on violation so `Agent.send()`/`publish()` return
+    `Result.err(...)`. A newly-supplied policy is adopted even on the broker
+    singleton's re-init, and `set_separation_policy()` is an explicit setter.
+  - Hardening (from a fresh-context G4 review): topic fan-out is covered;
+    a ref's `path` and dict keys are subject to the prose ceiling; custom
+    `guarded_types` are upper-cased to match `Message`; receiver-less sends
+    from a listed agent fail closed; deep/cyclic payloads are rejected
+    (`PAYLOAD_TOO_DEEP`) instead of overflowing the stack.
+  - Enforcement is applied by the in-memory `MessageBroker`; alternate
+    transports (`nats_broker`, S2) are out of scope for this change.
+  - 52 new tests. Implements enhancement ask #3 from
+    `.Doctrine/integrations/maple.md`.
+
+---
+
 ## Version 1.1.1 - S2.dev Integration (March 2026)
 
 ### Additions

@@ -136,11 +136,39 @@ class Agent:
         self.executor.shutdown(wait=False)
         logger.info(f"Agent {self.agent_id} stopped")
 
-    def send(self, message: Message) -> Result[str, Dict[str, Any]]:
-        """Send a message to another agent."""
+    def send(
+        self, message: Message, require_routable: bool = False
+    ) -> Result[str, Dict[str, Any]]:
+        """Send a message to another agent.
+
+        By default this returns ``Ok`` once the message is *enqueued* — which
+        is not the same as delivered (a message to a nonexistent agent still
+        enqueues). Pass ``require_routable=True`` to first verify the receiver
+        has a live subscription; if it does not, this returns
+        ``Result.err`` with ``errorType`` ``UNROUTABLE`` instead of a
+        misleading ``Ok``. (Reachability is checked at send time; it is not a
+        post-delivery acknowledgement.)
+        """
         # Set the sender if not already set
         if not message.sender:
             message.sender = self.agent_id
+
+        if require_routable and hasattr(self.broker, "is_routable"):
+            if not self.broker.is_routable(message.receiver):
+                self.messages_failed += 1
+                error = {
+                    "errorType": "UNROUTABLE",
+                    "message": (
+                        f"No route to receiver '{message.receiver}': "
+                        "no live subscription"
+                    ),
+                    "details": {
+                        "messageType": message.message_type,
+                        "receiver": message.receiver,
+                    },
+                }
+                logger.warning(f"Refusing unroutable send: {error}")
+                return Result.err(error)
 
         try:
             message_id = self.broker.send(message)
@@ -590,9 +618,16 @@ class Agent:
         message_type: str,
         handler: Callable[[Message], Optional[Message]],
     ) -> None:
-        """Register a handler for a specific message type."""
-        self.message_handlers[message_type] = handler
-        logger.info(f"Registered handler for message type {message_type}")
+        """Register a handler for a specific message type.
+
+        The key is normalized to upper-case to match ``Message``, which
+        upper-cases every ``message_type`` on construction. Without this, a
+        handler registered as ``"work.package"`` would silently never fire for
+        an incoming ``WORK.PACKAGE`` (the "case trap").
+        """
+        normalized = message_type.upper() if isinstance(message_type, str) else message_type
+        self.message_handlers[normalized] = handler
+        logger.info(f"Registered handler for message type {normalized}")
 
     def register_topic_handler(
         self, topic: str, handler: Callable[[Message], Optional[Message]]

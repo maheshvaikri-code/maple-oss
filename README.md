@@ -53,13 +53,23 @@ Most agent frameworks give you either **infrastructure** (messaging, security, f
 - **Priority Message Queuing** — Messages routed by priority with health-aware routing.
 - **Task Management** — Task queue, scheduler (capability matching + load balancing), fault-tolerant execution, result collection with 7 aggregation strategies.
 - **Agent Discovery** — Auto-registration, capability matching, health monitoring, failure detection.
-- **10 Protocol Adapters** — Native interop with A2A, MCP, FIPA ACL, AutoGen, CrewAI, LangGraph, OpenAI SDK, IBM ACP, S2.dev, n8n.
+- **11 Protocol Adapters** — Native interop with A2A, MCP, FIPA ACL, AutoGen, CrewAI, LangGraph, OpenAI SDK, IBM ACP, S2.dev, n8n, plus a native doctrine profile.
+
+### Doctrine Workforce (v1.1.2)
+
+Primitives for running a governed multi-agent workforce (builders + fresh-context verifiers) as a runtime guarantee rather than a convention:
+
+- **Fresh-Context Verifier Preset** — Separation of duties enforced by the broker: a per-agent **sender allowlist** (a verifier can be wired to reply only to the orchestrator, never to the builder it judges) plus an **artifact-ref-only payload policy** for guarded message types. `from maple.security import fresh_context_verifier_preset, SeparationOfDutiesPolicy, ArtifactRef`.
+- **Doctrine Message Schemas** — Typed `WORK.PACKAGE` / `GATE.RESULT` builders and validators so a workforce speaks a checked vocabulary; payloads carry content-pinned artifact hashedrefs, not prose. `from maple.adapters.doctrine_adapter import DoctrineAdapter, build_work_package, build_gate_result`.
+- **Token Budget as a Resource** — `tokens` is a first-class `ResourceRequest` type alongside `compute`/`memory`/`bandwidth`, so LLM budget maps to loop-engineering caps in negotiation.
+- **Routability Check** — `broker.is_routable(agent_id)` and `agent.send(msg, require_routable=True)` distinguish "enqueued" from "deliverable" — a send to a nonexistent agent returns `Result.err(UNROUTABLE)` instead of a misleading `Ok`.
+- **Exactly-Once Delivery** — Direct messages fire the receiver's handler exactly once; handler keys are normalized so a handler registered `"work.package"` receives an incoming `WORK.PACKAGE`.
 
 ---
 
 ## Integrations
 
-MAPLE ships with 10 adapters in `maple/adapters/` for bridging to external protocols and frameworks.
+MAPLE ships with 11 adapters in `maple/adapters/` for bridging to external protocols and frameworks (10 external, plus a native doctrine profile).
 
 | Adapter | File | What It Does |
 |---------|------|-------------|
@@ -73,6 +83,7 @@ MAPLE ships with 10 adapters in `maple/adapters/` for bridging to external proto
 | **IBM ACP** | `acp_adapter.py` | Bridge to IBM Agent Communication Protocol. Maps MAPLE resource specifications to ACP capabilities and translates message formats. |
 | **S2.dev** | `s2_adapter.py` | Durable streaming via [s2.dev](https://s2.dev). `S2Broker` provides persistent message delivery (per-agent and per-topic streams). `S2StateBackend` provides append-only state with full audit history. Install: `pip install maple-oss[s2]` |
 | **n8n** | `n8n-integration/` | 3 visual workflow nodes (Agent, Coordinator, Resource Manager) for building multi-agent AI pipelines in [n8n](https://n8n.io) without code. |
+| **Doctrine profile** | `doctrine_adapter.py` | Native, first-class `WORK.PACKAGE` / `GATE.RESULT` schemas — typed builders and validators for a governed workforce. Payloads carry artifact hashedrefs (via `ArtifactRef`), so they satisfy the fresh-context verifier preset. Imported explicitly, so `import maple` stays free of the security layer. |
 
 All adapters follow MAPLE's `Result<T,E>` pattern and work with the existing security, resource, and broker infrastructure.
 
@@ -405,7 +416,7 @@ maple/
 | Tool framework | Built-in | Built-in | Built-in | Built-in | No | Built-in |
 | Memory system | Built-in | Partial | Partial | No | No | No |
 | MCP tool discovery | Built-in | No | No | No | No | Native |
-| Protocol adapters | 9 adapters | No | No | No | No | No |
+| Protocol adapters | 10 adapters | No | No | No | No | No |
 
 **Where MAPLE excels:** Production infrastructure + autonomous reasoning in one framework. If your agents need resource awareness, security, fault tolerance, AND autonomous decision-making — MAPLE provides all of these as first-class features.
 
@@ -496,7 +507,7 @@ maple-oss/
 │   ├── security/            Auth, encryption, Link ID Mechanism
 │   ├── state/               Distributed state management
 │   ├── task_management/     Scheduling, fault tolerance, optimization
-│   └── adapters/            9 protocol adapters
+│   └── adapters/            10 protocol adapters
 ├── tests/                   818 tests across all modules
 ├── docs/                    Comprehensive documentation
 ├── examples/                Autonomous agent and team examples
@@ -534,13 +545,22 @@ Contributions welcome in:
 **MAPLE - Multi Agent Protocol Language Engine**
 **Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)**
 
-Licensed under the **GNU Affero General Public License v3.0** (AGPL-3.0).
+MAPLE is **dual-licensed**:
 
-- Free to use, study, modify, and share
-- Derivative works must remain open source
-- Network use requires source disclosure
+| Use case | License |
+| --- | --- |
+| Open source projects, research, personal use | [AGPL-3.0](LICENSE) — free |
+| Proprietary software, SaaS, enterprise deployment | [Commercial License](COMMERCIAL_LICENSE.md) |
 
-See [LICENSE](LICENSE) for complete terms.
+### Open Source (AGPL-3.0)
+
+Free to use, modify, and distribute. If you run MAPLE as part of a network service, AGPL-3.0 requires you to make your application source code available to users of that service.
+
+### Commercial License
+
+If your organization builds proprietary products, deploys SaaS services, or has a policy against AGPL dependencies, a commercial license removes the copyleft obligation. Startup, Business, and Enterprise tiers available.
+
+→ **[See COMMERCIAL_LICENSE.md](COMMERCIAL_LICENSE.md)** for tiers and pricing, or email **[maheshvaikri@gmail.com](mailto:maheshvaikri@gmail.com)** with subject `[MAPLE Commercial License]`.
 
 ---
 

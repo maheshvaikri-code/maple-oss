@@ -86,24 +86,27 @@ class ResourceRequest:
     compute: Optional[ResourceRange] = None
     memory: Optional[ResourceRange] = None
     bandwidth: Optional[ResourceRange] = None
+    tokens: Optional[ResourceRange] = None  # LLM token budget (integer count)
     time: Optional[TimeConstraint] = None
     priority: str = "MEDIUM"
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to a dictionary."""
         result = {'priority': self.priority}
-        
+
         if self.compute:
             result['compute'] = self.compute.to_dict()
         if self.memory:
             result['memory'] = self.memory.to_dict()
         if self.bandwidth:
             result['bandwidth'] = self.bandwidth.to_dict()
+        if self.tokens:
+            result['tokens'] = self.tokens.to_dict()
         if self.time:
             result['time'] = self.time.to_dict()
-        
+
         return result
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'ResourceRequest':
         """Create from a dictionary."""
@@ -111,6 +114,7 @@ class ResourceRequest:
             compute=ResourceRange.from_dict(data['compute']) if 'compute' in data else None,
             memory=ResourceRange.from_dict(data['memory']) if 'memory' in data else None,
             bandwidth=ResourceRange.from_dict(data['bandwidth']) if 'bandwidth' in data else None,
+            tokens=ResourceRange.from_dict(data['tokens']) if 'tokens' in data else None,
             time=TimeConstraint.from_dict(data['time']) if 'time' in data else None,
             priority=data.get('priority', 'MEDIUM')
         )

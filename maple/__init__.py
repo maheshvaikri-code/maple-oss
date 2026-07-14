@@ -63,7 +63,7 @@ try:
 except ImportError:  # pragma: no cover
     pass
 
-__version__ = "1.1.1"
+__version__ = "1.1.2"
 __author__ = "Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)"
 __email__ = "mahesh@mapleagent.org"
 __license__ = "AGPL 3.0"

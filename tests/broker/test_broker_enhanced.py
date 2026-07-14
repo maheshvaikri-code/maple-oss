@@ -37,7 +37,7 @@ class TestBrokerMessageQueueIntegration:
         broker = MessageBroker(config)
         assert broker._message_router is not None
 
-    def test_send_enqueues_in_both(self):
+    def test_send_enqueues_once(self):
         config = Config(agent_id="test", broker_url="memory://test")
         broker = MessageBroker(config)
         msg = Message(
@@ -47,11 +47,12 @@ class TestBrokerMessageQueueIntegration:
             payload={"data": "hello"},
         )
         broker.send(msg)
-        # Should be in basic queue
-        assert "b" in MessageBroker._agent_queues
-        assert len(MessageBroker._agent_queues["b"]) == 1
-        # Should also be in message queue
+        # Enqueued exactly once (priority queue), not also duplicated into the
+        # basic queue — the delivery loop drains both, so a double-enqueue
+        # would deliver the message twice.
         assert broker._message_queue is not None
+        assert broker._message_queue.size() == 1
+        assert len(MessageBroker._agent_queues.get("b", [])) == 0
 
 
 class TestBrokerAuthorizationIntegration:

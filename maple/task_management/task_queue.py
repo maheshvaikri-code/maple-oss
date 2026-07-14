@@ -118,23 +118,29 @@ class TaskQueue:
         # Background cleanup
         self._cleanup_thread: Optional[threading.Thread] = None
         self._running = False
-    
+        # Signalled on stop() so the cleanup loop wakes immediately instead of
+        # sleeping out its full interval (otherwise stop() blocks on join).
+        self._stop_event = threading.Event()
+
     def start(self):
         """Start the task queue background processing."""
         with self._lock:
             if self._running:
                 return
-            
+
             self._running = True
+            self._stop_event.clear()
             self._cleanup_thread = threading.Thread(target=self._cleanup_loop, daemon=True)
             self._cleanup_thread.start()
-    
+
     def stop(self):
         """Stop the task queue."""
         with self._lock:
             self._running = False
             self._condition.notify_all()
-        
+
+        # Wake the cleanup loop out of its sleep so join() returns promptly.
+        self._stop_event.set()
         if self._cleanup_thread:
             self._cleanup_thread.join(timeout=5.0)
     
@@ -458,8 +464,12 @@ class TaskQueue:
                         del self.tasks[task_id]
                         if task_id in self.task_callbacks:
                             del self.task_callbacks[task_id]
-                
-                time.sleep(300)  # Cleanup every 5 minutes
-                
+
+                # Cleanup every 5 minutes, but wake immediately on stop().
+                if self._stop_event.wait(timeout=300):
+                    break
+
             except Exception:
-                time.sleep(60)  # Error occurred, wait before retrying
+                # Error occurred, back off — but still wake promptly on stop().
+                if self._stop_event.wait(timeout=60):
+                    break

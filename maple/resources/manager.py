@@ -126,7 +126,7 @@ class ResourceManager:
                 # Release the resources
                 for resource_type, amount in self.allocations[allocation.allocation_id].resources.items():
                     # For resources that are added (like compute units)
-                    if resource_type in ['compute', 'memory', 'bandwidth']:
+                    if resource_type in ['compute', 'memory', 'bandwidth', 'tokens']:
                         if resource_type in self.available_resources:
                             self.available_resources[resource_type] += amount
                     
@@ -178,7 +178,15 @@ class ResourceManager:
                     'requested': request.bandwidth.min,
                     'available': self.available_resources['bandwidth']
                 }
-        
+
+        # Check tokens (LLM budget — plain integer count, like compute)
+        if request.tokens and 'tokens' in self.available_resources:
+            if request.tokens.min > self.available_resources['tokens']:
+                shortfall['tokens'] = {
+                    'requested': request.tokens.min,
+                    'available': self.available_resources['tokens']
+                }
+
         # Return whether there's any shortfall
         return len(shortfall) == 0, shortfall
     
@@ -223,10 +231,18 @@ class ResourceManager:
             # Similar to memory
             amount = min(request.bandwidth.preferred, self.available_resources['bandwidth'])
             amount = max(amount, request.bandwidth.min)  # But ensure at least minimum
-            
+
             self.available_resources['bandwidth'] -= amount
             resources['bandwidth'] = amount
-        
+
+        # Allocate tokens (LLM budget — plain integer count, like compute)
+        if request.tokens and 'tokens' in self.available_resources:
+            amount = min(request.tokens.preferred, self.available_resources['tokens'])
+            amount = max(amount, request.tokens.min)  # But ensure at least minimum
+
+            self.available_resources['tokens'] -= amount
+            resources['tokens'] = amount
+
         # Create and store the allocation
         allocation = ResourceAllocation(allocation_id, resources)
         self.allocations[allocation_id] = allocation
