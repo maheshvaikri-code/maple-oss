@@ -89,6 +89,12 @@ class ResourceRequest:
     tokens: Optional[ResourceRange] = None  # LLM token budget (integer count)
     time: Optional[TimeConstraint] = None
     priority: str = "MEDIUM"
+    # Arbitrary named NUMERIC resources beyond the built-in fields, so an agent can
+    # negotiate dimensions MAPLE does not hard-code (e.g. 'gpu', 'disk', 'money',
+    # 'api_calls', 'energy'). Each value is a ResourceRange of plain numbers; the manager
+    # treats a custom resource's lifecycle (renewable vs consumable) per DEFAULT_LIFECYCLES
+    # or the register_resource(..., lifecycle=...) override. For byte sizes prefer `memory`.
+    custom: Optional[Dict[str, ResourceRange]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to a dictionary."""
@@ -104,6 +110,8 @@ class ResourceRequest:
             result['tokens'] = self.tokens.to_dict()
         if self.time:
             result['time'] = self.time.to_dict()
+        if self.custom:
+            result['custom'] = {name: rng.to_dict() for name, rng in self.custom.items()}
 
         return result
 
@@ -116,7 +124,10 @@ class ResourceRequest:
             bandwidth=ResourceRange.from_dict(data['bandwidth']) if 'bandwidth' in data else None,
             tokens=ResourceRange.from_dict(data['tokens']) if 'tokens' in data else None,
             time=TimeConstraint.from_dict(data['time']) if 'time' in data else None,
-            priority=data.get('priority', 'MEDIUM')
+            priority=data.get('priority', 'MEDIUM'),
+            custom={
+                name: ResourceRange.from_dict(v) for name, v in data['custom'].items()
+            } if 'custom' in data else None,
         )
     
     @classmethod

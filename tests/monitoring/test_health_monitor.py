@@ -126,9 +126,17 @@ class TestLifecycle:
 class TestHealthSummary:
     """Test health summary."""
 
-    def test_no_data(self, monitor):
-        summary = monitor.get_health_summary()
-        assert summary['status'] == 'no_data'
+    def test_fresh_monitor_reports_live_not_no_data(self):
+        # BEHAVIOR CHANGE (MAPLE improvement #3, revalidate with owner): a monitor with no
+        # SAMPLED record no longer returns 'no_data' -- get_health_summary falls back to an
+        # on-demand read, so a just-started monitor reports live metrics (zero rates ->
+        # 'healthy'), never the misleading 'no_data'.
+        from maple.monitoring.health_monitor import HealthMonitor
+
+        summary = HealthMonitor("fresh").get_health_summary()
+        assert summary['status'] != 'no_data'
+        assert summary['status'] == 'healthy'
+        assert summary['message_rate'] == 0 and summary['error_rate'] == 0
 
     def test_healthy(self, monitor):
         # Record some normal activity

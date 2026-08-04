@@ -25,8 +25,8 @@ from dataclasses import dataclass
 
 from ..core.result import Result
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+# NOTE: a LIBRARY must not configure the root logger (that hijacks the host's logging
+# and emits INFO noise). Use a module logger; the host owns logging config.
 logger = logging.getLogger(__name__)
 
 T = TypeVar('T')
@@ -87,15 +87,25 @@ def retry(func: Callable[[], Result[T, E]], options: RetryOptions) -> Result[T, 
     # This should never be reached, but just in case
     return Result.err(last_error)
 
-def exponential_backoff(initial: float = 0.1, factor: float = 2.0, jitter: float = 0.1) -> Callable[[int], float]:
+def exponential_backoff(
+    initial: float = 0.1,
+    factor: float = 2.0,
+    jitter: float = 0.1,
+    max_delay: Optional[float] = None,
+) -> Callable[[int], float]:
     """
     Create an exponential backoff function.
-    
+
     Args:
         initial: Initial delay in seconds.
         factor: Multiplication factor for each attempt.
         jitter: Random jitter factor (0-1) to add to the delay.
-    
+        max_delay: Optional ceiling (seconds) on the per-attempt delay. Without it the
+            delay grows unbounded (``initial * factor ** attempt``), so a large
+            ``RetryOptions.max_attempts`` can stall a caller that holds a resource across
+            the backoff (e.g. a reserved worker slot). When set, the returned delay --
+            INCLUDING jitter -- never exceeds ``max_delay``.
+
     Returns:
         A function that calculates the delay for each attempt.
     """
@@ -103,6 +113,8 @@ def exponential_backoff(initial: float = 0.1, factor: float = 2.0, jitter: float
         delay = initial * (factor ** attempt)
         if jitter > 0:
             delay += delay * random.uniform(0, jitter)
+        if max_delay is not None:
+            delay = min(delay, max_delay)
         return delay
-    
+
     return backoff

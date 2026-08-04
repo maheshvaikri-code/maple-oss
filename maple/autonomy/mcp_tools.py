@@ -15,13 +15,31 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 
 """MCP tool discovery and integration for MAPLE autonomous agents."""
 
+import dataclasses
 import logging
-from typing import Any, Dict, List, Optional
+import re
+from typing import Any, Callable, Dict, List, Optional
 
 from ..core.result import Result
 from .tools import Tool, ToolRegistry
 
 logger = logging.getLogger(__name__)
+
+# A discovered MCP tool name is UNTRUSTED (an external server names it). Reduce it to a safe
+# identifier before it becomes a registry key or lands in a rendered tool list.
+_UNSAFE_TOOL = re.compile(r"[^A-Za-z0-9_.\-]")
+
+# A host authorization callback: given a discovered tool (and its server id) return True to
+# allow registration, False to REJECT it. Lets a host apply a default-deny / classification
+# policy at the trust boundary instead of registering an untrusted server's tools as-is.
+ToolPolicy = Callable[[Tool, Optional[str]], bool]
+
+
+def sanitize_tool_name(name: str, max_len: int = 64) -> str:
+    """Reduce an untrusted MCP tool name to a safe identifier (alnum + ``_ . -``), length
+    bounded. Prevents control-byte / newline injection into a registry key or a rendered
+    tool list, and an unbounded name from a hostile server."""
+    return _UNSAFE_TOOL.sub("", str(name or ""))[:max_len]
 
 
 def discover_mcp_tools(mcp_server_url: str, agent) -> Result[List[Tool], Dict[str, Any]]:
@@ -123,13 +141,56 @@ def discover_mcp_tools(mcp_server_url: str, agent) -> Result[List[Tool], Dict[st
         })
 
 
-def register_mcp_tools(registry: ToolRegistry, tools: List[Tool]) -> int:
-    """Register a list of MCP tools into a ToolRegistry. Returns count registered."""
+def register_mcp_tools(
+    registry: ToolRegistry,
+    tools: List[Tool],
+    *,
+    server_id: Optional[str] = None,
+    policy: Optional[ToolPolicy] = None,
+    namespace: bool = False,
+    max_tools: Optional[int] = None,
+) -> int:
+    """Register a list of MCP tools into a ToolRegistry. Returns the count registered.
+
+    MCP tools come from an EXTERNAL, untrusted server. The optional governance hooks let a
+    host mediate that trust boundary (recommended for any server you do not fully control):
+
+    - ``policy(tool, server_id) -> bool`` -- a host authorization callback. A tool the policy
+      rejects (or that makes the policy raise) is NOT registered. This is the default-deny
+      hook: a host can classify/gate each discovered tool instead of trusting the server's
+      self-reported name/description.
+    - ``namespace=True`` (requires ``server_id``) -- register each tool under a sanitized,
+      server-namespaced name ``mcp.<server_id>.<name>`` so an untrusted server cannot shadow
+      or overwrite another server's -- or a native -- tool.
+    - ``max_tools`` -- cap the number registered from one discovery (a flood bound).
+
+    Backward-compatible: with no hooks it registers all tools as before -- safe only for a
+    server you fully trust.
+    """
     registered = 0
-    for tool in tools:
-        result = registry.register(tool)
+    safe_server = sanitize_tool_name(server_id, 32) if server_id else None
+    for tool in tools or []:
+        if max_tools is not None and registered >= max_tools:
+            break
+        if policy is not None:
+            try:
+                if not policy(tool, server_id):
+                    logger.info("MCP tool '%s' rejected by host policy", getattr(tool, "name", "?"))
+                    continue
+            except Exception as e:  # a policy fault fails CLOSED (reject), never registers
+                logger.warning(
+                    "MCP policy raised for '%s' -> rejected: %s", getattr(tool, "name", "?"), e
+                )
+                continue
+        entry = tool
+        if namespace:
+            bare = sanitize_tool_name(getattr(tool, "name", ""))
+            if not bare or not safe_server:  # can't namespace safely -> skip (fail-closed)
+                continue
+            entry = dataclasses.replace(tool, name=f"mcp.{safe_server}.{bare}")
+        result = registry.register(entry)
         if result.is_ok():
             registered += 1
         else:
-            logger.warning(f"Failed to register MCP tool '{tool.name}'")
+            logger.warning("Failed to register MCP tool '%s'", getattr(entry, "name", "?"))
     return registered

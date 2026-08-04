@@ -45,7 +45,13 @@ from .core.types import AgentID, Duration, MessageID, Priority, Size
 from .error.circuit_breaker import CircuitBreaker
 from .error.recovery import RetryOptions, exponential_backoff, retry
 from .error.types import Error, ErrorType, Severity
-from .resources.manager import ResourceAllocation, ResourceManager
+from .resources.manager import (
+    DEFAULT_LIFECYCLES,
+    ResourceAllocation,
+    ResourceLifecycle,
+    ResourceManager,
+)
+from .resources.lease import Lease, LeaseManager
 from .resources.negotiation import ResourceNegotiator
 from .resources.specification import ResourceRange, ResourceRequest, TimeConstraint
 
@@ -63,7 +69,7 @@ try:
 except ImportError:  # pragma: no cover
     pass
 
-__version__ = "1.1.2"
+__version__ = "1.1.3"
 __author__ = "Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)"
 __email__ = "mahesh@mapleagent.org"
 __license__ = "AGPL 3.0"
@@ -109,7 +115,11 @@ __all__ = [
     "TimeConstraint",
     "ResourceManager",
     "ResourceAllocation",
+    "ResourceLifecycle",
+    "DEFAULT_LIFECYCLES",
     "ResourceNegotiator",
+    "Lease",
+    "LeaseManager",
     # Communication patterns
     "Stream",
     "StreamOptions",

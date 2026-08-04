@@ -5,9 +5,9 @@
 **Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)**
 
 <p>
-<a href="https://github.com/maheshvaikri-code/maple-oss"><img src="https://img.shields.io/badge/version-1.1.1-brightgreen" alt="Version"></a>
+<a href="https://github.com/maheshvaikri-code/maple-oss"><img src="https://img.shields.io/badge/version-1.1.3-brightgreen" alt="Version"></a>
 <a href="https://github.com/maheshvaikri-code/maple-oss"><img src="https://img.shields.io/badge/Python-3.8%20|%203.9%20|%203.10%20|%203.11%20|%203.12%20|%203.13-brightgreen" alt="Python"></a>
-<a href="https://github.com/maheshvaikri-code/maple-oss"><img src="https://img.shields.io/badge/Tests-818%20PASSED-brightgreen" alt="Tests"></a>
+<a href="https://github.com/maheshvaikri-code/maple-oss"><img src="https://img.shields.io/badge/Tests-1002%20PASSED-brightgreen" alt="Tests"></a>
 <a href="https://github.com/maheshvaikri-code/maple-oss"><img src="https://img.shields.io/badge/Coverage-80%25-brightgreen" alt="Coverage"></a>
 <a href="https://github.com/maheshvaikri-code/maple-oss/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-AGPL%203.0-blue.svg" alt="License"></a>
 <a href="https://mapleagent.org"><img src="https://img.shields.io/badge/Docs-mapleagent.org-blue" alt="Documentation"></a>
@@ -64,6 +64,17 @@ Primitives for running a governed multi-agent workforce (builders + fresh-contex
 - **Token Budget as a Resource** — `tokens` is a first-class `ResourceRequest` type alongside `compute`/`memory`/`bandwidth`, so LLM budget maps to loop-engineering caps in negotiation.
 - **Routability Check** — `broker.is_routable(agent_id)` and `agent.send(msg, require_routable=True)` distinguish "enqueued" from "deliverable" — a send to a nonexistent agent returns `Result.err(UNROUTABLE)` instead of a misleading `Ok`.
 - **Exactly-Once Delivery** — Direct messages fire the receiver's handler exactly once; handler keys are normalized so a handler registered `"work.package"` receives an incoming `WORK.PACKAGE`.
+
+### Resource & Reliability Primitives (v1.1.3)
+
+Extensibility and hardening surfaced by integrating MAPLE into a governed downstream host:
+
+- **Resource Lifecycles** — `ResourceManager` distinguishes **renewable** pools (returned on release) from **consumable** budgets (spent, never refunded — money, API calls, energy). `register_resource(type, amount, lifecycle=...)`; `release()` refunds only renewable resources.
+- **Custom Resource Dimensions** — `ResourceRequest.custom` negotiates arbitrarily-named numeric resources (GPU, disk, `$` spend, QPS) without MAPLE hard-coding each.
+- **Exclusive Leases** — `LeaseManager` / `Lease` grant exclusive, TTL-bounded holds with monotonic **fencing tokens** — a lock, a device, a license seat, or a singleton "leader" role. Expiry is the preemption mechanism; a crashed holder can't deadlock the resource. `from maple.resources import LeaseManager`.
+- **MCP Tool Governance** — `register_mcp_tools(..., policy=..., namespace=True, max_tools=...)` mediates the trust boundary for untrusted MCP servers: fail-closed authorization, server-namespacing to prevent tool shadowing, name sanitization, and a registration cap.
+- **Bounded Backoff** — `exponential_backoff(max_delay=...)` caps per-attempt delay so a large retry count can't stall a caller holding a resource.
+- **On-Demand Health** — `HealthMonitor.snapshot()` returns an immediate health read without waiting for the first sampling interval.
 
 ---
 
@@ -458,7 +469,7 @@ python -m pytest tests/security/ -v       # Security tests
 python -m pytest tests/broker/ -v         # Broker tests
 ```
 
-Current status: **818 tests passing**, **80% code coverage**.
+Current status: **1002 tests passing**, **80% code coverage**.
 
 ---
 
@@ -508,14 +519,14 @@ maple-oss/
 │   ├── state/               Distributed state management
 │   ├── task_management/     Scheduling, fault tolerance, optimization
 │   └── adapters/            10 protocol adapters
-├── tests/                   818 tests across all modules
+├── tests/                   1002 tests across all modules
 ├── docs/                    Comprehensive documentation
 ├── examples/                Autonomous agent and team examples
 ├── demo_package/            Interactive demos and web dashboard
 ├── n8n-integration/         Visual workflow nodes for n8n
 ├── pyproject.toml           Package configuration
 ├── setup.py                 Legacy setup script
-└── VERSION                  Current version (1.1.1)
+└── VERSION                  Current version (1.1.3)
 ```
 
 ---

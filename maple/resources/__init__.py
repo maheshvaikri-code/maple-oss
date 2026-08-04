@@ -17,14 +17,24 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 # maple/resources/__init__.py
 
 from .specification import ResourceRequest, ResourceRange, TimeConstraint
-from .manager import ResourceManager, ResourceAllocation
+from .manager import (
+    ResourceManager,
+    ResourceAllocation,
+    ResourceLifecycle,
+    DEFAULT_LIFECYCLES,
+)
 from .negotiation import ResourceNegotiator
+from .lease import Lease, LeaseManager
 
 __all__ = [
-    'ResourceRequest', 
-    'ResourceRange', 
+    'ResourceRequest',
+    'ResourceRange',
     'TimeConstraint',
-    'ResourceManager', 
+    'ResourceManager',
     'ResourceAllocation',
-    'ResourceNegotiator'
+    'ResourceLifecycle',
+    'DEFAULT_LIFECYCLES',
+    'ResourceNegotiator',
+    'Lease',
+    'LeaseManager',
 ]

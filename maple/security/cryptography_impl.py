@@ -405,9 +405,11 @@ class CryptographyManager:
             builder = builder.public_key(key_pair.public_key)
             builder = builder.serial_number(secrets.randbits(64))
             
-            # Set validity period
+            # Set validity period. datetime.utcnow() is deprecated (Python 3.12+); this is
+            # the non-deprecated equivalent, kept naive-UTC to match the x509 builder's
+            # existing expectation (owner may move to timezone-aware separately).
             import datetime
-            now = datetime.datetime.utcnow()
+            now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
             builder = builder.not_valid_before(now)
             builder = builder.not_valid_after(now + datetime.timedelta(days=validity_days))
             

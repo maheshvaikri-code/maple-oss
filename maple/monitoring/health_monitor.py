@@ -142,13 +142,8 @@ class HealthMonitor:
                 print(f"Health monitor error: {e}")
                 time.sleep(1.0)
     
-    def get_health_summary(self) -> Dict[str, Any]:
-        """Get a summary of health status."""
-        if not self.metrics_history:
-            return {"status": "no_data"}
-        
-        latest = self.metrics_history[-1]
-        
+    def _summarize(self, latest: HealthMetrics) -> Dict[str, Any]:
+        """Build a health-summary dict from a metrics record (sampled or on-demand)."""
         # Determine health status
         if latest.error_rate > 0.1:  # More than 10% error rate
             status = "unhealthy"
@@ -158,7 +153,7 @@ class HealthMonitor:
             status = "warning"
         else:
             status = "healthy"
-        
+
         return {
             "status": status,
             "uptime": latest.uptime,
@@ -168,3 +163,22 @@ class HealthMonitor:
             "cpu_usage_percent": latest.cpu_usage,
             "avg_response_time": latest.response_time_avg
         }
+
+    def snapshot(self) -> Dict[str, Any]:
+        """An IMMEDIATE health summary, computed on demand from the accumulated counters --
+        available the instant the monitor exists, without waiting for the background
+        sampling loop's first ``collection_interval``. Use this for an on-request read
+        (e.g. a status CLI); ``get_health_summary`` reflects the last *sampled* record."""
+        return self._summarize(self.get_current_metrics())
+
+    def get_health_summary(self) -> Dict[str, Any]:
+        """Get a summary of health status. Reflects the most recent SAMPLED record; if the
+        background loop has not sampled yet (a just-started monitor), it falls back to an
+        on-demand read of the current counters -- so it no longer returns ``no_data`` while
+        live data already exists. See ``snapshot`` for an always-on-demand read."""
+        latest = (
+            self.metrics_history[-1]
+            if self.metrics_history
+            else self.get_current_metrics()
+        )
+        return self._summarize(latest)

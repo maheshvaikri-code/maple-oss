@@ -6,6 +6,49 @@
 
 **Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)**
 
+## Version 1.1.3 - Downstream integration improvements (August 2026)
+
+Hardening and extensibility surfaced by integrating MAPLE into a governed
+downstream host. All backward-compatible except two intentional behavior
+changes (noted below). Full suite: 1002 passed.
+
+### Additions
+
+- **`exponential_backoff(max_delay=...)`** (`maple.error.recovery`): optional
+  per-attempt delay ceiling (`min(delay, max_delay)`, applied after jitter).
+  Default `None` keeps the prior unbounded behavior. Prevents a large
+  `max_attempts` from stalling a caller holding a resource across the backoff.
+- **MCP tool governance** (`maple.autonomy.register_mcp_tools`): opt-in host
+  hooks for untrusted MCP servers — `policy(tool, server_id)` (fail-closed
+  default-deny), `namespace=True` (`mcp.<server_id>.<name>`, prevents
+  shadowing), `max_tools` cap, and `sanitize_tool_name()`. No hooks =
+  registers all tools as before.
+- **`HealthMonitor.snapshot()`** (`maple.monitoring`): immediate on-demand
+  health read computed from live counters, without waiting for the first
+  sampling interval.
+- **Resource model v2** (`maple.resources`): `ResourceLifecycle`
+  (`RENEWABLE`/`CONSUMABLE`) + `DEFAULT_LIFECYCLES`; `register_resource(...,
+  lifecycle=...)`; `release()` refunds only renewable resources (consumable
+  budgets stay spent). `ResourceRequest.custom` for arbitrary named numeric
+  dimensions (gpu/disk/money/api_calls/energy). New `LeaseManager`/`Lease` —
+  exclusive, TTL-bounded holds with monotonic fencing tokens. Additive exports.
+
+### Fixes / hygiene
+
+- Replaced deprecated `datetime.utcnow()` with the non-deprecated naive-UTC
+  equivalent (`maple.core.message`, `maple.security.cryptography_impl`);
+  serialization unchanged.
+
+### Behavior changes (intentional)
+
+- `HealthMonitor.get_health_summary()` on a fresh monitor now returns a live
+  summary instead of `{"status": "no_data"}`.
+- Removed library `logging.basicConfig` from 7 modules — a library must not
+  configure the root logger. MAPLE's own INFO logs no longer print unless the
+  host configures logging.
+
+---
+
 ## Version 1.1.2 - Doctrine wishlist + broker/task fixes (July 2026)
 
 ### Fixes

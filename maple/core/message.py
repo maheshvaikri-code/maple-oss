@@ -7,7 +7,7 @@ Core message handling for MAPLE's perfect communication protocol.
 
 import json
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Union
 
 from .types import AgentID, MessageID, Priority, TypeValidator
@@ -38,8 +38,11 @@ class Message:
         else:
             self.message_id = message_id
 
-        # Set timestamp
-        self.timestamp = timestamp or datetime.utcnow()
+        # Set timestamp. datetime.utcnow() is deprecated (Python 3.12+); this is the
+        # non-deprecated equivalent that keeps the SAME naive-UTC value, so the
+        # `.isoformat() + "Z"` serialization below is unchanged (owner may modernize to
+        # timezone-aware datetimes separately -- see the improvements doc).
+        self.timestamp = timestamp or datetime.now(timezone.utc).replace(tzinfo=None)
 
         # Validate and set sender/receiver
         self.sender = self._validate_agent_id(sender) if sender else None

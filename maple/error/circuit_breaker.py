@@ -25,8 +25,8 @@ import logging
 
 from ..core.result import Result
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+# NOTE: a LIBRARY must not configure the root logger (that hijacks the host's logging
+# and emits INFO noise). Use a module logger; the host owns logging config.
 logger = logging.getLogger(__name__)
 
 T = TypeVar('T')
