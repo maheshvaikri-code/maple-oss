@@ -11,9 +11,10 @@
 | New feature regressions | PASS | 165 LLM/autonomy/CLI tests passed; one existing pytest config warning. |
 | Compile/import | PASS | `python -m compileall -q maple`; top-level public import and doctor smoke test pass. |
 | Changed-file Ruff | PASS | New/behavior-touched implementation checks pass. |
-| Package artifacts | PASS | Wheel and sdist built; Twine checks passed. |
+| Package artifacts | PASS | Metadata-clean wheel and sdist built; Twine checks passed. |
+| Installed artifact smoke | PASS | Clean venv installed the wheel with `--no-deps`; `maple doctor --json` returned `ready:true`, `network:false`. |
 | Local readiness | PASS | `maple doctor --json` returned all six checks true and `network:false`. |
-| Full repository regression | OPEN | Reached 86% with no reported assertion failure, then stopped in a known slow integration region. |
+| Full repository regression | OPEN | S2 adapter passed in 0.06s; adapters/state/security partitions passed; discovery passed 57 tests in 152.28s; Windows Doctrine gold Git-heavy tests took 100.62s and 64.60s before interruption. |
 | Dependency consistency | OPEN | Shared interpreter `pip check` reports unrelated package conflicts and invalid-distribution warnings. |
 | Repository-wide lint | OPEN | Existing package-init and legacy-test debt remains; no broad cleanup claimed. |
 | Independent review | OPEN | Fresh verifier sessions are unavailable in this tool context. |
@@ -34,6 +35,7 @@
 ## Release decision
 
 **QA status: CONDITIONAL / NOT PUBLISH-READY.** The implementation is
-feature-complete for the planned seven slices and package-buildable, but the
-release gate must remain open until the listed repository-level checks are
-completed in a clean environment. No external release action was taken.
+feature-complete for the planned seven slices and the built wheel passes a
+clean-venv doctor smoke test, but the release gate must remain open until the
+listed repository-level checks are completed in a clean environment. No
+external release action was taken.

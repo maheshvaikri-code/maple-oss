@@ -10,6 +10,10 @@
 
 ### Additions
 
+- **Release metadata hardening**: `pyproject.toml` is now the single source
+  for package metadata, the legacy `setup.py` delegates to it, and the source
+  manifest includes only files present in the repository. Wheel/sdist builds
+  are warning-free and remain Twine-checkable.
 - **Native workflow runtime (preview)** (`maple.autonomy.workflow`): validated
   sequential graphs, stable run IDs, JSON-safe node-boundary checkpoints,
   conditional routing, interruption/resume, atomic file persistence, and

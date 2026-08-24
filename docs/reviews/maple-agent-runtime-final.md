@@ -33,9 +33,15 @@ All checks passed!
 Package build:
 Successfully built maple_oss-1.1.3-py3-none-any.whl and maple_oss-1.1.3.tar.gz
 
+Package metadata/build warnings:
+None after consolidating metadata and the source manifest
+
 Twine:
 maple_oss-1.1.3-py3-none-any.whl: PASSED
 maple_oss-1.1.3.tar.gz: PASSED
+
+Wheel install smoke (clean venv, --no-deps):
+{"version":"1.1.3","ready":true,"network":false}
 
 Doctor:
 {"checks":{"core":true,"evaluation":true,"events":true,"execution":true,"interop":true,"retrieval":true},"network":false,"ready":true,"status":"SUCCESS","version":"1.1.3"}
@@ -43,9 +49,11 @@ Doctor:
 
 ## Open release findings
 
-1. The full `tests` run reached 86% with no assertion failure output, then was
-   interrupted after the known slow integration region stopped advancing. It is
-   unfinished evidence, not a full-suite pass.
+1. The full `tests` run remains unfinished evidence, not a full-suite pass.
+   The suspected S2 adapter was cleared in isolation (16 passed in 0.06s).
+   Partitioned evidence shows adapters, state, and security passing; discovery
+   passed 57 tests in 152.28s; and the Windows Doctrine gold partition reached
+   two Git-heavy tests taking 100.62s and 64.60s before it was interrupted.
 2. `pip check` failed in the shared interpreter because unrelated installed
    packages conflict (including `chromadb`, `fsspec`, `pydantic`, `openai`, and
    `langchain-core` version requirements). This is not a clean isolated MAPLE
