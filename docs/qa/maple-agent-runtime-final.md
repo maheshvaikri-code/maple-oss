@@ -13,9 +13,10 @@
 | Changed-file Ruff | PASS | New/behavior-touched implementation checks pass. |
 | Package artifacts | PASS | Metadata-clean wheel and sdist built; Twine checks passed. |
 | Installed artifact smoke | PASS | Clean venv installed the wheel with `--no-deps`; `maple doctor --json` returned `ready:true`, `network:false`. |
+| Isolated dependency audit | PASS | Fresh `.[dev,security]` environment: `pip check` returned `No broken requirements found.` |
 | Local readiness | PASS | `maple doctor --json` returned all six checks true and `network:false`. |
 | Full repository regression | OPEN | S2 adapter passed in 0.06s; adapters/state/security partitions passed; discovery passed 57 tests in 152.28s; Windows Doctrine gold Git-heavy tests took 100.62s and 64.60s before interruption. |
-| Dependency consistency | OPEN | Shared interpreter `pip check` reports unrelated package conflicts and invalid-distribution warnings. |
+| Dependency consistency | PASS | Isolated MAPLE environment is consistent; shared-interpreter conflicts are unrelated and non-authoritative. |
 | Repository-wide lint | OPEN | Existing package-init and legacy-test debt remains; no broad cleanup claimed. |
 | Independent review | OPEN | Fresh verifier sessions are unavailable in this tool context. |
 | External publish / website | NOT RUN | Explicitly outside current authorization and scope. |
@@ -29,13 +30,13 @@
 - Retrieval, event, evaluation, and interop payloads have explicit size/shape
   controls; event/evaluation outputs redact credential-like keys.
 - Security sign-off is limited to the changed feature boundaries. It is not a
-  substitute for an isolated-environment dependency audit or final independent
-  verifier pass.
+  substitute for the unfinished full-suite run or final independent verifier
+  pass.
 
 ## Release decision
 
 **QA status: CONDITIONAL / NOT PUBLISH-READY.** The implementation is
-feature-complete for the planned seven slices and the built wheel passes a
-clean-venv doctor smoke test, but the release gate must remain open until the
-listed repository-level checks are completed in a clean environment. No
-external release action was taken.
+feature-complete for the planned seven slices, the built wheel passes a
+clean-venv doctor smoke test, and the isolated dependency audit is clean. The
+release gate must remain open for the full-suite, repository-wide lint, and
+fresh-verifier checks. No external release action was taken.

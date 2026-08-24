@@ -27,6 +27,9 @@ new dependency change was made.
 Focused LLM/autonomy/CLI regression:
 165 passed, 1 warning in 0.23s
 
+Focused regression in isolated `.[dev,security]` environment:
+165 passed, 1 warning in 0.34s
+
 Focused changed implementation Ruff check:
 All checks passed!
 
@@ -43,6 +46,9 @@ maple_oss-1.1.3.tar.gz: PASSED
 Wheel install smoke (clean venv, --no-deps):
 {"version":"1.1.3","ready":true,"network":false}
 
+Isolated dependency audit:
+No broken requirements found.
+
 Doctor:
 {"checks":{"core":true,"evaluation":true,"events":true,"execution":true,"interop":true,"retrieval":true},"network":false,"ready":true,"status":"SUCCESS","version":"1.1.3"}
 ```
@@ -54,10 +60,10 @@ Doctor:
    Partitioned evidence shows adapters, state, and security passing; discovery
    passed 57 tests in 152.28s; and the Windows Doctrine gold partition reached
    two Git-heavy tests taking 100.62s and 64.60s before it was interrupted.
-2. `pip check` failed in the shared interpreter because unrelated installed
-   packages conflict (including `chromadb`, `fsspec`, `pydantic`, `openai`, and
-   `langchain-core` version requirements). This is not a clean isolated MAPLE
-   dependency environment; final dependency audit remains open.
+2. The shared interpreter's `pip check` still reports unrelated package
+   conflicts (including `chromadb`, `fsspec`, `pydantic`, `openai`, and
+   `langchain-core`), but a fresh environment installed `.[dev,security]` and
+   returned `No broken requirements found.` The isolated dependency gate passes.
 3. Repository-wide Ruff is not clean because of existing package-initializer
    and legacy-test lint debt. New implementation files are checked separately
    and pass; broad cleanup remains out of scope for this capability program.
