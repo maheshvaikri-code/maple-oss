@@ -39,6 +39,7 @@ Most agent frameworks give you either **infrastructure** (messaging, security, f
 - **Pluggable LLM Providers** — OpenAI, Anthropic Claude, or any compatible API (vLLM, Ollama, Together AI).
 - **Tool Framework** — Register custom tools with JSON Schema parameters. Built-in tools for inter-agent communication, state read/write, resource checks, and secure link establishment.
 - **Typed Contracts and Guardrails (preview)** — Validate bounded JSON inputs and outputs, request structured model responses, and fail closed on rejected or unavailable guardrails.
+- **Trusted Local Execution (preview)** — Opt tools into bounded input/output, timeout, cooperative cancellation, approval, and concurrency controls; this is not an untrusted-code sandbox.
 - **Three-Tier Memory** — Working memory (context window), episodic memory (task history), semantic memory (learned facts). LLM-assisted summarization when context fills up.
 - **Multi-Agent Orchestration** — Form teams by capability, execute via supervisor delegation or consensus voting.
 - **MCP Tool Discovery** — Discover and use tools from any MCP server as native MAPLE tools.

@@ -20,6 +20,7 @@ from typing import Any, Callable, Dict, List, Optional
 from ..core.result import Result
 from ..llm.types import ToolDefinition
 from .contracts import Guardrail, run_guardrails, validate_json_schema
+from .execution import ExecutionExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,7 @@ class Tool:
     result_schema: Optional[Dict[str, Any]] = None
     input_guardrails: List[Guardrail] = field(default_factory=list)
     output_guardrails: List[Guardrail] = field(default_factory=list)
+    executor: Optional[ExecutionExecutor] = None
 
     def to_llm_definition(self) -> ToolDefinition:
         """Convert to LLM-compatible tool definition."""
@@ -63,7 +65,13 @@ class Tool:
         if input_guardrails.is_err():
             return Result.err(input_guardrails.unwrap_err())
         try:
-            result = self.handler(**kwargs)
+            if self.executor is None:
+                result = self.handler(**kwargs)
+            else:
+                execution = self.executor.execute(self.name, self.handler, kwargs=kwargs)
+                if execution.is_err():
+                    return Result.err(execution.unwrap_err())
+                result = execution.unwrap()
         except Exception as e:
             return Result.err(
                 {

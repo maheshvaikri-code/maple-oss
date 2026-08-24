@@ -18,6 +18,10 @@
 - **Typed agent contracts (preview)** (`maple.autonomy.contracts`): bounded
   JSON-Schema validation for tool and model boundaries, structured output
   parsing, and fail-closed input/output guardrails with regression tests.
+- **Trusted local execution (preview)** (`maple.autonomy.execution`): bounded
+  trusted-handler execution with input/output byte limits, concurrency,
+  timeout, cooperative cancellation, approval, and cleanup semantics. The
+  public documentation calls out that it is not a hard-kill sandbox.
 
 ## Version 1.1.3 - Downstream integration improvements (August 2026)
 

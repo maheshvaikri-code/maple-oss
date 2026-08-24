@@ -496,6 +496,39 @@ class CircuitBreaker:
         """Circuit breaker pattern for preventing cascading failures."""
 ```
 
+## Trusted Local Execution (preview)
+
+`TrustedLocalExecutor` is an explicit boundary for trusted Python handlers. It
+adds input/output byte limits, bounded concurrent workers, approval callbacks,
+timeouts, and cooperative cancellation. A timeout sets the cancellation token
+and returns a structured failure, but cannot forcibly kill a Python thread;
+model-generated code, shell commands, and other untrusted execution require a
+separately reviewed process or hosted sandbox and are not supported here.
+
+```python
+from maple import CancellationToken, ExecutionPolicy, TrustedLocalExecutor
+
+token = CancellationToken()
+executor = TrustedLocalExecutor(
+    ExecutionPolicy(
+        timeout_seconds=5,
+        max_input_bytes=64_000,
+        max_output_bytes=256_000,
+        max_concurrent=4,
+    )
+)
+result = executor.execute(
+    "lookup",
+    trusted_lookup,
+    kwargs={"key": "example"},
+    cancellation=token,
+)
+```
+
+Pass the executor to `Tool(executor=...)` to apply the same boundary to a
+tool. Handlers that need cancellation should close over the token and check
+`token.is_cancelled()` or `token.wait()` while working.
+
 ## Typed Agent Contracts (preview)
 
 MAPLE can validate tool inputs and outputs against a bounded JSON-Schema subset,

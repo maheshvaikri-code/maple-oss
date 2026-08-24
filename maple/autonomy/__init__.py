@@ -28,6 +28,12 @@ from .contracts import (
     schema_guardrail,
     validate_json_schema,
 )
+from .execution import (
+    CancellationToken,
+    ExecutionExecutor,
+    ExecutionPolicy,
+    TrustedLocalExecutor,
+)
 from .workflow import (
     END,
     CheckpointStore,
@@ -63,6 +69,10 @@ __all__ = [
     "run_guardrails",
     "schema_guardrail",
     "validate_json_schema",
+    "CancellationToken",
+    "ExecutionExecutor",
+    "ExecutionPolicy",
+    "TrustedLocalExecutor",
     "END",
     "CheckpointStore",
     "FileCheckpointStore",

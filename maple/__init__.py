@@ -78,6 +78,12 @@ from .autonomy.contracts import (
     schema_guardrail,
     validate_json_schema,
 )
+from .autonomy.execution import (
+    CancellationToken,
+    ExecutionExecutor,
+    ExecutionPolicy,
+    TrustedLocalExecutor,
+)
 from .llm.types import LLMConfig, ChatMessage, ChatRole
 from .llm.registry import LLMProviderRegistry
 
@@ -163,6 +169,10 @@ __all__ = [
     "run_guardrails",
     "schema_guardrail",
     "validate_json_schema",
+    "CancellationToken",
+    "ExecutionExecutor",
+    "ExecutionPolicy",
+    "TrustedLocalExecutor",
     "LLMConfig",
     "ChatMessage",
     "ChatRole",
