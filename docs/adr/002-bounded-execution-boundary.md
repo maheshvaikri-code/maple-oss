@@ -1,7 +1,7 @@
 # ADR-002: Bounded execution for trusted local handlers
 
-**Status:** Accepted  
-**Date:** 2026-08-24  
+**Status:** Accepted
+**Date:** 2026-08-24
 **Decision owners:** Chief Architect / Security Reviewer
 
 ## Context
