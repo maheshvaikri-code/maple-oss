@@ -44,6 +44,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev,security]"
           pip install build twine
+          python -m pip check
+          python -m compileall -q maple
+          python -m maple.cli doctor --json
 
       - name: Run tests
         run: python -m pytest tests/ -v --tb=short -q
@@ -108,6 +111,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev,security]"
           pip install bump2version build twine
+          python -m pip check
+          python -m compileall -q maple
+          python -m maple.cli doctor --json
 
       - name: Configure Git
         run: |

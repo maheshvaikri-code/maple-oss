@@ -41,9 +41,53 @@ jobs:
         continue-on-error: true
         run: bandit -r maple/ -ll -q
 
+  runtime-quality:
+    name: MAPLE runtime release preflight
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install MAPLE with development and security extras
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev,security]"
+
+      - name: Verify isolated dependencies
+        run: python -m pip check
+
+      - name: Compile and run network-free doctor
+        run: |
+          python -m compileall -q maple
+          python -m maple.cli doctor --json
+
+      - name: Lint changed runtime surface
+        run: |
+          python -m flake8 \
+            maple/autonomy/workflow.py \
+            maple/autonomy/contracts.py \
+            maple/autonomy/execution.py \
+            maple/autonomy/retrieval.py \
+            maple/autonomy/events.py \
+            maple/autonomy/evaluation.py \
+            maple/autonomy/interop.py \
+            maple/llm/capabilities.py \
+            maple/cli.py \
+            --max-line-length=88 \
+            --extend-ignore=E203,W503,W291,W293,E302,E402,F401,F811,F841 \
+            --count --statistics
+
+      - name: Run focused runtime regression
+        run: python -m pytest tests/llm tests/autonomy tests/test_cli.py -q -o addopts=
+
   test:
     name: Test (Python ${{ matrix.python-version }}, ${{ matrix.os }})
-    needs: lint
+    needs: [lint, runtime-quality]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -126,6 +170,8 @@ jobs:
       - name: Verify install from wheel
         run: |
           pip install dist/*.whl
+          python -m pip check
+          python -m maple.cli doctor --json
           python -c "
           import maple
           from maple import Agent, Message, Config, Result

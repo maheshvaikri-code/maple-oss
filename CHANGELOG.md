@@ -10,6 +10,9 @@
 
 ### Additions
 
+- **CI/release preflight**: GitHub Actions now enforces isolated dependency
+  consistency, compilation, the network-free doctor, changed-runtime Flake8,
+  focused regressions, and built-wheel verification before package release.
 - **Release metadata hardening**: `pyproject.toml` is now the single source
   for package metadata, the legacy `setup.py` delegates to it, and the source
   manifest includes only files present in the repository. Wheel/sdist builds
