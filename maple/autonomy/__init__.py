@@ -47,6 +47,14 @@ from .retrieval import (
 from .events import AgentEvent, EventStream, RedactionPolicy
 from .evaluation import EvalCase, EvalObservation, EvalReport, EvalResult, EvaluationHarness
 from .interop import InteropEnvelope, round_trip_json
+from .artifacts import (
+    Artifact,
+    ArtifactStore,
+    CodeBlock,
+    FileArtifactStore,
+    InMemoryArtifactStore,
+    extract_code_blocks,
+)
 from .workflow import (
     END,
     CheckpointStore,
@@ -104,6 +112,12 @@ __all__ = [
     "EvaluationHarness",
     "InteropEnvelope",
     "round_trip_json",
+    "Artifact",
+    "ArtifactStore",
+    "CodeBlock",
+    "FileArtifactStore",
+    "InMemoryArtifactStore",
+    "extract_code_blocks",
     "END",
     "CheckpointStore",
     "FileCheckpointStore",

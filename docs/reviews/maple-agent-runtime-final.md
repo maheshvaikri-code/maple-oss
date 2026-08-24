@@ -18,6 +18,8 @@ The feature program now includes:
 - strict interop envelopes and the local `maple doctor --json` preflight.
 - bounded live MCP `tools/list` discovery, JSON-RPC `tools/call`, and a
   dependency-free Streamable HTTP transport (ADR-007).
+- immutable bounded artifacts and non-executing Markdown code-block parsing
+  (ADR-008).
 
 Slice-level review artifacts are filed in `docs/reviews/` and corresponding QA
 artifacts in `docs/qa/`. No website, cloud, external publication, license, or
@@ -27,10 +29,13 @@ new dependency change was made.
 
 ```text
 Focused LLM/autonomy/CLI regression:
-171 passed, 1 warning in 0.78s
+176 passed, 1 warning in 0.85s
 
 Focused MCP/governance regression:
 22 passed, 1 warning in 0.59s
+
+Focused artifact regression:
+5 passed, 1 warning in 0.04s
 
 Focused regression in isolated `.[dev,security]` environment:
 165 passed, 1 warning in 0.34s

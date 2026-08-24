@@ -45,6 +45,7 @@ Most agent frameworks give you either **infrastructure** (messaging, security, f
 - **Evaluation Harness (preview)** — Run deterministic golden cases with output-schema checks, exact outputs, tool-trajectory checks, bounded reports, and redacted actual values.
 - **Capability-Aware Provider Fallback (preview)** — Select providers by declared tool/streaming/structured-output/context capabilities with deterministic initialization fallback.
 - **Interop Envelope + Doctor CLI (preview)** — Strict adapter round-trip envelopes and a network-free `maple doctor --json` readiness report for the runtime surfaces.
+- **Artifacts and Code Blocks (preview)** — Store immutable SHA-256-addressed files with bounded in-memory or file-backed stores, and extract Markdown code blocks as data without executing them.
 - **Three-Tier Memory** — Working memory (context window), episodic memory (task history), semantic memory (learned facts). LLM-assisted summarization when context fills up.
 - **Multi-Agent Orchestration** — Form teams by capability, execute via supervisor delegation or consensus voting.
 - **MCP Tool Discovery** — Discover live `tools/list` descriptors over bounded Streamable HTTP and use approved external tools as native MAPLE tools; the legacy URL-only helper remains offline for compatibility.
@@ -479,8 +480,8 @@ python -m pytest tests/security/ -v       # Security tests
 python -m pytest tests/broker/ -v         # Broker tests
 ```
 
-Current status: focused LLM/autonomy/CLI regression **171 passed**, focused
-MCP/governance regression **22 passed**, and local compile/doctor/package
+Current status: focused LLM/autonomy/CLI regression **176 passed**, including
+focused MCP/governance and artifact tests, and local compile/doctor/package
 preflight gates pass. The full repository regression remains open; the latest
 bounded attempt reported **1049 passed** before interruption in slow Doctrine
 gold cases. Coverage is not being treated as a release gate until the full
@@ -516,6 +517,28 @@ The transport enforces bounded request/response bodies and MCP initialization;
 discovery rejects malformed or duplicate descriptors. The default URL-only
 form preserves the historical two-tool offline compatibility behavior and is
 not live discovery.
+
+### Artifacts and code blocks
+
+Code is treated as data until a separately approved isolation provider exists:
+
+```python
+from maple.autonomy import InMemoryArtifactStore, extract_code_blocks
+
+blocks = extract_code_blocks(model_text).unwrap()
+artifacts = InMemoryArtifactStore()
+for block in blocks:
+    artifact = artifacts.put(
+        block.code.encode("utf-8"),
+        name=f"block-{block.index}.txt",
+        media_type="text/plain",
+    ).unwrap()
+    print(artifact.artifact_id, artifact.size)
+```
+
+The parser and stores enforce source, block, artifact, and total-store limits,
+verify content hashes on reads, and reject path-like artifact names. They do
+not run Python, shell, browser, or computer-use code.
 
 | Example | Description |
 |---------|-------------|

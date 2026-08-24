@@ -103,6 +103,14 @@ from .autonomy.evaluation import (
     EvaluationHarness,
 )
 from .autonomy.interop import InteropEnvelope, round_trip_json
+from .autonomy.artifacts import (
+    Artifact,
+    ArtifactStore,
+    CodeBlock,
+    FileArtifactStore,
+    InMemoryArtifactStore,
+    extract_code_blocks,
+)
 from .llm.types import LLMConfig, ChatMessage, ChatRole
 from .llm.registry import LLMProviderRegistry
 from .llm.capabilities import (
@@ -216,6 +224,12 @@ __all__ = [
     "EvaluationHarness",
     "InteropEnvelope",
     "round_trip_json",
+    "Artifact",
+    "ArtifactStore",
+    "CodeBlock",
+    "FileArtifactStore",
+    "InMemoryArtifactStore",
+    "extract_code_blocks",
     "LLMConfig",
     "ChatMessage",
     "ChatRole",
