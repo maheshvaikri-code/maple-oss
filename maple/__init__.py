@@ -95,6 +95,13 @@ from .autonomy.retrieval import (
     TextChunker,
 )
 from .autonomy.events import AgentEvent, EventStream, RedactionPolicy
+from .autonomy.evaluation import (
+    EvalCase,
+    EvalObservation,
+    EvalReport,
+    EvalResult,
+    EvaluationHarness,
+)
 from .llm.types import LLMConfig, ChatMessage, ChatRole
 from .llm.registry import LLMProviderRegistry
 from .llm.capabilities import (
@@ -201,6 +208,11 @@ __all__ = [
     "AgentEvent",
     "EventStream",
     "RedactionPolicy",
+    "EvalCase",
+    "EvalObservation",
+    "EvalReport",
+    "EvalResult",
+    "EvaluationHarness",
     "LLMConfig",
     "ChatMessage",
     "ChatRole",
