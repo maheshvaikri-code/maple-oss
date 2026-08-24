@@ -25,6 +25,10 @@
   persistence, hash verification, and a bounded Markdown fence parser that
   returns code as data without executing it. Native sandbox, shell, browser,
   and computer-use execution remain intentionally unimplemented.
+- **Provider-agnostic LLM streaming** (`maple.llm.provider`): the shared
+  `stream()` contract now yields bounded text chunks, tool-call deltas, and a
+  finish event after a successful completion, while preserving typed provider
+  errors. Native low-latency provider streams remain explicit overrides.
 - **Release metadata hardening**: `pyproject.toml` is now the single source
   for package metadata, the legacy `setup.py` delegates to it, and the source
   manifest includes only files present in the repository. Wheel/sdist builds

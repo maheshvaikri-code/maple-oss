@@ -15,11 +15,13 @@ The feature program now includes:
 - bounded sequenced events with recursive redaction;
 - evaluation cases for outputs/schemas/trajectories;
 - declared provider capabilities and fallback routing;
-- strict interop envelopes and the local `maple doctor --json` preflight.
+- strict interop envelopes and the local `maple doctor --json` preflight;
 - bounded live MCP `tools/list` discovery, JSON-RPC `tools/call`, and a
   dependency-free Streamable HTTP transport (ADR-007).
 - immutable bounded artifacts and non-executing Markdown code-block parsing
   (ADR-008).
+- provider-agnostic completion-backed LLM streaming with text, tool-call, and
+  finish chunks (ADR-009).
 
 Slice-level review artifacts are filed in `docs/reviews/` and corresponding QA
 artifacts in `docs/qa/`. No website, cloud, external publication, license, or
@@ -30,6 +32,9 @@ new dependency change was made.
 ```text
 Focused LLM/autonomy/CLI regression:
 176 passed, 1 warning in 0.85s
+
+Focused provider-stream regression:
+2 passed, 1 warning in 0.02s
 
 Focused MCP/governance regression:
 22 passed, 1 warning in 0.59s
@@ -88,7 +93,7 @@ Doctor:
 
 ## Verdict
 
-**Feature review:** PASS for the eight implemented capability slices.
+**Feature review:** PASS for the ten implemented capability slices.
 **Publish readiness:** NOT YET APPROVED. A release manager should close the
 open full-suite, isolated-environment dependency/audit, repository lint, and
 fresh-verifier gates before publishing. External publication remains awaiting
