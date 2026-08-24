@@ -278,8 +278,8 @@ class TrustedLocalExecutor:
             return Result.ok(value)
         finally:
             if timed_out:
-                worker.shutdown(wait=False, cancel_futures=True)
+                worker.shutdown(wait=False)
                 future.add_done_callback(lambda _: self._slots.release())
             else:
-                worker.shutdown(wait=True, cancel_futures=True)
+                worker.shutdown(wait=True)
                 self._slots.release()
