@@ -25,6 +25,9 @@
 - **Retrieval/data primitives (preview)** (`maple.autonomy.retrieval`): bounded
   source-bearing documents, deterministic chunking with offsets, and a
   dependency-free lexical retriever with ranked citations and regression tests.
+- **Event streaming and redaction (preview)** (`maple.autonomy.events`): bounded
+  sequenced event retention, snapshot/wait/subscriber consumers, structured
+  payload limits, and recursive credential-key redaction.
 
 ## Version 1.1.3 - Downstream integration improvements (August 2026)
 

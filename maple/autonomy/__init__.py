@@ -44,6 +44,7 @@ from .retrieval import (
     SourceRef,
     TextChunker,
 )
+from .events import AgentEvent, EventStream, RedactionPolicy
 from .workflow import (
     END,
     CheckpointStore,
@@ -91,6 +92,9 @@ __all__ = [
     "RetrievalHit",
     "SourceRef",
     "TextChunker",
+    "AgentEvent",
+    "EventStream",
+    "RedactionPolicy",
     "END",
     "CheckpointStore",
     "FileCheckpointStore",

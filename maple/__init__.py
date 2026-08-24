@@ -94,6 +94,7 @@ from .autonomy.retrieval import (
     SourceRef,
     TextChunker,
 )
+from .autonomy.events import AgentEvent, EventStream, RedactionPolicy
 from .llm.types import LLMConfig, ChatMessage, ChatRole
 from .llm.registry import LLMProviderRegistry
 
@@ -191,6 +192,9 @@ __all__ = [
     "RetrievalHit",
     "SourceRef",
     "TextChunker",
+    "AgentEvent",
+    "EventStream",
+    "RedactionPolicy",
     "LLMConfig",
     "ChatMessage",
     "ChatRole",

@@ -600,6 +600,31 @@ vector database or embedding service. Empty/malformed/oversized inputs fail
 with structured `Result` errors, and every hit carries a source reference for
 citation.
 
+## Event Streaming and Redaction (preview)
+
+`EventStream` provides an in-process observability contract for workflow, model,
+and tool lifecycle events. It assigns monotonic sequence numbers, retains a
+bounded ring, supports snapshots/waiters and synchronous subscribers, and
+redacts credential-like keys before retention or delivery. Payload shape,
+string, item, depth, and byte limits fail closed with structured errors.
+
+```python
+from maple import EventStream
+
+events = EventStream(max_events=1_000, max_payload_bytes=64_000)
+events.publish(
+    "tool.completed",
+    {"tool": "search", "api_key": "never-retained"},
+    run_id="run-1",
+)
+for event in events.snapshot().unwrap():
+    print(event.sequence, event.event_type, event.payload)
+```
+
+This is a local event contract, not a durable broker or hosted telemetry
+service. Subscribers are synchronous and should hand off to a host-owned queue
+when callback work may block.
+
 ## Workflow Runtime (preview)
 
 The workflow runtime provides a dependency-free, sequential execution graph
