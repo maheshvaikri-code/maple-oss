@@ -55,10 +55,12 @@ hardening remains in progress. Focused feature gates, compile, metadata-clean
 wheel/sdist builds, Twine checks, a clean-venv wheel doctor smoke pass, and a
 fresh `.[dev,security]` environment with `pip check` reporting no broken
 requirements all pass.
-The full repository regression is not complete: adapters, state, and security
-partitions passed, discovery passed 57 tests in 152.28s, and the Windows
-Doctrine gold partition exposed 100.62s and 64.60s Git-heavy tests before the
-run was stopped. The shared interpreter still has unrelated `pip check`
+The full repository regression is not complete: the latest bounded attempt
+reported `1049 passed, 8 warnings in 839.17s` before interruption in the
+remaining Doctrine gold cases. Fresh-repository profiling shows individual
+Git commands taking roughly 5–15 seconds on this Windows environment, with
+the slowest gold cases at 166.96s, 159.74s, 115.61s, and 56.04s. No assertion
+failure was reported. The shared interpreter still has unrelated `pip check`
 conflicts, but the isolated dependency gate is clean. Repository-wide Ruff
 debt and unavailable independent fresh-context verification remain open.
 External publishing, cloud selection, and website changes remain explicitly out

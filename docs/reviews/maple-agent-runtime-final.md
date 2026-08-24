@@ -56,10 +56,12 @@ Doctor:
 ## Open release findings
 
 1. The full `tests` run remains unfinished evidence, not a full-suite pass.
-   The suspected S2 adapter was cleared in isolation (16 passed in 0.06s).
-   Partitioned evidence shows adapters, state, and security passing; discovery
-   passed 57 tests in 152.28s; and the Windows Doctrine gold partition reached
-   two Git-heavy tests taking 100.62s and 64.60s before it was interrupted.
+   The latest bounded attempt reported `1049 passed, 8 warnings in 839.17s`
+   before interruption in the remaining Doctrine gold cases. The suspected S2
+   adapter was cleared in isolation (16 passed in 0.06s). Fresh-repository
+   profiling shows individual Git commands taking roughly 5–15 seconds, with
+   the slowest gold cases at 166.96s, 159.74s, 115.61s, and 56.04s. No
+   assertion failure was reported.
 2. The shared interpreter's `pip check` still reports unrelated package
    conflicts (including `chromadb`, `fsspec`, `pydantic`, `openai`, and
    `langchain-core`), but a fresh environment installed `.[dev,security]` and

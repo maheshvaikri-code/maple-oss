@@ -15,7 +15,7 @@
 | Installed artifact smoke | PASS | Clean venv installed the wheel with `--no-deps`; `maple doctor --json` returned `ready:true`, `network:false`. |
 | Isolated dependency audit | PASS | Fresh `.[dev,security]` environment: `pip check` returned `No broken requirements found.` |
 | Local readiness | PASS | `maple doctor --json` returned all six checks true and `network:false`. |
-| Full repository regression | OPEN | S2 adapter passed in 0.06s; adapters/state/security partitions passed; discovery passed 57 tests in 152.28s; Windows Doctrine gold Git-heavy tests took 100.62s and 64.60s before interruption. |
+| Full repository regression | OPEN | Latest bounded run: `1049 passed, 8 warnings in 839.17s` before interruption in remaining Doctrine gold cases; no assertion failure. Fresh temp-repo Git profiling shows roughly 5–15s per command, with slowest gold cases at 166.96s, 159.74s, 115.61s, and 56.04s. |
 | Dependency consistency | PASS | Isolated MAPLE environment is consistent; shared-interpreter conflicts are unrelated and non-authoritative. |
 | Repository-wide lint | OPEN | Existing package-init and legacy-test debt remains; no broad cleanup claimed. |
 | Independent review | OPEN | Fresh verifier sessions are unavailable in this tool context. |
