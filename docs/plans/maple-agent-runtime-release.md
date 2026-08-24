@@ -14,7 +14,7 @@
 | 5 | Workflow/model/tool event streaming and observability | Backend Engineer / Observability | events, traces, correlation IDs, redaction, tests, docs | Event ordering, bounded buffers, cancellation, redaction, failure telemetry | done: commit `5be8115`; focused `11 passed`; autonomy `125 passed` |
 | 6 | Agent evaluation harness and model/provider capabilities | ML Engineer / Interop Engineer | eval fixtures, provider contracts, tests, docs | Golden set, schema/trajectory checks, provider fallback, pinned model metadata | done: commits `4ead28d` + `3a91c6d`; focused `7 passed`; LLM/autonomy `160 passed` |
 | 7 | Interoperability and developer experience | Interop / DevOps / Tech Writer | adapters, examples, CLI/task runner, API docs | Round-trip payloads, unknown fields, quickstart, one-command checks | done: commit `bf1614b`; focused `5 passed`; combined LLM/autonomy/CLI `165 passed` |
-| 8 | Release hardening | Security / QA / Release Manager | CI, changelog, release artifacts, package metadata | Full test/lint/type/audit/build matrix and clean-tree checklist | todo |
+| 8 | Release hardening | Security / QA / Release Manager | CI, changelog, release artifacts, package metadata | Full test/lint/type/audit/build matrix and clean-tree checklist | in progress: focused gates/build pass; full-suite, shared-env dependency, and independent-review gates remain open |
 
 ## Threat sketch
 
@@ -49,10 +49,12 @@ privileged action without approval.
 
 ## Status snapshot
 
-Done (with evidence): G0 brief, G1 ADR, G2 plan, Slice 1 commit `d75c58c`,
-Slice 2 commit `fed365f`, review/QA artifacts, focused and autonomy tests.
-Next: release hardening and G4-G7 gates. Blocked on: no local blocker; full
-repository regression is slow/stopped at `1008 passed`, package-init Ruff debt
-remains a release-hardening item, independent fresh-context verification is not
-available in this tool context, and external publishing, cloud selection, and
-website changes remain explicitly out of scope until human approval.
+Done (with evidence): G0 brief, G1 ADR, G2 plan, and all seven G3 feature
+slices through `bf1614b`; slice review/QA artifacts are filed. Release
+hardening remains in progress. Focused feature gates and package build pass;
+the full repository regression reached 86% without an assertion failure but was
+stopped in the known slow integration region, `pip check` is contaminated by
+shared-environment conflicts, package-init Ruff debt remains, independent
+fresh-context verification is unavailable in this tool context, and external
+publishing, cloud selection, and website changes remain explicitly out of scope
+until human approval.
