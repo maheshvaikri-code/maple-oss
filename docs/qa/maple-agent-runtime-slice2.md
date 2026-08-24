@@ -1,7 +1,7 @@
 # QA + Security Report - MAPLE Agent Runtime Slice 2 @ fed365f
 
 **QA Engineer:** local verification role  · **Security Reviewer:** local
-security pass  · **Date:** 2026-08-24  
+security pass  · **Date:** 2026-08-24
 **Build under test:** `fed365f feat(autonomy): add typed agent contracts`
 
 ## Acceptance criteria
@@ -40,6 +40,6 @@ is not treated as a full-suite release pass.
 ## Verdict
 
 **Security:** SIGN-OFF for the dependency-free Slice 2 boundary; final release
-security sign-off remains open.  
+security sign-off remains open.
 **QA:** pass for Slice 2; final release QA remains open pending the remaining
 slices and a completed repository regression run.

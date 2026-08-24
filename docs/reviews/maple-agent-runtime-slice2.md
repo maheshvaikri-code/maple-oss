@@ -1,6 +1,6 @@
 # Code Review - MAPLE Agent Runtime Slice 2 @ fed365f
 
-**Reviewer role:** Code Reviewer  · **Date:** 2026-08-24  
+**Reviewer role:** Code Reviewer  · **Date:** 2026-08-24
 **Reviewed against:** [brief](../briefs/maple-agent-runtime-release.md),
 [ADR-001](../adr/001-maple-workflow-runtime.md), and
 [implementation plan](../plans/maple-agent-runtime-release.md)
