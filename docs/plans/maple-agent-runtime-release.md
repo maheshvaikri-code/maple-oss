@@ -13,7 +13,7 @@
 | 4 | Retrieval/data primitives | ML Engineer / Data Engineer | retrieval module, adapters, fixtures, tests, docs | Ingestion, chunking, source refs, empty/large/malformed input, retrieval fixture metrics | done: commit `953f601`; focused `20 passed`; autonomy `120 passed` |
 | 5 | Workflow/model/tool event streaming and observability | Backend Engineer / Observability | events, traces, correlation IDs, redaction, tests, docs | Event ordering, bounded buffers, cancellation, redaction, failure telemetry | done: commit `5be8115`; focused `11 passed`; autonomy `125 passed` |
 | 6 | Agent evaluation harness and model/provider capabilities | ML Engineer / Interop Engineer | eval fixtures, provider contracts, tests, docs | Golden set, schema/trajectory checks, provider fallback, pinned model metadata | done: commits `4ead28d` + `3a91c6d`; focused `7 passed`; LLM/autonomy `160 passed` |
-| 7 | Interoperability and developer experience | Interop / DevOps / Tech Writer | adapters, examples, CLI/task runner, API docs | Round-trip payloads, unknown fields, quickstart, one-command checks | todo |
+| 7 | Interoperability and developer experience | Interop / DevOps / Tech Writer | adapters, examples, CLI/task runner, API docs | Round-trip payloads, unknown fields, quickstart, one-command checks | done: commit `bf1614b`; focused `5 passed`; combined LLM/autonomy/CLI `165 passed` |
 | 8 | Release hardening | Security / QA / Release Manager | CI, changelog, release artifacts, package metadata | Full test/lint/type/audit/build matrix and clean-tree checklist | todo |
 
 ## Threat sketch
@@ -51,8 +51,8 @@ privileged action without approval.
 
 Done (with evidence): G0 brief, G1 ADR, G2 plan, Slice 1 commit `d75c58c`,
 Slice 2 commit `fed365f`, review/QA artifacts, focused and autonomy tests.
-Next: Slice 7 interoperability and developer experience. Blocked on: no local
-blocker; full repository regression is slow/stopped at `1008 passed`, package-
-init Ruff debt remains a release-hardening item, and external publishing, cloud
-selection, and website changes remain explicitly out of scope until human
-approval.
+Next: release hardening and G4-G7 gates. Blocked on: no local blocker; full
+repository regression is slow/stopped at `1008 passed`, package-init Ruff debt
+remains a release-hardening item, independent fresh-context verification is not
+available in this tool context, and external publishing, cloud selection, and
+website changes remain explicitly out of scope until human approval.
