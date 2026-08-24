@@ -84,6 +84,16 @@ from .autonomy.execution import (
     ExecutionPolicy,
     TrustedLocalExecutor,
 )
+from .autonomy.retrieval import (
+    ChunkingPolicy,
+    Document,
+    DocumentChunk,
+    InMemoryLexicalRetriever,
+    RetrievalBackend,
+    RetrievalHit,
+    SourceRef,
+    TextChunker,
+)
 from .llm.types import LLMConfig, ChatMessage, ChatRole
 from .llm.registry import LLMProviderRegistry
 
@@ -173,6 +183,14 @@ __all__ = [
     "ExecutionExecutor",
     "ExecutionPolicy",
     "TrustedLocalExecutor",
+    "ChunkingPolicy",
+    "Document",
+    "DocumentChunk",
+    "InMemoryLexicalRetriever",
+    "RetrievalBackend",
+    "RetrievalHit",
+    "SourceRef",
+    "TextChunker",
     "LLMConfig",
     "ChatMessage",
     "ChatRole",

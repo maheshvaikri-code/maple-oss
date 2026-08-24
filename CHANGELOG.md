@@ -22,6 +22,9 @@
   trusted-handler execution with input/output byte limits, concurrency,
   timeout, cooperative cancellation, approval, and cleanup semantics. The
   public documentation calls out that it is not a hard-kill sandbox.
+- **Retrieval/data primitives (preview)** (`maple.autonomy.retrieval`): bounded
+  source-bearing documents, deterministic chunking with offsets, and a
+  dependency-free lexical retriever with ranked citations and regression tests.
 
 ## Version 1.1.3 - Downstream integration improvements (August 2026)
 

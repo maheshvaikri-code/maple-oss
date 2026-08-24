@@ -34,6 +34,16 @@ from .execution import (
     ExecutionPolicy,
     TrustedLocalExecutor,
 )
+from .retrieval import (
+    ChunkingPolicy,
+    Document,
+    DocumentChunk,
+    InMemoryLexicalRetriever,
+    RetrievalBackend,
+    RetrievalHit,
+    SourceRef,
+    TextChunker,
+)
 from .workflow import (
     END,
     CheckpointStore,
@@ -73,6 +83,14 @@ __all__ = [
     "ExecutionExecutor",
     "ExecutionPolicy",
     "TrustedLocalExecutor",
+    "ChunkingPolicy",
+    "Document",
+    "DocumentChunk",
+    "InMemoryLexicalRetriever",
+    "RetrievalBackend",
+    "RetrievalHit",
+    "SourceRef",
+    "TextChunker",
     "END",
     "CheckpointStore",
     "FileCheckpointStore",

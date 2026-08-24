@@ -566,6 +566,40 @@ config = AutonomousConfig(
 parsed = parse_structured_output('{"answer":"ready"}', report_schema)
 ```
 
+## Retrieval and Source References (preview)
+
+The retrieval contract keeps document identity, source citations, chunk offsets,
+metadata, and ranked hits together. `TextChunker` enforces document/chunk
+bounds, while `InMemoryLexicalRetriever` provides a dependency-free reference
+backend for local development and tests. Vector or embedding stores can later
+implement `RetrievalBackend` without changing agent-facing result types.
+
+```python
+from maple import (
+    Document,
+    InMemoryLexicalRetriever,
+    SourceRef,
+)
+
+retriever = InMemoryLexicalRetriever()
+retriever.add_document(
+    Document(
+        document_id="guide-1",
+        text="MAPLE uses resource-aware agent orchestration.",
+        source=SourceRef(uri="https://example.invalid/guide", title="Guide"),
+    )
+)
+hits = retriever.search("resource-aware orchestration", top_k=3)
+if hits.is_ok():
+    for hit in hits.unwrap():
+        print(hit.score, hit.chunk.source.uri, hit.chunk.text)
+```
+
+The reference backend is intentionally lexical and local; it is not a hosted
+vector database or embedding service. Empty/malformed/oversized inputs fail
+with structured `Result` errors, and every hit carries a source reference for
+citation.
+
 ## Workflow Runtime (preview)
 
 The workflow runtime provides a dependency-free, sequential execution graph
