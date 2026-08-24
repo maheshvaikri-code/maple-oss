@@ -625,6 +625,54 @@ This is a local event contract, not a durable broker or hosted telemetry
 service. Subscribers are synchronous and should hand off to a host-owned queue
 when callback work may block.
 
+## Evaluation and Provider Capabilities (preview)
+
+The evaluation harness runs local runners against golden cases. A case can
+assert exact output, a bounded JSON schema, and an ordered tool trajectory.
+Failures are recorded per case so one bad case does not abort the report; actual
+values are redacted and size-bounded before they are returned.
+
+```python
+from maple import EvalCase, EvalObservation, EvaluationHarness
+
+cases = [
+    EvalCase(
+        case_id="lookup",
+        input={"query": "MAPLE"},
+        output_schema={"type": "object", "required": ["answer"]},
+        expected_tool_names=("search",),
+    )
+]
+report = EvaluationHarness().run(
+    cases,
+    lambda value: EvalObservation(
+        output={"answer": "ready"},
+        tool_names=("search",),
+    ),
+)
+```
+
+Providers can declare compatibility requirements independently of provider
+names. `ProviderRouter` orders matching descriptors by explicit priority and
+tries configured providers in that order, returning a structured failure if no
+compatible provider initializes.
+
+```python
+from maple import ProviderCapabilities, ProviderRequirements, ProviderRouter
+
+router = ProviderRouter()
+router.register(
+    "local",
+    LocalProvider,
+    ProviderCapabilities(tools=True, structured_output=True),
+    priority=10,
+)
+provider = router.create(
+    {"local": local_config},
+    ProviderRequirements(tools=True, structured_output=True),
+)
+```
+
 ## Workflow Runtime (preview)
 
 The workflow runtime provides a dependency-free, sequential execution graph

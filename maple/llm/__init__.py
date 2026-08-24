@@ -16,14 +16,39 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 """LLM Provider Layer for MAPLE autonomous agents."""
 
 from .types import (
-    ChatRole, ChatMessage, ToolDefinition, ToolCall, ToolResult,
-    TokenUsage, LLMResponse, LLMChunk, LLMConfig,
+    ChatRole,
+    ChatMessage,
+    ToolDefinition,
+    ToolCall,
+    ToolResult,
+    TokenUsage,
+    LLMResponse,
+    LLMChunk,
+    LLMConfig,
 )
 from .provider import LLMProvider
 from .registry import LLMProviderRegistry
+from .capabilities import (
+    ProviderCapabilities,
+    ProviderDescriptor,
+    ProviderRequirements,
+    ProviderRouter,
+)
 
 __all__ = [
-    'ChatRole', 'ChatMessage', 'ToolDefinition', 'ToolCall', 'ToolResult',
-    'TokenUsage', 'LLMResponse', 'LLMChunk', 'LLMConfig',
-    'LLMProvider', 'LLMProviderRegistry',
+    "ChatRole",
+    "ChatMessage",
+    "ToolDefinition",
+    "ToolCall",
+    "ToolResult",
+    "TokenUsage",
+    "LLMResponse",
+    "LLMChunk",
+    "LLMConfig",
+    "LLMProvider",
+    "LLMProviderRegistry",
+    "ProviderCapabilities",
+    "ProviderDescriptor",
+    "ProviderRequirements",
+    "ProviderRouter",
 ]

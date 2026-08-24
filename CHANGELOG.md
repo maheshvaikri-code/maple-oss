@@ -28,6 +28,10 @@
 - **Event streaming and redaction (preview)** (`maple.autonomy.events`): bounded
   sequenced event retention, snapshot/wait/subscriber consumers, structured
   payload limits, and recursive credential-key redaction.
+- **Evaluation/provider capabilities (preview)** (`maple.autonomy.evaluation`,
+  `maple.llm.capabilities`): deterministic output/trajectory evaluation cases,
+  redacted bounded reports, declared capability matching, and provider
+  initialization fallback.
 
 ## Version 1.1.3 - Downstream integration improvements (August 2026)
 

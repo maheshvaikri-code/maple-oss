@@ -42,6 +42,8 @@ Most agent frameworks give you either **infrastructure** (messaging, security, f
 - **Trusted Local Execution (preview)** — Opt tools into bounded input/output, timeout, cooperative cancellation, approval, and concurrency controls; this is not an untrusted-code sandbox.
 - **Retrieval/Data Primitives (preview)** — Ingest bounded documents, split deterministic chunks, run local lexical retrieval, and retain source references for grounded answers.
 - **Event Streaming and Redaction (preview)** — Publish bounded sequenced events with ring retention, wait/snapshot consumers, subscriber isolation, and recursive credential redaction.
+- **Evaluation Harness (preview)** — Run deterministic golden cases with output-schema checks, exact outputs, tool-trajectory checks, bounded reports, and redacted actual values.
+- **Capability-Aware Provider Fallback (preview)** — Select providers by declared tool/streaming/structured-output/context capabilities with deterministic initialization fallback.
 - **Three-Tier Memory** — Working memory (context window), episodic memory (task history), semantic memory (learned facts). LLM-assisted summarization when context fills up.
 - **Multi-Agent Orchestration** — Form teams by capability, execute via supervisor delegation or consensus voting.
 - **MCP Tool Discovery** — Discover and use tools from any MCP server as native MAPLE tools.

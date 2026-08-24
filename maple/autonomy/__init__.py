@@ -45,6 +45,7 @@ from .retrieval import (
     TextChunker,
 )
 from .events import AgentEvent, EventStream, RedactionPolicy
+from .evaluation import EvalCase, EvalObservation, EvalReport, EvalResult, EvaluationHarness
 from .workflow import (
     END,
     CheckpointStore,
@@ -95,6 +96,11 @@ __all__ = [
     "AgentEvent",
     "EventStream",
     "RedactionPolicy",
+    "EvalCase",
+    "EvalObservation",
+    "EvalReport",
+    "EvalResult",
+    "EvaluationHarness",
     "END",
     "CheckpointStore",
     "FileCheckpointStore",

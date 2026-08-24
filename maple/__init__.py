@@ -97,6 +97,12 @@ from .autonomy.retrieval import (
 from .autonomy.events import AgentEvent, EventStream, RedactionPolicy
 from .llm.types import LLMConfig, ChatMessage, ChatRole
 from .llm.registry import LLMProviderRegistry
+from .llm.capabilities import (
+    ProviderCapabilities,
+    ProviderDescriptor,
+    ProviderRequirements,
+    ProviderRouter,
+)
 
 # S2.dev durable streaming integration (optional)
 try:
@@ -199,6 +205,10 @@ __all__ = [
     "ChatMessage",
     "ChatRole",
     "LLMProviderRegistry",
+    "ProviderCapabilities",
+    "ProviderDescriptor",
+    "ProviderRequirements",
+    "ProviderRouter",
     # S2.dev integration (optional)
     "S2Broker",
     "S2StateBackend",
