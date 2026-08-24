@@ -13,6 +13,13 @@
 - **CI/release preflight**: GitHub Actions now enforces isolated dependency
   consistency, compilation, the network-free doctor, changed-runtime Flake8,
   focused regressions, and built-wheel verification before package release.
+- **Live MCP discovery** (`maple.adapters.mcp_adapter`,
+  `maple.autonomy.mcp_tools`): added a dependency-free bounded Streamable HTTP
+  transport with lazy MCP initialization, JSON/SSE response parsing, live
+  paginated `tools/list`, real JSON-RPC `tools/call`, RPC error mapping, and
+  strict external descriptor conversion. Live tools require approval by
+  default; the historical URL-only discovery call remains offline for
+  compatibility.
 - **Release metadata hardening**: `pyproject.toml` is now the single source
   for package metadata, the legacy `setup.py` delegates to it, and the source
   manifest includes only files present in the repository. Wheel/sdist builds

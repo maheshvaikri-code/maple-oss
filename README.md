@@ -47,7 +47,7 @@ Most agent frameworks give you either **infrastructure** (messaging, security, f
 - **Interop Envelope + Doctor CLI (preview)** — Strict adapter round-trip envelopes and a network-free `maple doctor --json` readiness report for the runtime surfaces.
 - **Three-Tier Memory** — Working memory (context window), episodic memory (task history), semantic memory (learned facts). LLM-assisted summarization when context fills up.
 - **Multi-Agent Orchestration** — Form teams by capability, execute via supervisor delegation or consensus voting.
-- **MCP Tool Discovery** — Discover and use tools from any MCP server as native MAPLE tools.
+- **MCP Tool Discovery** — Discover live `tools/list` descriptors over bounded Streamable HTTP and use approved external tools as native MAPLE tools; the legacy URL-only helper remains offline for compatibility.
 - **Observability** — Full decision traces, agent snapshots, token usage tracking.
 - **Workflow Runtime (preview)** — Define validated workflows with stable run IDs, JSON-safe node-boundary checkpoints, interruption, conditional routing, and local file-backed resume.
 
@@ -80,7 +80,7 @@ Extensibility and hardening surfaced by integrating MAPLE into a governed downst
 - **Resource Lifecycles** — `ResourceManager` distinguishes **renewable** pools (returned on release) from **consumable** budgets (spent, never refunded — money, API calls, energy). `register_resource(type, amount, lifecycle=...)`; `release()` refunds only renewable resources.
 - **Custom Resource Dimensions** — `ResourceRequest.custom` negotiates arbitrarily-named numeric resources (GPU, disk, `$` spend, QPS) without MAPLE hard-coding each.
 - **Exclusive Leases** — `LeaseManager` / `Lease` grant exclusive, TTL-bounded holds with monotonic **fencing tokens** — a lock, a device, a license seat, or a singleton "leader" role. Expiry is the preemption mechanism; a crashed holder can't deadlock the resource. `from maple.resources import LeaseManager`.
-- **MCP Tool Governance** — `register_mcp_tools(..., policy=..., namespace=True, max_tools=...)` mediates the trust boundary for untrusted MCP servers: fail-closed authorization, server-namespacing to prevent tool shadowing, name sanitization, and a registration cap.
+- **MCP Tool Governance** — `register_mcp_tools(..., policy=..., namespace=True, max_tools=...)` mediates the trust boundary for untrusted MCP servers: fail-closed authorization, server-namespacing to prevent tool shadowing, name sanitization, and a registration cap. Live-discovered tools are approval-required by default.
 - **Bounded Backoff** — `exponential_backoff(max_delay=...)` caps per-attempt delay so a large retry count can't stall a caller holding a resource.
 - **On-Demand Health** — `HealthMonitor.snapshot()` returns an immediate health read without waiting for the first sampling interval.
 
@@ -93,7 +93,7 @@ MAPLE ships with 11 adapters in `maple/adapters/` for bridging to external proto
 | Adapter | File | What It Does |
 |---------|------|-------------|
 | **Google A2A** | `a2a_adapter.py` | Translate MAPLE messages to/from A2A Agent-to-Agent protocol. Maps MAPLE resources to A2A task metadata, bridges agent discovery via A2A Agent Cards. |
-| **Anthropic MCP** | `mcp_adapter.py` | Bridge MCP tool servers into MAPLE. Discover MCP tools and register them as native MAPLE `Tool` objects. MAPLE agents call MCP tools via the ReAct loop. |
+| **MCP** | `mcp_adapter.py` | Bridge Streamable HTTP MCP servers into MAPLE. Perform bounded initialization, live `tools/list` discovery, JSON-RPC `tools/call`, and register descriptors as approval-required native MAPLE `Tool` objects. |
 | **FIPA ACL** | `fipa_acl_adapter.py` | Convert MAPLE messages to FIPA Agent Communication Language format. Supports performatives (inform, request, propose) and maps MAPLE priority to FIPA protocol fields. |
 | **AutoGen** | `autogen_adapter.py` | Wrap MAPLE agents as AutoGen-compatible participants. Run AutoGen group chats backed by MAPLE's broker, security, and resource management. |
 | **CrewAI** | `crewai_adapter.py` | Register MAPLE agents as CrewAI crew members. Map CrewAI tasks to MAPLE's task scheduler with fault tolerance and result collection. |
@@ -479,11 +479,43 @@ python -m pytest tests/security/ -v       # Security tests
 python -m pytest tests/broker/ -v         # Broker tests
 ```
 
-Current status: **1002 tests passing**, **80% code coverage**.
+Current status: focused LLM/autonomy/CLI regression **171 passed**, focused
+MCP/governance regression **22 passed**, and local compile/doctor/package
+preflight gates pass. The full repository regression remains open; the latest
+bounded attempt reported **1049 passed** before interruption in slow Doctrine
+gold cases. Coverage is not being treated as a release gate until the full
+suite and repository-wide lint debt are closed.
 
 ---
 
 ## Examples
+
+### Live MCP tools
+
+Live discovery is explicit so a URL-only compatibility call never performs an
+unexpected network request:
+
+```python
+from maple.adapters.mcp_adapter import MCPClient, StreamableHTTPTransport
+from maple.autonomy import discover_mcp_tools, register_mcp_tools
+
+transport = StreamableHTTPTransport("https://example.com/mcp")
+client = MCPClient(agent, transport.server_url, transport=transport)
+discovered = discover_mcp_tools(transport.server_url, agent, client=client)
+if discovered.is_ok():
+    register_mcp_tools(
+        registry,
+        discovered.unwrap(),
+        server_id="example",
+        namespace=True,
+        policy=lambda tool, _server: tool.requires_approval,
+    )
+```
+
+The transport enforces bounded request/response bodies and MCP initialization;
+discovery rejects malformed or duplicate descriptors. The default URL-only
+form preserves the historical two-tool offline compatibility behavior and is
+not live discovery.
 
 | Example | Description |
 |---------|-------------|

@@ -49,8 +49,10 @@ compatibility**, and the **tests/benchmarks** added.
   reject skips; policy-raise fails closed; default registers all; namespacing prevents native
   shadowing; two servers' same-named tools stay distinct; namespace-without-server-id registers
   nothing; hostile name sanitized; `max_tools` caps.
-- **Note.** `discover_mcp_tools` currently returns two *hardcoded* standard tools rather than
-  the server's live tool list — a separate follow-up, out of scope here.
+- **Status update.** Live discovery is now available when a caller supplies an
+  `MCPClient` with `StreamableHTTPTransport`; the historical URL-only form
+  remains a no-network compatibility fallback. See ADR-007 for bounds and
+  deferred stdio/session-resumption work.
 
 ## #3 — `HealthMonitor.snapshot()`: an immediate, on-demand health read
 

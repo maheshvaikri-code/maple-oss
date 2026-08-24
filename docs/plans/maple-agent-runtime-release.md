@@ -14,7 +14,8 @@
 | 5 | Workflow/model/tool event streaming and observability | Backend Engineer / Observability | events, traces, correlation IDs, redaction, tests, docs | Event ordering, bounded buffers, cancellation, redaction, failure telemetry | done: commit `5be8115`; focused `11 passed`; autonomy `125 passed` |
 | 6 | Agent evaluation harness and model/provider capabilities | ML Engineer / Interop Engineer | eval fixtures, provider contracts, tests, docs | Golden set, schema/trajectory checks, provider fallback, pinned model metadata | done: commits `4ead28d` + `3a91c6d`; focused `7 passed`; LLM/autonomy `160 passed` |
 | 7 | Interoperability and developer experience | Interop / DevOps / Tech Writer | adapters, examples, CLI/task runner, API docs | Round-trip payloads, unknown fields, quickstart, one-command checks | done: commit `bf1614b`; focused `5 passed`; combined LLM/autonomy/CLI `165 passed` |
-| 8 | Release hardening | Security / QA / Release Manager | CI, changelog, release artifacts, package metadata | Full test/lint/type/audit/build matrix and clean-tree checklist | in progress: metadata-clean build, isolated dependency gate, wheel smoke, and focused gates pass; full-suite, repository lint, and independent-review gates remain open |
+| 8 | Release hardening | Security / QA / Release Manager | CI, changelog, release artifacts, package metadata | Full test/lint/type/audit/build matrix and clean-tree checklist | in progress: metadata-clean build, isolated dependency gate, wheel smoke, CI preflight, and focused gates pass; full-suite, repository lint, and independent-review gates remain open |
+| 9 | Live MCP tool discovery and bounded JSON-RPC transport | Chief Architect / Interop / Backend / Security | `docs/adr/007-*`, MCP adapter/autonomy modules, MCP tests, README, changelog | Live descriptor conversion, pagination, malformed/duplicate rejection, RPC errors, initialization/session headers, focused lint | done: focused MCP suite `22 passed`; changed-surface Ruff/Flake8 and compile pass |
 
 ## Threat sketch
 
@@ -49,13 +50,13 @@ privileged action without approval.
 
 ## Status snapshot
 
-Done (with evidence): G0 brief, G1 ADR, G2 plan, and all seven G3 feature
-slices through `bf1614b`; slice review/QA artifacts are filed. Release
-hardening remains in progress. Focused feature gates, compile, changed-surface
-Ruff/Flake8, metadata-clean wheel/sdist builds, Twine checks, a clean-venv
-wheel doctor smoke pass, and a
-fresh `.[dev,security]` environment with `pip check` reporting no broken
-requirements all pass.
+Done (with evidence): G0 brief, G1 ADR, G2 plan, and all eight G3 feature
+slices through `bf1614b` plus the MCP interoperability slice in ADR-007;
+slice review/QA artifacts are filed. Release hardening remains in progress.
+Focused feature gates (171 LLM/autonomy/CLI tests and 22 focused MCP tests),
+compile, changed-surface Ruff/Flake8, metadata-clean wheel/sdist builds, Twine
+checks, a clean-venv wheel doctor smoke pass, and a fresh `.[dev,security]`
+environment with `pip check` reporting no broken requirements all pass.
 The full repository regression is not complete: the latest bounded attempt
 reported `1049 passed, 8 warnings in 839.17s` before interruption in the
 remaining Doctrine gold cases. Fresh-repository profiling shows individual

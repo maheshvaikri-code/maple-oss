@@ -8,7 +8,8 @@
 
 | Gate | Result | Evidence / limitation |
 |---|---|---|
-| New feature regressions | PASS | 165 LLM/autonomy/CLI tests passed; one existing pytest config warning. |
+| New feature regressions | PASS | 171 LLM/autonomy/CLI tests passed; one existing pytest config warning. |
+| Live MCP interoperability | PASS | 22 focused tests cover live descriptors, pagination, malformed/unsupported schemas, RPC errors, approval defaults, and real localhost HTTP initialization/session headers. |
 | Compile/import | PASS | `python -m compileall -q maple`; top-level public import and doctor smoke test pass. |
 | Changed-file Ruff | PASS | New/behavior-touched implementation checks pass. |
 | Changed-file Flake8 | PASS | Exact CI-style command returned `0` for the changed runtime surface. |
@@ -37,7 +38,7 @@
 ## Release decision
 
 **QA status: CONDITIONAL / NOT PUBLISH-READY.** The implementation is
-feature-complete for the planned seven slices, the built wheel passes a
+feature-complete for the planned eight capability slices, the built wheel passes a
 clean-venv doctor smoke test, and the isolated dependency audit is clean. The
 release gate must remain open for the full-suite, repository-wide lint, and
 fresh-verifier checks. No external release action was taken.
