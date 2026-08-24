@@ -231,7 +231,9 @@ class EvaluationHarness:
                             errors.append(
                                 {
                                     "errorType": "EVAL_OUTPUT_MISMATCH",
-                                    "message": "actual output did not match expected output.",
+                                    "message": (
+                                        "actual output did not match expected output."
+                                    ),
                                 }
                             )
                     if case.output_schema is not None:
@@ -243,7 +245,9 @@ class EvaluationHarness:
                             errors.append(
                                 {
                                     "errorType": "EVAL_SCHEMA_MISMATCH",
-                                    "message": "actual output failed the expected schema.",
+                                    "message": (
+                                        "actual output failed the expected schema."
+                                    ),
                                 }
                             )
                     if case.expected_tool_names:
@@ -254,7 +258,9 @@ class EvaluationHarness:
                             errors.append(
                                 {
                                     "errorType": "EVAL_TRAJECTORY_MISMATCH",
-                                    "message": "tool trajectory did not match expected names.",
+                                    "message": (
+                                        "tool trajectory did not match expected names."
+                                    ),
                                 }
                             )
                     score = passed_checks / expected_checks if expected_checks else 0.0

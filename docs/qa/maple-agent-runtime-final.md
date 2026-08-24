@@ -11,6 +11,7 @@
 | New feature regressions | PASS | 165 LLM/autonomy/CLI tests passed; one existing pytest config warning. |
 | Compile/import | PASS | `python -m compileall -q maple`; top-level public import and doctor smoke test pass. |
 | Changed-file Ruff | PASS | New/behavior-touched implementation checks pass. |
+| Changed-file Flake8 | PASS | Exact CI-style command returned `0` for the changed runtime surface. |
 | Package artifacts | PASS | Metadata-clean wheel and sdist built; Twine checks passed. |
 | Installed artifact smoke | PASS | Clean venv installed the wheel with `--no-deps`; `maple doctor --json` returned `ready:true`, `network:false`. |
 | Isolated dependency audit | PASS | Fresh `.[dev,security]` environment: `pip check` returned `No broken requirements found.` |

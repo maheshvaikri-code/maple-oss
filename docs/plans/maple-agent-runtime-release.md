@@ -51,8 +51,9 @@ privileged action without approval.
 
 Done (with evidence): G0 brief, G1 ADR, G2 plan, and all seven G3 feature
 slices through `bf1614b`; slice review/QA artifacts are filed. Release
-hardening remains in progress. Focused feature gates, compile, metadata-clean
-wheel/sdist builds, Twine checks, a clean-venv wheel doctor smoke pass, and a
+hardening remains in progress. Focused feature gates, compile, changed-surface
+Ruff/Flake8, metadata-clean wheel/sdist builds, Twine checks, a clean-venv
+wheel doctor smoke pass, and a
 fresh `.[dev,security]` environment with `pip check` reporting no broken
 requirements all pass.
 The full repository regression is not complete: the latest bounded attempt

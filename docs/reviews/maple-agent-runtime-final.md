@@ -33,6 +33,9 @@ Focused regression in isolated `.[dev,security]` environment:
 Focused changed implementation Ruff check:
 All checks passed!
 
+Focused changed implementation Flake8 check:
+0
+
 Package build:
 Successfully built maple_oss-1.1.3-py3-none-any.whl and maple_oss-1.1.3.tar.gz
 
