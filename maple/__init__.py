@@ -60,6 +60,17 @@ from .autonomy.agent import AutonomousAgent, AutonomousConfig, Goal
 from .autonomy.tools import Tool, ToolRegistry
 from .autonomy.memory import MemoryManager
 from .autonomy.orchestrator import AgentOrchestrator
+from .autonomy.workflow import (
+    END,
+    CheckpointStore,
+    FileCheckpointStore,
+    InMemoryCheckpointStore,
+    Workflow,
+    WorkflowCheckpoint,
+    WorkflowContext,
+    WorkflowPause,
+    WorkflowRun,
+)
 from .llm.types import LLMConfig, ChatMessage, ChatRole
 from .llm.registry import LLMProviderRegistry
 
@@ -131,6 +142,15 @@ __all__ = [
     "ToolRegistry",
     "MemoryManager",
     "AgentOrchestrator",
+    "END",
+    "CheckpointStore",
+    "FileCheckpointStore",
+    "InMemoryCheckpointStore",
+    "Workflow",
+    "WorkflowCheckpoint",
+    "WorkflowContext",
+    "WorkflowPause",
+    "WorkflowRun",
     "LLMConfig",
     "ChatMessage",
     "ChatRole",

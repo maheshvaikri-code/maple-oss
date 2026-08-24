@@ -496,6 +496,44 @@ class CircuitBreaker:
         """Circuit breaker pattern for preventing cascading failures."""
 ```
 
+## Workflow Runtime (preview)
+
+The workflow runtime provides a dependency-free, sequential execution graph
+with JSON-safe checkpoints. A node receives a `WorkflowContext` and returns a
+mapping of state updates, `Result.ok(updates)`, or `Result.err(error)`. Raise
+`WorkflowPause(payload)` when external input is required; resume the same run
+with the checkpoint store that was used to start it.
+
+```python
+from maple import FileCheckpointStore, Workflow, WorkflowPause
+
+store = FileCheckpointStore("./.maple-checkpoints")
+workflow = Workflow("approval_flow", checkpoint_store=store)
+
+workflow.add_node("prepare", lambda ctx: {"ready": True})
+
+def approve(ctx):
+    if ctx.resume_value is None:
+        raise WorkflowPause({"question": "Approve this action?"})
+    return {"approved": ctx.resume_value}
+
+workflow.add_node("approve", approve)
+workflow.add_node("finish", lambda ctx: {"done": True})
+workflow.set_entry_point("prepare")
+workflow.add_edge("prepare", "approve")
+workflow.add_edge("approve", "finish")
+workflow.add_edge("finish")
+
+run = workflow.run({"request": "example"}, run_id="example-1")
+if run.is_ok() and run.unwrap().status == "interrupted":
+    run = workflow.resume("example-1", resume_value=True)
+```
+
+Checkpoint data accepts JSON-compatible values only, is size-bounded, and is
+restored as data rather than executable objects. The current file store is
+atomic and thread-safe within one process; cross-process coordination and
+parallel workflow execution remain planned follow-on capabilities.
+
 ## Usage Example
 
 ```python

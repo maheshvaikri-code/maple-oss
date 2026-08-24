@@ -42,6 +42,7 @@ Most agent frameworks give you either **infrastructure** (messaging, security, f
 - **Multi-Agent Orchestration** — Form teams by capability, execute via supervisor delegation or consensus voting.
 - **MCP Tool Discovery** — Discover and use tools from any MCP server as native MAPLE tools.
 - **Observability** — Full decision traces, agent snapshots, token usage tracking.
+- **Workflow Runtime (preview)** — Define validated workflows with stable run IDs, JSON-safe node-boundary checkpoints, interruption, conditional routing, and local file-backed resume.
 
 ### Production Infrastructure
 
@@ -424,6 +425,7 @@ maple/
 | Priority message queuing | Built-in | No | No | No | No | No |
 | Task scheduling & load balancing | Built-in | No | No | No | No | No |
 | Multi-agent orchestration | Built-in | Built-in | Built-in | Built-in | No | No |
+| Workflow graph + checkpoint/resume | Preview | Built-in | Partial | Partial | No | No |
 | Tool framework | Built-in | Built-in | Built-in | Built-in | No | Built-in |
 | Memory system | Built-in | Partial | Partial | No | No | No |
 | MCP tool discovery | Built-in | No | No | No | No | Native |
@@ -431,7 +433,7 @@ maple/
 
 **Where MAPLE excels:** Production infrastructure + autonomous reasoning in one framework. If your agents need resource awareness, security, fault tolerance, AND autonomous decision-making — MAPLE provides all of these as first-class features.
 
-**Where others are stronger:** LangGraph has deeper graph-based workflow primitives. CrewAI has simpler role-based setup. A2A and MCP have broader language support and larger ecosystems. AutoGen has mature human-in-the-loop patterns.
+**Where others are stronger:** LangGraph, CrewAI, and current Microsoft Agent Framework releases still provide deeper workflow, session, and human-in-the-loop runtime surfaces. MAPLE's native workflow runtime is currently preview-level while its protocol and infrastructure features remain the differentiator.
 
 ---
 

@@ -6,6 +6,16 @@
 
 **Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)**
 
+## Unreleased
+
+### Additions
+
+- **Native workflow runtime (preview)** (`maple.autonomy.workflow`): validated
+  sequential graphs, stable run IDs, JSON-safe node-boundary checkpoints,
+  conditional routing, interruption/resume, atomic file persistence, and
+  optimistic checkpoint versions. Public API documentation and regression
+  tests are included.
+
 ## Version 1.1.3 - Downstream integration improvements (August 2026)
 
 Hardening and extensibility surfaced by integrating MAPLE into a governed

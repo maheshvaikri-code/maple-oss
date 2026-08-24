@@ -21,6 +21,17 @@ from .agent import AutonomousAgent, AutonomousConfig, Goal, ReasoningStep
 from .orchestrator import AgentOrchestrator, TeamMember
 from .observability import DecisionTrace, DecisionLogger, AgentSnapshot
 from .mcp_tools import discover_mcp_tools, register_mcp_tools
+from .workflow import (
+    END,
+    CheckpointStore,
+    FileCheckpointStore,
+    InMemoryCheckpointStore,
+    Workflow,
+    WorkflowCheckpoint,
+    WorkflowContext,
+    WorkflowPause,
+    WorkflowRun,
+)
 
 __all__ = [
     'Tool', 'ToolRegistry',
@@ -29,4 +40,7 @@ __all__ = [
     'AgentOrchestrator', 'TeamMember',
     'DecisionTrace', 'DecisionLogger', 'AgentSnapshot',
     'discover_mcp_tools', 'register_mcp_tools',
+    'END', 'CheckpointStore', 'FileCheckpointStore',
+    'InMemoryCheckpointStore', 'Workflow', 'WorkflowCheckpoint',
+    'WorkflowContext', 'WorkflowPause', 'WorkflowRun',
 ]
