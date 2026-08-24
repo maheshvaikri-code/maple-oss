@@ -496,6 +496,43 @@ class CircuitBreaker:
         """Circuit breaker pattern for preventing cascading failures."""
 ```
 
+## Typed Agent Contracts (preview)
+
+MAPLE can validate tool inputs and outputs against a bounded JSON-Schema subset,
+parse structured model responses, and apply synchronous guardrails at agent and
+tool boundaries. Guardrails may return `True`/`None` to allow a value, `False`
+to reject it, or a `Result`. Exceptions and malformed guardrail results fail
+closed. The validator enforces depth and collection-size limits; regular
+expression `pattern` constraints are rejected because they cannot be given a
+reliable execution deadline by the standard library.
+
+```python
+from maple import AutonomousConfig, Tool, parse_structured_output
+
+report_schema = {
+    "type": "object",
+    "required": ["answer"],
+    "properties": {"answer": {"type": "string", "minLength": 1}},
+    "additionalProperties": False,
+}
+
+tool = Tool(
+    name="report",
+    description="Produce a report",
+    parameters={"type": "object", "required": ["topic"]},
+    handler=produce_report,
+    result_schema=report_schema,
+    input_guardrails=[lambda args: len(args["topic"]) <= 200],
+)
+
+config = AutonomousConfig(
+    llm=llm_config,
+    response_schema=report_schema,
+    output_guardrails=[lambda value: value["answer"] != ""],
+)
+parsed = parse_structured_output('{"answer":"ready"}', report_schema)
+```
+
 ## Workflow Runtime (preview)
 
 The workflow runtime provides a dependency-free, sequential execution graph

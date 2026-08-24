@@ -1,15 +1,14 @@
 """Tests for the AutonomousAgent with ReAct loop."""
 
-import json
 import pytest
-from unittest.mock import MagicMock, patch
 from maple.autonomy.agent import (
-    AutonomousAgent, AutonomousConfig, Goal, ReasoningStep,
+    AutonomousAgent,
+    AutonomousConfig,
+    Goal,
+    ReasoningStep,
 )
 from maple.agent.config import Config
-from maple.llm.types import (
-    ChatMessage, ChatRole, LLMConfig, LLMResponse, TokenUsage, ToolCall,
-)
+from maple.llm.types import LLMConfig, LLMResponse, TokenUsage, ToolCall
 from maple.llm.provider import LLMProvider
 from maple.llm.registry import LLMProviderRegistry
 from maple.core.result import Result
@@ -23,7 +22,9 @@ class MockLLMProvider(LLMProvider):
         self._responses = responses or []
         self._call_index = 0
 
-    def complete(self, messages, tools=None, temperature=None, max_tokens=None, stop=None):
+    def complete(
+        self, messages, tools=None, temperature=None, max_tokens=None, stop=None
+    ):
         if self._call_index < len(self._responses):
             resp = self._responses[self._call_index]
             self._call_index += 1
@@ -106,13 +107,18 @@ class TestAutonomousAgent:
         agent = AutonomousAgent(config, auto_config)
 
         # Override LLM with scripted responses
-        agent.llm = MockLLMProvider(auto_config.llm, responses=[
-            LLMResponse(
-                content="The answer is 42.",
-                finish_reason="stop",
-                usage=TokenUsage(prompt_tokens=20, completion_tokens=10, total_tokens=30),
-            ),
-        ])
+        agent.llm = MockLLMProvider(
+            auto_config.llm,
+            responses=[
+                LLMResponse(
+                    content="The answer is 42.",
+                    finish_reason="stop",
+                    usage=TokenUsage(
+                        prompt_tokens=20, completion_tokens=10, total_tokens=30
+                    ),
+                ),
+            ],
+        )
 
         result = agent.pursue_goal("What is the answer to everything?")
         assert result.is_ok()
@@ -120,6 +126,40 @@ class TestAutonomousAgent:
         assert goal.status == "completed"
         assert goal.result == "The answer is 42."
         assert len(goal.reasoning_trace) == 1
+
+    def test_structured_output_and_output_guardrail(self):
+        config = make_config()
+        auto_config = make_auto_config(
+            response_schema={
+                "type": "object",
+                "required": ["answer"],
+                "properties": {"answer": {"type": "string"}},
+            },
+            output_guardrails=[lambda value: value.get("answer") == "42"],
+        )
+        agent = AutonomousAgent(config, auto_config)
+        agent.llm = MockLLMProvider(
+            auto_config.llm,
+            responses=[
+                LLMResponse(content='{"answer":"42"}', finish_reason="stop"),
+            ],
+        )
+
+        result = agent.pursue_goal("Return the answer")
+
+        assert result.is_ok()
+        assert result.unwrap().result == {"answer": "42"}
+
+    def test_input_guardrail_rejects_before_goal_creation(self):
+        config = make_config()
+        auto_config = make_auto_config(input_guardrails=[lambda value: False])
+        agent = AutonomousAgent(config, auto_config)
+
+        result = agent.pursue_goal("blocked request")
+
+        assert result.is_err()
+        assert result.unwrap_err()["errorType"] == "GUARDRAIL_REJECTED"
+        assert agent.get_active_goals() == {}
 
     def test_pursue_goal_with_tool_call(self):
         """Test that the agent executes tool calls from LLM."""
@@ -129,28 +169,43 @@ class TestAutonomousAgent:
 
         # Register a custom tool
         from maple.autonomy.tools import Tool
+
         tool = Tool(
             name="calculator",
             description="Add two numbers",
-            parameters={"type": "object", "properties": {"a": {"type": "integer"}, "b": {"type": "integer"}}},
+            parameters={
+                "type": "object",
+                "properties": {"a": {"type": "integer"}, "b": {"type": "integer"}},
+            },
             handler=lambda a=0, b=0: Result.ok({"sum": a + b}),
         )
         agent.register_tool(tool)
 
         # Scripted: first response has tool call, second is final answer
-        agent.llm = MockLLMProvider(auto_config.llm, responses=[
-            LLMResponse(
-                content="Let me calculate.",
-                tool_calls=[ToolCall(id="tc_1", name="calculator", arguments={"a": 3, "b": 4})],
-                finish_reason="tool_calls",
-                usage=TokenUsage(prompt_tokens=20, completion_tokens=10, total_tokens=30),
-            ),
-            LLMResponse(
-                content="The sum is 7.",
-                finish_reason="stop",
-                usage=TokenUsage(prompt_tokens=30, completion_tokens=5, total_tokens=35),
-            ),
-        ])
+        agent.llm = MockLLMProvider(
+            auto_config.llm,
+            responses=[
+                LLMResponse(
+                    content="Let me calculate.",
+                    tool_calls=[
+                        ToolCall(
+                            id="tc_1", name="calculator", arguments={"a": 3, "b": 4}
+                        )
+                    ],
+                    finish_reason="tool_calls",
+                    usage=TokenUsage(
+                        prompt_tokens=20, completion_tokens=10, total_tokens=30
+                    ),
+                ),
+                LLMResponse(
+                    content="The sum is 7.",
+                    finish_reason="stop",
+                    usage=TokenUsage(
+                        prompt_tokens=30, completion_tokens=5, total_tokens=35
+                    ),
+                ),
+            ],
+        )
 
         result = agent.pursue_goal("What is 3 + 4?")
         assert result.is_ok()
@@ -165,19 +220,28 @@ class TestAutonomousAgent:
         auto_config = make_auto_config()
         agent = AutonomousAgent(config, auto_config)
 
-        agent.llm = MockLLMProvider(auto_config.llm, responses=[
-            LLMResponse(
-                content="Let me use a tool.",
-                tool_calls=[ToolCall(id="tc_1", name="nonexistent_tool", arguments={})],
-                finish_reason="tool_calls",
-                usage=TokenUsage(prompt_tokens=20, completion_tokens=10, total_tokens=30),
-            ),
-            LLMResponse(
-                content="The tool didn't work, but I'll answer anyway.",
-                finish_reason="stop",
-                usage=TokenUsage(prompt_tokens=30, completion_tokens=10, total_tokens=40),
-            ),
-        ])
+        agent.llm = MockLLMProvider(
+            auto_config.llm,
+            responses=[
+                LLMResponse(
+                    content="Let me use a tool.",
+                    tool_calls=[
+                        ToolCall(id="tc_1", name="nonexistent_tool", arguments={})
+                    ],
+                    finish_reason="tool_calls",
+                    usage=TokenUsage(
+                        prompt_tokens=20, completion_tokens=10, total_tokens=30
+                    ),
+                ),
+                LLMResponse(
+                    content="The tool didn't work, but I'll answer anyway.",
+                    finish_reason="stop",
+                    usage=TokenUsage(
+                        prompt_tokens=30, completion_tokens=10, total_tokens=40
+                    ),
+                ),
+            ],
+        )
 
         result = agent.pursue_goal("Do something")
         assert result.is_ok()
@@ -195,20 +259,27 @@ class TestAutonomousAgent:
         agent = AutonomousAgent(config, auto_config)
 
         # LLM always responds with content but no stop signal
-        agent.llm = MockLLMProvider(auto_config.llm, responses=[
-            LLMResponse(
-                content="Thinking step 1...",
-                tool_calls=[ToolCall(id="tc_1", name="query_agents", arguments={})],
-                finish_reason="tool_calls",
-                usage=TokenUsage(prompt_tokens=10, completion_tokens=5, total_tokens=15),
-            ),
-            LLMResponse(
-                content="Thinking step 2...",
-                tool_calls=[ToolCall(id="tc_2", name="query_agents", arguments={})],
-                finish_reason="tool_calls",
-                usage=TokenUsage(prompt_tokens=10, completion_tokens=5, total_tokens=15),
-            ),
-        ])
+        agent.llm = MockLLMProvider(
+            auto_config.llm,
+            responses=[
+                LLMResponse(
+                    content="Thinking step 1...",
+                    tool_calls=[ToolCall(id="tc_1", name="query_agents", arguments={})],
+                    finish_reason="tool_calls",
+                    usage=TokenUsage(
+                        prompt_tokens=10, completion_tokens=5, total_tokens=15
+                    ),
+                ),
+                LLMResponse(
+                    content="Thinking step 2...",
+                    tool_calls=[ToolCall(id="tc_2", name="query_agents", arguments={})],
+                    finish_reason="tool_calls",
+                    usage=TokenUsage(
+                        prompt_tokens=10, completion_tokens=5, total_tokens=15
+                    ),
+                ),
+            ],
+        )
 
         result = agent.pursue_goal("An impossible task")
         assert result.is_ok()
@@ -229,19 +300,32 @@ class TestAutonomousAgent:
 
         agent.set_approval_callback(approval_callback)
 
-        agent.llm = MockLLMProvider(auto_config.llm, responses=[
-            LLMResponse(
-                content="Writing state.",
-                tool_calls=[ToolCall(id="tc_1", name="write_state", arguments={"key": "test", "value": "val"})],
-                finish_reason="tool_calls",
-                usage=TokenUsage(prompt_tokens=10, completion_tokens=5, total_tokens=15),
-            ),
-            LLMResponse(
-                content="Action was denied.",
-                finish_reason="stop",
-                usage=TokenUsage(prompt_tokens=10, completion_tokens=5, total_tokens=15),
-            ),
-        ])
+        agent.llm = MockLLMProvider(
+            auto_config.llm,
+            responses=[
+                LLMResponse(
+                    content="Writing state.",
+                    tool_calls=[
+                        ToolCall(
+                            id="tc_1",
+                            name="write_state",
+                            arguments={"key": "test", "value": "val"},
+                        )
+                    ],
+                    finish_reason="tool_calls",
+                    usage=TokenUsage(
+                        prompt_tokens=10, completion_tokens=5, total_tokens=15
+                    ),
+                ),
+                LLMResponse(
+                    content="Action was denied.",
+                    finish_reason="stop",
+                    usage=TokenUsage(
+                        prompt_tokens=10, completion_tokens=5, total_tokens=15
+                    ),
+                ),
+            ],
+        )
 
         result = agent.pursue_goal("Write some state")
         assert result.is_ok()
@@ -253,10 +337,18 @@ class TestAutonomousAgent:
         agent = AutonomousAgent(config, auto_config)
 
         # Override to make it stop immediately
-        agent.llm = MockLLMProvider(auto_config.llm, responses=[
-            LLMResponse(content="Done.", finish_reason="stop",
-                        usage=TokenUsage(prompt_tokens=5, completion_tokens=5, total_tokens=10)),
-        ])
+        agent.llm = MockLLMProvider(
+            auto_config.llm,
+            responses=[
+                LLMResponse(
+                    content="Done.",
+                    finish_reason="stop",
+                    usage=TokenUsage(
+                        prompt_tokens=5, completion_tokens=5, total_tokens=10
+                    ),
+                ),
+            ],
+        )
         agent.pursue_goal("Test goal")
         goals = agent.get_active_goals()
         assert len(goals) == 1
@@ -267,13 +359,18 @@ class TestAutonomousAgent:
         auto_config = make_auto_config()
         agent = AutonomousAgent(config, auto_config)
 
-        agent.llm = MockLLMProvider(auto_config.llm, responses=[
-            LLMResponse(
-                content='["Step 1: Research", "Step 2: Implement", "Step 3: Test"]',
-                finish_reason="stop",
-                usage=TokenUsage(prompt_tokens=10, completion_tokens=20, total_tokens=30),
-            ),
-        ])
+        agent.llm = MockLLMProvider(
+            auto_config.llm,
+            responses=[
+                LLMResponse(
+                    content='["Step 1: Research", "Step 2: Implement", "Step 3: Test"]',
+                    finish_reason="stop",
+                    usage=TokenUsage(
+                        prompt_tokens=10, completion_tokens=20, total_tokens=30
+                    ),
+                ),
+            ],
+        )
 
         goal = Goal(goal_id="g1", description="Build a feature")
         result = agent.decompose_goal(goal)
@@ -294,28 +391,37 @@ class TestReflection:
         )
         agent = AutonomousAgent(config, auto_config)
 
-        agent.llm = MockLLMProvider(auto_config.llm, responses=[
-            # Step 0: tool call
-            LLMResponse(
-                content="Step 0",
-                tool_calls=[ToolCall(id="tc_1", name="query_agents", arguments={})],
-                finish_reason="tool_calls",
-                usage=TokenUsage(prompt_tokens=10, completion_tokens=5, total_tokens=15),
-            ),
-            # Step 1: tool call (triggers reflection after this)
-            LLMResponse(
-                content="Step 1",
-                tool_calls=[ToolCall(id="tc_2", name="query_agents", arguments={})],
-                finish_reason="tool_calls",
-                usage=TokenUsage(prompt_tokens=10, completion_tokens=5, total_tokens=15),
-            ),
-            # Reflection response
-            LLMResponse(
-                content='{"should_stop": true, "conclusion": "All done", "reason": "task complete"}',
-                finish_reason="stop",
-                usage=TokenUsage(prompt_tokens=10, completion_tokens=10, total_tokens=20),
-            ),
-        ])
+        agent.llm = MockLLMProvider(
+            auto_config.llm,
+            responses=[
+                # Step 0: tool call
+                LLMResponse(
+                    content="Step 0",
+                    tool_calls=[ToolCall(id="tc_1", name="query_agents", arguments={})],
+                    finish_reason="tool_calls",
+                    usage=TokenUsage(
+                        prompt_tokens=10, completion_tokens=5, total_tokens=15
+                    ),
+                ),
+                # Step 1: tool call (triggers reflection after this)
+                LLMResponse(
+                    content="Step 1",
+                    tool_calls=[ToolCall(id="tc_2", name="query_agents", arguments={})],
+                    finish_reason="tool_calls",
+                    usage=TokenUsage(
+                        prompt_tokens=10, completion_tokens=5, total_tokens=15
+                    ),
+                ),
+                # Reflection response
+                LLMResponse(
+                    content='{"should_stop": true, "conclusion": "All done", "reason": "task complete"}',
+                    finish_reason="stop",
+                    usage=TokenUsage(
+                        prompt_tokens=10, completion_tokens=10, total_tokens=20
+                    ),
+                ),
+            ],
+        )
 
         result = agent.pursue_goal("Test reflection")
         assert result.is_ok()

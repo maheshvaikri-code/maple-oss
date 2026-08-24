@@ -38,6 +38,7 @@ Most agent frameworks give you either **infrastructure** (messaging, security, f
 - **ReAct Reasoning Loop** — Agents think, act, and reflect autonomously. Built-in backtracking when approaches fail.
 - **Pluggable LLM Providers** — OpenAI, Anthropic Claude, or any compatible API (vLLM, Ollama, Together AI).
 - **Tool Framework** — Register custom tools with JSON Schema parameters. Built-in tools for inter-agent communication, state read/write, resource checks, and secure link establishment.
+- **Typed Contracts and Guardrails (preview)** — Validate bounded JSON inputs and outputs, request structured model responses, and fail closed on rejected or unavailable guardrails.
 - **Three-Tier Memory** — Working memory (context window), episodic memory (task history), semantic memory (learned facts). LLM-assisted summarization when context fills up.
 - **Multi-Agent Orchestration** — Form teams by capability, execute via supervisor delegation or consensus voting.
 - **MCP Tool Discovery** — Discover and use tools from any MCP server as native MAPLE tools.
@@ -427,6 +428,7 @@ maple/
 | Multi-agent orchestration | Built-in | Built-in | Built-in | Built-in | No | No |
 | Workflow graph + checkpoint/resume | Preview | Built-in | Partial | Partial | No | No |
 | Tool framework | Built-in | Built-in | Built-in | Built-in | No | Built-in |
+| Typed I/O + guardrails | Preview | Built-in | Partial | Partial | No | No |
 | Memory system | Built-in | Partial | Partial | No | No | No |
 | MCP tool discovery | Built-in | No | No | No | No | Native |
 | Protocol adapters | 10 adapters | No | No | No | No | No |

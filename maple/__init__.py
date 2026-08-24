@@ -71,6 +71,13 @@ from .autonomy.workflow import (
     WorkflowPause,
     WorkflowRun,
 )
+from .autonomy.contracts import (
+    Guardrail,
+    parse_structured_output,
+    run_guardrails,
+    schema_guardrail,
+    validate_json_schema,
+)
 from .llm.types import LLMConfig, ChatMessage, ChatRole
 from .llm.registry import LLMProviderRegistry
 
@@ -151,6 +158,11 @@ __all__ = [
     "WorkflowContext",
     "WorkflowPause",
     "WorkflowRun",
+    "Guardrail",
+    "parse_structured_output",
+    "run_guardrails",
+    "schema_guardrail",
+    "validate_json_schema",
     "LLMConfig",
     "ChatMessage",
     "ChatRole",

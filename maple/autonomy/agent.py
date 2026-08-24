@@ -13,8 +13,6 @@ received a copy of the GNU Affero General Public License along with MAPLE - Mult
 Language Engine. If not, see <https://www.gnu.org/licenses/>.
 """
 
-"""Autonomous agent with LLM-driven reasoning and tool execution."""
-
 import json
 import logging
 import time
@@ -28,10 +26,16 @@ from ..core.result import Result
 from ..llm.provider import LLMProvider
 from ..llm.registry import LLMProviderRegistry
 from ..llm.types import (
-    ChatMessage, ChatRole, LLMConfig, LLMResponse, ToolCall, ToolResult,
+    ChatMessage,
+    ChatRole,
+    LLMConfig,
+    LLMResponse,
+    ToolCall,
+    ToolResult,
 )
 from .memory import MemoryManager
 from .tools import Tool, ToolRegistry, create_builtin_tools
+from .contracts import Guardrail, parse_structured_output, run_guardrails
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +43,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ReasoningStep:
     """A single step in the ReAct loop."""
+
     step_number: int
     phase: str
     content: str
@@ -50,10 +55,11 @@ class ReasoningStep:
 @dataclass
 class Goal:
     """A goal for the autonomous agent."""
+
     goal_id: str
     description: str
     status: str = "pending"
-    sub_goals: List['Goal'] = field(default_factory=list)
+    sub_goals: List["Goal"] = field(default_factory=list)
     result: Optional[Any] = None
     reasoning_trace: List[ReasoningStep] = field(default_factory=list)
 
@@ -61,6 +67,7 @@ class Goal:
 @dataclass
 class AutonomousConfig:
     """Extended configuration for autonomous agents."""
+
     llm: LLMConfig
     max_reasoning_steps: int = 20
     max_tool_calls_per_step: int = 5
@@ -68,6 +75,9 @@ class AutonomousConfig:
     require_approval_for: List[str] = field(default_factory=list)
     reflection_frequency: int = 5
     system_prompt: Optional[str] = None
+    response_schema: Optional[Dict[str, Any]] = None
+    input_guardrails: List[Guardrail] = field(default_factory=list)
+    output_guardrails: List[Guardrail] = field(default_factory=list)
 
 
 class AutonomousAgent(Agent):
@@ -96,7 +106,9 @@ class AutonomousAgent(Agent):
         # Initialize LLM provider
         provider_result = LLMProviderRegistry.create(autonomy_config.llm)
         if provider_result.is_err():
-            raise RuntimeError(f"Failed to create LLM provider: {provider_result.unwrap_err()}")
+            raise RuntimeError(
+                f"Failed to create LLM provider: {provider_result.unwrap_err()}"
+            )
         self.llm: LLMProvider = provider_result.unwrap()
 
         # Initialize tool registry with built-in tools
@@ -130,6 +142,13 @@ class AutonomousAgent(Agent):
         """
         Main entry point: pursue a high-level goal using the ReAct loop.
         """
+        input_guardrails = run_guardrails(
+            description,
+            self.autonomy_config.input_guardrails,
+            stage="agent:input",
+        )
+        if input_guardrails.is_err():
+            return Result.err(input_guardrails.unwrap_err())
         goal = Goal(
             goal_id=str(uuid.uuid4()),
             description=description,
@@ -149,11 +168,13 @@ class AutonomousAgent(Agent):
         except Exception as e:
             goal.status = "failed"
             goal.result = str(e)
-            return Result.err({
-                'errorType': 'GOAL_PURSUIT_ERROR',
-                'message': str(e),
-                'details': {'goal_id': goal.goal_id}
-            })
+            return Result.err(
+                {
+                    "errorType": "GOAL_PURSUIT_ERROR",
+                    "message": str(e),
+                    "details": {"goal_id": goal.goal_id},
+                }
+            )
 
     def _react_loop(self, goal: Goal) -> Result[Any, Dict[str, Any]]:
         """
@@ -170,7 +191,9 @@ class AutonomousAgent(Agent):
 
             # THINK: Get LLM response
             tool_defs = self.tool_registry.get_llm_definitions()
-            response_result = self.llm.complete(messages, tools=tool_defs if tool_defs else None)
+            response_result = self.llm.complete(
+                messages, tools=tool_defs if tool_defs else None
+            )
 
             if response_result.is_err():
                 return response_result
@@ -192,26 +215,32 @@ class AutonomousAgent(Agent):
 
             # Check if done (no tool calls and finish_reason == "stop")
             if not response.tool_calls and response.finish_reason == "stop":
-                return Result.ok(response.content)
+                return self._finalize_output(response.content)
 
             # ACT: Execute tool calls
             if response.tool_calls:
-                messages.append(ChatMessage(
-                    role=ChatRole.ASSISTANT,
-                    content=response.content or "",
-                    tool_calls=response.tool_calls,
-                ))
+                messages.append(
+                    ChatMessage(
+                        role=ChatRole.ASSISTANT,
+                        content=response.content or "",
+                        tool_calls=response.tool_calls,
+                    )
+                )
 
-                for tool_call in response.tool_calls[:self.autonomy_config.max_tool_calls_per_step]:
+                for tool_call in response.tool_calls[
+                    : self.autonomy_config.max_tool_calls_per_step
+                ]:
                     tool_result = self._execute_tool_call(tool_call)
                     step.tool_results.append(tool_result)
 
-                    messages.append(ChatMessage(
-                        role=ChatRole.TOOL,
-                        content=tool_result.content,
-                        tool_call_id=tool_result.tool_call_id,
-                        name=tool_call.name,
-                    ))
+                    messages.append(
+                        ChatMessage(
+                            role=ChatRole.TOOL,
+                            content=tool_result.content,
+                            tool_call_id=tool_result.tool_call_id,
+                            name=tool_call.name,
+                        )
+                    )
 
                     # Update working memory
                     self.memory.working.add(
@@ -219,21 +248,27 @@ class AutonomousAgent(Agent):
                         content=tool_result.content[:500],
                     )
             else:
-                messages.append(ChatMessage(
-                    role=ChatRole.ASSISTANT,
-                    content=response.content or "",
-                ))
+                messages.append(
+                    ChatMessage(
+                        role=ChatRole.ASSISTANT,
+                        content=response.content or "",
+                    )
+                )
 
             # REFLECT: Every N steps, assess progress
             if (step_num + 1) % self.autonomy_config.reflection_frequency == 0:
                 reflection = self._reflect(goal, messages, step_num)
                 if reflection.get("should_stop"):
-                    return Result.ok(reflection.get("conclusion", response.content))
+                    return self._finalize_output(
+                        reflection.get("conclusion", response.content)
+                    )
 
-        return Result.err({
-            'errorType': 'MAX_STEPS_REACHED',
-            'message': f'Reached maximum reasoning steps ({self.autonomy_config.max_reasoning_steps})',
-        })
+        return Result.err(
+            {
+                "errorType": "MAX_STEPS_REACHED",
+                "message": f"Reached maximum reasoning steps ({self.autonomy_config.max_reasoning_steps})",
+            }
+        )
 
     def _execute_tool_call(self, tool_call: ToolCall) -> ToolResult:
         """Execute a single tool call with approval check."""
@@ -248,7 +283,10 @@ class AutonomousAgent(Agent):
         tool = tool_result.unwrap()
 
         # Human-in-the-loop check
-        if tool.requires_approval or tool_call.name in self.autonomy_config.require_approval_for:
+        if (
+            tool.requires_approval
+            or tool_call.name in self.autonomy_config.require_approval_for
+        ):
             if self._approval_callback:
                 approved = self._approval_callback(tool_call.name, tool_call.arguments)
                 if not approved:
@@ -271,7 +309,9 @@ class AutonomousAgent(Agent):
 
     def _build_initial_context(self, goal: Goal) -> List[ChatMessage]:
         """Build the initial message context for the ReAct loop."""
-        system_prompt = self.autonomy_config.system_prompt or self._default_system_prompt()
+        system_prompt = (
+            self.autonomy_config.system_prompt or self._default_system_prompt()
+        )
 
         messages = [
             ChatMessage(role=ChatRole.SYSTEM, content=system_prompt),
@@ -280,23 +320,32 @@ class AutonomousAgent(Agent):
         # Add working memory context
         context = self.memory.working.get_context()
         if context:
-            messages.append(ChatMessage(
-                role=ChatRole.SYSTEM,
-                content=f"Current working memory:\n{json.dumps(context, default=str)}"
-            ))
+            messages.append(
+                ChatMessage(
+                    role=ChatRole.SYSTEM,
+                    content=f"Current working memory:\n{json.dumps(context, default=str)}",
+                )
+            )
 
-        messages.append(ChatMessage(
-            role=ChatRole.USER,
-            content=goal.description,
-        ))
+        messages.append(
+            ChatMessage(
+                role=ChatRole.USER,
+                content=goal.description,
+            )
+        )
 
         return messages
 
     def _default_system_prompt(self) -> str:
         tools_desc = "\n".join(
-            f"- {t.name}: {t.description}"
-            for t in self.tool_registry.list_tools()
+            f"- {t.name}: {t.description}" for t in self.tool_registry.list_tools()
         )
+        output_instruction = ""
+        if self.autonomy_config.response_schema is not None:
+            output_instruction = (
+                "\nReturn the final response as JSON matching this schema:\n"
+                f"{json.dumps(self.autonomy_config.response_schema, default=str)}\n"
+            )
         return f"""You are an autonomous MAPLE agent (ID: {self.agent_id}).
 You can reason step by step and use tools to accomplish goals.
 
@@ -308,25 +357,42 @@ Instructions:
 2. Use tools when you need information or need to take action.
 3. If a tool call fails, analyze the error and try a different approach.
 4. When you have completed the goal, respond with your final answer without calling any tools.
-5. If you cannot complete the goal, explain why."""
+5. If you cannot complete the goal, explain why.
+{output_instruction}"""
+
+    def _finalize_output(self, content: Optional[str]) -> Result[Any, Dict[str, Any]]:
+        """Parse structured output and apply output guardrails at the boundary."""
+        parsed = parse_structured_output(content, self.autonomy_config.response_schema)
+        if parsed.is_err():
+            return Result.err(parsed.unwrap_err())
+        guardrails = run_guardrails(
+            parsed.unwrap(),
+            self.autonomy_config.output_guardrails,
+            stage="agent:output",
+        )
+        if guardrails.is_err():
+            return Result.err(guardrails.unwrap_err())
+        return Result.ok(parsed.unwrap())
 
     def _reflect(self, goal: Goal, messages: List[ChatMessage], step_num: int) -> Dict:
         """Ask the LLM to reflect on progress."""
-        reflection_messages = messages + [ChatMessage(
-            role=ChatRole.USER,
-            content=f"""Reflect on your progress toward the goal: "{goal.description}"
+        reflection_messages = messages + [
+            ChatMessage(
+                role=ChatRole.USER,
+                content=f"""Reflect on your progress toward the goal: "{goal.description}"
 Step {step_num + 1}/{self.autonomy_config.max_reasoning_steps}.
 Are you making progress? Should you continue or stop?
-Respond with JSON: {{"should_stop": bool, "conclusion": "your conclusion if stopping", "reason": "why"}}"""
-        )]
+Respond with JSON: {{"should_stop": bool, "conclusion": "your conclusion if stopping", "reason": "why"}}""",
+            )
+        ]
 
         result = self.llm.complete(reflection_messages)
         if result.is_ok():
             try:
                 content = result.unwrap().content or ""
                 # Try to extract JSON from the response
-                if '{' in content:
-                    json_str = content[content.index('{'):content.rindex('}') + 1]
+                if "{" in content:
+                    json_str = content[content.index("{") : content.rindex("}") + 1]
                     return json.loads(json_str)
             except (json.JSONDecodeError, ValueError):
                 pass
@@ -335,7 +401,10 @@ Respond with JSON: {{"should_stop": bool, "conclusion": "your conclusion if stop
     def decompose_goal(self, goal: Goal) -> Result[List[Goal], Dict]:
         """Use LLM to decompose a complex goal into sub-goals."""
         messages = [
-            ChatMessage(role=ChatRole.SYSTEM, content="Decompose this goal into 2-5 sub-goals. Respond as a JSON array of strings."),
+            ChatMessage(
+                role=ChatRole.SYSTEM,
+                content="Decompose this goal into 2-5 sub-goals. Respond as a JSON array of strings.",
+            ),
             ChatMessage(role=ChatRole.USER, content=goal.description),
         ]
         result = self.llm.complete(messages)
@@ -343,24 +412,28 @@ Respond with JSON: {{"should_stop": bool, "conclusion": "your conclusion if stop
             return result
         try:
             content = result.unwrap().content or "[]"
-            if '[' in content:
-                json_str = content[content.index('['):content.rindex(']') + 1]
+            if "[" in content:
+                json_str = content[content.index("[") : content.rindex("]") + 1]
                 sub_descriptions = json.loads(json_str)
             else:
                 sub_descriptions = [content]
             sub_goals = [
                 Goal(goal_id=str(uuid.uuid4()), description=d)
-                for d in sub_descriptions if isinstance(d, str)
+                for d in sub_descriptions
+                if isinstance(d, str)
             ]
             goal.sub_goals = sub_goals
             return Result.ok(sub_goals)
         except Exception as e:
-            return Result.err({'errorType': 'DECOMPOSITION_ERROR', 'message': str(e)})
+            return Result.err({"errorType": "DECOMPOSITION_ERROR", "message": str(e)})
 
-    def _log_decision(self, goal: Goal, step: ReasoningStep, response: LLMResponse, duration_ms: float) -> None:
+    def _log_decision(
+        self, goal: Goal, step: ReasoningStep, response: LLMResponse, duration_ms: float
+    ) -> None:
         """Log a decision for observability."""
         if self._decision_logger:
             from .observability import DecisionTrace
+
             trace = DecisionTrace(
                 agent_id=self.agent_id,
                 goal_id=goal.goal_id,
@@ -368,7 +441,10 @@ Respond with JSON: {{"should_stop": bool, "conclusion": "your conclusion if stop
                 timestamp=time.time(),
                 prompt_summary=f"Step {step.step_number}",
                 response_summary=(response.content or "")[:200],
-                tool_calls=[{'name': tc.name, 'args': tc.arguments} for tc in response.tool_calls],
+                tool_calls=[
+                    {"name": tc.name, "args": tc.arguments}
+                    for tc in response.tool_calls
+                ],
                 tool_results=[],
                 token_usage=response.usage.__dict__ if response.usage else {},
                 duration_ms=duration_ms,
@@ -381,8 +457,17 @@ Respond with JSON: {{"should_stop": bool, "conclusion": "your conclusion if stop
 
     # --- Async support ---
 
-    async def pursue_goal_async(self, description: str) -> Result['Goal', Dict[str, Any]]:
+    async def pursue_goal_async(
+        self, description: str
+    ) -> Result["Goal", Dict[str, Any]]:
         """Async entry point: pursue a high-level goal using the async ReAct loop."""
+        input_guardrails = run_guardrails(
+            description,
+            self.autonomy_config.input_guardrails,
+            stage="agent:input",
+        )
+        if input_guardrails.is_err():
+            return Result.err(input_guardrails.unwrap_err())
         goal = Goal(
             goal_id=str(uuid.uuid4()),
             description=description,
@@ -402,11 +487,13 @@ Respond with JSON: {{"should_stop": bool, "conclusion": "your conclusion if stop
         except Exception as e:
             goal.status = "failed"
             goal.result = str(e)
-            return Result.err({
-                'errorType': 'GOAL_PURSUIT_ERROR',
-                'message': str(e),
-                'details': {'goal_id': goal.goal_id}
-            })
+            return Result.err(
+                {
+                    "errorType": "GOAL_PURSUIT_ERROR",
+                    "message": str(e),
+                    "details": {"goal_id": goal.goal_id},
+                }
+            )
 
     async def _react_loop_async(self, goal: Goal) -> Result[Any, Dict[str, Any]]:
         """Async ReAct loop — enables parallel tool execution and async LLM calls."""
@@ -437,42 +524,54 @@ Respond with JSON: {{"should_stop": bool, "conclusion": "your conclusion if stop
             self._log_decision(goal, step, response, duration_ms)
 
             if not response.tool_calls and response.finish_reason == "stop":
-                return Result.ok(response.content)
+                return self._finalize_output(response.content)
 
             if response.tool_calls:
-                messages.append(ChatMessage(
-                    role=ChatRole.ASSISTANT,
-                    content=response.content or "",
-                    tool_calls=response.tool_calls,
-                ))
+                messages.append(
+                    ChatMessage(
+                        role=ChatRole.ASSISTANT,
+                        content=response.content or "",
+                        tool_calls=response.tool_calls,
+                    )
+                )
 
-                for tool_call in response.tool_calls[:self.autonomy_config.max_tool_calls_per_step]:
+                for tool_call in response.tool_calls[
+                    : self.autonomy_config.max_tool_calls_per_step
+                ]:
                     tool_result = self._execute_tool_call(tool_call)
                     step.tool_results.append(tool_result)
 
-                    messages.append(ChatMessage(
-                        role=ChatRole.TOOL,
-                        content=tool_result.content,
-                        tool_call_id=tool_result.tool_call_id,
-                        name=tool_call.name,
-                    ))
+                    messages.append(
+                        ChatMessage(
+                            role=ChatRole.TOOL,
+                            content=tool_result.content,
+                            tool_call_id=tool_result.tool_call_id,
+                            name=tool_call.name,
+                        )
+                    )
 
                     self.memory.working.add(
                         key=f"tool:{tool_call.name}:{step_num}",
                         content=tool_result.content[:500],
                     )
             else:
-                messages.append(ChatMessage(
-                    role=ChatRole.ASSISTANT,
-                    content=response.content or "",
-                ))
+                messages.append(
+                    ChatMessage(
+                        role=ChatRole.ASSISTANT,
+                        content=response.content or "",
+                    )
+                )
 
             if (step_num + 1) % self.autonomy_config.reflection_frequency == 0:
                 reflection = self._reflect(goal, messages, step_num)
                 if reflection.get("should_stop"):
-                    return Result.ok(reflection.get("conclusion", response.content))
+                    return self._finalize_output(
+                        reflection.get("conclusion", response.content)
+                    )
 
-        return Result.err({
-            'errorType': 'MAX_STEPS_REACHED',
-            'message': f'Reached maximum reasoning steps ({self.autonomy_config.max_reasoning_steps})',
-        })
+        return Result.err(
+            {
+                "errorType": "MAX_STEPS_REACHED",
+                "message": f"Reached maximum reasoning steps ({self.autonomy_config.max_reasoning_steps})",
+            }
+        )

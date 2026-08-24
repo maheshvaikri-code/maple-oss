@@ -15,6 +15,9 @@
   conditional routing, interruption/resume, atomic file persistence, and
   optimistic checkpoint versions. Public API documentation and regression
   tests are included.
+- **Typed agent contracts (preview)** (`maple.autonomy.contracts`): bounded
+  JSON-Schema validation for tool and model boundaries, structured output
+  parsing, and fail-closed input/output guardrails with regression tests.
 
 ## Version 1.1.3 - Downstream integration improvements (August 2026)
 
