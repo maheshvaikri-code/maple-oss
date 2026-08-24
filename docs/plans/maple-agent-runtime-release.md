@@ -10,7 +10,7 @@
 | 1 | Typed workflow graph, checkpoint store, stable run IDs, interruption, resume | Backend Engineer | `maple/autonomy/workflow.py`, autonomy exports, workflow tests, API docs | Happy path, invalid graph, malformed checkpoint, interruption/resume, duplicate run IDs, state bounds | done: commit `d75c58c`; focused `33 passed`; autonomy `96 passed` |
 | 2 | Typed tool inputs/outputs and guardrail boundary | ML Engineer / Backend Engineer | autonomy tools/contracts, LLM types, tests, API docs | Schema failures, guardrail rejection/failure, structured output, compatibility | done: commit `fed365f`; focused `34 passed`; autonomy `107 passed` |
 | 3 | Safe bounded execution boundary | Security Reviewer / Backend Engineer | execution module, tool integration, tests, threat documentation | No in-process untrusted execution, timeout, size, cancellation, approval, cleanup | done: commit `9628e7d`; focused `27 passed`; autonomy `114 passed` |
-| 4 | Retrieval/data primitives | ML Engineer / Data Engineer | retrieval module, adapters, fixtures, tests, docs | Ingestion, chunking, source refs, empty/large/malformed input, retrieval fixture metrics | todo |
+| 4 | Retrieval/data primitives | ML Engineer / Data Engineer | retrieval module, adapters, fixtures, tests, docs | Ingestion, chunking, source refs, empty/large/malformed input, retrieval fixture metrics | done: commit `953f601`; focused `20 passed`; autonomy `120 passed` |
 | 5 | Workflow/model/tool event streaming and observability | Backend Engineer / Observability | events, traces, correlation IDs, redaction, tests, docs | Event ordering, bounded buffers, cancellation, redaction, failure telemetry | todo |
 | 6 | Agent evaluation harness and model/provider capabilities | ML Engineer / Interop Engineer | eval fixtures, provider contracts, tests, docs | Golden set, schema/trajectory checks, provider fallback, pinned model metadata | todo |
 | 7 | Interoperability and developer experience | Interop / DevOps / Tech Writer | adapters, examples, CLI/task runner, API docs | Round-trip payloads, unknown fields, quickstart, one-command checks | todo |
@@ -51,7 +51,8 @@ privileged action without approval.
 
 Done (with evidence): G0 brief, G1 ADR, G2 plan, Slice 1 commit `d75c58c`,
 Slice 2 commit `fed365f`, review/QA artifacts, focused and autonomy tests.
-Next: Slice 4 retrieval/data primitives. Blocked on: no local blocker; full
-repository regression is slow/stopped at `1008 passed`, package-init Ruff debt
-remains a release-hardening item, and external publishing, cloud selection, and
-website changes remain explicitly out of scope until human approval.
+Next: Slice 5 event streaming, observability, and redaction. Blocked on: no
+local blocker; full repository regression is slow/stopped at `1008 passed`,
+package-init Ruff debt remains a release-hardening item, and external
+publishing, cloud selection, and website changes remain explicitly out of scope
+until human approval.
