@@ -17,7 +17,45 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 # Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
 
 import argparse
+import json
 import sys
+
+
+def doctor_report():
+    """Return a local-only readiness report for the published runtime surface."""
+    from maple import (
+        EvalCase,
+        EventStream,
+        InMemoryLexicalRetriever,
+        InteropEnvelope,
+        TrustedLocalExecutor,
+        __version__,
+    )
+
+    checks = {
+        "core": True,
+        "execution": isinstance(TrustedLocalExecutor(), TrustedLocalExecutor),
+        "retrieval": isinstance(InMemoryLexicalRetriever(), InMemoryLexicalRetriever),
+        "events": isinstance(EventStream(), EventStream),
+        "evaluation": isinstance(
+            EvalCase("doctor", True, expected_output=True), EvalCase
+        ),
+        "interop": InteropEnvelope(
+            protocol="doctor",
+            message_type="READY",
+            payload={"ok": True},
+            metadata={},
+        )
+        .to_json()
+        .is_ok(),
+    }
+    return {
+        "status": "SUCCESS" if all(checks.values()) else "ERROR",
+        "version": __version__,
+        "ready": all(checks.values()),
+        "checks": checks,
+        "network": False,
+    }
 
 
 def main():
@@ -26,25 +64,28 @@ def main():
         prog="maple",
         description="MAPLE - Multi Agent Protocol Language Engine",
     )
-    parser.add_argument(
-        "--version", action="store_true", help="Show MAPLE version"
-    )
+    parser.add_argument("--version", action="store_true", help="Show MAPLE version")
     parser.add_argument(
         "command",
         nargs="?",
-        choices=["validate", "info"],
+        choices=["validate", "info", "doctor"],
         help="Command to run",
+    )
+    parser.add_argument(
+        "--json", action="store_true", help="Print machine-readable output"
     )
 
     args = parser.parse_args()
 
     if args.version:
         from maple import __version__
+
         print(f"MAPLE v{__version__}")
         return 0
 
     if args.command == "validate":
         from maple import validate_installation
+
         result = validate_installation()
         if result["status"] == "SUCCESS":
             print(f"MAPLE v{result['version']} is properly installed.")
@@ -55,10 +96,21 @@ def main():
 
     if args.command == "info":
         from maple import __version__, __author__, __license__
+
         print(f"MAPLE v{__version__}")
         print(f"Author: {__author__}")
         print(f"License: {__license__}")
         return 0
+
+    if args.command == "doctor":
+        report = doctor_report()
+        if args.json:
+            print(json.dumps(report, sort_keys=True))
+        else:
+            print(f"MAPLE v{report['version']} doctor: {report['status']}")
+            for name, passed in report["checks"].items():
+                print(f"  {name}: {'PASS' if passed else 'FAIL'}")
+        return 0 if report["ready"] else 1
 
     parser.print_help()
     return 0

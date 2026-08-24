@@ -673,6 +673,27 @@ provider = router.create(
 )
 ```
 
+## Interoperability and Doctor CLI (preview)
+
+`InteropEnvelope` is a strict versioned JSON envelope for adapter round-trip
+fixtures. It rejects unknown top-level fields, unsupported schema versions,
+non-JSON values, and oversized payloads.
+
+```python
+from maple import InteropEnvelope, round_trip_json
+
+envelope = InteropEnvelope(
+    protocol="a2a",
+    message_type="TASK",
+    payload={"task": "research"},
+)
+round_tripped = round_trip_json(envelope)
+```
+
+For local release preflight, run `maple doctor --json`. It reports the runtime
+surface checks without contacting providers or cloud services; it does not
+replace the full test, lint, type, dependency-audit, and packaging gates.
+
 ## Workflow Runtime (preview)
 
 The workflow runtime provides a dependency-free, sequential execution graph

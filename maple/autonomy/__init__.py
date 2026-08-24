@@ -46,6 +46,7 @@ from .retrieval import (
 )
 from .events import AgentEvent, EventStream, RedactionPolicy
 from .evaluation import EvalCase, EvalObservation, EvalReport, EvalResult, EvaluationHarness
+from .interop import InteropEnvelope, round_trip_json
 from .workflow import (
     END,
     CheckpointStore,
@@ -101,6 +102,8 @@ __all__ = [
     "EvalReport",
     "EvalResult",
     "EvaluationHarness",
+    "InteropEnvelope",
+    "round_trip_json",
     "END",
     "CheckpointStore",
     "FileCheckpointStore",

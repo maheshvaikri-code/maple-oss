@@ -102,6 +102,7 @@ from .autonomy.evaluation import (
     EvalResult,
     EvaluationHarness,
 )
+from .autonomy.interop import InteropEnvelope, round_trip_json
 from .llm.types import LLMConfig, ChatMessage, ChatRole
 from .llm.registry import LLMProviderRegistry
 from .llm.capabilities import (
@@ -213,6 +214,8 @@ __all__ = [
     "EvalReport",
     "EvalResult",
     "EvaluationHarness",
+    "InteropEnvelope",
+    "round_trip_json",
     "LLMConfig",
     "ChatMessage",
     "ChatRole",

@@ -32,6 +32,9 @@
   `maple.llm.capabilities`): deterministic output/trajectory evaluation cases,
   redacted bounded reports, declared capability matching, and provider
   initialization fallback.
+- **Interop and doctor CLI (preview)** (`maple.autonomy.interop`, `maple.cli`):
+  strict versioned JSON adapter envelopes and a network-free machine-readable
+  runtime readiness report.
 
 ## Version 1.1.3 - Downstream integration improvements (August 2026)
 
