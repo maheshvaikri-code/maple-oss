@@ -33,6 +33,7 @@ from ..llm.types import (
     ChatRole,
     LLMConfig,
     LLMResponse,
+    TokenUsage,
     ToolCall,
     ToolResult,
 )
@@ -75,6 +76,7 @@ class Goal:
     reasoning_trace: List[ReasoningStep] = field(default_factory=list)
     session_id: Optional[str] = None
     session_error: Optional[Dict[str, Any]] = None
+    token_usage: TokenUsage = field(default_factory=TokenUsage)
 
 
 @dataclass(frozen=True)
@@ -93,6 +95,9 @@ class AutonomousConfig:
     ``output_model`` is an optional Pydantic-style model class. When set, a
     completed response is returned as a validated model instance; the legacy
     ``response_schema`` dictionary remains unchanged when it is unset.
+    ``max_total_tokens`` is an optional hard per-goal budget. When set,
+    provider usage data is required and tool execution stops before side
+    effects if the budget is exceeded.
     """
 
     llm: LLMConfig
@@ -106,6 +111,7 @@ class AutonomousConfig:
     output_model: Optional[Type[Any]] = None
     input_guardrails: List[Guardrail] = field(default_factory=list)
     output_guardrails: List[Guardrail] = field(default_factory=list)
+    max_total_tokens: Optional[int] = None
 
 
 class AutonomousAgent(Agent):
@@ -130,6 +136,12 @@ class AutonomousAgent(Agent):
     ) -> None:
         super().__init__(config, broker)
         self.autonomy_config = autonomy_config
+        if autonomy_config.max_total_tokens is not None and (
+            isinstance(autonomy_config.max_total_tokens, bool)
+            or not isinstance(autonomy_config.max_total_tokens, int)
+            or autonomy_config.max_total_tokens <= 0
+        ):
+            raise ValueError("max_total_tokens must be a positive integer")
         self._output_schema: Optional[Dict[str, Any]] = autonomy_config.response_schema
         if autonomy_config.output_model is not None:
             output_schema = structured_model_schema(autonomy_config.output_model)
@@ -527,6 +539,9 @@ class AutonomousAgent(Agent):
                 return response_result
 
             response = response_result.unwrap()
+            usage_result = self._account_response_usage(goal, response)
+            if usage_result.is_err():
+                return Result.err(usage_result.unwrap_err())
             duration_ms = (time.time() - start_time) * 1000
 
             # Record reasoning step
@@ -586,6 +601,8 @@ class AutonomousAgent(Agent):
             # REFLECT: Every N steps, assess progress
             if (step_num + 1) % self.autonomy_config.reflection_frequency == 0:
                 reflection = self._reflect(goal, messages, step_num)
+                if "_maple_error" in reflection:
+                    return Result.err(reflection["_maple_error"])
                 if reflection.get("should_stop"):
                     return self._finalize_output(
                         reflection.get("conclusion", response.content)
@@ -875,8 +892,12 @@ Instructions:
 
         result = self.llm.complete(reflection_messages)
         if result.is_ok():
+            response = result.unwrap()
+            usage_result = self._account_response_usage(goal, response)
+            if usage_result.is_err():
+                return {"_maple_error": usage_result.unwrap_err()}
             try:
-                content = result.unwrap().content or ""
+                content = response.content or ""
                 # Try to extract JSON from the response
                 if "{" in content:
                     json_str = content[content.index("{") : content.rindex("}") + 1]
@@ -886,6 +907,58 @@ Instructions:
             except (json.JSONDecodeError, ValueError):
                 pass
         return {"should_stop": False}
+
+    def _account_response_usage(
+        self, goal: Goal, response: LLMResponse
+    ) -> Result[None, Dict[str, Any]]:
+        """Account provider usage and enforce an optional per-goal budget."""
+        usage = response.usage
+        budget = self.autonomy_config.max_total_tokens
+        if usage is None:
+            if budget is None:
+                return Result.ok(None)
+            return Result.err(
+                {
+                    "errorType": "TOKEN_USAGE_UNAVAILABLE",
+                    "message": "A token budget requires provider usage data.",
+                }
+            )
+
+        values = (
+            usage.prompt_tokens,
+            usage.completion_tokens,
+            usage.total_tokens,
+        )
+        if any(
+            isinstance(value, bool) or not isinstance(value, int) or value < 0
+            for value in values
+        ):
+            return Result.err(
+                {
+                    "errorType": "TOKEN_USAGE_INVALID",
+                    "message": "Provider returned invalid token usage data.",
+                }
+            )
+
+        response_total = max(
+            usage.total_tokens, usage.prompt_tokens + usage.completion_tokens
+        )
+        goal.token_usage.prompt_tokens += usage.prompt_tokens
+        goal.token_usage.completion_tokens += usage.completion_tokens
+        goal.token_usage.total_tokens += response_total
+
+        if budget is not None and goal.token_usage.total_tokens > budget:
+            return Result.err(
+                {
+                    "errorType": "TOKEN_BUDGET_EXCEEDED",
+                    "message": "Autonomous goal exceeded its token budget.",
+                    "details": {
+                        "max_total_tokens": budget,
+                        "used_tokens": goal.token_usage.total_tokens,
+                    },
+                }
+            )
+        return Result.ok(None)
 
     def decompose_goal(self, goal: Goal) -> Result[List[Goal], Dict[str, Any]]:
         """Use LLM to decompose a complex goal into sub-goals."""
@@ -1022,6 +1095,9 @@ Instructions:
                 return response_result
 
             response = response_result.unwrap()
+            usage_result = self._account_response_usage(goal, response)
+            if usage_result.is_err():
+                return Result.err(usage_result.unwrap_err())
             duration_ms = (time.time() - start_time) * 1000
 
             step = ReasoningStep(
@@ -1099,6 +1175,8 @@ Instructions:
 
             if (step_num + 1) % self.autonomy_config.reflection_frequency == 0:
                 reflection = self._reflect(goal, messages, step_num)
+                if "_maple_error" in reflection:
+                    return Result.err(reflection["_maple_error"])
                 if reflection.get("should_stop"):
                     return self._finalize_output(
                         reflection.get("conclusion", response.content)

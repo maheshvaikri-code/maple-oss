@@ -112,6 +112,62 @@ class TestAutonomousAgent:
         assert agent.memory is not None
         assert agent.tool_registry is not None
 
+    def test_invalid_token_budget_is_rejected(self):
+        with pytest.raises(ValueError, match="max_total_tokens"):
+            AutonomousAgent(make_config(), make_auto_config(max_total_tokens=0))
+
+    def test_token_budget_tracks_usage_and_blocks_tool_side_effect(self):
+        from maple.autonomy.tools import Tool
+
+        calls = []
+        auto_config = make_auto_config(max_total_tokens=10)
+        agent = AutonomousAgent(make_config(), auto_config)
+        agent.llm = MockLLMProvider(
+            auto_config.llm,
+            responses=[
+                LLMResponse(
+                    content="Call the tool",
+                    tool_calls=[
+                        ToolCall(id="tc-budget", name="side_effect", arguments={})
+                    ],
+                    finish_reason="tool_calls",
+                    usage=TokenUsage(
+                        prompt_tokens=6, completion_tokens=5, total_tokens=11
+                    ),
+                )
+            ],
+        )
+        agent.register_tool(
+            Tool(
+                name="side_effect",
+                description="Record a side effect",
+                parameters={"type": "object"},
+                handler=lambda: (calls.append("called") or Result.ok({})),
+            )
+        )
+
+        result = agent.pursue_goal("Use the side effect tool")
+
+        assert result.is_ok()
+        goal = result.unwrap()
+        assert goal.status == "failed"
+        assert goal.result["errorType"] == "TOKEN_BUDGET_EXCEEDED"
+        assert goal.token_usage.total_tokens == 11
+        assert calls == []
+
+    def test_token_budget_requires_provider_usage(self):
+        auto_config = make_auto_config(max_total_tokens=10)
+        agent = AutonomousAgent(make_config(), auto_config)
+        agent.llm = MockLLMProvider(
+            auto_config.llm,
+            responses=[LLMResponse(content="Done", finish_reason="stop")],
+        )
+
+        result = agent.pursue_goal("Finish without usage")
+
+        assert result.is_ok()
+        assert result.unwrap().result["errorType"] == "TOKEN_USAGE_UNAVAILABLE"
+
     def test_pursue_goal_simple(self):
         """Test that pursuing a simple goal works when LLM responds with stop."""
         config = make_config()
@@ -313,16 +369,18 @@ class TestAutonomousAgent:
         from maple.autonomy.tools import Tool
 
         for name in ("first", "second"):
-            agent.register_tool(Tool(
-                name=name,
-                description=f"Run {name}",
-                parameters={
-                    "type": "object",
-                    "properties": {"label": {"type": "string"}},
-                    "required": ["label"],
-                },
-                handler=parallel_handler,
-            ))
+            agent.register_tool(
+                Tool(
+                    name=name,
+                    description=f"Run {name}",
+                    parameters={
+                        "type": "object",
+                        "properties": {"label": {"type": "string"}},
+                        "required": ["label"],
+                    },
+                    handler=parallel_handler,
+                )
+            )
 
         agent.llm = MockLLMProvider(
             auto_config.llm,
@@ -347,6 +405,45 @@ class TestAutonomousAgent:
         tool_results = goal.reasoning_trace[0].tool_results
         assert [item.tool_call_id for item in tool_results] == ["call-1", "call-2"]
         assert all(not item.is_error for item in tool_results)
+
+    def test_async_token_budget_blocks_tool_side_effect(self):
+        from maple.autonomy.tools import Tool
+
+        calls = []
+        auto_config = make_auto_config(max_total_tokens=10)
+        agent = AutonomousAgent(make_config(), auto_config)
+        agent.llm = MockLLMProvider(
+            auto_config.llm,
+            responses=[
+                LLMResponse(
+                    content="Call the tool",
+                    tool_calls=[
+                        ToolCall(id="tc-async-budget", name="side_effect", arguments={})
+                    ],
+                    finish_reason="tool_calls",
+                    usage=TokenUsage(
+                        prompt_tokens=6, completion_tokens=5, total_tokens=11
+                    ),
+                )
+            ],
+        )
+        agent.register_tool(
+            Tool(
+                name="side_effect",
+                description="Record a side effect",
+                parameters={"type": "object"},
+                handler=lambda: (calls.append("called") or Result.ok({})),
+            )
+        )
+
+        result = asyncio.run(agent.pursue_goal_async("Use the side effect tool"))
+
+        assert result.is_ok()
+        goal = result.unwrap()
+        assert goal.status == "failed"
+        assert goal.result["errorType"] == "TOKEN_BUDGET_EXCEEDED"
+        assert goal.token_usage.total_tokens == 11
+        assert calls == []
 
     def test_max_steps_reached(self):
         """Test that hitting max steps returns an error."""
@@ -435,13 +532,15 @@ class TestAutonomousAgent:
 
         from maple.autonomy.tools import Tool
 
-        agent.register_tool(Tool(
-            name="dangerous",
-            description="A tool that needs approval",
-            parameters={"type": "object"},
-            handler=lambda: calls.append("executed") or Result.ok({"ok": True}),
-            requires_approval=True,
-        ))
+        agent.register_tool(
+            Tool(
+                name="dangerous",
+                description="A tool that needs approval",
+                parameters={"type": "object"},
+                handler=lambda: calls.append("executed") or Result.ok({"ok": True}),
+                requires_approval=True,
+            )
+        )
         agent.llm = MockLLMProvider(
             auto_config.llm,
             responses=[
@@ -472,13 +571,15 @@ class TestAutonomousAgent:
 
         from maple.autonomy.tools import Tool
 
-        agent.register_tool(Tool(
-            name="dangerous",
-            description="A tool that needs approval",
-            parameters={"type": "object"},
-            handler=lambda: calls.append("executed") or Result.ok({"ok": True}),
-            requires_approval=True,
-        ))
+        agent.register_tool(
+            Tool(
+                name="dangerous",
+                description="A tool that needs approval",
+                parameters={"type": "object"},
+                handler=lambda: calls.append("executed") or Result.ok({"ok": True}),
+                requires_approval=True,
+            )
+        )
 
         pending = agent._execute_tool_call(ToolCall("call-durable", "dangerous", {}))
         pending_payload = json.loads(pending.content)
@@ -596,3 +697,4 @@ class TestReflection:
         assert result.is_ok()
         goal = result.unwrap()
         assert goal.status == "completed"
+        assert goal.token_usage.total_tokens == 50
