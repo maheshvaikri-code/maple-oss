@@ -5,8 +5,7 @@ Created by: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
 Type-safe error handling mechanism for distributed agent communication.
 """
 
-import json
-from typing import Any, Callable, Generic, Optional, TypeVar, Union
+from typing import Any, Callable, Generic, Mapping, TypeVar, Union, cast
 
 T = TypeVar("T")
 E = TypeVar("E")
@@ -50,13 +49,13 @@ class Result(Generic[T, E]):
             Exception: If the result is Err.
         """
         if self._is_ok:
-            return self._value
+            return cast(T, self._value)
         raise Exception(f"Called unwrap on an Err value: {self._value}")
 
     def unwrap_or(self, default: T) -> T:
         """Extract the success value or return a default."""
         if self._is_ok:
-            return self._value
+            return cast(T, self._value)
         return default
 
     def unwrap_err(self) -> E:
@@ -67,34 +66,34 @@ class Result(Generic[T, E]):
             Exception: If the result is Ok.
         """
         if not self._is_ok:
-            return self._value
+            return cast(E, self._value)
         raise Exception(f"Called unwrap_err on an Ok value: {self._value}")
 
     def map(self, f: Callable[[T], U]) -> "Result[U, E]":
         """Apply a function to the success value."""
         if self._is_ok:
-            return Result.ok(f(self._value))
-        return Result.err(self._value)
+            return Result.ok(f(cast(T, self._value)))
+        return Result.err(cast(E, self._value))
 
     def map_err(self, f: Callable[[E], F]) -> "Result[T, F]":
         """Apply a function to the error value."""
         if not self._is_ok:
-            return Result.err(f(self._value))
-        return Result.ok(self._value)
+            return Result.err(f(cast(E, self._value)))
+        return Result.ok(cast(T, self._value))
 
     def and_then(self, f: Callable[[T], "Result[U, E]"]) -> "Result[U, E]":
         """Chain operations that might fail."""
         if self._is_ok:
-            return f(self._value)
-        return Result.err(self._value)
+            return f(cast(T, self._value))
+        return Result.err(cast(E, self._value))
 
     def or_else(self, f: Callable[[E], "Result[T, F]"]) -> "Result[T, F]":
         """Provide an alternative if the result is an error."""
         if not self._is_ok:
-            return f(self._value)
-        return Result.ok(self._value)
+            return f(cast(E, self._value))
+        return Result.ok(cast(T, self._value))
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Convert result to dictionary for serialization."""
         return {
             "status": "ok" if self._is_ok else "err",
@@ -102,12 +101,11 @@ class Result(Generic[T, E]):
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "Result[Any, Any]":
+    def from_dict(cls, data: Mapping[str, Any]) -> "Result[Any, Any]":
         """Create result from dictionary."""
         if data.get("status") == "ok":
-            return cls.ok(data.get("value"))
-        else:
-            return cls.err(data.get("error"))
+            return cls.ok(cast(Any, data.get("value")))
+        return cls.err(cast(Any, data.get("error")))
 
     def __repr__(self) -> str:
         if self._is_ok:
@@ -115,7 +113,7 @@ class Result(Generic[T, E]):
         else:
             return f"Result.err({self._value!r})"
 
-    def __eq__(self, other) -> bool:
+    def __eq__(self, other: object) -> bool:
         if not isinstance(other, Result):
             return False
         return self._is_ok == other._is_ok and self._value == other._value
