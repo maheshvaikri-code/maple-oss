@@ -60,6 +60,10 @@
   added bounded golden source-URI cases with lexical/vector hit support,
   source-level precision/recall/F1 metrics, malformed-runner isolation, and
   explicit separation from generated-answer faithfulness claims.
+- **Deterministic grounded-answer evaluation** (`maple.autonomy.evaluation`):
+  added bounded source URI/text fixtures, deterministic claim segmentation and
+  lexical support ratios, typed threshold/malformed-runner failures, and an
+  explicit no-semantic-entailment/no-LLM-judge boundary.
 - **Bounded workflow history** (`maple.autonomy.workflow`): added an
   in-process `HistoryCheckpointStore` decorator that retains immutable,
   version-ordered checkpoint snapshots for inspection without claiming

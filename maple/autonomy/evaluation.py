@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import math
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
@@ -14,6 +16,35 @@ from .retrieval import RetrievalHit, VectorRetrievalHit
 
 Error = Dict[str, Any]
 _UNSET = object()
+_GROUNDING_TOKEN = re.compile(r"[^\W_]+", re.UNICODE)
+_GROUNDING_MAX_CLAIMS = 256
+_GROUNDING_MAX_SOURCES = 256
+_GROUNDING_STOPWORDS = frozenset(
+    {
+        "a",
+        "an",
+        "and",
+        "are",
+        "as",
+        "at",
+        "be",
+        "by",
+        "for",
+        "from",
+        "in",
+        "is",
+        "it",
+        "of",
+        "on",
+        "or",
+        "that",
+        "the",
+        "to",
+        "was",
+        "were",
+        "with",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -142,11 +173,151 @@ class RetrievalEvalCase:
 
 
 @dataclass(frozen=True)
+class GroundingSource:
+    """Bounded source text used by deterministic groundedness evaluation."""
+
+    uri: str
+    text: str
+
+    def validate(self) -> Optional[Error]:
+        if (
+            not isinstance(self.uri, str)
+            or not self.uri
+            or len(self.uri) > 2_048
+            or any(ord(char) < 32 for char in self.uri)
+        ):
+            return {
+                "errorType": "GROUNDING_CASE_INVALID",
+                "message": "source URI must be bounded text.",
+            }
+        if (
+            not isinstance(self.text, str)
+            or not self.text.strip()
+            or len(self.text.encode("utf-8")) > 262_144
+        ):
+            return {
+                "errorType": "GROUNDING_CASE_INVALID",
+                "message": "source text must be non-empty and bounded.",
+            }
+        return None
+
+
+@dataclass(frozen=True)
+class GroundednessEvalCase:
+    """One lexical claim-support evaluation case."""
+
+    case_id: str
+    query: str
+    sources: Tuple[GroundingSource, ...]
+    min_supported_ratio: float = 1.0
+    min_claim_overlap: float = 0.5
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def validate(self) -> Optional[Error]:
+        if (
+            not isinstance(self.case_id, str)
+            or not self.case_id
+            or len(self.case_id) > 256
+        ):
+            return {
+                "errorType": "GROUNDING_CASE_INVALID",
+                "message": "case_id must be bounded and non-empty.",
+            }
+        if (
+            not isinstance(self.query, str)
+            or not self.query.strip()
+            or len(self.query.encode("utf-8")) > 16_384
+        ):
+            return {
+                "errorType": "GROUNDING_CASE_INVALID",
+                "message": "query must be non-empty and bounded.",
+            }
+        if (
+            not isinstance(self.sources, tuple)
+            or not self.sources
+            or len(self.sources) > _GROUNDING_MAX_SOURCES
+        ):
+            return {
+                "errorType": "GROUNDING_CASE_INVALID",
+                "message": "sources must be a non-empty bounded tuple.",
+            }
+        source_uris = []
+        for source in self.sources:
+            if not isinstance(source, GroundingSource):
+                return {
+                    "errorType": "GROUNDING_CASE_INVALID",
+                    "message": "sources must contain GroundingSource values.",
+                }
+            source_error = source.validate()
+            if source_error:
+                return source_error
+            source_uris.append(source.uri)
+        if len(set(source_uris)) != len(source_uris):
+            return {
+                "errorType": "GROUNDING_CASE_INVALID",
+                "message": "source URIs must not contain duplicates.",
+            }
+        for name, value in (
+            ("min_supported_ratio", self.min_supported_ratio),
+            ("min_claim_overlap", self.min_claim_overlap),
+        ):
+            is_number = isinstance(value, (int, float)) and not isinstance(value, bool)
+            if is_number:
+                try:
+                    finite = math.isfinite(value)
+                except OverflowError:
+                    finite = False
+            else:
+                finite = False
+            if (
+                not is_number
+                or not finite
+                or value < 0.0
+                or value > 1.0
+            ):
+                return {
+                    "errorType": "GROUNDING_CASE_INVALID",
+                    "message": f"{name} must be a finite number between 0 and 1.",
+                }
+        try:
+            json.dumps(self.metadata, allow_nan=False)
+        except (TypeError, ValueError):
+            return {
+                "errorType": "GROUNDING_CASE_INVALID",
+                "message": "case metadata must be JSON serializable.",
+            }
+        return None
+
+
+@dataclass(frozen=True)
 class EvalObservation:
     """Optional runner result carrying output and ordered tool names."""
 
     output: Any
     tool_names: Tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class GroundednessObservation:
+    """Runner result for one generated answer."""
+
+    answer: str
+
+
+def _grounding_terms(text: str) -> set:
+    return {
+        token.casefold()
+        for token in _GROUNDING_TOKEN.findall(text)
+        if token.casefold() not in _GROUNDING_STOPWORDS
+    }
+
+
+def _grounding_claims(answer: str) -> List[str]:
+    return [
+        claim.strip()
+        for claim in re.split(r"(?<=[.!?])\s+|\r?\n+", answer.strip())
+        if claim.strip()
+    ]
 
 
 @dataclass(frozen=True)
@@ -356,6 +527,213 @@ class EvaluationHarness:
                     }
                 )
                 score = 0.0
+            results.append(
+                EvalResult(
+                    case_id=case.case_id,
+                    passed=not errors,
+                    score=score,
+                    actual_output=self._safe_output(actual),
+                    errors=tuple(errors),
+                    duration_ms=(time.perf_counter() - started) * 1000,
+                )
+            )
+        return Result.ok(EvalReport(results=tuple(results)))
+
+    def run_groundedness(
+        self,
+        cases: Sequence[GroundednessEvalCase],
+        runner: Callable[[str], Any],
+    ) -> Result[EvalReport, Error]:
+        """Score bounded lexical claim support against supplied source text.
+
+        This is a deterministic lexical proxy. It does not establish
+        semantic entailment, factuality, or citation faithfulness.
+        """
+        if (
+            not isinstance(self.max_cases, int)
+            or isinstance(self.max_cases, bool)
+            or self.max_cases <= 0
+        ):
+            return Result.err(
+                {
+                    "errorType": "EVAL_CONFIG_INVALID",
+                    "message": "max_cases must be positive.",
+                }
+            )
+        if (
+            not isinstance(self.max_value_bytes, int)
+            or isinstance(self.max_value_bytes, bool)
+            or self.max_value_bytes <= 0
+        ):
+            return Result.err(
+                {
+                    "errorType": "EVAL_CONFIG_INVALID",
+                    "message": "max_value_bytes must be positive.",
+                }
+            )
+        if not callable(runner):
+            return Result.err(
+                {
+                    "errorType": "EVAL_INPUT_INVALID",
+                    "message": "runner must be callable.",
+                }
+            )
+        if len(cases) > self.max_cases:
+            return Result.err(
+                {
+                    "errorType": "EVAL_CASE_LIMIT",
+                    "message": "case count exceeds the limit.",
+                }
+            )
+
+        results: List[EvalResult] = []
+        for case in cases:
+            case_error = case.validate()
+            if case_error is not None:
+                return Result.err(case_error)
+            started = time.perf_counter()
+            errors: List[Error] = []
+            actual: Any = None
+            score = 0.0
+            try:
+                encoded_case = json.dumps(
+                    {
+                        "query": case.query,
+                        "sources": [
+                            {"uri": source.uri, "text": source.text}
+                            for source in case.sources
+                        ],
+                    },
+                    ensure_ascii=False,
+                    allow_nan=False,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+                if len(encoded_case) > self.max_value_bytes:
+                    errors.append(
+                        {
+                            "errorType": "GROUNDING_CASE_SIZE",
+                            "message": "grounding case exceeds the value byte limit.",
+                        }
+                    )
+                else:
+                    observation = runner(case.query)
+                    if isinstance(observation, Result):
+                        if observation.is_err():
+                            errors.append(
+                                {
+                                    "errorType": "GROUNDING_RUNNER_ERROR",
+                                    "message": "grounding runner returned an error.",
+                                }
+                            )
+                        else:
+                            observation = observation.unwrap()
+                    if not errors:
+                        if not isinstance(observation, GroundednessObservation):
+                            errors.append(
+                                {
+                                    "errorType": "GROUNDING_OBSERVATION_INVALID",
+                                    "message": (
+                                        "grounding runner must return a "
+                                        "GroundednessObservation."
+                                    ),
+                                }
+                            )
+                        elif (
+                            not isinstance(observation.answer, str)
+                            or not observation.answer.strip()
+                        ):
+                            errors.append(
+                                {
+                                    "errorType": "GROUNDING_ANSWER_INVALID",
+                                    "message": "grounding answer must be non-empty text.",
+                                }
+                            )
+                        elif (
+                            len(observation.answer.encode("utf-8"))
+                            > self.max_value_bytes
+                        ):
+                            errors.append(
+                                {
+                                    "errorType": "GROUNDING_ANSWER_SIZE",
+                                    "message": "grounding answer exceeds the value byte limit.",
+                                }
+                            )
+                        else:
+                            claims = _grounding_claims(observation.answer)
+                            if not claims:
+                                errors.append(
+                                    {
+                                        "errorType": "GROUNDING_CLAIM_INVALID",
+                                        "message": "grounding answer contains no claims.",
+                                    }
+                                )
+                            elif len(claims) > _GROUNDING_MAX_CLAIMS:
+                                errors.append(
+                                    {
+                                        "errorType": "GROUNDING_CLAIM_LIMIT",
+                                        "message": "grounding claim count exceeds the limit.",
+                                    }
+                                )
+                            else:
+                                source_terms = {
+                                    source.uri: _grounding_terms(source.text)
+                                    for source in case.sources
+                                }
+                                supported_indexes: List[int] = []
+                                evidence_uris = set()
+                                for index, claim in enumerate(claims):
+                                    claim_terms = _grounding_terms(claim)
+                                    if not claim_terms:
+                                        errors.append(
+                                            {
+                                                "errorType": "GROUNDING_CLAIM_INVALID",
+                                                "message": "grounding claim has no comparable terms.",
+                                            }
+                                        )
+                                        break
+                                    best_ratio = -1.0
+                                    best_uri = ""
+                                    for uri, terms in source_terms.items():
+                                        overlap = len(claim_terms.intersection(terms))
+                                        ratio = overlap / len(claim_terms)
+                                        if ratio > best_ratio or (
+                                            ratio == best_ratio
+                                            and (not best_uri or uri < best_uri)
+                                        ):
+                                            best_ratio = ratio
+                                            best_uri = uri
+                                    if best_ratio >= case.min_claim_overlap:
+                                        supported_indexes.append(index)
+                                        evidence_uris.add(best_uri)
+                                if not errors:
+                                    score = len(supported_indexes) / len(claims)
+                                    actual = {
+                                        "claim_count": len(claims),
+                                        "supported_claim_count": len(supported_indexes),
+                                        "unsupported_claim_count": len(claims)
+                                        - len(supported_indexes),
+                                        "supported_claim_indexes": supported_indexes,
+                                        "supported_ratio": score,
+                                        "evidence_source_uris": sorted(evidence_uris),
+                                    }
+                                    if score < case.min_supported_ratio:
+                                        errors.append(
+                                            {
+                                                "errorType": "GROUNDING_SUPPORT_LOW",
+                                                "message": (
+                                                    "supported claim ratio was below "
+                                                    "the threshold."
+                                                ),
+                                            }
+                                        )
+            except Exception as exc:
+                errors.append(
+                    {
+                        "errorType": "GROUNDING_RUNNER_EXCEPTION",
+                        "message": "grounding runner raised an exception.",
+                        "details": {"exception": type(exc).__name__},
+                    }
+                )
             results.append(
                 EvalResult(
                     case_id=case.case_id,

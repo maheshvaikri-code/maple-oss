@@ -54,6 +54,9 @@ from .evaluation import (
     EvalReport,
     EvalResult,
     EvaluationHarness,
+    GroundednessEvalCase,
+    GroundednessObservation,
+    GroundingSource,
     RetrievalEvalCase,
 )
 from .interop import InteropEnvelope, round_trip_json
@@ -153,6 +156,9 @@ __all__ = [
     "EvalReport",
     "EvalResult",
     "EvaluationHarness",
+    "GroundednessEvalCase",
+    "GroundednessObservation",
+    "GroundingSource",
     "RetrievalEvalCase",
     "InteropEnvelope",
     "round_trip_json",

@@ -6,6 +6,9 @@ from maple.autonomy.evaluation import (
     EvalCase,
     EvalObservation,
     EvaluationHarness,
+    GroundednessEvalCase,
+    GroundednessObservation,
+    GroundingSource,
     RetrievalEvalCase,
 )
 from maple.autonomy.retrieval import (
@@ -223,3 +226,133 @@ def test_retrieval_evaluation_bounds_runner_hit_count():
 
     assert report.is_ok()
     assert report.unwrap().results[0].errors[0]["errorType"] == "RAG_HIT_LIMIT"
+
+
+def test_groundedness_evaluation_scores_supported_claims_deterministically():
+    case = GroundednessEvalCase(
+        "grounded",
+        "What does MAPLE provide?",
+        (
+            GroundingSource(
+                "urn:source:maple",
+                "MAPLE provides resource aware messaging for agents.",
+            ),
+        ),
+    )
+
+    report = EvaluationHarness().run_groundedness(
+        [case],
+        lambda query: GroundednessObservation(
+            "MAPLE provides resource aware messaging for agents."
+        ),
+    )
+
+    assert report.is_ok()
+    result = report.unwrap().results[0]
+    assert result.passed
+    assert result.score == 1.0
+    assert result.actual_output["evidence_source_uris"] == ["urn:source:maple"]
+
+
+def test_groundedness_evaluation_reports_low_support_without_aborting():
+    case = GroundednessEvalCase(
+        "mixed",
+        "What is supported?",
+        (GroundingSource("urn:source:one", "MAPLE supports typed workflows."),),
+        min_supported_ratio=1.0,
+        min_claim_overlap=0.75,
+    )
+
+    report = EvaluationHarness().run_groundedness(
+        [case],
+        lambda query: GroundednessObservation(
+            "MAPLE supports typed workflows. MAPLE has a browser sandbox."
+        ),
+    )
+
+    assert report.is_ok()
+    result = report.unwrap().results[0]
+    assert not result.passed
+    assert result.score == pytest.approx(0.5)
+    assert result.errors[0]["errorType"] == "GROUNDING_SUPPORT_LOW"
+
+
+def test_groundedness_evaluation_isolates_malformed_and_raising_runners():
+    source = GroundingSource("urn:source:one", "MAPLE supports typed workflows.")
+    cases = [
+        GroundednessEvalCase("pass", "good", (source,)),
+        GroundednessEvalCase("malformed", "bad", (source,)),
+        GroundednessEvalCase("exception", "crash", (source,)),
+    ]
+
+    def runner(query):
+        if query == "bad":
+            return {"answer": "not typed"}
+        if query == "crash":
+            raise RuntimeError("runner details")
+        return GroundednessObservation("MAPLE supports typed workflows.")
+
+    report = EvaluationHarness().run_groundedness(cases, runner)
+
+    assert report.is_ok()
+    assert report.unwrap().passed == 1
+    assert report.unwrap().results[1].errors[0]["errorType"] == (
+        "GROUNDING_OBSERVATION_INVALID"
+    )
+    assert report.unwrap().results[2].errors[0]["errorType"] == (
+        "GROUNDING_RUNNER_EXCEPTION"
+    )
+
+
+def test_groundedness_evaluation_rejects_duplicate_sources_and_non_finite_threshold():
+    source = GroundingSource("urn:source:one", "MAPLE supports typed workflows.")
+    duplicate_sources = GroundednessEvalCase(
+        "invalid",
+        "query",
+        (source, source),
+    )
+    non_finite_threshold = GroundednessEvalCase(
+        "invalid-threshold",
+        "query",
+        (source,),
+        min_supported_ratio=float("nan"),
+    )
+
+    duplicate_result = EvaluationHarness().run_groundedness(
+        [duplicate_sources],
+        lambda query: GroundednessObservation("MAPLE supports workflows."),
+    )
+    threshold_result = EvaluationHarness().run_groundedness(
+        [non_finite_threshold],
+        lambda query: GroundednessObservation("MAPLE supports workflows."),
+    )
+
+    assert duplicate_result.is_err()
+    assert duplicate_result.unwrap_err()["errorType"] == "GROUNDING_CASE_INVALID"
+    assert threshold_result.is_err()
+    assert threshold_result.unwrap_err()["errorType"] == "GROUNDING_CASE_INVALID"
+
+
+def test_groundedness_evaluation_handles_runner_errors_and_answer_bounds():
+    source = GroundingSource("urn:source:one", "MAPLE supports workflows.")
+    error_case = GroundednessEvalCase("error", "error", (source,))
+    normal_harness = EvaluationHarness()
+    small_harness = EvaluationHarness(max_value_bytes=32)
+
+    runner_error = normal_harness.run_groundedness(
+        [error_case],
+        lambda query: Result.err({"errorType": "MODEL_ERROR", "message": "offline"}),
+    )
+    oversized = small_harness.run_groundedness(
+        [error_case],
+        lambda query: GroundednessObservation("MAPLE supports workflows."),
+    )
+
+    assert runner_error.is_ok()
+    assert runner_error.unwrap().results[0].errors[0]["errorType"] == (
+        "GROUNDING_RUNNER_ERROR"
+    )
+    assert oversized.is_ok()
+    assert oversized.unwrap().results[0].errors[0]["errorType"] == (
+        "GROUNDING_CASE_SIZE"
+    )

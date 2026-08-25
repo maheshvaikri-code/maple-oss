@@ -694,8 +694,46 @@ report = EvaluationHarness().run_retrieval(
 
 Malformed hit sequences, runner errors, and exceptions are isolated as typed
 per-case failures. Golden source sets are host-maintained; calibrated
-generation/groundedness evaluation and LLM-as-judge workflows are separate
-future contracts.
+generation evaluation and LLM-as-judge workflows remain separate contracts.
+
+`run_groundedness` provides a deterministic lexical claim-support proxy over
+bounded source URI/text pairs. It splits a generated answer into bounded
+claims, removes a small fixed English stopword set, and marks a claim supported
+when token overlap with one source reaches `min_claim_overlap`.
+
+```python
+from maple import (
+    EvaluationHarness,
+    GroundednessEvalCase,
+    GroundednessObservation,
+    GroundingSource,
+)
+
+case = GroundednessEvalCase(
+    case_id="answer-grounding-v1",
+    query="What does MAPLE provide?",
+    sources=(
+        GroundingSource(
+            "urn:docs:maple",
+            "MAPLE provides resource aware messaging for agents.",
+        ),
+    ),
+    min_supported_ratio=1.0,
+    min_claim_overlap=0.75,
+)
+report = EvaluationHarness().run_groundedness(
+    [case],
+    lambda query: GroundednessObservation(
+        "MAPLE provides resource aware messaging for agents."
+    ),
+)
+```
+
+Runner failures, malformed observations, oversized values, and low support
+ratios are returned as typed per-case failures. This metric is a reproducible
+lexical proxy, not semantic entailment, factuality, citation faithfulness, or
+an LLM-as-judge result; paraphrase, contradiction, and multilingual quality
+need a separate calibrated evaluation contract.
 
 Providers can declare compatibility requirements independently of provider
 names. `ProviderRouter` orders matching descriptors by explicit priority and

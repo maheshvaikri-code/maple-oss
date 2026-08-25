@@ -7,7 +7,7 @@
 <p>
 <a href="https://github.com/maheshvaikri-code/maple-oss"><img src="https://img.shields.io/badge/version-1.1.3-brightgreen" alt="Version"></a>
 <a href="https://github.com/maheshvaikri-code/maple-oss"><img src="https://img.shields.io/badge/Python-3.8%20|%203.9%20|%203.10%20|%203.11%20|%203.12%20|%203.13-brightgreen" alt="Python"></a>
-<a href="https://github.com/maheshvaikri-code/maple-oss"><img src="https://img.shields.io/badge/Focused%20tests-235%20passed-brightgreen" alt="Focused tests"></a>
+<a href="https://github.com/maheshvaikri-code/maple-oss"><img src="https://img.shields.io/badge/Focused%20tests-240%20passed-brightgreen" alt="Focused tests"></a>
 <a href="https://github.com/maheshvaikri-code/maple-oss/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-AGPL%203.0-blue.svg" alt="License"></a>
 <a href="https://mapleagent.org"><img src="https://img.shields.io/badge/Docs-mapleagent.org-blue" alt="Documentation"></a>
 </p>
@@ -43,6 +43,7 @@ Most agent frameworks give you either **infrastructure** (messaging, security, f
 - **Event Streaming and Redaction (preview)** — Publish bounded sequenced events with ring retention, wait/snapshot consumers, subscriber isolation, and recursive credential redaction.
 - **Evaluation Harness (preview)** — Run deterministic golden cases with output-schema checks, exact outputs, tool-trajectory checks, bounded reports, and redacted actual values.
 - **Retrieval/Citation Evaluation (preview)** — Score lexical or vector retrieval against bounded golden source URIs with deterministic source-level precision, recall, and F1; generated-answer faithfulness remains a separate calibrated evaluation.
+- **Grounded-Answer Evaluation (preview)** — Score bounded answer claims against supplied source text with deterministic lexical overlap and typed threshold failures; this is an explicit proxy, not semantic entailment or an LLM judge.
 - **Capability-Aware Provider Fallback (preview)** — Select providers by declared tool/streaming/structured-output/context capabilities with deterministic initialization fallback.
 - **Provider-Agnostic LLM Streaming (preview)** — Consume bounded text, tool-call, and finish chunks through one async contract; OpenAI-compatible and Anthropic providers use native async streams when available, with a completion-backed fallback.
 - **Bounded Async Tool Fan-Out (preview)** — Execute independent tool calls concurrently within the per-step cap while preserving deterministic tool-message order and isolating worker failures.
@@ -488,9 +489,9 @@ python -m pytest tests/security/ -v       # Security tests
 python -m pytest tests/broker/ -v         # Broker tests
 ```
 
-Current status: focused LLM/autonomy/CLI regression **235 passed**, including
+Current status: focused LLM/autonomy/CLI regression **240 passed**, including
 focused MCP/governance, artifact, retrieval evaluation, session, server, and
-execution-journal tests, and local compile/doctor/package
+execution-journal, and grounded-answer evaluation tests, and local compile/doctor/package
 preflight gates pass. The full repository regression remains open; the latest
 bounded attempt reported **1049 passed** before interruption in slow Doctrine
 gold cases. Coverage is not being treated as a release gate until the full
