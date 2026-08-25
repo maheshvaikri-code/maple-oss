@@ -27,7 +27,7 @@ import uuid
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 
 class AuditEventType(Enum):
@@ -107,17 +107,17 @@ class AuditLogger:
         log_file: Optional[str] = None,
         max_events_memory: int = 1000,
         enable_console: bool = False,
-    ):
+    ) -> None:
         self.log_file = log_file
         self.max_events_memory = max_events_memory
         self.enable_console = enable_console
 
         # In-memory event storage
-        self.events = []
+        self.events: List[AuditEvent] = []
         self.events_lock = threading.RLock()
 
         # Statistics
-        self.event_counts = {}
+        self.event_counts: Dict[str, int] = {}
         self.last_cleanup = time.time()
 
     def log_event(
@@ -182,7 +182,7 @@ class AuditLogger:
 
     def log_authentication_success(
         self, principal: str, agent_id: str, method: str, session_id: str
-    ):
+    ) -> str:
         """Log successful authentication."""
         return self.log_event(
             event_type=AuditEventType.AUTHENTICATION_SUCCESS,
@@ -196,8 +196,12 @@ class AuditLogger:
         )
 
     def log_authentication_failure(
-        self, principal: str, agent_id: str, reason: str, source_ip: str = None
-    ):
+        self,
+        principal: str,
+        agent_id: str,
+        reason: str,
+        source_ip: Optional[str] = None,
+    ) -> str:
         """Log failed authentication attempt."""
         return self.log_event(
             event_type=AuditEventType.AUTHENTICATION_FAILURE,
@@ -212,7 +216,7 @@ class AuditLogger:
 
     def log_authorization_granted(
         self, principal: str, resource: str, action: str, agent_id: str
-    ):
+    ) -> str:
         """Log successful authorization."""
         return self.log_event(
             event_type=AuditEventType.AUTHORIZATION_GRANTED,
@@ -227,7 +231,7 @@ class AuditLogger:
 
     def log_authorization_denied(
         self, principal: str, resource: str, action: str, reason: str, agent_id: str
-    ):
+    ) -> str:
         """Log denied authorization attempt."""
         return self.log_event(
             event_type=AuditEventType.AUTHORIZATION_DENIED,
@@ -246,7 +250,7 @@ class AuditLogger:
         agent_b: str,
         link_id: str,
         encryption_params: Dict[str, Any],
-    ):
+    ) -> str:
         """Log link establishment."""
         return self.log_event(
             event_type=AuditEventType.LINK_ESTABLISHED,
@@ -263,7 +267,7 @@ class AuditLogger:
             },
         )
 
-    def log_link_failed(self, agent_a: str, agent_b: str, reason: str):
+    def log_link_failed(self, agent_a: str, agent_b: str, reason: str) -> str:
         """Log link establishment failure."""
         return self.log_event(
             event_type=AuditEventType.LINK_FAILED,
@@ -276,7 +280,7 @@ class AuditLogger:
 
     def log_security_violation(
         self, agent_id: str, violation_type: str, details: Dict[str, Any]
-    ):
+    ) -> str:
         """Log security violation."""
         return self.log_event(
             event_type=AuditEventType.SECURITY_VIOLATION,
@@ -289,7 +293,7 @@ class AuditLogger:
 
     def log_token_issued(
         self, principal: str, token_type: str, expires_in: int, permissions: List[str]
-    ):
+    ) -> str:
         """Log token issuance."""
         return self.log_event(
             event_type=AuditEventType.TOKEN_ISSUED,
@@ -304,7 +308,7 @@ class AuditLogger:
             },
         )
 
-    def log_token_revoked(self, principal: str, token_id: str, reason: str):
+    def log_token_revoked(self, principal: str, token_id: str, reason: str) -> str:
         """Log token revocation."""
         return self.log_event(
             event_type=AuditEventType.TOKEN_REVOKED,
@@ -364,13 +368,13 @@ class AuditLogger:
                 return {"total_events": 0}
 
             # Count by severity
-            severity_counts = {}
+            severity_counts: Dict[str, int] = {}
             for event in self.events:
                 severity = event.severity.value
                 severity_counts[severity] = severity_counts.get(severity, 0) + 1
 
             # Count by result
-            result_counts = {}
+            result_counts: Dict[str, int] = {}
             for event in self.events:
                 result = event.result
                 result_counts[result] = result_counts.get(result, 0) + 1
@@ -389,23 +393,23 @@ class AuditLogger:
                 "newest_event_timestamp": max(e.timestamp for e in self.events),
             }
 
-    def _write_to_file(self, event: AuditEvent):
+    def _write_to_file(self, event: AuditEvent) -> None:
         """Write audit event to file."""
         try:
-            with open(self.log_file, "a") as f:
+            with open(cast(str, self.log_file), "a") as f:
                 f.write(json.dumps(event.to_dict()) + "\n")
                 f.flush()  # Ensure immediate write
         except Exception as e:
             # Log to console if file writing fails
             print(f"Audit log file write error: {e}")
 
-    def flush_to_file(self):
+    def flush_to_file(self) -> None:
         """Flush any pending file operations."""
         # This method exists for API compatibility
         # File writes are already flushed in _write_to_file
         pass
 
-    def _print_to_console(self, event: AuditEvent):
+    def _print_to_console(self, event: AuditEvent) -> None:
         """Print audit event to console."""
         timestamp_str = datetime.fromtimestamp(event.timestamp).strftime(
             "%Y-%m-%d %H:%M:%S"
@@ -448,7 +452,7 @@ def configure_audit_logger(
     log_file: Optional[str] = None,
     enable_console: bool = False,
     max_events_memory: int = 1000,
-):
+) -> None:
     """Configure the global audit logger."""
     global _audit_logger
     _audit_logger = AuditLogger(
