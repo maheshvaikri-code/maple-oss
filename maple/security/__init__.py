@@ -16,9 +16,7 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 # maple/security/__init__.py
 # Creator: Mahesh Vaikri
 
-"""
-Security module for MAPLE providing authentication, authorization, and encryption.
-"""
+# Security module for MAPLE providing authentication, authorization, and encryption.
 
 import time
 from typing import Any, Dict, List, Optional

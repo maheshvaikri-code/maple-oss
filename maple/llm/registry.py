@@ -13,7 +13,7 @@ received a copy of the GNU Affero General Public License along with MAPLE - Mult
 Language Engine. If not, see <https://www.gnu.org/licenses/>.
 """
 
-"""LLM Provider registry for MAPLE."""
+# LLM Provider registry for MAPLE.
 
 import logging
 from typing import Dict, Type

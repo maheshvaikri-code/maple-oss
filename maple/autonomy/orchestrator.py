@@ -13,7 +13,7 @@ received a copy of the GNU Affero General Public License along with MAPLE - Mult
 Language Engine. If not, see <https://www.gnu.org/licenses/>.
 """
 
-"""Multi-agent orchestration for MAPLE autonomous agents."""
+# Multi-agent orchestration for MAPLE autonomous agents.
 
 import logging
 import uuid

@@ -13,7 +13,7 @@ received a copy of the GNU Affero General Public License along with MAPLE - Mult
 Language Engine. If not, see <https://www.gnu.org/licenses/>.
 """
 
-"""Observability for MAPLE autonomous agents."""
+# Observability for MAPLE autonomous agents.
 
 import json
 import time

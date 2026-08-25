@@ -13,7 +13,7 @@ received a copy of the GNU Affero General Public License along with MAPLE - Mult
 Language Engine. If not, see <https://www.gnu.org/licenses/>.
 """
 
-"""Memory system for autonomous agents, built on existing StateStore."""
+# Memory system for autonomous agents, built on existing StateStore.
 
 import json
 import logging

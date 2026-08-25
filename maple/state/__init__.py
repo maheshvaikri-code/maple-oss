@@ -16,10 +16,8 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 # maple/state/__init__.py
 # Creator: Mahesh Vaikri
 
-"""
-State Management Components for MAPLE
-Provides distributed state storage, synchronization, and consistency management
-"""
+# State Management Components for MAPLE.
+# Provides distributed state storage, synchronization, and consistency management.
 
 from .consistency import ConsistencyConstraint, ConsistencyManager, ConsistencyModel
 from .store import ConsistencyLevel, StateEntry, StateStore, StorageBackend

@@ -16,9 +16,7 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 # maple/monitoring/__init__.py
 # Creator: Mahesh Vaikri
 
-"""
-Monitoring and observability components for MAPLE.
-"""
+# Monitoring and observability components for MAPLE.
 
 from .health_monitor import HealthMetrics, HealthMonitor
 

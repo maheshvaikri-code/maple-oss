@@ -16,10 +16,8 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 # maple/broker/__init__.py
 # Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
 
-"""
-Broker module for MAPLE providing message routing and delivery.
-Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
-"""
+# Broker module for MAPLE providing message routing and delivery.
+# Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri).
 
 from .broker import MessageBroker
 from .production_broker import (

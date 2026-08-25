@@ -13,7 +13,7 @@ received a copy of the GNU Affero General Public License along with MAPLE - Mult
 Language Engine. If not, see <https://www.gnu.org/licenses/>.
 """
 
-"""LLM types for MAPLE autonomy layer."""
+# LLM types for MAPLE autonomy layer.
 
 from dataclasses import dataclass, field
 from enum import Enum
