@@ -124,6 +124,11 @@
   loop contracts without changing health evaluation behavior. The health
   regression passes 15 tests, the changed-file mypy check is clean, and the
   aggregate audit is now `136 errors` in 15 files.
+- **Legacy interop adapter typing**: clarified A2A, ACP, and FIPA ACL adapter
+  constructors and the FIPA JSON decode boundary without changing translation
+  behavior. No dedicated adapter tests exist; import smoke, compile, formatter,
+  and changed-file mypy checks pass, and the aggregate audit is now
+  `132 errors` in 12 files.
 - **Repository formatter gate closure**: normalized the tracked `maple/`
   source tree with the configured Black and isort profiles. Both checks are
   now idempotent, the focused runtime gate remains `240 passed`, and a fresh

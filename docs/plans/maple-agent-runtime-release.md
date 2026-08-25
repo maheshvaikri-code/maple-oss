@@ -58,6 +58,7 @@
 | 49 | Autonomy event payload container type cleanup | Autonomy / Backend / QA | event redaction stream, event regression, changelog, review/QA artifacts | Event suite, explicit changed-file mypy with skipped imports, Black/isort/compile, aggregate audit | done: commit `dfb001b`; separated list and mapping redaction outputs with explicit containers; focused `5 passed`; aggregate reduced to `143 errors in 17 files` |
 | 50 | Workflow next-node optionality boundary cleanup | Autonomy / Backend / QA | workflow execution loop, workflow/replay regression, changelog, review/QA artifacts | Workflow/replay suite, explicit changed-file mypy with skipped imports, Black/isort/compile, aggregate audit | done: commit `e084f9b`; initialized next-node state with its declared optional contract before sequential/parallel routing; focused `19 passed`; aggregate reduced to `142 errors in 16 files` |
 | 51 | Health-monitor type boundary cleanup | Discovery / Backend / QA | health monitor, health regression, changelog, review/QA artifacts | Health-monitor suite, explicit changed-file mypy with skipped imports, Black/isort/compile, aggregate audit | done: commit `d8bdfa6`; clarified status defaults, monitor lifecycle returns, heartbeat metrics optionality, callback registration, and monitor-loop contracts; focused `15 passed`; aggregate reduced to `136 errors in 15 files` |
+| 52 | Legacy interop adapter type boundary cleanup | Interop / Backend / QA | A2A, ACP, FIPA ACL adapters, import/compile evidence, changelog, review/QA artifacts | Explicit changed-file mypy with skipped imports, Black/isort/compile, import smoke, aggregate audit | done: commit `4086f0d`; typed adapter constructors and JSON decode boundary without changing translation behavior; no dedicated adapter tests exist; import smoke passed; aggregate reduced to `132 errors in 12 files` |
 
 ## Threat sketch
 
@@ -148,6 +149,7 @@ state-synchronization slice 48's follow-up audit now reports `146 errors in 18 f
 autonomy-event slice 49's follow-up audit now reports `143 errors in 17 files`;
 workflow slice 50's follow-up audit now reports `142 errors in 16 files`;
 health-monitor slice 51's follow-up audit now reports `136 errors in 15 files`;
+legacy-interop slice 52's follow-up audit now reports `132 errors in 12 files`;
 installed mypy 2.3 rejects the configured Python 3.8 target, so the support
 matrix/toolchain decision remains open. Dependency-audit disposition and
 unavailable independent fresh-context verification remain open.
