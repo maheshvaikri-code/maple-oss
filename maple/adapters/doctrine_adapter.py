@@ -34,7 +34,7 @@ message built here already satisfies the fresh-context verifier preset
   ``artifact`` ref, and optional short ``evidence``.
 """
 
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, cast
 
 from ..core.message import Message
 from ..core.result import Result
@@ -56,9 +56,9 @@ RefLike = Union[ArtifactRef, Dict[str, str]]
 def _ref_dict(ref: Any) -> Optional[Dict[str, str]]:
     """Normalize an ArtifactRef or a ``{path, sha256}`` dict; None if invalid."""
     if isinstance(ref, ArtifactRef):
-        return ref.to_dict()
+        return cast(Dict[str, str], ref.to_dict())
     if is_artifact_ref(ref):
-        return ref
+        return cast(Dict[str, str], ref)
     return None
 
 
@@ -133,7 +133,7 @@ def build_work_package(
 
     check = validate_work_package_payload(payload)
     if check.is_err():
-        return check
+        return Result.err(check.unwrap_err())
 
     try:
         message = Message(
@@ -220,7 +220,7 @@ def build_gate_result(
 
     check = validate_gate_result_payload(payload)
     if check.is_err():
-        return check
+        return Result.err(check.unwrap_err())
 
     try:
         message = Message(
@@ -285,8 +285,11 @@ class DoctrineAdapter:
             priority=priority,
         )
         if built.is_err():
-            return built
-        return self.maple_agent.send(built.unwrap(), require_routable=require_routable)
+            return Result.err(built.unwrap_err())
+        return cast(
+            Result[str, Dict[str, Any]],
+            self.maple_agent.send(built.unwrap(), require_routable=require_routable),
+        )
 
     def send_gate_result(
         self,
@@ -310,5 +313,8 @@ class DoctrineAdapter:
             priority=priority,
         )
         if built.is_err():
-            return built
-        return self.maple_agent.send(built.unwrap(), require_routable=require_routable)
+            return Result.err(built.unwrap_err())
+        return cast(
+            Result[str, Dict[str, Any]],
+            self.maple_agent.send(built.unwrap(), require_routable=require_routable),
+        )
