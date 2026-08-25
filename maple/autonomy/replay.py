@@ -328,7 +328,10 @@ class InMemoryExecutionJournal(_ExecutionJournalSupport):
                         execution_key=execution_key,
                     )
                 )
-            return self._copy_record(record)
+            copied = self._copy_record(record)
+            if copied.is_err():
+                return Result.err(copied.unwrap_err())
+            return Result[Optional[ExecutionRecord], Error].ok(copied.unwrap())
 
     def save(self, record: ExecutionRecord) -> Result[ExecutionRecord, Error]:
         copied = self._copy_record(record)
@@ -501,8 +504,9 @@ class FileExecutionJournal(_ExecutionJournalSupport):
             loaded = self._read_unlocked_from_path(path)
             if loaded.is_err():
                 return Result.err(loaded.unwrap_err())
-            if loaded.unwrap() is not None:
-                records.append(loaded.unwrap())
+            record = loaded.unwrap()
+            if record is not None:
+                records.append(record)
                 if len(records) > self.max_records:
                     return Result.err(
                         _error(
@@ -554,9 +558,11 @@ class FileExecutionJournal(_ExecutionJournalSupport):
             return Result.err(validation)
         with self._lock:
             loaded = self._read_unlocked(execution_key)
-            if loaded.is_err() or loaded.unwrap() is None:
+            if loaded.is_err():
                 return loaded
             record = loaded.unwrap()
+            if record is None:
+                return loaded
             if record.input_digest != input_digest:
                 return Result.err(
                     _error(
@@ -565,7 +571,10 @@ class FileExecutionJournal(_ExecutionJournalSupport):
                         execution_key=execution_key,
                     )
                 )
-            return self._copy_record(record)
+            copied = self._copy_record(record)
+            if copied.is_err():
+                return Result.err(copied.unwrap_err())
+            return Result[Optional[ExecutionRecord], Error].ok(copied.unwrap())
 
     def save(self, record: ExecutionRecord) -> Result[ExecutionRecord, Error]:
         copied = self._copy_record(record)
@@ -576,8 +585,8 @@ class FileExecutionJournal(_ExecutionJournalSupport):
             existing = self._read_unlocked(candidate.execution_key)
             if existing.is_err():
                 return Result.err(existing.unwrap_err())
-            if existing.unwrap() is not None:
-                stored = existing.unwrap()
+            stored = existing.unwrap()
+            if stored is not None:
                 if (
                     stored.input_digest == candidate.input_digest
                     and stored.output == candidate.output

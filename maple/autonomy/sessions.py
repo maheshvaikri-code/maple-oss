@@ -794,7 +794,10 @@ class FileSessionStore(_SessionStoreSupport):
                 )
             with path.open("r", encoding="utf-8") as handle:
                 snapshot = SessionSnapshot.from_dict(json.load(handle))
-            return self._copy_snapshot(snapshot)
+            copied = self._copy_snapshot(snapshot)
+            if copied.is_err():
+                return Result.err(copied.unwrap_err())
+            return Result[Optional[SessionSnapshot], Error].ok(copied.unwrap())
         except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
             return Result.err(
                 _error(
@@ -916,7 +919,8 @@ class FileSessionStore(_SessionStoreSupport):
             current = self._read_unlocked(session_id)
             if current.is_err():
                 return Result.err(current.unwrap_err())
-            if current.unwrap() is None:
+            current_snapshot = current.unwrap()
+            if current_snapshot is None:
                 return Result.err(
                     _error(
                         "SESSION_NOT_FOUND",
@@ -925,7 +929,7 @@ class FileSessionStore(_SessionStoreSupport):
                     )
                 )
             candidate = self._append_snapshot(
-                current.unwrap(), message, expected_version
+                current_snapshot, message, expected_version
             )
             if candidate.is_err():
                 return Result.err(candidate.unwrap_err())
@@ -944,7 +948,8 @@ class FileSessionStore(_SessionStoreSupport):
             current = self._read_unlocked(session_id)
             if current.is_err():
                 return Result.err(current.unwrap_err())
-            if current.unwrap() is None:
+            current_snapshot = current.unwrap()
+            if current_snapshot is None:
                 return Result.err(
                     _error(
                         "SESSION_NOT_FOUND",
@@ -952,7 +957,7 @@ class FileSessionStore(_SessionStoreSupport):
                         session_id=session_id,
                     )
                 )
-            candidate = self._clear_snapshot(current.unwrap(), expected_version)
+            candidate = self._clear_snapshot(current_snapshot, expected_version)
             if candidate.is_err():
                 return Result.err(candidate.unwrap_err())
             return self._write_unlocked(candidate.unwrap())
