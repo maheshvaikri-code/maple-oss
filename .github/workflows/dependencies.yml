@@ -5,12 +5,12 @@ on:
     - cron: "0 0 * * MON" # Weekly on Mondays
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   update-dependencies:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
 
     steps:
       - uses: actions/checkout@v4
@@ -42,7 +42,7 @@ jobs:
       - name: Check for security vulnerabilities
         run: |
           pip install pip-audit
-          pip-audit || true
+          pip-audit
 
       - name: Run tests with current dependencies
         run: python -m pytest tests/ -v --tb=short -q

@@ -31,13 +31,27 @@ jobs:
 
       - name: Run pip-audit for dependency vulnerabilities
         run: |
-          pip-audit --format=json --output=audit-report.json || true
-          pip-audit || true
+          set +e
+          pip-audit --format=json --output=audit-report.json
+          audit_report_exit=$?
+          pip-audit
+          audit_text_exit=$?
+          if [ "$audit_report_exit" -ne 0 ]; then
+            exit "$audit_report_exit"
+          fi
+          exit "$audit_text_exit"
 
       - name: Run bandit security scan
         run: |
-          bandit -r maple/ -f json -o bandit-report.json || true
-          bandit -r maple/ -ll || true
+          set +e
+          bandit -r maple/ -f json -o bandit-report.json
+          bandit_report_exit=$?
+          bandit -r maple/ -ll
+          bandit_text_exit=$?
+          if [ "$bandit_report_exit" -ne 0 ]; then
+            exit "$bandit_report_exit"
+          fi
+          exit "$bandit_text_exit"
 
       - name: Upload security reports
         uses: actions/upload-artifact@v4
