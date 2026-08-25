@@ -32,7 +32,7 @@ class ResourceRange:
     preferred: Optional[Any] = None
     max: Optional[Any] = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         # Set preferred to min if not specified
         if self.preferred is None:
             self.preferred = self.min
@@ -94,7 +94,7 @@ class ResourceRequest:
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to a dictionary."""
-        result = {"priority": self.priority}
+        result: Dict[str, Any] = {"priority": self.priority}
 
         if self.compute:
             result["compute"] = self.compute.to_dict()

@@ -37,7 +37,7 @@ class ResourceNegotiator:
     Handles resource negotiation between agents.
     """
 
-    def __init__(self, agent):
+    def __init__(self, agent: Any) -> None:
         """
         Initialize the negotiator.
 
@@ -45,8 +45,8 @@ class ResourceNegotiator:
             agent: The agent that owns this negotiator.
         """
         self.agent = agent
-        self.pending_requests = {}
-        self.pending_offers = {}
+        self.pending_requests: Dict[str, queue.Queue[Message]] = {}
+        self.pending_offers: Dict[str, Dict[str, Any]] = {}
         self._lock = threading.RLock()
 
     def request_resources(
@@ -69,7 +69,7 @@ class ResourceNegotiator:
         request_id = str(uuid.uuid4())
 
         # Create a queue for the response
-        response_queue = queue.Queue()
+        response_queue: queue.Queue[Message] = queue.Queue()
 
         with self._lock:
             self.pending_requests[request_id] = response_queue

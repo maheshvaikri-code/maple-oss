@@ -79,7 +79,7 @@ class ResourceManager:
     Manages resource allocation and tracking.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.available_resources: Dict[str, Any] = {}
         self.allocations: Dict[str, ResourceAllocation] = {}
         self._lifecycles: Dict[str, str] = {}
