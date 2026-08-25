@@ -21,6 +21,7 @@
 | 12 | Provider-native LLM streaming adapters | ML Engineer / Backend | `docs/adr/010-*`, OpenAI/Anthropic providers, native stream tests, README, changelog | Native provider events, bounded text, tool-call fragments, typed request errors, compatibility fallback | done: native stream suite `5 passed`; changed provider Ruff/Flake8 and compile pass |
 | 13 | Bounded async tool fan-out | Backend / ML Engineer | `docs/adr/011-*`, async ReAct loop, agent regression tests, README, changelog | Concurrent independent handlers, per-step cap, deterministic result order, worker error isolation | done: agent suite `15 passed`; changed agent Ruff/Flake8 and compile pass |
 | 14 | Fail-closed autonomous approval | Security Reviewer / Backend | `docs/adr/012-*`, autonomous tool boundary, approval regression, README, changelog | Missing callback denial, callback exception denial, explicit denial, handler side-effect absence | done: approval regression included in `16` agent tests; changed agent Ruff/Flake8 and compile pass |
+| 15 | Bounded checkpointed workflow fan-out/fan-in | Chief Architect / Backend / Security | `docs/adr/013-*`, workflow runtime/tests, API docs, README, changelog | Concurrent independent branches, bounded workers, deterministic merge, collision rejection, pause/resume group boundary | in progress |
 
 ## Threat sketch
 
@@ -55,11 +56,12 @@ privileged action without approval.
 
 ## Status snapshot
 
-Done (with evidence): G0 brief, G1 ADR, G2 plan, and fourteen G3 feature
-slices through fail-closed autonomous approval, including MCP interoperability,
-bounded artifacts, native LLM streaming, deterministic async tool result
-ordering, and approval-side-effect protection; slice review/QA artifacts are
-filed.
+Done (with evidence): G0 brief, G1 ADR, G2 plan, and fourteen committed G3
+feature slices through fail-closed autonomous approval, including MCP
+interoperability, bounded artifacts, native LLM streaming, deterministic async
+tool result ordering, and approval-side-effect protection; slice review/QA
+artifacts are filed. Slice 15 is implemented in the working tree and awaits
+focused verification, review artifacts, and commit.
 Release hardening remains in progress.
 Focused feature gates (183 LLM/autonomy/CLI tests, including 22 MCP, 5
 artifact, 5 stream, async tool fan-out, and fail-closed approval regressions),

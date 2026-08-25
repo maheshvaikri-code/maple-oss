@@ -46,6 +46,7 @@ Most agent frameworks give you either **infrastructure** (messaging, security, f
 - **Provider-Agnostic LLM Streaming (preview)** — Consume bounded text, tool-call, and finish chunks through one async contract; OpenAI-compatible and Anthropic providers use native async streams when available, with a completion-backed fallback.
 - **Bounded Async Tool Fan-Out (preview)** — Execute independent tool calls concurrently within the per-step cap while preserving deterministic tool-message order and isolating worker failures.
 - **Fail-Closed Tool Approval (preview)** — Approval-required tools never execute without an explicit callback approval; missing callbacks, callback failures, and denials become typed tool results.
+- **Bounded Workflow Fan-Out/Fan-In (preview)** — Run independent workflow branches concurrently with isolated state snapshots, deterministic collision-free merging, and a checkpointed join boundary.
 - **Interop Envelope + Doctor CLI (preview)** — Strict adapter round-trip envelopes and a network-free `maple doctor --json` readiness report for the runtime surfaces.
 - **Artifacts and Code Blocks (preview)** — Store immutable SHA-256-addressed files with bounded in-memory or file-backed stores, and extract Markdown code blocks as data without executing them.
 - **Three-Tier Memory** — Working memory (context window), episodic memory (task history), semantic memory (learned facts). LLM-assisted summarization when context fills up.
@@ -436,6 +437,7 @@ maple/
 | Task scheduling & load balancing | Built-in | No | No | No | No | No |
 | Multi-agent orchestration | Built-in | Built-in | Built-in | Built-in | No | No |
 | Workflow graph + checkpoint/resume | Preview | Built-in | Partial | Partial | No | No |
+| Bounded workflow fan-out/fan-in | Preview | Built-in | Partial | Partial | No | No |
 | Tool framework | Built-in | Built-in | Built-in | Built-in | No | Built-in |
 | Typed I/O + guardrails | Preview | Built-in | Partial | Partial | No | No |
 | Memory system | Built-in | Partial | Partial | No | No | No |

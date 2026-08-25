@@ -42,6 +42,11 @@
   as approval-required now return typed `APPROVAL_REQUIRED`,
   `APPROVAL_ERROR`, or `APPROVAL_DENIED` results without invoking handlers
   unless an approval callback explicitly approves the action.
+- **Bounded workflow fan-out/fan-in** (`maple.autonomy.workflow`): independent
+  branch nodes can run concurrently with isolated state snapshots, deterministic
+  collision-free merging, and a checkpointed join boundary. The trusted
+  in-process implementation remains bounded and does not claim sandboxing,
+  per-branch retry, or cross-process coordination.
 - **Release metadata hardening**: `pyproject.toml` is now the single source
   for package metadata, the legacy `setup.py` delegates to it, and the source
   manifest includes only files present in the repository. Wheel/sdist builds

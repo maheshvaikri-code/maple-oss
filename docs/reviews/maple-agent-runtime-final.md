@@ -28,6 +28,9 @@ The feature program now includes:
   worker-error isolation (ADR-011).
 - fail-closed autonomous approval for missing callbacks, callback errors, and
   denials without handler side effects (ADR-012).
+- bounded checkpointed workflow fan-out/fan-in with isolated branch state,
+  deterministic collision-free merging, and a documented at-least-once pause
+  boundary (ADR-013).
 
 Slice-level review artifacts are filed in `docs/reviews/` and corresponding QA
 artifacts in `docs/qa/`. No website, cloud, external publication, license, or
@@ -37,7 +40,7 @@ new dependency change was made.
 
 ```text
 Focused LLM/autonomy/CLI regression:
-183 passed, 1 warning in 0.84s
+187 passed, 1 warning in 0.85s
 
 Focused provider-stream regression:
 5 passed, 1 warning in 0.03s
@@ -105,7 +108,7 @@ Doctor:
 
 ## Verdict
 
-**Feature review:** PASS for the ten implemented capability slices.
+**Feature review:** PASS for the fifteen implemented capability slices.
 **Publish readiness:** NOT YET APPROVED. A release manager should close the
 open full-suite, isolated-environment dependency/audit, repository lint, and
 fresh-verifier gates before publishing. External publication remains awaiting

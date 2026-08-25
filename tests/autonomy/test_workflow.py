@@ -1,6 +1,7 @@
 """Tests for MAPLE's native workflow and checkpoint boundary."""
 
 import json
+import threading
 
 from maple.autonomy import (
     FileCheckpointStore,
@@ -189,3 +190,142 @@ def test_non_json_node_error_is_replaced_with_persistable_failure():
     assert result.is_ok()
     assert result.unwrap().status == "failed"
     assert result.unwrap().error["errorType"] == "WORKFLOW_FAILURE_NOT_SERIALIZABLE"
+
+
+def test_fan_out_runs_branches_concurrently_and_commits_ordered_merge():
+    barrier = threading.Barrier(2)
+    calls = []
+    workflow = Workflow("parallel", max_parallel_branches=2)
+
+    def start(context):
+        calls.append("start")
+        return {"prepared": True}
+
+    def left(context):
+        calls.append("left")
+        barrier.wait(timeout=2)
+        return {"left": "done"}
+
+    def right(context):
+        calls.append("right")
+        barrier.wait(timeout=2)
+        return {"right": "done"}
+
+    def join(context):
+        assert context.state["left"] == "done"
+        assert context.state["right"] == "done"
+        calls.append("join")
+        return {"joined": True}
+
+    for name, handler in (
+        ("start", start),
+        ("left", left),
+        ("right", right),
+        ("join", join),
+    ):
+        assert workflow.add_node(name, handler).is_ok()
+    assert workflow.set_entry_point("start").is_ok()
+    assert workflow.add_fan_out("start", ("left", "right"), "join").is_ok()
+    assert workflow.add_edge("join").is_ok()
+
+    result = workflow.run({}, run_id="parallel-run")
+
+    assert result.is_ok()
+    completed = result.unwrap()
+    assert completed.status == "completed"
+    assert completed.state == {
+        "prepared": True,
+        "left": "done",
+        "right": "done",
+        "joined": True,
+    }
+    assert completed.completed_nodes == ["start", "left", "right", "join"]
+    assert completed.step_count == 2
+    assert calls[0] == "start"
+    assert set(calls[1:3]) == {"left", "right"}
+    assert calls[3] == "join"
+
+
+def test_fan_out_pause_resumes_from_group_boundary(tmp_path):
+    calls = []
+    workflow = Workflow(
+        "parallel_pause",
+        checkpoint_store=FileCheckpointStore(tmp_path),
+        max_parallel_branches=2,
+    )
+
+    def start(context):
+        calls.append("start")
+        return {"prepared": True}
+
+    def approval(context):
+        calls.append("approval")
+        if context.resume_value is None:
+            raise WorkflowPause({"question": "approve branch?"})
+        return {"approved": context.resume_value}
+
+    def other(context):
+        calls.append("other")
+        return {"other": True}
+
+    workflow.add_node("start", start)
+    workflow.add_node("approval", approval)
+    workflow.add_node("other", other)
+    workflow.add_node("join", lambda context: {"joined": True})
+    workflow.set_entry_point("start")
+    workflow.add_fan_out("start", ("approval", "other"), "join")
+    workflow.add_edge("join")
+
+    first = workflow.run({}, run_id="parallel-pause-run")
+
+    assert first.is_ok()
+    assert first.unwrap().status == "interrupted"
+    assert first.unwrap().completed_nodes == []
+    assert first.unwrap().interrupt_payload == {
+        "branch": "approval",
+        "payload": {"question": "approve branch?"},
+        "fan_out": ["approval", "other"],
+    }
+
+    resumed = workflow.resume("parallel-pause-run", resume_value="yes")
+
+    assert resumed.is_ok()
+    assert resumed.unwrap().status == "completed"
+    assert resumed.unwrap().state["approved"] == "yes"
+    assert resumed.unwrap().state["other"] is True
+    assert calls[0] == "start"
+    assert set(calls[1:3]) == {"approval", "other"}
+    assert calls[3] == "start"
+    assert set(calls[4:6]) == {"approval", "other"}
+
+
+def test_fan_out_rejects_colliding_branch_state_and_preserves_checkpoint_boundary():
+    store = InMemoryCheckpointStore()
+    workflow = Workflow("parallel_conflict", checkpoint_store=store)
+    workflow.add_node("start", lambda context: None)
+    workflow.add_node("left", lambda context: {"value": "left"})
+    workflow.add_node("right", lambda context: {"value": "right"})
+    workflow.set_entry_point("start")
+    workflow.add_fan_out("start", ("left", "right"), "join")
+    workflow.add_node("join", lambda context: None)
+    workflow.add_edge("join")
+
+    result = workflow.run({}, run_id="parallel-conflict-run")
+
+    assert result.is_ok()
+    failed = result.unwrap()
+    assert failed.status == "failed"
+    assert failed.error["errorType"] == "PARALLEL_STATE_CONFLICT"
+    assert failed.completed_nodes == []
+    checkpoint = store.load("parallel-conflict-run").unwrap()
+    assert checkpoint.status == "failed"
+    assert checkpoint.completed_nodes == []
+
+
+def test_fan_out_rejects_branch_count_above_configured_bound():
+    workflow = Workflow("parallel_limit", max_parallel_branches=2)
+
+    result = workflow.add_fan_out("start", ("one", "two", "three"), "join")
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "PARALLELISM_EXCEEDED"

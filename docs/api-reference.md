@@ -696,8 +696,8 @@ replace the full test, lint, type, dependency-audit, and packaging gates.
 
 ## Workflow Runtime (preview)
 
-The workflow runtime provides a dependency-free, sequential execution graph
-with JSON-safe checkpoints. A node receives a `WorkflowContext` and returns a
+The workflow runtime provides a dependency-free execution graph with
+JSON-safe checkpoints. A node receives a `WorkflowContext` and returns a
 mapping of state updates, `Result.ok(updates)`, or `Result.err(error)`. Raise
 `WorkflowPause(payload)` when external input is required; resume the same run
 with the checkpoint store that was used to start it.
@@ -727,10 +727,29 @@ if run.is_ok() and run.unwrap().status == "interrupted":
     run = workflow.resume("example-1", resume_value=True)
 ```
 
+Independent branches can run concurrently and join at a durable checkpoint.
+Branch outputs must use distinct state keys; the declaration order controls the
+deterministic merge and checkpoint history. The branch limit defaults to eight
+and can be set with `max_parallel_branches` up to 64.
+
+```python
+workflow = Workflow("research", max_parallel_branches=2)
+workflow.add_node("start", lambda ctx: {"query": "MAPLE"})
+workflow.add_node("web", lambda ctx: {"web_result": "..."})
+workflow.add_node("docs", lambda ctx: {"docs_result": "..."})
+workflow.add_node("join", lambda ctx: {"ready": True})
+workflow.set_entry_point("start")
+workflow.add_fan_out("start", ("web", "docs"), "join")
+workflow.add_edge("join")
+```
+
 Checkpoint data accepts JSON-compatible values only, is size-bounded, and is
 restored as data rather than executable objects. The current file store is
-atomic and thread-safe within one process; cross-process coordination and
-parallel workflow execution remain planned follow-on capabilities.
+atomic and thread-safe within one process. Fan-out uses bounded trusted
+in-process threads; it is not a hard sandbox, and a pause before the group
+checkpoint may repeat branch side effects when resumed. Cross-process
+coordination, per-branch retry, replay, and state history remain planned
+follow-on capabilities.
 
 ## Usage Example
 

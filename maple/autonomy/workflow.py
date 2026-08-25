@@ -13,6 +13,7 @@ from __future__ import annotations
 
 # Small, dependency-free workflow runtime for MAPLE agent applications.
 
+import concurrent.futures
 import json
 import math
 import os
@@ -23,13 +24,25 @@ import time
 import uuid
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Mapping, Optional, Protocol, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Mapping,
+    Optional,
+    Protocol,
+    Sequence,
+    Tuple,
+    Union,
+)
 
 from ..core.result import Result
 
 END = "__end__"
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
 _STATUSES = {"running", "interrupted", "completed", "failed"}
+_MAX_PARALLEL_BRANCHES = 64
 
 Error = Dict[str, Any]
 NodeOutput = Union[Mapping[str, Any], Result[Optional[Mapping[str, Any]], Error], None]
@@ -484,7 +497,12 @@ class FileCheckpointStore:
 
 
 class Workflow:
-    """Validated sequential workflow with durable node-boundary checkpoints."""
+    """Validated workflow with durable node-boundary checkpoints.
+
+    Ordinary edges execute sequentially. ``add_fan_out`` adds one bounded
+    thread-based fan-out/fan-in group whose branch outputs are merged in the
+    declaration order and committed as one checkpoint before the join node.
+    """
 
     def __init__(
         self,
@@ -492,6 +510,7 @@ class Workflow:
         *,
         max_steps: int = 100,
         max_state_bytes: int = 1_048_576,
+        max_parallel_branches: int = 8,
         checkpoint_store: Optional[CheckpointStore] = None,
     ) -> None:
         identifier_error = _valid_identifier(name, "workflow_name")
@@ -501,9 +520,14 @@ class Workflow:
             raise ValueError("max_steps must be between 1 and 100000")
         if max_state_bytes <= 0:
             raise ValueError("max_state_bytes must be positive")
+        if not 0 < max_parallel_branches <= _MAX_PARALLEL_BRANCHES:
+            raise ValueError(
+                f"max_parallel_branches must be between 1 and {_MAX_PARALLEL_BRANCHES}"
+            )
         self.name = name
         self.max_steps = max_steps
         self.max_state_bytes = max_state_bytes
+        self.max_parallel_branches = max_parallel_branches
         self.checkpoint_store: CheckpointStore = (
             checkpoint_store or InMemoryCheckpointStore()
         )
@@ -511,6 +535,7 @@ class Workflow:
         self._direct_edges: Dict[str, Optional[str]] = {}
         self._conditional_edges: Dict[str, Dict[str, Optional[str]]] = {}
         self._routers: Dict[str, RouteSelector] = {}
+        self._parallel_edges: Dict[str, Tuple[Tuple[str, ...], str]] = {}
         self._entry_point: Optional[str] = None
 
     def add_node(self, name: str, handler: NodeHandler) -> Result[None, Error]:
@@ -551,7 +576,11 @@ class Workflow:
         target_error = self._validate_target(target)
         if target_error:
             return Result.err(target_error)
-        if source in self._direct_edges or source in self._conditional_edges:
+        if (
+            source in self._direct_edges
+            or source in self._conditional_edges
+            or source in self._parallel_edges
+        ):
             return Result.err(
                 _error(
                     "DUPLICATE_EDGE",
@@ -578,7 +607,11 @@ class Workflow:
                     "INVALID_ROUTING", "Selector and routes are required.", node=source
                 )
             )
-        if source in self._direct_edges or source in self._conditional_edges:
+        if (
+            source in self._direct_edges
+            or source in self._conditional_edges
+            or source in self._parallel_edges
+        ):
             return Result.err(
                 _error(
                     "DUPLICATE_EDGE",
@@ -597,6 +630,95 @@ class Workflow:
             normalized_routes[route] = target
         self._conditional_edges[source] = normalized_routes
         self._routers[source] = selector
+        return Result.ok(None)
+
+    def add_fan_out(
+        self, source: str, branches: Sequence[str], join: str
+    ) -> Result[None, Error]:
+        """Run branch nodes concurrently, then continue at ``join``.
+
+        Branch handlers receive independent snapshots of the state produced by
+        ``source``. Their mapping outputs must use distinct keys; the merged
+        output is committed atomically at the fan-in boundary. Branches are
+        ordered for deterministic state merging and checkpoint history even
+        though their handlers execute concurrently.
+        """
+        source_error = _valid_identifier(source, "source_node")
+        if source_error:
+            return Result.err(source_error)
+        join_error = _valid_identifier(join, "join_node")
+        if join_error:
+            return Result.err(join_error)
+        if source == join:
+            return Result.err(
+                _error("INVALID_PARALLEL_GRAPH", "Source and join nodes must differ.")
+            )
+        if isinstance(branches, (str, bytes)):
+            return Result.err(
+                _error(
+                    "INVALID_PARALLEL_GRAPH",
+                    "Branches must be a sequence of nodes.",
+                )
+            )
+        try:
+            normalized_branches = tuple(branches)
+        except TypeError:
+            return Result.err(
+                _error(
+                    "INVALID_PARALLEL_GRAPH",
+                    "Branches must be a sequence of nodes.",
+                )
+            )
+        if not normalized_branches:
+            return Result.err(
+                _error("INVALID_PARALLEL_GRAPH", "At least one branch is required.")
+            )
+        if len(normalized_branches) > self.max_parallel_branches:
+            return Result.err(
+                _error(
+                    "PARALLELISM_EXCEEDED",
+                    "Fan-out exceeds the configured branch limit.",
+                    max_parallel_branches=self.max_parallel_branches,
+                )
+            )
+        for branch in normalized_branches:
+            if not isinstance(branch, str):
+                return Result.err(
+                    _error("INVALID_IDENTIFIER", "branch_node must be a string.")
+                )
+        if len(set(normalized_branches)) != len(normalized_branches):
+            return Result.err(
+                _error("DUPLICATE_BRANCH", "Fan-out branches must be unique.")
+            )
+        for branch in normalized_branches:
+            branch_error = _valid_identifier(branch, "branch_node")
+            if branch_error:
+                return Result.err(branch_error)
+            if branch in {source, join}:
+                return Result.err(
+                    _error(
+                        "INVALID_PARALLEL_GRAPH",
+                        "Source and join nodes cannot also be fan-out branches.",
+                        node=branch,
+                    )
+                )
+        if source in self._direct_edges or source in self._conditional_edges:
+            return Result.err(
+                _error(
+                    "DUPLICATE_EDGE",
+                    f'Node "{source}" already has routing.',
+                    node=source,
+                )
+            )
+        if source in self._parallel_edges:
+            return Result.err(
+                _error(
+                    "DUPLICATE_EDGE",
+                    f'Node "{source}" already has routing.',
+                    node=source,
+                )
+            )
+        self._parallel_edges[source] = (normalized_branches, join)
         return Result.ok(None)
 
     def validate(self) -> Result[None, Error]:
@@ -635,6 +757,76 @@ class Workflow:
                 if target_error:
                     return Result.err(target_error)
 
+        parallel_branches: Dict[str, str] = {}
+        for source, (branches, join) in self._parallel_edges.items():
+            if source not in self._nodes:
+                return Result.err(
+                    _error(
+                        "INVALID_WORKFLOW",
+                        "Fan-out source is not registered.",
+                        node=source,
+                    )
+                )
+            if source in self._direct_edges or source in self._conditional_edges:
+                return Result.err(
+                    _error(
+                        "INVALID_WORKFLOW",
+                        "Fan-out source cannot also have ordinary routing.",
+                        node=source,
+                    )
+                )
+            if join not in self._nodes:
+                return Result.err(
+                    _error(
+                        "INVALID_WORKFLOW",
+                        "Fan-in join node is not registered.",
+                        node=join,
+                    )
+                )
+            for branch in branches:
+                if branch not in self._nodes:
+                    return Result.err(
+                        _error(
+                            "INVALID_WORKFLOW",
+                            "Fan-out branch node is not registered.",
+                            node=branch,
+                        )
+                    )
+                if branch in self._direct_edges or branch in self._conditional_edges:
+                    return Result.err(
+                        _error(
+                            "INVALID_WORKFLOW",
+                            "Fan-out branches cannot define ordinary routing.",
+                            node=branch,
+                        )
+                    )
+                previous_source = parallel_branches.get(branch)
+                if previous_source is not None:
+                    return Result.err(
+                        _error(
+                            "INVALID_WORKFLOW",
+                            "A node cannot belong to multiple fan-out groups.",
+                            node=branch,
+                            first_source=previous_source,
+                            second_source=source,
+                        )
+                    )
+                parallel_branches[branch] = source
+
+        ordinary_targets = set(self._direct_edges.values())
+        ordinary_targets.discard(None)
+        for routes in self._conditional_edges.values():
+            ordinary_targets.update(target for target in routes.values() if target)
+        ambiguous_branches = sorted(ordinary_targets.intersection(parallel_branches))
+        if ambiguous_branches:
+            return Result.err(
+                _error(
+                    "INVALID_WORKFLOW",
+                    "Fan-out branches cannot also be ordinary edge targets.",
+                    nodes=ambiguous_branches,
+                )
+            )
+
         reachable = set()
         pending = [self._entry_point]
         while pending:
@@ -647,6 +839,10 @@ class Workflow:
             for target in self._conditional_edges.get(node, {}).values():
                 if target is not None:
                     pending.append(target)
+            if node in self._parallel_edges:
+                branches, join = self._parallel_edges[node]
+                pending.extend(branches)
+                pending.append(join)
         unreachable = sorted(set(self._nodes) - reachable)
         if unreachable:
             return Result.err(
@@ -794,6 +990,7 @@ class Workflow:
                 node_name=node_name,
                 resume_value=resume_value if first_node else None,
             )
+            node_resume_value = resume_value if first_node else None
             first_node = False
             try:
                 output = handler(context)
@@ -830,17 +1027,66 @@ class Workflow:
             updates = output_result.unwrap()
             prospective_state = dict(current.state)
             prospective_state.update(updates)
-            next_result = self._next_node(node_name, prospective_state)
-            if next_result.is_err():
-                return self._fail(current, store, next_result.unwrap_err())
-            next_node = next_result.unwrap()
+            parallel_route = self._parallel_edges.get(node_name)
+            if parallel_route is not None:
+                branches, join = parallel_route
+                try:
+                    parallel_result = self._run_parallel_branches(
+                        branches,
+                        prospective_state,
+                        current.run_id,
+                        resume_value=node_resume_value,
+                    )
+                except WorkflowPause as pause:
+                    payload_error = _validate_json_value(pause.payload)
+                    if payload_error:
+                        return self._fail(current, store, payload_error)
+                    paused = replace(
+                        current,
+                        status="interrupted",
+                        interrupt_payload=pause.payload,
+                        error=None,
+                        updated_at=time.time(),
+                    )
+                    saved_result = store.save(paused, expected_version=current.version)
+                    if saved_result.is_err():
+                        return Result.err(saved_result.unwrap_err())
+                    return Result.ok(WorkflowRun.from_checkpoint(saved_result.unwrap()))
+                if parallel_result.is_err():
+                    return self._fail(current, store, parallel_result.unwrap_err())
+                branch_updates = parallel_result.unwrap()
+                conflicting_keys = [
+                    key for key in updates if key in branch_updates
+                ]
+                if conflicting_keys:
+                    return self._fail(
+                        current,
+                        store,
+                        _error(
+                            "PARALLEL_STATE_CONFLICT",
+                            "Source and branch outputs cannot update the same "
+                            "state keys.",
+                            node=node_name,
+                            keys=conflicting_keys,
+                        ),
+                    )
+                updates.update(branch_updates)
+                prospective_state.update(branch_updates)
+                next_node = join
+                completed_nodes = [node_name, *branches]
+            else:
+                next_result = self._next_node(node_name, prospective_state)
+                if next_result.is_err():
+                    return self._fail(current, store, next_result.unwrap_err())
+                next_node = next_result.unwrap()
+                completed_nodes = [node_name]
             state_result = _copy_json(
                 prospective_state, max_state_bytes=self.max_state_bytes
             )
             if state_result.is_err():
                 return self._fail(current, store, state_result.unwrap_err())
             completed = list(current.completed_nodes)
-            completed.append(node_name)
+            completed.extend(completed_nodes)
             updated = replace(
                 current,
                 state=state_result.unwrap(),
@@ -857,6 +1103,95 @@ class Workflow:
                 return Result.err(saved_result.unwrap_err())
             current = saved_result.unwrap()
         return Result.ok(WorkflowRun.from_checkpoint(current))
+
+    def _run_parallel_branches(
+        self,
+        branches: Tuple[str, ...],
+        state: Mapping[str, Any],
+        run_id: str,
+        *,
+        resume_value: Any = None,
+    ) -> Result[Dict[str, Any], Error]:
+        """Execute one fan-out group and merge its results deterministically."""
+        def execute_branch(branch: str) -> Tuple[str, Any]:
+            handler = self._nodes.get(branch)
+            if handler is None:
+                return (
+                    "error",
+                    _error(
+                        "INVALID_WORKFLOW",
+                        "Checkpoint references an unknown parallel branch.",
+                        node=branch,
+                    ),
+                )
+            branch_state = _copy_json(state, max_state_bytes=self.max_state_bytes)
+            if branch_state.is_err():
+                return ("error", branch_state.unwrap_err())
+            context = WorkflowContext(
+                state=branch_state.unwrap(),
+                run_id=run_id,
+                node_name=branch,
+                resume_value=resume_value,
+            )
+            try:
+                output = handler(context)
+            except WorkflowPause as pause:
+                return ("pause", pause.payload)
+            except Exception as exc:
+                return (
+                    "error",
+                    _error(
+                        "NODE_EXECUTION_ERROR",
+                        "Parallel workflow node execution failed.",
+                        node=branch,
+                        reason=str(exc)[:256],
+                    ),
+                )
+            output_result = self._normalize_output(output)
+            if output_result.is_err():
+                return ("error", output_result.unwrap_err())
+            return ("ok", output_result.unwrap())
+
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=min(len(branches), self.max_parallel_branches),
+            thread_name_prefix="maple-workflow",
+        ) as executor:
+            futures = [executor.submit(execute_branch, branch) for branch in branches]
+            results = [future.result() for future in futures]
+
+        for branch, (status, value) in zip(branches, results):
+            if status == "pause":
+                raise WorkflowPause(
+                    {"branch": branch, "payload": value, "fan_out": list(branches)}
+                )
+            if status == "error":
+                if isinstance(value, dict) and value.get("errorType"):
+                    return Result.err(value)
+                return Result.err(
+                    _error(
+                        "PARALLEL_BRANCH_ERROR",
+                        "Parallel branch returned an invalid error.",
+                        node=branch,
+                    )
+                )
+
+        merged: Dict[str, Any] = {}
+        for branch, (status, value) in zip(branches, results):
+            if status != "ok":
+                continue
+            for key, item in value.items():
+                if key in merged:
+                    return Result.err(
+                        _error(
+                            "PARALLEL_STATE_CONFLICT",
+                            "Parallel branch outputs cannot update the same "
+                            "state keys.",
+                            node=branch,
+                            key=key,
+                        )
+                    )
+                merged[key] = item
+        return Result.ok(merged)
 
     def _fail(
         self,
