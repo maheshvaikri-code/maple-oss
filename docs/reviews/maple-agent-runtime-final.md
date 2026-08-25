@@ -160,6 +160,6 @@ Doctor:
 
 **Feature review:** PASS for the eighteen implemented capability slices.
 **Publish readiness:** NOT YET APPROVED. A release manager should close the
-open full-suite, remaining legacy lint/security debt, repository lint, and
-fresh-verifier gates before publishing. External publication remains awaiting
-explicit human approval.
+open full-suite and fresh-verifier gates before publishing. The remaining
+Bandit findings are documented low-severity legacy debt; external publication
+remains awaiting explicit human approval.
