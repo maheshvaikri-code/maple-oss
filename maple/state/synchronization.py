@@ -92,11 +92,11 @@ class StateSynchronizer:
 
     def __init__(
         self,
-        agent,
+        agent: Any,
         state_store: StateStore,
         sync_mode: SyncMode = SyncMode.BIDIRECTIONAL,
         sync_interval: float = 5.0,
-    ):
+    ) -> None:
         """
         Initialize the state synchronizer.
 

@@ -69,10 +69,10 @@ class ConsistencyManager:
 
     def __init__(
         self,
-        agent,
+        agent: Any,
         state_store: StateStore,
         default_model: ConsistencyModel = ConsistencyModel.EVENTUAL,
-    ):
+    ) -> None:
         """
         Initialize the consistency manager.
 

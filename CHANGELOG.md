@@ -68,6 +68,11 @@
   provider registration lifecycle without changing runtime behavior. The
   serialization/provider suite passes 32 tests, the explicit changed-file
   mypy check is clean, and the aggregate audit is now `198 errors` in 31 files.
+- **Error/state lifecycle type boundary**: annotated consistency and
+  synchronization manager constructor contracts without changing distributed
+  state behavior. The state regression surface passes 22 tests, the explicit
+  changed-file mypy check is clean, and the aggregate audit is now
+  `196 errors` in 30 files.
 - **Repository formatter gate closure**: normalized the tracked `maple/`
   source tree with the configured Black and isort profiles. Both checks are
   now idempotent, the focused runtime gate remains `240 passed`, and a fresh
