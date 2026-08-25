@@ -28,7 +28,7 @@ import os
 import time
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any, Dict, Optional, Tuple, Union, cast
 
 try:
     import secrets
@@ -90,7 +90,7 @@ class KeyPair:
             encoding=serialization.Encoding.PEM,
             format=serialization.PublicFormat.SubjectPublicKeyInfo,
         )
-        return pem.decode("utf-8")
+        return cast(str, pem.decode("utf-8"))
 
     def private_key_pem(self, password: Optional[bytes] = None) -> str:
         """Export private key as PEM string (password protected)."""
@@ -106,7 +106,7 @@ class KeyPair:
             format=serialization.PrivateFormat.PKCS8,
             encryption_algorithm=encryption,
         )
-        return pem.decode("utf-8")
+        return cast(str, pem.decode("utf-8"))
 
 
 class CryptographyManager:
