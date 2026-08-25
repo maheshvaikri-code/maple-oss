@@ -19,7 +19,7 @@
 import asyncio
 import json
 import time
-from typing import Any, Dict, List, Optional, Protocol
+from typing import Any, Dict, List, Optional, Protocol, Set, Tuple
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
@@ -36,11 +36,11 @@ class MCPAdapter:
     Extends MCP with MAPLE's advanced agent communication capabilities.
     """
 
-    def __init__(self, maple_agent, mcp_config: Dict[str, Any]):
+    def __init__(self, maple_agent: Any, mcp_config: Dict[str, Any]) -> None:
         self.maple_agent = maple_agent
         self.mcp_config = mcp_config
-        self.mcp_tools = {}
-        self.mcp_resources = {}
+        self.mcp_tools: Dict[str, Any] = {}
+        self.mcp_resources: Dict[str, Any] = {}
 
     def register_maple_as_mcp_server(self) -> Dict[str, Any]:
         """
@@ -177,6 +177,18 @@ class MCPAdapter:
                 {"errorType": "MCP_COMMUNICATION_ERROR", "message": str(e)}
             )
 
+    async def _handle_resource_management(
+        self, args: Dict[str, Any]
+    ) -> Result[Any, Dict[str, Any]]:
+        """Fail closed until a host wires a resource manager into the adapter."""
+        return Result.err(
+            {
+                "errorType": "RESOURCE_MANAGEMENT_UNAVAILABLE",
+                "message": "MCP resource management is not configured for this adapter",
+                "details": {"action": args.get("action")},
+            }
+        )
+
     def create_mcp_client_for_external_tools(self, mcp_server_url: str) -> "MCPClient":
         """
         Create MCP client to access external tools with MAPLE enhancements.
@@ -224,7 +236,7 @@ class StreamableHTTPTransport:
         max_request_bytes: int = 262_144,
         client_name: str = "maple-oss",
         client_version: str = "1.1.3",
-    ):
+    ) -> None:
         parts = urlsplit(server_url)
         if parts.scheme not in {"http", "https"} or not parts.hostname:
             raise ValueError("MCP server URL must be an absolute http(s) URL")
@@ -245,7 +257,7 @@ class StreamableHTTPTransport:
         self._request_id = 0
         # Create the lock on the first request so a client constructed in sync
         # code can be used by any later asyncio event loop.
-        self._initialize_lock = None
+        self._initialize_lock: Optional[asyncio.Lock] = None
 
     async def request(
         self, payload: Dict[str, Any]
@@ -262,7 +274,8 @@ class StreamableHTTPTransport:
         if self._protocol_version is None and payload.get("method") != "initialize":
             if self._initialize_lock is None:
                 self._initialize_lock = asyncio.Lock()
-            async with self._initialize_lock:
+            initialize_lock = self._initialize_lock
+            async with initialize_lock:
                 if self._protocol_version is None:
                     initialized = await self._initialize()
                     if initialized.is_err():
@@ -409,7 +422,7 @@ class StreamableHTTPTransport:
             )
         return Result.ok(response)
 
-    def _send(self, request: Request):
+    def _send(self, request: Request) -> Tuple[int, str, Any, bytes]:
         with urlopen(request, timeout=self.timeout) as response:
             body = response.read(self.max_response_bytes + 1)
             if len(body) > self.max_response_bytes:
@@ -423,8 +436,8 @@ class StreamableHTTPTransport:
 
     @staticmethod
     def _parse_sse(body: bytes, expected_id: Any) -> Dict[str, Any]:
-        messages = []
-        data_lines = []
+        messages: List[Dict[str, Any]] = []
+        data_lines: List[str] = []
         for line in body.decode("utf-8").splitlines() + [""]:
             if not line:
                 if data_lines:
@@ -450,7 +463,7 @@ class MCPClient:
 
     def __init__(
         self,
-        maple_agent,
+        maple_agent: Any,
         server_url: str,
         *,
         transport: Optional[MCPTransport] = None,
@@ -473,11 +486,13 @@ class MCPClient:
                     "message": "Configure an MCP transport before live discovery",
                 }
             )
-        tools = []
-        cursor = None
-        seen_cursors = set()
+        tools: List[Dict[str, Any]] = []
+        cursor: Optional[str] = None
+        seen_cursors: Set[str] = set()
         for _ in range(16):
-            params = {"cursor": cursor} if cursor is not None else None
+            params: Optional[Dict[str, Any]] = (
+                {"cursor": cursor} if cursor is not None else None
+            )
             page = await self._request("tools/list", params)
             if page.is_err():
                 return Result.err(page.unwrap_err())
