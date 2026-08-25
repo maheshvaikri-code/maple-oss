@@ -110,6 +110,11 @@
   types do not collide during static analysis. The synchronization regression
   passes 9 tests, the changed-file mypy check is clean, and the aggregate audit
   is now `146 errors` in 18 files.
+- **Autonomy event payload typing**: separated list and mapping containers in
+  recursive event redaction so payload shape and secret replacement remain
+  explicit under static analysis. The event regression passes 5 tests, the
+  changed-file mypy check is clean, and the aggregate audit is now
+  `143 errors` in 17 files.
 - **Repository formatter gate closure**: normalized the tracked `maple/`
   source tree with the configured Black and isort profiles. Both checks are
   now idempotent, the focused runtime gate remains `240 passed`, and a fresh
