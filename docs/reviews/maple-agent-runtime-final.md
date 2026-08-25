@@ -118,8 +118,13 @@ Doctor:
 - The focused cross-surface gate completed with `269 passed, 1 skipped in
   51.72s`; the full LLM suite completed with `36 passed in 0.24s`.
 - The explicit Python 3.10-target mypy audit is now clean across all 93 source
-  files. The configured Python 3.8 versus installed mypy 2.3 mismatch remains
-  an explicit toolchain decision, not a suppressed diagnostic.
+  files, and the default repository invocation is now clean after slice 63
+  aligned the static target with mypy 2.x. Package runtime support remains
+  `>=3.8`.
+- The broader cross-surface regression completed with `616 passed, 1 skipped in
+  173.01s`; the repository-wide command collected 1262 items and entered the
+  slow Doctrine gold phase without assertion output before its bounded session
+  ended without a pytest summary.
 - Black/isort, the enforced `tools`/`tests` Ruff gate, compile, wheel/sdist,
   Twine, and network-free doctor gates pass. The doctor reports all checks true,
   `ready: true`, `network: false`, version `1.1.3`.
@@ -131,6 +136,6 @@ Doctor:
 
 **Feature review:** PASS for the eighteen implemented capability slices.
 **Publish readiness:** NOT YET APPROVED. A release manager should close the
-open full-suite, isolated-environment dependency/audit, repository lint, and
-fresh-verifier gates before publishing. External publication remains awaiting
-explicit human approval.
+open full-suite, dependency/audit, repository lint, and fresh-verifier gates
+before publishing. External publication remains awaiting explicit human
+approval.

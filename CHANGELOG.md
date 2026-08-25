@@ -14,9 +14,13 @@
   clean across all 93 source files; the focused cross-surface regression is
   `269 passed, 1 skipped`, the full LLM suite is `36 passed`, and wheel/sdist,
   Twine, formatter, enforced Ruff, compile, and network-free doctor gates pass.
-  Full repository regression, broad legacy `maple/` Ruff debt, toolchain
-  mismatch, dependency/security audit disposition, and fresh verification
-  remain release gates; no publication or website change was performed.
+  Full repository regression, broad legacy `maple/` Ruff debt,
+  dependency/security audit disposition, and fresh verification remain release
+  gates; no publication or website change was performed.
+- **Mypy toolchain contract**: retained the package's Python `>=3.8` runtime
+  support while setting the static-analysis target to Python 3.10, the minimum
+  accepted by mypy 2.x. Default mypy now reports no issues across 93 source
+  files, and the wider cross-surface regression is `616 passed, 1 skipped`.
 - **OpenAI SDK resource-function boundary**: implemented the previously
   undefined `maple_resource_request` route with injected `ResourceManager`
   allocation, finite-positive input validation, and fail-closed behavior when

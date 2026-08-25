@@ -73,6 +73,7 @@
 | 61 | CrewAI tool-boundary closure | Interop / Resource / Security / QA | CrewAI adapter, CrewAI tool regression, changelog, review/QA artifacts | Offline adapter tests, explicit changed-file mypy with skipped imports, Black/isort/Ruff/compile, aggregate audit | done: commit `31e408a`; implemented communication/resource/secure-link/priority tools and typed optional CrewAI fallback without changing crew execution flow; focused `3 passed`; aggregate reduced to `27 errors in 1 file` |
 
 | 62 | NATS broker optional-transport type closure | Broker / Interop / QA | NATS broker, offline NATS regression, changelog, review/QA artifacts | Offline config/not-connected tests, explicit changed-file mypy with skipped imports, Black/isort/Ruff/compile, aggregate audit | done: commit `5f57e50`; typed optional NATS SDK/error aliases, nullable config defaults, stable message IDs/results, callback payloads, and sync event-loop wrapper; focused `1 passed, 1 skipped`; aggregate audit clean for all `93 source files` |
+| 63 | Mypy target/toolchain contract closure | Release / DevOps / QA | `pyproject.toml`, release plan, changelog, review/QA artifacts | Default mypy, cross-surface regression, Black/isort/Ruff/compile | done: commit `70d47a9`; retained Python `>=3.8` runtime support while moving the static-analysis target to Python 3.10, which is accepted by mypy 2.x; default audit clean across `93 source files`; cross-surface regression `616 passed, 1 skipped` |
 
 ## Threat sketch
 
@@ -186,6 +187,14 @@ is clean across all 93 source files; the focused cross-surface regression is
 isort, the enforced `tools`/`tests` Ruff gate, compile, wheel/sdist, Twine, and
 network-free doctor checks pass. Broad legacy `ruff check maple` remains open at
 264 existing diagnostics. Full repository regression, dependency-audit
-disposition, Bandit availability, the Python 3.8/mypy 2.3 toolchain decision,
-and independent fresh-context verification remain open. No publication or
-website change was performed.
+disposition, Bandit availability, and independent fresh-context verification
+remain open. No publication or website change was performed.
+
+2026-08-25 typecheck contract closure: commit `70d47a9` retains the package's
+Python `>=3.8` runtime declaration and changes only the mypy static-analysis
+target to Python 3.10 because mypy 2.x rejects Python 3.8 targets. The default
+`python -m mypy maple/ --ignore-missing-imports` audit now reports `Success: no
+issues found in 93 source files`; the broader cross-surface regression reports
+`616 passed, 1 skipped in 173.01s`. Full repository completion, repository-wide
+legacy Ruff debt, dependency/security disposition, and fresh verification remain
+open.
