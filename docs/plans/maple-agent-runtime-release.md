@@ -70,6 +70,8 @@
 
 | 60 | LangGraph recovery and optional-SDK boundary | Interop / Reliability / QA | LangGraph adapter, recovery regression, changelog, review/QA artifacts | Offline recovery tests, explicit changed-file mypy with skipped imports, Black/isort/Ruff/compile, aggregate audit | done: commit `6a5c376`; implemented bounded retry/resource-reallocation/degradation decisions and typed optional SDK fallback without changing graph construction semantics; focused `3 passed`; aggregate reduced to `42 errors in 3 files` |
 
+| 61 | CrewAI tool-boundary closure | Interop / Resource / Security / QA | CrewAI adapter, CrewAI tool regression, changelog, review/QA artifacts | Offline adapter tests, explicit changed-file mypy with skipped imports, Black/isort/Ruff/compile, aggregate audit | done: commit `31e408a`; implemented communication/resource/secure-link/priority tools and typed optional CrewAI fallback without changing crew execution flow; focused `3 passed`; aggregate reduced to `27 errors in 1 file` |
+
 ## Threat sketch
 
 Assets touched: workflow state, tool arguments, model outputs, checkpoint
@@ -168,6 +170,7 @@ S2 slice 57's follow-up audit now reports `87 errors in 7 files`;
 LLM-provider slice 58's follow-up audit now reports `62 errors in 5 files`;
 OpenAI-SDK slice 59's follow-up audit now reports `51 errors in 4 files`;
 LangGraph slice 60's follow-up audit now reports `42 errors in 3 files`;
+CrewAI slice 61's follow-up audit now reports `27 errors in 1 file`;
 installed mypy 2.3 rejects the configured Python 3.8 target, so the support
 matrix/toolchain decision remains open. Dependency-audit disposition and
 unavailable independent fresh-context verification remain open.

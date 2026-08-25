@@ -22,6 +22,11 @@
   across the unavailable-SDK fallback. The offline recovery regression passes
   3 tests, changed-file checks are clean, and the aggregate audit is now
   `42 errors` in 3 files.
+- **CrewAI tool-boundary closure**: implemented the advertised MAPLE
+  communication, resource, secure-link, and priority tools, with structured
+  failures for unavailable services and a type-safe optional CrewAI fallback.
+  The offline adapter regression passes 3 tests, changed-file checks are clean,
+  and the aggregate audit is now `27 errors` in 1 file.
 - **LLM provider SDK type boundaries**: clarified optional OpenAI and Anthropic
   client configuration, compatible request payload containers, and response
   parsing boundaries without changing provider behavior. The native provider
