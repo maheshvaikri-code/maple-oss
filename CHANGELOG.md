@@ -59,6 +59,10 @@
   aggregation now fails with structured data when its callable is absent; the
   result-collector suite passes 33 tests, and the aggregate audit is now
   `205 errors` in 35 files.
+- **CLI/package validation type boundary**: annotated the local doctor CLI,
+  package validation, and banner contracts without changing their behavior.
+  CLI/basic regressions pass 8 tests, the explicit changed-file mypy check is
+  clean, and the aggregate audit is now `201 errors` in 33 files.
 - **Repository formatter gate closure**: normalized the tracked `maple/`
   source tree with the configured Black and isort profiles. Both checks are
   now idempotent, the focused runtime gate remains `240 passed`, and a fresh

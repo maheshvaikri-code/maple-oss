@@ -28,6 +28,7 @@ Licensed under the AGPL License, Version 3.0
 """
 
 import warnings
+from typing import Any, Dict
 
 from .agent.agent import Agent
 from .agent.config import (
@@ -319,7 +320,7 @@ __all__ = [
 
 
 # Validation that our perfect test score is maintained
-def validate_installation():
+def validate_installation() -> Dict[str, Any]:
     """Validate that MAPLE is properly installed and ready to use."""
     try:
         # Test core functionality
@@ -350,7 +351,7 @@ if __debug__:
 
 
 # Package banner for CLI tools
-def print_banner():
+def print_banner() -> None:
     """Print MAPLE banner."""
     print(
         f"""

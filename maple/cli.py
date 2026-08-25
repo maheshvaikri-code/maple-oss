@@ -21,9 +21,10 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 import argparse
 import json
 import sys
+from typing import Any, Dict
 
 
-def doctor_report():
+def doctor_report() -> Dict[str, Any]:
     """Return a local-only readiness report for the published runtime surface."""
     from maple import (
         EvalCase,
@@ -65,7 +66,7 @@ def doctor_report():
     }
 
 
-def main():
+def main() -> int:
     """MAPLE CLI entry point."""
     parser = argparse.ArgumentParser(
         prog="maple",
