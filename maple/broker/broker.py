@@ -47,8 +47,9 @@ class MessageBroker:
     """
 
     # Class-level storage for the broker
-    _instance = None
+    _instance: Optional["MessageBroker"] = None
     _lock = threading.Lock()
+    _initialized: bool = False
 
     # Shared broker state
     _agent_queues: Dict[str, List[Message]] = {}
@@ -57,7 +58,7 @@ class MessageBroker:
     _topic_subscribers: Dict[str, List[str]] = {}
     _topic_handlers: Dict[str, Dict[str, Callable[[str, Message], None]]] = {}
 
-    def __new__(cls, config: Config):
+    def __new__(cls, config: Config) -> "MessageBroker":
         """Create or return a singleton instance."""
         with cls._lock:
             if cls._instance is None:
@@ -65,7 +66,7 @@ class MessageBroker:
                 cls._instance._initialized = False
             return cls._instance
 
-    def __init__(self, config: Config):
+    def __init__(self, config: Config) -> None:
         """Initialize the broker."""
         # Only initialize once. The broker is a process-wide singleton, so
         # every Agent constructs it with its own Config. Honor a newly
@@ -78,7 +79,7 @@ class MessageBroker:
 
         self.config = config
         self.running = False
-        self.delivery_thread = None
+        self.delivery_thread: Optional[threading.Thread] = None
         self.security_config = getattr(config, "security", None)
         # Separation-of-duties policy (fresh-context verifier preset), if any.
         # When set, send() enforces its sender allowlist + artifact-ref-only
@@ -405,7 +406,9 @@ class MessageBroker:
             # Infer agent_id from the calling context if not provided
             import inspect
 
-            frame = inspect.currentframe().f_back
+            frame = inspect.currentframe()
+            if frame is not None:
+                frame = frame.f_back
             while frame:
                 if "self" in frame.f_locals and hasattr(
                     frame.f_locals["self"], "agent_id"

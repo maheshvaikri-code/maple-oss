@@ -74,7 +74,7 @@ class MessageRouter:
     - Performance tracking
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the message router."""
         self.routes: List[RouteEntry] = []
         self.route_lock = threading.RLock()

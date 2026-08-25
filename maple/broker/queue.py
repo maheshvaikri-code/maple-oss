@@ -16,10 +16,8 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 # maple/broker/queue.py
 # Creator: Mahesh Vaikri
 
-"""
-Message Queue Management for MAPLE Brokers
-Provides priority queuing and message persistence
-"""
+# Message Queue Management for MAPLE Brokers.
+# Provides priority queuing and message persistence.
 
 import heapq
 import logging
@@ -55,7 +53,7 @@ class QueuedMessage:
     max_retries: int = 3
     expires_at: Optional[float] = None
 
-    def __lt__(self, other):
+    def __lt__(self, other: "QueuedMessage") -> bool:
         """For priority queue ordering."""
         # First by priority, then by timestamp
         if self.priority != other.priority:
@@ -90,7 +88,7 @@ class MessageQueue:
         queue_type: QueueType = QueueType.PRIORITY,
         max_size: int = 10000,
         default_ttl: Optional[float] = None,
-    ):
+    ) -> None:
         """
         Initialize the message queue.
 
@@ -151,7 +149,7 @@ class MessageQueue:
             with self._queue_lock:
                 # Check queue capacity
                 if len(self._priority_queue) >= self.max_size:
-                    self._stats_lock and self._update_stats("messages_dropped", 1)
+                    self._update_stats("messages_dropped", 1)
                     return Result.err(
                         {
                             "errorType": "QUEUE_FULL",
@@ -389,7 +387,7 @@ class MessageQueue:
     def get_statistics(self) -> Dict[str, Any]:
         """Get queue statistics."""
         with self._stats_lock:
-            stats = self._queue_stats.copy()
+            stats: Dict[str, Any] = self._queue_stats.copy()
 
         with self._queue_lock:
             stats.update(
