@@ -8,7 +8,7 @@ import re
 import threading
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Mapping, Optional, Protocol, Set, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Protocol, Sequence, Set, Tuple
 
 from ..core.result import Result
 
@@ -139,6 +139,21 @@ class RetrievalHit:
     chunk: DocumentChunk
     score: float
     matched_terms: Tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class VectorRetrievalHit:
+    """A ranked source-bearing chunk returned by vector similarity search."""
+
+    chunk: DocumentChunk
+    score: float
+
+
+class EmbeddingProvider(Protocol):
+    """Optional host seam for producing vectors outside the MAPLE core."""
+
+    def embed(self, text: str) -> Result[Sequence[float], Error]:
+        """Return one bounded embedding vector for text."""
 
 
 @dataclass(frozen=True)
@@ -418,4 +433,271 @@ class InMemoryLexicalRetriever:
                 "documents": len(self._documents),
                 "chunks": len(self._chunks),
                 "terms": len(self._term_index),
+            }
+
+
+def _validate_vector(
+    vector: Any,
+    *,
+    max_dimensions: int,
+    field_name: str,
+) -> Result[Tuple[float, ...], Error]:
+    if isinstance(vector, (str, bytes)) or not isinstance(vector, Sequence):
+        return Result.err(
+            _error(
+                "RETRIEVAL_VECTOR_INVALID",
+                f"{field_name} must be a numeric sequence.",
+            )
+        )
+    if not vector or len(vector) > max_dimensions:
+        return Result.err(
+            _error(
+                "RETRIEVAL_VECTOR_INVALID",
+                f"{field_name} dimensions are outside the allowed range.",
+                max_dimensions=max_dimensions,
+            )
+        )
+    values: List[float] = []
+    for index, value in enumerate(vector):
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return Result.err(
+                _error(
+                    "RETRIEVAL_VECTOR_INVALID",
+                    f"{field_name} contains a non-numeric value.",
+                    index=index,
+                )
+            )
+        converted = float(value)
+        if not math.isfinite(converted):
+            return Result.err(
+                _error(
+                    "RETRIEVAL_VECTOR_INVALID",
+                    f"{field_name} contains a non-finite value.",
+                    index=index,
+                )
+            )
+        values.append(converted)
+    if math.sqrt(sum(value * value for value in values)) <= 0.0:
+        return Result.err(
+            _error("RETRIEVAL_VECTOR_INVALID", f"{field_name} must not be zero.")
+        )
+    return Result.ok(tuple(values))
+
+
+class InMemoryVectorRetriever:
+    """Bounded cosine-similarity index over caller-supplied embeddings.
+
+    MAPLE validates and indexes vectors but does not select an embedding model
+    or call a hosted provider. Hosts can connect an ``EmbeddingProvider`` and
+    retain the same source-bearing chunk contract.
+    """
+
+    def __init__(
+        self,
+        chunker: Optional[TextChunker] = None,
+        *,
+        max_documents: int = 1_000,
+        max_vectors: int = 100_000,
+        max_dimensions: int = 4_096,
+        max_results: int = 100,
+    ) -> None:
+        self.chunker = chunker or TextChunker()
+        self.max_documents = max_documents
+        self.max_vectors = max_vectors
+        self.max_dimensions = max_dimensions
+        self.max_results = max_results
+        self._documents: Dict[str, Document] = {}
+        self._chunks: Dict[str, DocumentChunk] = {}
+        self._vectors: Dict[str, Tuple[float, ...]] = {}
+        self._dimension: Optional[int] = None
+        self._lock = threading.RLock()
+
+    def _validate_limits(self) -> Optional[Error]:
+        for name, value in (
+            ("max_documents", self.max_documents),
+            ("max_vectors", self.max_vectors),
+            ("max_dimensions", self.max_dimensions),
+            ("max_results", self.max_results),
+        ):
+            if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+                return _error("RETRIEVAL_CONFIG_INVALID", f"{name} must be positive.")
+        return None
+
+    def add_document(
+        self, document: Document, embeddings: Sequence[Sequence[float]]
+    ) -> Result[List[DocumentChunk], Error]:
+        limits_error = self._validate_limits()
+        if limits_error is not None:
+            return Result.err(limits_error)
+        if isinstance(embeddings, (str, bytes)) or not isinstance(embeddings, Sequence):
+            return Result.err(
+                _error(
+                    "RETRIEVAL_VECTOR_INVALID",
+                    "embeddings must be a bounded sequence of vectors.",
+                )
+            )
+        document_error = document.validate()
+        if document_error is not None:
+            return Result.err(document_error)
+        chunks_result = self.chunker.chunk(document)
+        if chunks_result.is_err():
+            return Result.err(chunks_result.unwrap_err())
+        chunks = chunks_result.unwrap()
+        if len(embeddings) != len(chunks):
+            return Result.err(
+                _error(
+                    "RETRIEVAL_VECTOR_COUNT_MISMATCH",
+                    "One embedding is required for each document chunk.",
+                    chunks=len(chunks),
+                    embeddings=len(embeddings),
+                )
+            )
+        vectors: List[Tuple[float, ...]] = []
+        local_dimension: Optional[int] = None
+        for index, embedding in enumerate(embeddings):
+            vector_result = _validate_vector(
+                embedding,
+                max_dimensions=self.max_dimensions,
+                field_name=f"embedding[{index}]",
+            )
+            if vector_result.is_err():
+                return Result.err(vector_result.unwrap_err())
+            vector = vector_result.unwrap()
+            if local_dimension is None:
+                local_dimension = len(vector)
+            if len(vector) != local_dimension:
+                return Result.err(
+                    _error(
+                        "RETRIEVAL_VECTOR_DIMENSION_MISMATCH",
+                        "Embeddings in one document must share dimensions.",
+                    )
+                )
+            vectors.append(vector)
+        with self._lock:
+            if document.document_id in self._documents:
+                return Result.err(
+                    _error(
+                        "RETRIEVAL_DUPLICATE_DOCUMENT",
+                        "document_id is already indexed.",
+                    )
+                )
+            if len(self._documents) >= self.max_documents:
+                return Result.err(
+                    _error("RETRIEVAL_DOCUMENT_LIMIT", "document limit reached.")
+                )
+            if len(self._vectors) + len(vectors) > self.max_vectors:
+                return Result.err(
+                    _error("RETRIEVAL_VECTOR_LIMIT", "vector limit reached.")
+                )
+            if (
+                local_dimension is not None
+                and self._dimension is not None
+                and local_dimension != self._dimension
+            ):
+                return Result.err(
+                    _error(
+                        "RETRIEVAL_VECTOR_DIMENSION_MISMATCH",
+                        "All indexed embeddings must share dimensions.",
+                        expected=self._dimension,
+                        actual=local_dimension,
+                    )
+                )
+            self._documents[document.document_id] = document
+            if local_dimension is not None:
+                self._dimension = local_dimension
+            for chunk, vector in zip(chunks, vectors):
+                self._chunks[chunk.chunk_id] = chunk
+                self._vectors[chunk.chunk_id] = vector
+        return Result.ok(chunks)
+
+    def remove_document(self, document_id: str) -> Result[bool, Error]:
+        error = _validate_identifier(document_id, "document_id")
+        if error is not None:
+            return Result.err(error)
+        with self._lock:
+            document = self._documents.pop(document_id, None)
+            if document is None:
+                return Result.ok(False)
+            chunk_ids = [
+                chunk_id
+                for chunk_id, chunk in self._chunks.items()
+                if chunk.document_id == document_id
+            ]
+            for chunk_id in chunk_ids:
+                del self._chunks[chunk_id]
+                del self._vectors[chunk_id]
+            if not self._vectors:
+                self._dimension = None
+        return Result.ok(True)
+
+    def search(
+        self,
+        query_vector: Sequence[float],
+        *,
+        top_k: int = 5,
+        min_score: float = 0.0,
+    ) -> Result[List[VectorRetrievalHit], Error]:
+        limits_error = self._validate_limits()
+        if limits_error is not None:
+            return Result.err(limits_error)
+        if (
+            not isinstance(top_k, int)
+            or isinstance(top_k, bool)
+            or not 1 <= top_k <= self.max_results
+        ):
+            return Result.err(
+                _error("RETRIEVAL_QUERY_INVALID", "top_k is outside the allowed range.")
+            )
+        if (
+            not isinstance(min_score, (int, float))
+            or isinstance(min_score, bool)
+            or not math.isfinite(min_score)
+            or not -1.0 <= min_score <= 1.0
+        ):
+            return Result.err(
+                _error(
+                    "RETRIEVAL_QUERY_INVALID",
+                    "min_score must be finite and between -1 and 1.",
+                )
+            )
+        vector_result = _validate_vector(
+            query_vector,
+            max_dimensions=self.max_dimensions,
+            field_name="query_vector",
+        )
+        if vector_result.is_err():
+            return Result.err(vector_result.unwrap_err())
+        query = vector_result.unwrap()
+        with self._lock:
+            if self._dimension is not None and len(query) != self._dimension:
+                return Result.err(
+                    _error(
+                        "RETRIEVAL_VECTOR_DIMENSION_MISMATCH",
+                        "Query dimensions do not match the index.",
+                        expected=self._dimension,
+                        actual=len(query),
+                    )
+                )
+            query_norm = math.sqrt(sum(value * value for value in query))
+            scored: List[VectorRetrievalHit] = []
+            for chunk_id, vector in self._vectors.items():
+                score = sum(left * right for left, right in zip(query, vector))
+                score /= query_norm * math.sqrt(sum(value * value for value in vector))
+                if score >= min_score:
+                    scored.append(
+                        VectorRetrievalHit(
+                            chunk=self._chunks[chunk_id],
+                            score=score,
+                        )
+                    )
+        scored.sort(key=lambda hit: (-hit.score, hit.chunk.chunk_id))
+        return Result.ok(scored[:top_k])
+
+    def stats(self) -> Dict[str, int]:
+        """Return bounded vector-index counts for observability."""
+        with self._lock:
+            return {
+                "documents": len(self._documents),
+                "vectors": len(self._vectors),
+                "dimensions": self._dimension or 0,
             }

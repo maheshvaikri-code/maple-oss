@@ -22,7 +22,8 @@
 | 13 | Bounded async tool fan-out | Backend / ML Engineer | `docs/adr/011-*`, async ReAct loop, agent regression tests, README, changelog | Concurrent independent handlers, per-step cap, deterministic result order, worker error isolation | done: agent suite `15 passed`; changed agent Ruff/Flake8 and compile pass |
 | 14 | Fail-closed autonomous approval | Security Reviewer / Backend | `docs/adr/012-*`, autonomous tool boundary, approval regression, README, changelog | Missing callback denial, callback exception denial, explicit denial, handler side-effect absence | done: approval regression included in `16` agent tests; changed agent Ruff/Flake8 and compile pass |
 | 15 | Bounded checkpointed workflow fan-out/fan-in | Chief Architect / Backend / Security | `docs/adr/013-*`, workflow runtime/tests, API docs, README, changelog | Concurrent independent branches, bounded workers, deterministic merge, collision rejection, pause/resume group boundary | done: commit `7f7afb0`; focused workflow `13 passed`; combined feature gate `187 passed` |
-| 16 | Durable approval requests and one-time decisions | Chief Architect / Backend / Security | `docs/adr/014-*`, approval stores/agent boundary/tests, API docs, README, changelog | Bounded JSON request, file restart persistence, CAS decision, fail-closed pending state, one-time consume, handler side-effect protection | in progress |
+| 16 | Durable approval requests and one-time decisions | Chief Architect / Backend / Security | `docs/adr/014-*`, approval stores/agent boundary/tests, API docs, README, changelog | Bounded JSON request, file restart persistence, CAS decision, fail-closed pending state, one-time consume, handler side-effect protection | done: commit `84830a7`; approval/agent `21 passed`; combined feature gate `192 passed` |
+| 17 | Dependency-free vector retrieval seam | ML Engineer / Backend | `docs/adr/015-*`, retrieval index/tests, API docs, README, changelog | Supplied embedding contract, finite/dimension/zero validation, one-vector-per-chunk atomic ingestion, deterministic cosine ranking, quotas, source citations | done: pending commit; focused retrieval `10 passed`; combined feature gate `196 passed` |
 
 ## Threat sketch
 
@@ -57,17 +58,16 @@ privileged action without approval.
 
 ## Status snapshot
 
-Done (with evidence): G0 brief, G1 ADR, G2 plan, and fifteen committed G3
-feature slices through bounded checkpointed workflow fan-out/fan-in, including
-MCP interoperability, bounded artifacts, native LLM streaming, deterministic
-async tool result ordering, and approval-side effect protection; slice
-review/QA artifacts are filed. Slice 16 durable approval state is implemented
-in the working tree and awaits focused verification, review artifacts, and
-commit.
+Done (with evidence): G0 brief, G1 ADR, G2 plan, and sixteen committed G3
+feature slices through durable approval state, including MCP interoperability,
+bounded artifacts, native LLM streaming, deterministic async tool result
+ordering, and workflow fan-out/fan-in; slice review/QA artifacts are filed.
+Slice 17 vector retrieval is implemented and verified in the working tree and
+awaits commit.
 Release hardening remains in progress.
-Focused feature gates (187 LLM/autonomy/CLI tests, including 22 MCP, 5
-artifact, 5 stream, async tool fan-out, fail-closed approval, and workflow
-fan-out regressions),
+Focused feature gates (196 LLM/autonomy/CLI tests, including 22 MCP, 5
+artifact, 5 stream, async tool fan-out, durable approval, workflow fan-out,
+and vector retrieval regressions),
 compile, changed-surface Ruff/Flake8, metadata-clean wheel/sdist builds, Twine
 checks, a clean-venv wheel doctor smoke pass, and a fresh `.[dev,security]`
 environment with `pip check` reporting no broken requirements all pass.

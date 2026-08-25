@@ -39,7 +39,7 @@ Most agent frameworks give you either **infrastructure** (messaging, security, f
 - **Tool Framework** — Register custom tools with JSON Schema parameters. Built-in tools for inter-agent communication, state read/write, resource checks, and secure link establishment.
 - **Typed Contracts and Guardrails (preview)** — Validate bounded JSON inputs and outputs, request structured model responses, and fail closed on rejected or unavailable guardrails.
 - **Trusted Local Execution (preview)** — Opt tools into bounded input/output, timeout, cooperative cancellation, approval, and concurrency controls; this is not an untrusted-code sandbox.
-- **Retrieval/Data Primitives (preview)** — Ingest bounded documents, split deterministic chunks, run local lexical retrieval, and retain source references for grounded answers.
+- **Retrieval/Data Primitives (preview)** — Ingest bounded documents, split deterministic chunks, run local lexical or caller-supplied-vector retrieval, and retain source references for grounded answers.
 - **Event Streaming and Redaction (preview)** — Publish bounded sequenced events with ring retention, wait/snapshot consumers, subscriber isolation, and recursive credential redaction.
 - **Evaluation Harness (preview)** — Run deterministic golden cases with output-schema checks, exact outputs, tool-trajectory checks, bounded reports, and redacted actual values.
 - **Capability-Aware Provider Fallback (preview)** — Select providers by declared tool/streaming/structured-output/context capabilities with deterministic initialization fallback.

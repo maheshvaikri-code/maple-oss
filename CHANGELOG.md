@@ -52,6 +52,10 @@
   denied, and one-time consumed states. Autonomous agents can persist a
   pending required-tool action, accept a host decision, and claim it before
   execution; full ReAct conversation replay remains separate.
+- **Dependency-free vector retrieval** (`maple.autonomy.retrieval`): added a
+  bounded in-memory cosine index over caller-supplied finite embeddings, with
+  one-vector-per-chunk validation, deterministic ties, source citations, and
+  no embedding-model or vector-database dependency.
 - **Release metadata hardening**: `pyproject.toml` is now the single source
   for package metadata, the legacy `setup.py` delegates to it, and the source
   manifest includes only files present in the repository. Wheel/sdist builds

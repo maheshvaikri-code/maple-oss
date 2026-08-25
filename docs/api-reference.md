@@ -570,9 +570,8 @@ parsed = parse_structured_output('{"answer":"ready"}', report_schema)
 
 The retrieval contract keeps document identity, source citations, chunk offsets,
 metadata, and ranked hits together. `TextChunker` enforces document/chunk
-bounds, while `InMemoryLexicalRetriever` provides a dependency-free reference
-backend for local development and tests. Vector or embedding stores can later
-implement `RetrievalBackend` without changing agent-facing result types.
+bounds, while `InMemoryLexicalRetriever` and `InMemoryVectorRetriever` provide
+dependency-free reference backends for local development and tests.
 
 ```python
 from maple import (
@@ -595,10 +594,29 @@ if hits.is_ok():
         print(hit.score, hit.chunk.source.uri, hit.chunk.text)
 ```
 
-The reference backend is intentionally lexical and local; it is not a hosted
-vector database or embedding service. Empty/malformed/oversized inputs fail
-with structured `Result` errors, and every hit carries a source reference for
-citation.
+The reference backend is intentionally local; it is not a hosted vector
+database or embedding service. A vector index accepts one finite, bounded
+embedding per generated chunk and uses cosine similarity with deterministic
+tie-breaking:
+
+```python
+from maple import Document, InMemoryVectorRetriever, SourceRef
+
+vector_retriever = InMemoryVectorRetriever()
+vector_retriever.add_document(
+    Document(
+        document_id="guide-1",
+        text="MAPLE uses resource-aware agent orchestration.",
+        source=SourceRef(uri="https://example.invalid/guide"),
+    ),
+    [(0.8, 0.2, 0.1)],  # supplied by the host's pinned embedding pipeline
+)
+hits = vector_retriever.search((0.7, 0.3, 0.1), top_k=3)
+```
+
+MAPLE does not select or call an embedding model. Empty/malformed/oversized
+inputs fail with structured `Result` errors, and every hit carries a source
+reference for citation.
 
 ## Event Streaming and Redaction (preview)
 

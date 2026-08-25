@@ -33,6 +33,9 @@ The feature program now includes:
   boundary (ADR-013).
 - durable in-memory/file approval requests with fail-closed decisions and
   one-time consumption before handler execution (ADR-014).
+- dependency-free vector retrieval over caller-supplied embeddings with
+  bounded validation, deterministic cosine ranking, quotas, and source
+  citations (ADR-015).
 
 Slice-level review artifacts are filed in `docs/reviews/` and corresponding QA
 artifacts in `docs/qa/`. No website, cloud, external publication, license, or
@@ -42,7 +45,7 @@ new dependency change was made.
 
 ```text
 Focused LLM/autonomy/CLI regression:
-192 passed, 1 warning in 0.87s
+196 passed, 1 warning in 0.88s
 
 Focused provider-stream regression:
 5 passed, 1 warning in 0.03s
@@ -110,7 +113,7 @@ Doctor:
 
 ## Verdict
 
-**Feature review:** PASS for the sixteen implemented capability slices.
+**Feature review:** PASS for the seventeen implemented capability slices.
 **Publish readiness:** NOT YET APPROVED. A release manager should close the
 open full-suite, isolated-environment dependency/audit, repository lint, and
 fresh-verifier gates before publishing. External publication remains awaiting

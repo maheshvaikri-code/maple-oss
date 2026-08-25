@@ -4,6 +4,7 @@ from maple.autonomy.retrieval import (
     ChunkingPolicy,
     Document,
     InMemoryLexicalRetriever,
+    InMemoryVectorRetriever,
     SourceRef,
     TextChunker,
 )
@@ -112,3 +113,71 @@ def test_document_validation_rejects_non_json_metadata():
 
     assert result.is_err()
     assert result.unwrap_err()["errorType"] == "RETRIEVAL_NON_JSON_METADATA"
+
+
+def test_vector_retriever_returns_ranked_source_bearing_hits():
+    retriever = InMemoryVectorRetriever()
+    first = make_document("doc-a", "agent orchestration")
+    second = make_document("doc-b", "resource allocation")
+    assert retriever.add_document(first, [(1.0, 0.0)]).is_ok()
+    assert retriever.add_document(second, [(0.0, 1.0)]).is_ok()
+
+    result = retriever.search((0.9, 0.1), top_k=2)
+
+    assert result.is_ok()
+    hits = result.unwrap()
+    assert [hit.chunk.document_id for hit in hits] == ["doc-a", "doc-b"]
+    assert hits[0].chunk.source.uri == "memory://doc-a"
+    assert hits[0].score > hits[1].score
+    assert retriever.stats() == {"documents": 2, "vectors": 2, "dimensions": 2}
+
+
+def test_vector_retriever_rejects_count_dimension_and_nonfinite_inputs_atomically():
+    retriever = InMemoryVectorRetriever()
+    document = make_document("vector-boundary")
+
+    count_mismatch = retriever.add_document(document, [])
+    invalid_zero = retriever.add_document(document, [(0.0, 0.0)])
+    valid = retriever.add_document(document, [(1.0, 0.0)])
+    dimension_mismatch = retriever.add_document(
+        make_document("vector-other"), [(1.0, 0.0, 0.0)]
+    )
+    invalid_query = retriever.search((float("nan"), 0.0))
+    wrong_query_dimension = retriever.search((1.0,))
+
+    assert count_mismatch.unwrap_err()["errorType"] == "RETRIEVAL_VECTOR_COUNT_MISMATCH"
+    assert invalid_zero.unwrap_err()["errorType"] == "RETRIEVAL_VECTOR_INVALID"
+    assert valid.is_ok()
+    assert dimension_mismatch.unwrap_err()["errorType"] == (
+        "RETRIEVAL_VECTOR_DIMENSION_MISMATCH"
+    )
+    assert invalid_query.unwrap_err()["errorType"] == "RETRIEVAL_VECTOR_INVALID"
+    assert wrong_query_dimension.unwrap_err()["errorType"] == (
+        "RETRIEVAL_VECTOR_DIMENSION_MISMATCH"
+    )
+    assert retriever.stats() == {"documents": 1, "vectors": 1, "dimensions": 2}
+
+
+def test_vector_retriever_tie_breaks_by_chunk_id_and_removes_documents():
+    retriever = InMemoryVectorRetriever()
+    retriever.add_document(make_document("doc-b"), [(1.0, 0.0)])
+    retriever.add_document(make_document("doc-a"), [(1.0, 0.0)])
+
+    tied = retriever.search((1.0, 0.0), top_k=2)
+    removed = retriever.remove_document("doc-a")
+    remaining = retriever.search((1.0, 0.0))
+
+    assert [hit.chunk.document_id for hit in tied.unwrap()] == ["doc-a", "doc-b"]
+    assert removed.unwrap() is True
+    assert [hit.chunk.document_id for hit in remaining.unwrap()] == ["doc-b"]
+
+
+def test_vector_retriever_enforces_vector_quota():
+    retriever = InMemoryVectorRetriever(max_vectors=1)
+    assert retriever.add_document(make_document("doc-a"), [(1.0, 0.0)]).is_ok()
+
+    rejected = retriever.add_document(make_document("doc-b"), [(0.0, 1.0)])
+
+    assert rejected.is_err()
+    assert rejected.unwrap_err()["errorType"] == "RETRIEVAL_VECTOR_LIMIT"
+    assert retriever.stats() == {"documents": 1, "vectors": 1, "dimensions": 2}
