@@ -42,6 +42,7 @@ Most agent frameworks give you either **infrastructure** (messaging, security, f
 - **Retrieval/Data Primitives (preview)** — Ingest bounded documents, split deterministic chunks, run local lexical or caller-supplied-vector retrieval, and retain source references for grounded answers.
 - **Event Streaming and Redaction (preview)** — Publish bounded sequenced events with ring retention, wait/snapshot consumers, subscriber isolation, and recursive credential redaction.
 - **Evaluation Harness (preview)** — Run deterministic golden cases with output-schema checks, exact outputs, tool-trajectory checks, bounded reports, and redacted actual values.
+- **Retrieval/Citation Evaluation (preview)** — Score lexical or vector retrieval against bounded golden source URIs with deterministic source-level precision, recall, and F1; generated-answer faithfulness remains a separate calibrated evaluation.
 - **Capability-Aware Provider Fallback (preview)** — Select providers by declared tool/streaming/structured-output/context capabilities with deterministic initialization fallback.
 - **Provider-Agnostic LLM Streaming (preview)** — Consume bounded text, tool-call, and finish chunks through one async contract; OpenAI-compatible and Anthropic providers use native async streams when available, with a completion-backed fallback.
 - **Bounded Async Tool Fan-Out (preview)** — Execute independent tool calls concurrently within the per-step cap while preserving deterministic tool-message order and isolating worker failures.

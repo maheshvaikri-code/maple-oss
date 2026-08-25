@@ -670,6 +670,33 @@ report = EvaluationHarness().run(
 )
 ```
 
+Retrieval quality can be evaluated separately from answer generation with
+bounded golden source URIs. `run_retrieval` accepts lexical
+`RetrievalHit` or vector `VectorRetrievalHit` values, deduplicates source URIs,
+and reports source-level precision, recall, and F1. It does not claim answer
+faithfulness or entailment.
+
+```python
+from maple import EvaluationHarness, RetrievalEvalCase
+
+case = RetrievalEvalCase(
+    case_id="policy-lookup-v1",
+    query="MAPLE resource messaging",
+    expected_source_uris=("urn:docs:messaging",),
+    min_precision=1.0,
+    min_recall=1.0,
+)
+report = EvaluationHarness().run_retrieval(
+    [case],
+    lambda query: retriever.search(query).unwrap(),
+)
+```
+
+Malformed hit sequences, runner errors, and exceptions are isolated as typed
+per-case failures. Golden source sets are host-maintained; calibrated
+generation/groundedness evaluation and LLM-as-judge workflows are separate
+future contracts.
+
 Providers can declare compatibility requirements independently of provider
 names. `ProviderRouter` orders matching descriptors by explicit priority and
 tries configured providers in that order, returning a structured failure if no

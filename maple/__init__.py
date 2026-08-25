@@ -105,6 +105,7 @@ from .autonomy.evaluation import (
     EvalReport,
     EvalResult,
     EvaluationHarness,
+    RetrievalEvalCase,
 )
 from .autonomy.interop import InteropEnvelope, round_trip_json
 from .autonomy.artifacts import (
@@ -250,6 +251,7 @@ __all__ = [
     "EvalReport",
     "EvalResult",
     "EvaluationHarness",
+    "RetrievalEvalCase",
     "InteropEnvelope",
     "round_trip_json",
     "Artifact",

@@ -1,6 +1,20 @@
 """Tests for deterministic agent evaluation."""
 
-from maple.autonomy.evaluation import EvalCase, EvalObservation, EvaluationHarness
+import pytest
+
+from maple.autonomy.evaluation import (
+    EvalCase,
+    EvalObservation,
+    EvaluationHarness,
+    RetrievalEvalCase,
+)
+from maple.autonomy.retrieval import (
+    Document,
+    DocumentChunk,
+    InMemoryLexicalRetriever,
+    SourceRef,
+    VectorRetrievalHit,
+)
 from maple.core.result import Result
 
 
@@ -80,3 +94,132 @@ def test_invalid_case_and_runner_exception_fail_closed():
     assert (
         exception.unwrap().results[0].errors[0]["errorType"] == "EVAL_RUNNER_EXCEPTION"
     )
+
+
+def test_retrieval_evaluation_measures_source_precision_recall_and_f1():
+    retriever = InMemoryLexicalRetriever()
+    retriever.add_document(
+        Document(
+            "doc-one",
+            "MAPLE provides resource aware messaging",
+            SourceRef("urn:source:one"),
+        )
+    )
+    retriever.add_document(
+        Document(
+            "doc-two",
+            "A different topic with no matching terms",
+            SourceRef("urn:source:two"),
+        )
+    )
+    case = RetrievalEvalCase(
+        "source-recall",
+        "resource messaging",
+        ("urn:source:one",),
+        min_precision=1.0,
+        min_recall=1.0,
+    )
+
+    report = EvaluationHarness().run_retrieval(
+        [case], lambda query: retriever.search(query).unwrap()
+    )
+
+    assert report.is_ok()
+    result = report.unwrap().results[0]
+    assert result.passed
+    assert result.score == 1.0
+    assert result.actual_output["matched_source_uris"] == ["urn:source:one"]
+
+
+def test_retrieval_evaluation_accepts_vector_hits_and_reports_low_recall():
+    source = SourceRef("urn:source:vector")
+    chunk = DocumentChunk(
+        "doc:0",
+        "doc",
+        0,
+        "vector result",
+        0,
+        13,
+        source,
+    )
+    case = RetrievalEvalCase(
+        "vector-recall",
+        "vector query",
+        ("urn:source:vector", "urn:source:missing"),
+        min_recall=1.0,
+    )
+
+    report = EvaluationHarness().run_retrieval(
+        [case], lambda query: [VectorRetrievalHit(chunk, 1.0)]
+    )
+
+    assert report.is_ok()
+    result = report.unwrap().results[0]
+    assert not result.passed
+    assert result.score == pytest.approx(2 / 3)
+    assert result.errors[0]["errorType"] == "RAG_RECALL_LOW"
+
+
+def test_retrieval_evaluation_isolates_malformed_and_raising_runners():
+    cases = [
+        RetrievalEvalCase("pass", "good", ("urn:source:one",)),
+        RetrievalEvalCase("malformed", "bad", ("urn:source:one",)),
+        RetrievalEvalCase("exception", "crash", ("urn:source:one",)),
+    ]
+    source = SourceRef("urn:source:one")
+    chunk = DocumentChunk("doc:0", "doc", 0, "good", 0, 4, source)
+
+    def runner(query):
+        if query == "bad":
+            return {"not": "hits"}
+        if query == "crash":
+            raise RuntimeError("runner details")
+        return [VectorRetrievalHit(chunk, 1.0)]
+
+    report = EvaluationHarness().run_retrieval(cases, runner)
+
+    assert report.is_ok()
+    assert report.unwrap().passed == 1
+    assert report.unwrap().results[1].errors[0]["errorType"] == (
+        "RAG_OBSERVATION_INVALID"
+    )
+    assert report.unwrap().results[2].errors[0]["errorType"] == (
+        "RAG_RUNNER_EXCEPTION"
+    )
+
+
+def test_retrieval_evaluation_rejects_invalid_golden_cases():
+    invalid = RetrievalEvalCase(
+        "invalid",
+        "query",
+        ("urn:source:one", "urn:source:one"),
+        min_precision=1.1,
+    )
+
+    result = EvaluationHarness().run_retrieval([invalid], lambda query: [])
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "RAG_CASE_INVALID"
+
+
+def test_retrieval_evaluation_rejects_unhashable_golden_uri_without_raising():
+    invalid = RetrievalEvalCase("invalid-uri", "query", ([],))
+
+    result = EvaluationHarness().run_retrieval([invalid], lambda query: [])
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "RAG_CASE_INVALID"
+
+
+def test_retrieval_evaluation_bounds_runner_hit_count():
+    source = SourceRef("urn:source:bounded")
+    chunk = DocumentChunk("doc:0", "doc", 0, "bounded", 0, 7, source)
+    hit = VectorRetrievalHit(chunk, 1.0)
+    case = RetrievalEvalCase("bounded", "query", ("urn:source:bounded",))
+
+    report = EvaluationHarness(max_retrieval_hits=1).run_retrieval(
+        [case], lambda query: [hit, hit]
+    )
+
+    assert report.is_ok()
+    assert report.unwrap().results[0].errors[0]["errorType"] == "RAG_HIT_LIMIT"

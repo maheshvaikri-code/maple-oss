@@ -28,6 +28,7 @@
 | 19 | Bounded conversation session store | Chief Architect / Backend / Security | `docs/adr/017-*`, session stores/tests, autonomy exports, API docs, README, changelog | Validated IDs/roles, bounded messages and metadata, immutable snapshots, atomic file restart persistence, optimistic append conflicts, no replay claim | done: commit `0648efa`; focused sessions `9 passed`; combined feature gate `208 passed` |
 | 20 | Loopback workflow run server | Chief Architect / Interop / Backend / Security | `docs/adr/018-*`, server/registry/tests, autonomy exports, API docs, README, changelog | Health, bounded JSON run/resume/inspect routes, stable HTTP errors, workflow reuse, loopback safety, deterministic shutdown | done: commit `7665eaf`; focused server `4 passed`; combined feature gate `212 passed` |
 | 21 | Session-aware agent turns | Chief Architect / Backend / Security / ML Engineer | `docs/adr/019-*`, autonomous agent/session tests, API docs, README, changelog | Opt-in sync/async session binding, CAS user turn, user/assistant-only replay, surfaced post-execution persistence errors, no trace/tool replay | done: commit `0b794ba`; focused `7 passed`; combined feature gate `219 passed` |
+| 22 | Deterministic retrieval/citation evaluation | ML Engineer / Backend / QA | `docs/adr/020-*`, evaluation module/tests, API docs, README, changelog | Bounded golden queries, lexical/vector hit support, source URI precision/recall/F1, malformed runner isolation, no faithfulness claim | doing: design accepted; implementation next |
 
 ## Threat sketch
 
@@ -70,7 +71,9 @@ history, and bounded conversation sessions; slice review/QA artifacts are
 filed. Replay-safe execution and RAG evaluation remain separate follow-on
 slices.
 Release hardening remains in progress. Slices 19, 20, and 21 are committed and
-verified.
+verified. Slice 22 is in G3 implementation for deterministic retrieval/source
+coverage evaluation; generation faithfulness and replay-safe execution remain
+separate follow-on capabilities.
 Focused feature gates (219 LLM/autonomy/CLI tests, including 22 MCP, 5
 artifact, 5 stream, async tool fan-out, durable approval, workflow fan-out,
 vector retrieval, checkpoint history, and session-aware agent regressions),

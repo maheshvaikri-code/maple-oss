@@ -56,6 +56,10 @@
   bounded in-memory cosine index over caller-supplied finite embeddings, with
   one-vector-per-chunk validation, deterministic ties, source citations, and
   no embedding-model or vector-database dependency.
+- **Deterministic retrieval/citation evaluation** (`maple.autonomy.evaluation`):
+  added bounded golden source-URI cases with lexical/vector hit support,
+  source-level precision/recall/F1 metrics, malformed-runner isolation, and
+  explicit separation from generated-answer faithfulness claims.
 - **Bounded workflow history** (`maple.autonomy.workflow`): added an
   in-process `HistoryCheckpointStore` decorator that retains immutable,
   version-ordered checkpoint snapshots for inspection without claiming

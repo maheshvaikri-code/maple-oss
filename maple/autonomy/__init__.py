@@ -48,7 +48,14 @@ from .retrieval import (
     VectorRetrievalHit,
 )
 from .events import AgentEvent, EventStream, RedactionPolicy
-from .evaluation import EvalCase, EvalObservation, EvalReport, EvalResult, EvaluationHarness
+from .evaluation import (
+    EvalCase,
+    EvalObservation,
+    EvalReport,
+    EvalResult,
+    EvaluationHarness,
+    RetrievalEvalCase,
+)
 from .interop import InteropEnvelope, round_trip_json
 from .artifacts import (
     Artifact,
@@ -137,6 +144,7 @@ __all__ = [
     "EvalReport",
     "EvalResult",
     "EvaluationHarness",
+    "RetrievalEvalCase",
     "InteropEnvelope",
     "round_trip_json",
     "Artifact",
