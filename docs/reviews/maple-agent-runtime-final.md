@@ -175,6 +175,9 @@ Doctor:
   `28 passed in 0.28s` for the Protobuf boundary. Static, package, and doctor
   checks pass; the exact full repository suite has not yet been rerun after
   the slice.
+- The post-Slice-72 exact repository attempt on `2b8bb57` collected `1278`
+  items, reached the Doctrine gold phase, and emitted six gold-test completions
+  before bounded interruption without failure output or a pytest summary.
 
 ## Verdict
 

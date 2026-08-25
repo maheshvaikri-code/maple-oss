@@ -25,7 +25,7 @@
 | Installed artifact smoke | PASS | Clean venv installed the wheel with `--no-deps`; `maple doctor --json` returned `ready:true`, `network:false`. |
 | Isolated dependency audit | PASS | Fresh `.[dev,security]` environment: `pip check` returned `No broken requirements found.` |
 | Local readiness | PASS | `maple --json doctor` returned all eight checks true and `network:false`. |
-| Full repository regression | OPEN | Exact-current bounded run on `ded4477` collected `1276` items, reached `90%`, entered the Doctrine gold tests, and was interrupted without failure output or a pytest summary. |
+| Full repository regression | OPEN | Exact-current bounded run on `2b8bb57` collected `1278` items, reached `90%`, emitted six Doctrine gold-test completions, and was interrupted without failure output or a pytest summary. |
 | Dependency consistency | PASS | Isolated MAPLE environment is consistent; shared-interpreter conflicts are unrelated and non-authoritative. |
 | Repository-wide lint | PASS | Slice 69 closes the remaining E402 import-boundary debt; broad `ruff check maple` reports zero findings. |
 | Typed tool input/output boundary | PASS | 43 focused contract/tool/agent tests and 212 full-autonomy tests cover model-derived schemas, pre-handler input rejection, normalized handler arguments, validated outputs, and invalid-result failure. |
@@ -158,8 +158,13 @@
   protobuf fail closed with structured errors. No runtime dependency was added.
 - Mypy reports no issues in 93 source files; MAPLE Ruff, tools/tests Ruff,
   Black, isort, compile, wheel/sdist, Twine, and network-free doctor gates pass.
-- The exact repository-wide suite has not yet been rerun after Slice 72; the
-  full-suite and fresh independent-verifier gates remain open.
+- The exact repository-wide suite was rerun after Slice 72 but did not emit a
+  final summary; the full-suite and fresh independent-verifier gates remain
+  open.
+- Exact-current post-Slice-72 run on `2b8bb57` collected `1278` items, reached
+  the Doctrine gold phase, and emitted six gold-test completions before the
+  bounded session was interrupted. No failure output or pytest summary was
+  produced; this is not a full-suite pass.
 
 ## Security conclusions
 

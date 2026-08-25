@@ -294,3 +294,8 @@ release evidence update.
 tests and reached `90%` before entering the slow Doctrine gold phase. The
 bounded session was interrupted after sparse gold-test progress without a
 failure traceback or pytest summary, so the full-suite gate remains open.
+
+2026-08-25 post-Protobuf exact-current attempt: commit `2b8bb57` collected
+`1278` tests, reached `90%`, and emitted six Doctrine gold-test completions
+before bounded interruption. No failure output or pytest summary was produced;
+the exact full-suite gate remains open.
