@@ -35,10 +35,10 @@ class AutoGenAdapter:
     Provides superior performance and capabilities over native AutoGen.
     """
 
-    def __init__(self, maple_agent, autogen_config: Dict[str, Any]):
+    def __init__(self, maple_agent: Any, autogen_config: Dict[str, Any]) -> None:
         self.maple_agent = maple_agent
         self.autogen_config = autogen_config
-        self.agent_map = {}
+        self.agent_map: Dict[str, "MAPLEEnhancedAutoGenAgent"] = {}
 
     def create_maple_enhanced_autogen_agent(
         self, name: str, system_message: str, llm_config: Dict[str, Any]
@@ -93,12 +93,19 @@ class MAPLEEnhancedAutoGenAgent(autogen.AssistantAgent):
     AutoGen Agent enhanced with MAPLE protocol capabilities.
     """
 
-    def __init__(self, name, system_message, llm_config, maple_agent, **kwargs):
+    def __init__(
+        self,
+        name: str,
+        system_message: str,
+        llm_config: Dict[str, Any],
+        maple_agent: Any,
+        **kwargs: Any,
+    ) -> None:
         super().__init__(
             name=name, system_message=system_message, llm_config=llm_config, **kwargs
         )
         self.maple_agent = maple_agent
-        self.maple_performance_metrics = {
+        self.maple_performance_metrics: Dict[str, Union[int, float]] = {
             "messages_processed": 0,
             "average_response_time": 0,
             "error_recovery_events": 0,
@@ -192,7 +199,13 @@ class MAPLEEnhancedGroupChat(autogen.GroupChat):
     AutoGen GroupChat enhanced with MAPLE protocol.
     """
 
-    def __init__(self, agents, messages, maple_agent, **kwargs):
+    def __init__(
+        self,
+        agents: List[Any],
+        messages: List[Dict[str, Any]],
+        maple_agent: Any,
+        **kwargs: Any,
+    ) -> None:
         super().__init__(agents=agents, messages=messages)
         self.maple_agent = maple_agent
         self.performance_mode = kwargs.get("performance_mode", "standard")
