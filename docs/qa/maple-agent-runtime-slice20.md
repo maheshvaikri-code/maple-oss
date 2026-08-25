@@ -1,8 +1,7 @@
-# QA + Security - MAPLE Agent Runtime Slice 20 @ working tree
+# QA + Security - MAPLE Agent Runtime Slice 20 @ `7665eaf`
 
 **QA Engineer · Security Reviewer · Date:** 2026-08-24
-**Build under test:** working tree after Slice 20 implementation; package
-version `1.1.3`
+**Build under test:** exact commit `7665eaf`; package version `1.1.3`
 
 ## Acceptance criteria verification
 
@@ -50,7 +49,7 @@ plugin autoload is disabled.
 
 | # | Repro steps | Severity | Fixed @ | Re-verified | Regression test |
 |---|---|---|---|---|---|
-| 1 | Send a body over the configured request-byte cap | MAJOR boundary risk | working tree | `4 passed` and `212 passed` | `test_run_server_rejects_unknown_routes_workflows_and_oversized_bodies` |
+| 1 | Send a body over the configured request-byte cap | MAJOR boundary risk | `7665eaf` | `4 passed` and `212 passed` | `test_run_server_rejects_unknown_routes_workflows_and_oversized_bodies` |
 
 The server writes a bounded `413` response and stops request processing before
 the workflow registry is called.
