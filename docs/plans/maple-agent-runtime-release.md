@@ -51,6 +51,7 @@
 | 42 | Failure-detection type boundary cleanup | Reliability / Discovery / QA | failure detector, circuit-breaker wrapper boundary, changelog, review/QA artifacts | Failure-detection suite, explicit changed-file mypy with skipped imports, Black/isort/compile, aggregate audit | done: commit `4ec10ee`; behavior-preserving detector lifecycle/recovery/callback annotations; focused `14 passed`; aggregate reduced to `181 errors in 29 files` |
 | 43 | Discovery registry and capability-matching type boundary cleanup | Discovery / Backend / QA | agent registry, capability matcher, changelog, review/QA artifacts | Combined registry/capability/health suite, explicit changed-file mypy with skipped imports, Black/isort/compile, aggregate audit | done: commit `c746b02`; behavior-preserving optional-input, requirement, lifecycle, and matrix annotations; focused `43 passed`; aggregate reduced to `172 errors in 27 files` |
 | 44 | Security link and encryption type boundary cleanup | Security / Backend / QA | link manager, encryption manager, crypto narrowing, changelog, review/QA artifacts | Link/encryption suites, explicit changed-file mypy with skipped imports, Black/isort/compile, aggregate audit | done: commit `e30ce65`; behavior-preserving optional-key/lifecycle and crypto-manager narrowing annotations; focused `34 passed`; aggregate reduced to `163 errors in 25 files` |
+| 45 | Communication pattern type boundary cleanup | Backend / Interop / QA | publish-subscribe, request-response, streaming, regression tests, changelog, review/QA artifacts | Communication suite, explicit changed-file mypy with skipped imports, Black/isort/compile, aggregate audit | done: pending source commit; typed agent and pending-request boundaries, broker-result cast, direct-publish string contract, and subscriber narrowing; focused `49 passed`; aggregate reduced to `152 errors in 22 files` |
 
 ## Threat sketch
 
@@ -134,6 +135,7 @@ reports `205 errors in 35 files`; slice 39's follow-up audit now reports
 `181 errors in 29 files`; slice 43's follow-up audit now reports
 `172 errors in 27 files`; slice 44's follow-up audit now reports
 `163 errors in 25 files`; the
+communication slice 45's follow-up audit now reports `152 errors in 22 files`;
 installed mypy 2.3 rejects the configured Python 3.8 target, so the support
 matrix/toolchain decision remains open. Dependency-audit disposition and
 unavailable independent fresh-context verification remain open.

@@ -89,6 +89,12 @@
   key inputs without changing cryptographic behavior. The link/encryption
   regressions pass 34 tests, both explicit changed-file mypy checks are clean,
   and the aggregate audit is now `163 errors` in 25 files.
+- **Communication pattern type boundary**: clarified agent and stream
+  constructors, typed pending request state, narrowed broker result boundaries,
+  and normalized direct publish IDs and stream subscribers to their declared
+  contracts. The communication regression surface passes 49 tests, all three
+  changed-file mypy checks are clean, and the aggregate audit is now
+  `152 errors` in 22 files.
 - **Repository formatter gate closure**: normalized the tracked `maple/`
   source tree with the configured Black and isort profiles. Both checks are
   now idempotent, the focused runtime gate remains `240 passed`, and a fresh
