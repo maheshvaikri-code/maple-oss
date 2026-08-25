@@ -10,6 +10,12 @@
 
 ### Additions
 
+- **Fail-closed CI quality and security gates**: removed silent success paths
+  from the CI, quality, dependency-audit, and security workflows; security
+  reports are still collected before the original audit status is returned.
+  Read-only contents permissions now protect workflows that do not publish or
+  mutate repository state. Existing Black/isort/mypy/Bandit debt is therefore
+  visible as a release blocker instead of being masked.
 - **Repository lint gate closure**: cleared the 154 repository Ruff findings
   across the tracked test surface without weakening import-smoke coverage;
   `python -m ruff check tools tests` now passes, with a 621-test changed
