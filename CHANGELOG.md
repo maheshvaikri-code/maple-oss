@@ -115,6 +115,10 @@
   explicit under static analysis. The event regression passes 5 tests, the
   changed-file mypy check is clean, and the aggregate audit is now
   `143 errors` in 17 files.
+- **Workflow next-node typing**: initialized the execution loop’s next-node
+  value with its declared optional contract before sequential or parallel route
+  assignment. Workflow and replay regressions pass 19 tests, the changed-file
+  mypy check is clean, and the aggregate audit is now `142 errors` in 16 files.
 - **Repository formatter gate closure**: normalized the tracked `maple/`
   source tree with the configured Black and isort profiles. Both checks are
   now idempotent, the focused runtime gate remains `240 passed`, and a fresh
