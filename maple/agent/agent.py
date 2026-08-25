@@ -23,13 +23,26 @@ import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Callable, Dict, List, Optional, TypeVar, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    TypeVar,
+    Union,
+    cast,
+)
 
 from ..broker.broker import MessageBroker
 from ..core.message import Message
 from ..core.result import Result
 from ..core.types import Priority
 from .config import Config
+
+if TYPE_CHECKING:
+    from ..communication.streaming import Stream
 
 # Type variables for handlers
 T = TypeVar("T")
@@ -46,14 +59,14 @@ class Agent:
     """
 
     # Shared agent registry singleton
-    _shared_registry = None
+    _shared_registry: Optional[Any] = None
 
-    def __init__(self, config: Config, broker: Optional[MessageBroker] = None):
+    def __init__(self, config: Config, broker: Optional[MessageBroker] = None) -> None:
         self.config = config
         self.agent_id = config.agent_id
         self.capabilities = getattr(config, "capabilities", [])
-        self.registry = None
-        self._crypto_manager = None
+        self.registry: Optional[Any] = None
+        self._crypto_manager: Optional[Any] = None
 
         # Auto-detect broker type from broker_url
         if broker:
@@ -80,11 +93,11 @@ class Agent:
             self.broker = MessageBroker(config)
 
         self.running = False
-        self.message_queue = queue.Queue()
-        self.handler_thread = None
-        self.message_handlers = {}
-        self.topic_handlers = {}
-        self.stream_handlers = {}
+        self.message_queue: queue.Queue[Message] = queue.Queue()
+        self.handler_thread: Optional[threading.Thread] = None
+        self.message_handlers: Dict[str, Callable[[Message], Optional[Message]]] = {}
+        self.topic_handlers: Dict[str, Callable[[Message], Optional[Message]]] = {}
+        self.stream_handlers: Dict[str, Callable[[Message], None]] = {}
         self.executor = ThreadPoolExecutor(max_workers=10)
 
         # Agent metrics
@@ -208,7 +221,7 @@ class Agent:
         correlation_id = message.metadata["correlationId"]
 
         # Create a response queue for this request
-        response_queue = queue.Queue()
+        response_queue: queue.Queue[Message] = queue.Queue()
 
         # Register a temporary handler for the response
         def response_handler(response: Message) -> None:
@@ -501,7 +514,9 @@ class Agent:
             link_id = message.metadata["linkId"]
         else:
             # Find an existing link
-            links_result = self.broker.link_manager.get_links_for_agent(self.agent_id)
+            links_result = cast(Any, self.broker.link_manager).get_links_for_agent(
+                self.agent_id
+            )
             if links_result.is_ok():
                 links = links_result.unwrap()
                 for link in links:
@@ -522,7 +537,7 @@ class Agent:
         # Send the message
         return self.send(linked_message)
 
-    def _get_crypto_manager(self):
+    def _get_crypto_manager(self) -> Any:
         """Get or create a CryptographyManager for this agent."""
         if self._crypto_manager is None:
             try:
@@ -548,7 +563,7 @@ class Agent:
                         encrypted_nonce, security_config.private_key
                     )
                     if result.is_ok():
-                        return result.unwrap() == original_nonce
+                        return bool(result.unwrap() == original_nonce)
             except Exception:
                 pass
         # Fallback to base64 for compatibility
@@ -569,7 +584,7 @@ class Agent:
                 if security_config and security_config.public_key:
                     result = crypto.encrypt_data(nonce, security_config.public_key)
                     if result.is_ok():
-                        return result.unwrap()
+                        return cast(str, result.unwrap())
             except Exception:
                 pass
         # Fallback to base64 for compatibility
@@ -580,7 +595,9 @@ class Agent:
         except Exception:
             return nonce
 
-    def _verify_link_params(self, encrypted_params: str, params: dict) -> bool:
+    def _verify_link_params(
+        self, encrypted_params: str, params: Dict[str, Any]
+    ) -> bool:
         """Verify link parameters by decrypting and comparing."""
         try:
             import base64
@@ -588,7 +605,7 @@ class Agent:
 
             decoded = base64.b64decode(encrypted_params.encode()).decode()
             decoded_params = json.loads(decoded)
-            return decoded_params == params
+            return bool(decoded_params == params)
         except Exception:
             return False
 
