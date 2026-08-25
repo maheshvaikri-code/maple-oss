@@ -79,7 +79,7 @@ privileged action without approval.
 
 Done (with evidence): G0 brief, G1 ADR, G2 plan, committed G3 feature slices
 through bounded workflow execution recovery, and release-hardening evidence
-through slice 33, including MCP
+through slice 36, including MCP
 interoperability, bounded artifacts, native LLM streaming, deterministic async
 tool result ordering, durable approval, workflow fan-out/fan-in, checkpoint
 history, bounded conversation sessions, and retrieval/source evaluation; slice
@@ -116,7 +116,8 @@ executable. The full repository regression remains incomplete after the
 formatter run reached 86% with no reported assertion failure before a bounded
 manual interruption. Slices 29–31's explicit Python 3.10-target type audit now
 reports `277 errors in 43 files`; slice 33's follow-up audit now reports
-`266 errors in 40 files`, down from the pre-cleanup baseline; the
+`266 errors in 40 files`, down from the pre-cleanup baseline; slice 36's
+follow-up audit now reports `239 errors in 37 files`; the
 installed mypy 2.3 rejects the configured Python 3.8 target, so the support
 matrix/toolchain decision remains open. Dependency-audit disposition and
 unavailable independent fresh-context verification remain open.
