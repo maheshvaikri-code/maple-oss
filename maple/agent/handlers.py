@@ -16,7 +16,7 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 # maple/agent/handlers.py
 # Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
 
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from ..core.message import Message
 from ..core.result import Result
@@ -29,7 +29,7 @@ class MessageHandler:
 
     def __init__(
         self, message_type: str, handler_func: Callable[[Message], Optional[Message]]
-    ):
+    ) -> None:
         self.message_type = message_type
         self.handler_func = handler_func
 
@@ -43,7 +43,7 @@ class MessageHandler:
         Returns:
             True if this handler can handle the message
         """
-        return message.message_type == self.message_type
+        return bool(message.message_type == self.message_type)
 
     def handle(self, message: Message) -> Result[Optional[Message], Dict[str, Any]]:
         """
@@ -76,8 +76,8 @@ class HandlerRegistry:
     Registry for message handlers.
     """
 
-    def __init__(self):
-        self.handlers = {}
+    def __init__(self) -> None:
+        self.handlers: Dict[str, MessageHandler] = {}
 
     def register(
         self, message_type: str, handler: Callable[[Message], Optional[Message]]
@@ -101,7 +101,8 @@ class HandlerRegistry:
         Returns:
             The handler if found, None otherwise
         """
-        return self.handlers.get(message_type)
+        handler = self.handlers.get(message_type)
+        return handler
 
     def handle_message(
         self, message: Message
@@ -126,6 +127,6 @@ class HandlerRegistry:
             }
         )
 
-    def list_handlers(self) -> list:
+    def list_handlers(self) -> List[str]:
         """Get a list of all registered message types."""
         return list(self.handlers.keys())
