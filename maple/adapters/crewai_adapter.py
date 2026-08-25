@@ -18,19 +18,25 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 import time
 from typing import Any, Dict, List, Optional
 
+from ..core.message import Message
+from ..core.result import Result
+from ..core.types import Priority
+
 try:
-    from crewai import Agent as CrewAgent
-    from crewai import Crew
-    from crewai import Task as CrewTask
+    from crewai import Agent as _CrewAgent  # noqa: F401
+    from crewai import Crew as _Crew  # noqa: F401
+    from crewai import Task as _CrewTask  # noqa: F401
 
     CREWAI_AVAILABLE = True
 except ImportError:
-    CrewAgent = None
-    CrewTask = None
-    Crew = None
     CREWAI_AVAILABLE = False
-from ..core.message import Message
-from ..core.result import Result
+
+CrewAgent: Any = globals().get("_CrewAgent", Any)
+CrewTask: Any = globals().get("_CrewTask", Any)
+Crew: Any = globals().get("_Crew", object)
+
+if not CREWAI_AVAILABLE:
+    Crew = object
 
 
 class CrewAIAdapter:
@@ -39,10 +45,10 @@ class CrewAIAdapter:
     Enhances CrewAI with MAPLE's superior resource management and type safety.
     """
 
-    def __init__(self, maple_agent):
+    def __init__(self, maple_agent: Any):
         self.maple_agent = maple_agent
-        self.crew_agents = {}
-        self.active_crews = {}
+        self.crew_agents: Dict[str, Any] = {}
+        self.active_crews: Dict[str, Any] = {}
 
     def create_maple_enhanced_crew_agent(
         self, role: str, goal: str, backstory: str
@@ -98,6 +104,90 @@ class CrewAIAdapter:
             },
         ]
 
+    def _maple_communicate_tool(
+        self,
+        target_agent: str,
+        message: str,
+        priority: str = "MEDIUM",
+        secure_link: bool = False,
+    ) -> Dict[str, Any]:
+        """Send a CrewAI tool message through the MAPLE agent boundary."""
+        try:
+            maple_message = Message(
+                message_type="CREWAI_FUNCTION_CALL",
+                receiver=target_agent,
+                priority=Priority(priority),
+                payload={"message": message},
+            )
+            if secure_link:
+                link_result = self.maple_agent.establish_link(target_agent)
+                if link_result.is_ok():
+                    maple_message.metadata["linkId"] = link_result.unwrap()
+            result = self.maple_agent.send(maple_message)
+            if result.is_err():
+                return {"status": "error", "error": result.unwrap_err()}
+            return {"status": "success", "message_id": result.unwrap()}
+        except Exception as e:
+            return {
+                "status": "error",
+                "errorType": "MAPLE_FUNCTION_ERROR",
+                "message": str(e),
+            }
+
+    def _maple_resource_tool(
+        self, resource_type: str, amount: Any, priority: str = "MEDIUM"
+    ) -> Dict[str, Any]:
+        """Request a resource through an optional injected resource manager."""
+        manager = getattr(self.maple_agent, "resource_manager", None)
+        if manager is None:
+            return {
+                "status": "error",
+                "errorType": "RESOURCE_MANAGEMENT_UNAVAILABLE",
+                "message": "No MAPLE resource manager is configured",
+            }
+        try:
+            resource_range = {"min": amount, "preferred": amount, "max": amount}
+            if resource_type in {"compute", "memory", "bandwidth", "tokens"}:
+                request: Dict[str, Any] = {resource_type: resource_range}
+            else:
+                request = {"custom": {resource_type: resource_range}}
+            request["priority"] = priority
+            result = manager.allocate(request)
+            if result.is_err():
+                return {"status": "error", "error": result.unwrap_err()}
+            return {"status": "success", "allocation": result.unwrap().to_dict()}
+        except Exception as e:
+            return {
+                "status": "error",
+                "errorType": "RESOURCE_REQUEST_ERROR",
+                "message": str(e),
+            }
+
+    def _maple_secure_link_tool(self, target_agent: str) -> Dict[str, Any]:
+        """Establish a secure MAPLE link or return a structured failure."""
+        try:
+            result = self.maple_agent.establish_link(target_agent)
+            if result.is_err():
+                return {"status": "error", "error": result.unwrap_err()}
+            return {"status": "success", "link_id": result.unwrap()}
+        except Exception as e:
+            return {
+                "status": "error",
+                "errorType": "LINK_ESTABLISHMENT_ERROR",
+                "message": str(e),
+            }
+
+    @staticmethod
+    def _map_crew_priority(crew_task: Any) -> Priority:
+        """Map a CrewAI task priority to MAPLE's bounded priority enum."""
+        value = getattr(crew_task, "priority", "MEDIUM")
+        if isinstance(value, Priority):
+            return value
+        try:
+            return Priority(str(value).upper())
+        except ValueError:
+            return Priority.MEDIUM
+
     def translate_crew_task_to_maple(self, crew_task: CrewTask) -> Message:
         """
         Convert CrewAI task to MAPLE message with enhanced capabilities.
@@ -142,16 +232,20 @@ class MAPLEEnhancedCrew(Crew):
     CrewAI Crew enhanced with MAPLE protocol capabilities.
     """
 
-    def __init__(self, agents, tasks, maple_agent, **kwargs):
+    def __init__(
+        self, agents: List[Any], tasks: List[Any], maple_agent: Any, **kwargs: Any
+    ) -> None:
         super().__init__(agents=agents, tasks=tasks, **kwargs)
         self.maple_agent = maple_agent
-        self.performance_metrics = {
+        self.performance_metrics: Dict[str, Any] = {
             "messages_processed": 0,
             "average_latency": 0,
             "error_recovery_count": 0,
         }
 
-    def kickoff(self, inputs: Dict[str, Any] = None) -> Result[str, Dict[str, Any]]:
+    def kickoff(
+        self, inputs: Optional[Dict[str, Any]] = None
+    ) -> Result[str, Dict[str, Any]]:
         """
         Enhanced kickoff with MAPLE performance and error handling.
         """
@@ -184,7 +278,7 @@ class MAPLEEnhancedCrew(Crew):
                 }
             )
 
-    def _establish_maple_links(self):
+    def _establish_maple_links(self) -> None:
         """
         Establish secure MAPLE links between all crew agents.
         """
