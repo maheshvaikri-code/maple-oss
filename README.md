@@ -46,6 +46,7 @@ Most agent frameworks give you either **infrastructure** (messaging, security, f
 - **Capability-Aware Provider Fallback (preview)** — Select providers by declared tool/streaming/structured-output/context capabilities with deterministic initialization fallback.
 - **Provider-Agnostic LLM Streaming (preview)** — Consume bounded text, tool-call, and finish chunks through one async contract; OpenAI-compatible and Anthropic providers use native async streams when available, with a completion-backed fallback.
 - **Bounded Async Tool Fan-Out (preview)** — Execute independent tool calls concurrently within the per-step cap while preserving deterministic tool-message order and isolating worker failures.
+- **Fail-Closed Tool Approval (preview)** — Approval-required tools never execute without an explicit callback approval; missing callbacks, callback failures, and denials become typed tool results.
 - **Interop Envelope + Doctor CLI (preview)** — Strict adapter round-trip envelopes and a network-free `maple doctor --json` readiness report for the runtime surfaces.
 - **Artifacts and Code Blocks (preview)** — Store immutable SHA-256-addressed files with bounded in-memory or file-backed stores, and extract Markdown code blocks as data without executing them.
 - **Three-Tier Memory** — Working memory (context window), episodic memory (task history), semantic memory (learned facts). LLM-assisted summarization when context fills up.
@@ -482,7 +483,7 @@ python -m pytest tests/security/ -v       # Security tests
 python -m pytest tests/broker/ -v         # Broker tests
 ```
 
-Current status: focused LLM/autonomy/CLI regression **182 passed**, including
+Current status: focused LLM/autonomy/CLI regression **183 passed**, including
 focused MCP/governance and artifact tests, and local compile/doctor/package
 preflight gates pass. The full repository regression remains open; the latest
 bounded attempt reported **1049 passed** before interruption in slow Doctrine

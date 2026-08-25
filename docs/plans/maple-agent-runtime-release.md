@@ -20,6 +20,7 @@
 | 11 | Provider-agnostic LLM stream contract | Chief Architect / ML Engineer / Backend | `docs/adr/009-*`, LLM provider base, stream tests, README, changelog | Text chunk bounds, tool-call deltas, finish event, completion error propagation, async iterator contract | done: stream suite `2 passed`; changed provider Ruff/Flake8 and compile pass |
 | 12 | Provider-native LLM streaming adapters | ML Engineer / Backend | `docs/adr/010-*`, OpenAI/Anthropic providers, native stream tests, README, changelog | Native provider events, bounded text, tool-call fragments, typed request errors, compatibility fallback | done: native stream suite `5 passed`; changed provider Ruff/Flake8 and compile pass |
 | 13 | Bounded async tool fan-out | Backend / ML Engineer | `docs/adr/011-*`, async ReAct loop, agent regression tests, README, changelog | Concurrent independent handlers, per-step cap, deterministic result order, worker error isolation | done: agent suite `15 passed`; changed agent Ruff/Flake8 and compile pass |
+| 14 | Fail-closed autonomous approval | Security Reviewer / Backend | `docs/adr/012-*`, autonomous tool boundary, approval regression, README, changelog | Missing callback denial, callback exception denial, explicit denial, handler side-effect absence | done: approval regression included in `16` agent tests; changed agent Ruff/Flake8 and compile pass |
 
 ## Threat sketch
 
@@ -54,13 +55,14 @@ privileged action without approval.
 
 ## Status snapshot
 
-Done (with evidence): G0 brief, G1 ADR, G2 plan, and thirteen G3 feature
-slices through bounded async tool fan-out, including MCP interoperability,
-bounded artifacts, native LLM streaming, and deterministic async tool result
-ordering; slice review/QA artifacts are filed.
+Done (with evidence): G0 brief, G1 ADR, G2 plan, and fourteen G3 feature
+slices through fail-closed autonomous approval, including MCP interoperability,
+bounded artifacts, native LLM streaming, deterministic async tool result
+ordering, and approval-side-effect protection; slice review/QA artifacts are
+filed.
 Release hardening remains in progress.
-Focused feature gates (182 LLM/autonomy/CLI tests, including 22 MCP, 5
-artifact, 5 stream, and the async tool fan-out regression),
+Focused feature gates (183 LLM/autonomy/CLI tests, including 22 MCP, 5
+artifact, 5 stream, async tool fan-out, and fail-closed approval regressions),
 compile, changed-surface Ruff/Flake8, metadata-clean wheel/sdist builds, Twine
 checks, a clean-venv wheel doctor smoke pass, and a fresh `.[dev,security]`
 environment with `pip check` reporting no broken requirements all pass.

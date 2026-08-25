@@ -1,6 +1,7 @@
 """Tests for the AutonomousAgent with ReAct loop."""
 
 import asyncio
+import json
 import threading
 
 import pytest
@@ -382,6 +383,41 @@ class TestAutonomousAgent:
         result = agent.pursue_goal("Write some state")
         assert result.is_ok()
         assert "write_state" in approved_calls
+
+    def test_required_tool_fails_closed_without_approval_callback(self):
+        config = make_config()
+        auto_config = make_auto_config()
+        agent = AutonomousAgent(config, auto_config)
+        calls = []
+
+        from maple.autonomy.tools import Tool
+
+        agent.register_tool(Tool(
+            name="dangerous",
+            description="A tool that needs approval",
+            parameters={"type": "object"},
+            handler=lambda: calls.append("executed") or Result.ok({"ok": True}),
+            requires_approval=True,
+        ))
+        agent.llm = MockLLMProvider(
+            auto_config.llm,
+            responses=[
+                LLMResponse(
+                    content="Requesting approval.",
+                    tool_calls=[ToolCall("call-approval", "dangerous", {})],
+                    finish_reason="tool_calls",
+                ),
+                LLMResponse(content="The action was blocked.", finish_reason="stop"),
+            ],
+        )
+
+        result = agent.pursue_goal("Run the dangerous tool")
+
+        assert result.is_ok()
+        tool_result = result.unwrap().reasoning_trace[0].tool_results[0]
+        assert tool_result.is_error is True
+        assert json.loads(tool_result.content)["errorType"] == "APPROVAL_REQUIRED"
+        assert calls == []
 
     def test_get_active_goals(self):
         config = make_config()

@@ -26,6 +26,8 @@ The feature program now includes:
   typed request errors and compatibility fallback (ADR-010).
 - bounded asynchronous tool fan-out with deterministic result ordering and
   worker-error isolation (ADR-011).
+- fail-closed autonomous approval for missing callbacks, callback errors, and
+  denials without handler side effects (ADR-012).
 
 Slice-level review artifacts are filed in `docs/reviews/` and corresponding QA
 artifacts in `docs/qa/`. No website, cloud, external publication, license, or
@@ -35,12 +37,15 @@ new dependency change was made.
 
 ```text
 Focused LLM/autonomy/CLI regression:
-182 passed, 1 warning in 0.80s
+183 passed, 1 warning in 0.84s
 
 Focused provider-stream regression:
 5 passed, 1 warning in 0.03s
 
 Focused async tool fan-out regression:
+1 passed, 1 warning in 0.02s
+
+Focused approval-boundary regression:
 1 passed, 1 warning in 0.02s
 
 Focused MCP/governance regression:

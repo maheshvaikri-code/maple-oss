@@ -38,6 +38,10 @@
   now execute independent tool calls concurrently within the existing
   per-step cap, preserve original tool-call order for the next model turn, and
   isolate worker exceptions as typed tool results.
+- **Fail-closed autonomous approval** (`maple.autonomy.agent`): tools marked
+  as approval-required now return typed `APPROVAL_REQUIRED`,
+  `APPROVAL_ERROR`, or `APPROVAL_DENIED` results without invoking handlers
+  unless an approval callback explicitly approves the action.
 - **Release metadata hardening**: `pyproject.toml` is now the single source
   for package metadata, the legacy `setup.py` delegates to it, and the source
   manifest includes only files present in the repository. Wheel/sdist builds

@@ -291,14 +291,43 @@ class AutonomousAgent(Agent):
             tool.requires_approval
             or tool_call.name in self.autonomy_config.require_approval_for
         ):
-            if self._approval_callback:
-                approved = self._approval_callback(tool_call.name, tool_call.arguments)
-                if not approved:
-                    return ToolResult(
-                        tool_call_id=tool_call.id,
-                        content='{"error": "Action not approved by human operator"}',
-                        is_error=True,
-                    )
+            if self._approval_callback is None:
+                return ToolResult(
+                    tool_call_id=tool_call.id,
+                    content=json.dumps({
+                        "errorType": "APPROVAL_REQUIRED",
+                        "message": "Tool execution requires approval.",
+                        "details": {"tool": tool_call.name},
+                    }),
+                    is_error=True,
+                )
+            try:
+                approved = self._approval_callback(
+                    tool_call.name, tool_call.arguments
+                )
+            except Exception as exc:
+                return ToolResult(
+                    tool_call_id=tool_call.id,
+                    content=json.dumps({
+                        "errorType": "APPROVAL_ERROR",
+                        "message": "Approval failed closed.",
+                        "details": {
+                            "tool": tool_call.name,
+                            "exception": type(exc).__name__,
+                        },
+                    }),
+                    is_error=True,
+                )
+            if not approved:
+                return ToolResult(
+                    tool_call_id=tool_call.id,
+                    content=json.dumps({
+                        "errorType": "APPROVAL_DENIED",
+                        "message": "Action was not approved by the operator.",
+                        "details": {"tool": tool_call.name},
+                    }),
+                    is_error=True,
+                )
 
         exec_result = tool.execute(**tool_call.arguments)
         if exec_result.is_ok():
