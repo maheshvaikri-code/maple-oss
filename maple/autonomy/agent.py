@@ -24,6 +24,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from ..agent.agent import Agent
 from ..agent.config import Config
+from ..broker.broker import MessageBroker
 from ..core.result import Result
 from ..llm.provider import LLMProvider
 from ..llm.registry import LLMProviderRegistry
@@ -113,8 +114,8 @@ class AutonomousAgent(Agent):
         self,
         config: Config,
         autonomy_config: AutonomousConfig,
-        broker=None,
-    ):
+        broker: Optional[MessageBroker] = None,
+    ) -> None:
         super().__init__(config, broker)
         self.autonomy_config = autonomy_config
 
@@ -663,8 +664,15 @@ class AutonomousAgent(Agent):
                     ),
                     is_error=True,
                 )
+            approval_callback = self._approval_callback
+            if approval_callback is None:
+                return self._approval_error(
+                    tool_call.id,
+                    "APPROVAL_REQUIRED",
+                    "Tool execution requires approval.",
+                )
             try:
-                approved = self._approval_callback(tool_call.name, tool_call.arguments)
+                approved = approval_callback(tool_call.name, tool_call.arguments)
             except Exception as exc:
                 return ToolResult(
                     tool_call_id=tool_call.id,
@@ -823,7 +831,9 @@ Instructions:
             return Result.err(guardrails.unwrap_err())
         return Result.ok(parsed.unwrap())
 
-    def _reflect(self, goal: Goal, messages: List[ChatMessage], step_num: int) -> Dict:
+    def _reflect(
+        self, goal: Goal, messages: List[ChatMessage], step_num: int
+    ) -> Dict[str, Any]:
         """Ask the LLM to reflect on progress."""
         reflection_prompt = (
             f'Reflect on your progress toward the goal: "{goal.description}"\n'
@@ -846,12 +856,14 @@ Instructions:
                 # Try to extract JSON from the response
                 if "{" in content:
                     json_str = content[content.index("{") : content.rindex("}") + 1]
-                    return json.loads(json_str)
+                    reflection = json.loads(json_str)
+                    if isinstance(reflection, dict):
+                        return reflection
             except (json.JSONDecodeError, ValueError):
                 pass
         return {"should_stop": False}
 
-    def decompose_goal(self, goal: Goal) -> Result[List[Goal], Dict]:
+    def decompose_goal(self, goal: Goal) -> Result[List[Goal], Dict[str, Any]]:
         """Use LLM to decompose a complex goal into sub-goals."""
         messages = [
             ChatMessage(
@@ -865,7 +877,7 @@ Instructions:
         ]
         result = self.llm.complete(messages)
         if result.is_err():
-            return result
+            return Result.err(result.unwrap_err())
         try:
             content = result.unwrap().content or "[]"
             if "[" in content:
@@ -1021,8 +1033,8 @@ Instructions:
                     return_exceptions=True,
                 )
                 for tool_call, tool_result in zip(tool_calls, tool_results):
-                    if isinstance(tool_result, Exception):
-                        tool_result = ToolResult(
+                    if isinstance(tool_result, BaseException):
+                        normalized_result = ToolResult(
                             tool_call_id=tool_call.id,
                             content=json.dumps(
                                 {
@@ -1036,20 +1048,22 @@ Instructions:
                             ),
                             is_error=True,
                         )
-                    step.tool_results.append(tool_result)
+                    else:
+                        normalized_result = tool_result
+                    step.tool_results.append(normalized_result)
 
                     messages.append(
                         ChatMessage(
                             role=ChatRole.TOOL,
-                            content=tool_result.content,
-                            tool_call_id=tool_result.tool_call_id,
+                            content=normalized_result.content,
+                            tool_call_id=normalized_result.tool_call_id,
                             name=tool_call.name,
                         )
                     )
 
                     self.memory.working.add(
                         key=f"tool:{tool_call.name}:{step_num}",
-                        content=tool_result.content[:500],
+                        content=normalized_result.content[:500],
                     )
             else:
                 messages.append(
