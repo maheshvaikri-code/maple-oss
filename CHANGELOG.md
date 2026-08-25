@@ -10,6 +10,12 @@
 
 ### Additions
 
+- **Optional bounded Protobuf serialization**: implemented both directions of
+  `SerializationFormat.PROTOBUF` using an optional `google.protobuf.Struct`
+  envelope. MAPLE preserves its existing JSON-compatible special-value handling,
+  caps inbound and outbound payloads at 1 MiB, rejects malformed envelopes, and
+  returns `PROTOBUF_UNAVAILABLE` when protobuf is absent. Core/autonomy coverage
+  reports `240 passed in 3.37s`; no dependency was added.
 - **Typed tool contracts**: added optional Pydantic-style `Tool.input_model`
   and `Tool.output_model` boundaries. MAPLE now publishes model-derived tool
   schemas, validates inputs before handler execution, normalizes validated

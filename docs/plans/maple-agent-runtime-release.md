@@ -82,6 +82,7 @@
 | 69 | Repository-wide legacy import-boundary closure | Backend / QA / Release | Doctrine adapter and security authentication/separation imports, changelog, review/QA artifacts | Affected regression, repository Ruff, changed-file Black/isort/mypy/compile, diff check | done: code commit `0ea2179`; affected suite `107 passed in 4.02s`; Ruff reports zero findings; changed files pass Black/isort/mypy/compile; optional JWT behavior remains covered |
 | 70 | Typed model output boundary | Backend / QA / Release | autonomy contracts, AutonomousConfig, public exports, contract/agent tests, changelog, review/QA artifacts | Focused contract/agent regression, full autonomy regression, Ruff, Black/isort, mypy, compile, package, doctor, diff check | done: code commit `bf2ca4a`; full autonomy regression `210 passed in 3.37s`; typed-output focused regression included in `28 passed in 0.35s`; wheel/sdist and Twine checks pass; all static/readiness gates pass |
 | 71 | Typed tool input/output contracts | Backend / QA / Release | autonomy contracts/tools, public exports, README/API docs, contract/tool/agent tests, changelog, review/QA artifacts | Typed schema publication, input/output validation, handler side-effect protection, focused/full autonomy regression, static/package/doctor gates | done: code commit `ded4477`; public docs commit `9236bc4`; focused contract/tool/agent regression `43 passed in 0.37s`; full autonomy regression `212 passed in 3.26s`; mypy/Ruff/Black/isort/compile, wheel/sdist, Twine, and doctor gates pass |
+| 72 | Optional bounded Protobuf serialization | Backend / Interop / QA / Release | core serializer, serialization tests, ADR-024, README/API docs, changelog, review/QA artifacts | Protobuf round trip, malformed/oversized input, oversized output, unavailable dependency, core/autonomy regression, static/package/doctor gates | done: code commit `2b8bb57`; core/autonomy regression `240 passed in 3.37s`; Protobuf tests `28 passed in 0.28s`; mypy/Ruff/Black/isort/compile, wheel/sdist, Twine, and doctor gates pass; no dependency added |
 
 ## Threat sketch
 
@@ -280,6 +281,14 @@ suite and fresh independent verification remain open.
 Public surface documentation for the typed tool boundary is recorded in
 commit `9236bc4` across the README and API reference. Website changes remain
 deferred until separately approved.
+
+2026-08-25 optional Protobuf closure: commit `2b8bb57` implements the
+advertised `SerializationFormat.PROTOBUF` path with an optional bounded
+`google.protobuf.Struct` envelope. Core/autonomy coverage reports `240 passed
+in 3.37s`; the serialization suite reports `28 passed in 0.28s`. Malformed,
+oversized, and missing-dependency paths fail closed; no new dependency was
+added. Public serialization documentation and ADR-024 are included in the
+release evidence update.
 
 2026-08-25 exact-current full-suite attempt: commit `ded4477` collected `1276`
 tests and reached `90%` before entering the slow Doctrine gold phase. The

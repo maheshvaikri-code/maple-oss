@@ -41,6 +41,9 @@ The feature program now includes:
 - typed model output and optional typed tool input/output boundaries with
   model-derived schemas, pre-handler validation, normalized handler arguments,
   and validated model instances at the tool boundary.
+- optional bounded Protobuf serialization through a generic `Struct` envelope,
+  with preserved MAPLE special-value handling and explicit unavailable,
+  malformed, and size-limit failures.
 
 Slice-level review artifacts are filed in `docs/reviews/` and corresponding QA
 artifacts in `docs/qa/`. No website, cloud, external publication, license, or
@@ -168,10 +171,14 @@ Doctor:
 - The exact-current repository run on `ded4477` collected `1276` items and
   reached the Doctrine gold phase without failure output, but was bounded and
   interrupted before pytest emitted a final summary.
+- Slice 72 core/autonomy regression reports `240 passed in 3.37s`, including
+  `28 passed in 0.28s` for the Protobuf boundary. Static, package, and doctor
+  checks pass; the exact full repository suite has not yet been rerun after
+  the slice.
 
 ## Verdict
 
-**Feature review:** PASS for the twenty implemented capability slices.
+**Feature review:** PASS for the twenty-one implemented capability slices.
 **Publish readiness:** NOT YET APPROVED. A release manager should close the
 open full-suite and fresh-verifier gates before publishing. The remaining
 Bandit findings are documented low-severity legacy debt; external publication

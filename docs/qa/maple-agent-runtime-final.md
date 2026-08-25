@@ -29,6 +29,7 @@
 | Dependency consistency | PASS | Isolated MAPLE environment is consistent; shared-interpreter conflicts are unrelated and non-authoritative. |
 | Repository-wide lint | PASS | Slice 69 closes the remaining E402 import-boundary debt; broad `ruff check maple` reports zero findings. |
 | Typed tool input/output boundary | PASS | 43 focused contract/tool/agent tests and 212 full-autonomy tests cover model-derived schemas, pre-handler input rejection, normalized handler arguments, validated outputs, and invalid-result failure. |
+| Optional Protobuf serialization boundary | PASS | 28 core serialization tests cover round-trip special values, malformed envelopes, inbound/outbound 1 MiB limits, and unavailable-dependency failure; core/autonomy regression reports 240 passed. |
 | Independent review | OPEN | Fresh verifier sessions are unavailable in this tool context. |
 | External publish / website | NOT RUN | Explicitly outside current authorization and scope. |
 
@@ -145,6 +146,21 @@
   session was interrupted after sparse gold-test progress without a pytest
   summary; this is not a full-suite pass.
 
+## Slice 72 revalidation
+
+- Core/autonomy regression reports `240 passed in 3.37s`; the serialization
+  suite reports `28 passed in 0.28s`.
+- `SerializationFormat.PROTOBUF` now uses an optional bounded
+  `google.protobuf.Struct` envelope around MAPLE's JSON-compatible form. Tuple,
+  set, bytes, and inert-object handling round-trip without arbitrary class
+  reconstruction.
+- Malformed envelopes, inbound and outbound payloads over 1 MiB, and missing
+  protobuf fail closed with structured errors. No runtime dependency was added.
+- Mypy reports no issues in 93 source files; MAPLE Ruff, tools/tests Ruff,
+  Black, isort, compile, wheel/sdist, Twine, and network-free doctor gates pass.
+- The exact repository-wide suite has not yet been rerun after Slice 72; the
+  full-suite and fresh independent-verifier gates remain open.
+
 ## Security conclusions
 
 - No new dependency, credential, cloud call, website mutation, or publication
@@ -160,7 +176,7 @@
 ## Release decision
 
 **QA status: CONDITIONAL / NOT PUBLISH-READY.** The implementation is
-feature-complete for the twenty implemented capability slices, the built wheel
+feature-complete for the twenty-one implemented capability slices, the built wheel
 passes a clean-venv doctor smoke test, and the isolated dependency audit is
 clean. The release gate must remain open for the exact full-suite and
 fresh-verifier checks. No external release action was taken.

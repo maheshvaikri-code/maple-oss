@@ -286,6 +286,28 @@ class Result[T, E]:
         """Deserialize from dictionary."""
 ```
 
+## Serialization Formats
+
+`Serializer` supports JSON, restricted Pickle, optional MessagePack, and
+optional bounded Protobuf envelopes. Protobuf uses a `google.protobuf.Struct`
+envelope around MAPLE's JSON-compatible representation, preserving MAPLE's
+tuple, set, bytes, and inert-object handling without reconstructing arbitrary
+classes. Protobuf input and output are capped at 1 MiB; installations without
+the optional library return `PROTOBUF_UNAVAILABLE`.
+
+```python
+from maple.core.serialization import SerializationFormat, Serializer
+
+serializer = Serializer()
+encoded = serializer.serialize(
+    {"request_id": "r-1", "attempt": 2}, SerializationFormat.PROTOBUF
+)
+if encoded.is_ok():
+    decoded = serializer.deserialize(
+        encoded.unwrap(), SerializationFormat.PROTOBUF
+    )
+```
+
 ## Resource Management
 
 ### ResourceRequest Class
