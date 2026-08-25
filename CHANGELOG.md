@@ -73,6 +73,11 @@
   state behavior. The state regression surface passes 22 tests, the explicit
   changed-file mypy check is clean, and the aggregate audit is now
   `196 errors` in 30 files.
+- **Failure-detection type boundary**: completed circuit-breaker wrapper,
+  detector lifecycle, recovery, callback, and background-loop contracts while
+  preserving failure detection behavior. The dedicated discovery regression
+  passes 14 tests, the explicit changed-file mypy check is clean, and the
+  aggregate audit is now `181 errors` in 29 files.
 - **Repository formatter gate closure**: normalized the tracked `maple/`
   source tree with the configured Black and isort profiles. Both checks are
   now idempotent, the focused runtime gate remains `240 passed`, and a fresh

@@ -20,7 +20,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Callable, Dict, List, Optional, Set
+from typing import Any, Callable, Dict, List, Optional, Set, cast
 
 from ..core.result import Result
 from ..error.circuit_breaker import CircuitBreaker, CircuitState
@@ -68,31 +68,34 @@ class RecoveryAction:
 class CircuitBreakerState:
     """Wrapper around shared CircuitBreaker for backwards compatibility."""
 
-    def __init__(self, agent_id: str, threshold: int = 5):
+    def __init__(self, agent_id: str, threshold: int = 5) -> None:
         self.agent_id = agent_id
-        self._cb = CircuitBreaker(failure_threshold=threshold, reset_timeout=30.0)
+        self._cb: CircuitBreaker[Any, Any] = CircuitBreaker(
+            failure_threshold=threshold, reset_timeout=30.0
+        )
 
     @property
-    def failure_count(self):
-        return self._cb.failure_count
+    def failure_count(self) -> int:
+        return cast(int, self._cb.failure_count)
 
     @property
-    def last_failure_time(self):
-        return self._cb.last_failure_time
+    def last_failure_time(self) -> float:
+        return cast(float, self._cb.last_failure_time)
 
     @property
-    def state(self):
-        return self._cb.state.value.lower()
+    def state(self) -> str:
+        circuit_state = cast(CircuitState, self._cb.state)
+        return cast(str, circuit_state.value).lower()
 
     @property
-    def threshold(self):
-        return self._cb.failure_threshold
+    def threshold(self) -> int:
+        return cast(int, self._cb.failure_threshold)
 
 
 class FailureDetector:
     """Detects and manages agent failures with recovery capabilities."""
 
-    def __init__(self, registry: AgentRegistry, health_monitor: HealthMonitor):
+    def __init__(self, registry: AgentRegistry, health_monitor: HealthMonitor) -> None:
         self.registry = registry
         self.health_monitor = health_monitor
 
@@ -141,7 +144,7 @@ class FailureDetector:
         self.max_consecutive_failures = 3
         self.failure_rate_window = 300  # 5 minutes
 
-    def start_detection(self):
+    def start_detection(self) -> None:
         """Start the failure detection system."""
         with self._lock:
             if self._detecting:
@@ -156,7 +159,7 @@ class FailureDetector:
             # Register health monitor callback
             self.health_monitor.add_health_callback(self._on_health_status_change)
 
-    def stop_detection(self):
+    def stop_detection(self) -> None:
         """Stop the failure detection system."""
         with self._lock:
             self._detecting = False
@@ -206,7 +209,7 @@ class FailureDetector:
 
         return failures
 
-    def _record_failure(self, failure: FailureEvent):
+    def _record_failure(self, failure: FailureEvent) -> None:
         """Record a failure event."""
         with self._lock:
             if failure.agent_id not in self.failure_history:
@@ -292,7 +295,7 @@ class FailureDetector:
         # In a real implementation, this would trigger an actual agent restart
         # For now, we simulate by marking the agent as online after a delay
 
-        def delayed_restart():
+        def delayed_restart() -> None:
             time.sleep(5)  # Simulate restart delay
             # Simulate successful restart
             self.registry.update_agent_status(agent_id, "online", load=0.0)
@@ -335,7 +338,9 @@ class FailureDetector:
 
         return True
 
-    def _on_health_status_change(self, agent_id: str, health_status: HealthStatus):
+    def _on_health_status_change(
+        self, agent_id: str, health_status: HealthStatus
+    ) -> None:
         """Callback for health status changes."""
 
         # Trigger failure detection if health deteriorates
@@ -415,21 +420,23 @@ class FailureDetector:
                 "timestamp": time.time(),
             }
 
-    def add_failure_callback(self, callback: Callable[[FailureEvent], None]):
+    def add_failure_callback(self, callback: Callable[[FailureEvent], None]) -> None:
         """Add a callback to be notified of failure events."""
         self.failure_callbacks.append(callback)
 
     def configure_recovery_action(
         self, failure_type: FailureType, action: RecoveryAction
-    ):
+    ) -> None:
         """Configure a custom recovery action for a failure type."""
         self.recovery_actions[failure_type] = action
 
-    def register_recovery_handler(self, failure_type: FailureType, handler: Callable):
+    def register_recovery_handler(
+        self, failure_type: FailureType, handler: Callable
+    ) -> None:
         """Register a custom recovery handler for a failure type."""
         self._custom_recovery_handlers[failure_type] = handler
 
-    def _update_circuit_breaker(self, agent_id: str):
+    def _update_circuit_breaker(self, agent_id: str) -> None:
         """Update circuit breaker state for an agent after a failure."""
         with self._lock:
             if agent_id not in self._circuit_breakers:
@@ -459,7 +466,7 @@ class FailureDetector:
                 )
             return Result.ok(None)
 
-    def _detection_loop(self):
+    def _detection_loop(self) -> None:
         """Main failure detection loop."""
 
         while self._detecting:
