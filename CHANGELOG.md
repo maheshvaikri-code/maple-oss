@@ -63,6 +63,11 @@
   package validation, and banner contracts without changing their behavior.
   CLI/basic regressions pass 8 tests, the explicit changed-file mypy check is
   clean, and the aggregate audit is now `201 errors` in 33 files.
+- **Serialization/provider registry type boundary**: annotated optional
+  serialization dependency checks, message serialization input, and built-in
+  provider registration lifecycle without changing runtime behavior. The
+  serialization/provider suite passes 32 tests, the explicit changed-file
+  mypy check is clean, and the aggregate audit is now `198 errors` in 31 files.
 - **Repository formatter gate closure**: normalized the tracked `maple/`
   source tree with the configured Black and isort profiles. Both checks are
   now idempotent, the focused runtime gate remains `240 passed`, and a fresh

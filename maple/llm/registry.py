@@ -61,7 +61,7 @@ class LLMProviderRegistry:
         return list(cls._providers.keys())
 
     @classmethod
-    def _ensure_registered(cls):
+    def _ensure_registered(cls) -> None:
         """Auto-register built-in providers on first use."""
         if cls._providers:
             return

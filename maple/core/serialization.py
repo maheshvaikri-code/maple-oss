@@ -63,7 +63,7 @@ class Serializer:
         self.default_format = default_format
         self._check_dependencies()
 
-    def _check_dependencies(self):
+    def _check_dependencies(self) -> None:
         """Check availability of optional serialization libraries."""
         self.msgpack_available = False
         self.protobuf_available = False
@@ -330,7 +330,7 @@ class Serializer:
         else:
             return data
 
-    def serialize_message(self, message) -> Result[bytes, Dict[str, Any]]:
+    def serialize_message(self, message: Any) -> Result[bytes, Dict[str, Any]]:
         """
         Serialize a MAPLE message.
 
