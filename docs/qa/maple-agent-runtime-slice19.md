@@ -1,8 +1,7 @@
-# QA + Security - MAPLE Agent Runtime Slice 19 @ working tree
+# QA + Security - MAPLE Agent Runtime Slice 19 @ `0648efa`
 
 **QA Engineer · Security Reviewer · Date:** 2026-08-24
-**Build under test:** working tree after Slice 19 implementation; package
-version `1.1.3`
+**Build under test:** exact commit `0648efa`; package version `1.1.3`
 
 ## Acceptance criteria verification
 
@@ -52,7 +51,7 @@ plugin autoload is disabled.
 
 | # | Repro steps | Severity | Fixed @ | Re-verified | Regression test |
 |---|---|---|---|---|---|
-| 1 | Load a file containing only `session_id` | MAJOR boundary gap | working tree | `9 passed` | `test_file_session_malformed_payload_fails_closed` |
+| 1 | Load a file containing only `session_id` | MAJOR boundary gap | `0648efa` | `9 passed` | `test_file_session_malformed_payload_fails_closed` |
 
 The parser was tightened to require the complete persisted snapshot shape;
 malformed files now fail closed without creating state.

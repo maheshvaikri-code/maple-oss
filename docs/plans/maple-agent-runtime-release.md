@@ -25,7 +25,7 @@
 | 16 | Durable approval requests and one-time decisions | Chief Architect / Backend / Security | `docs/adr/014-*`, approval stores/agent boundary/tests, API docs, README, changelog | Bounded JSON request, file restart persistence, CAS decision, fail-closed pending state, one-time consume, handler side-effect protection | done: commit `84830a7`; approval/agent `21 passed`; combined feature gate `192 passed` |
 | 17 | Dependency-free vector retrieval seam | ML Engineer / Backend | `docs/adr/015-*`, retrieval index/tests, API docs, README, changelog | Supplied embedding contract, finite/dimension/zero validation, one-vector-per-chunk atomic ingestion, deterministic cosine ranking, quotas, source citations | done: commit `2623d74`; focused retrieval `10 passed`; combined feature gate `196 passed` |
 | 18 | Bounded workflow checkpoint history | Backend / ML Engineer | `docs/adr/016-*`, workflow history decorator/tests, API docs, README, changelog | Immutable version snapshots, bounded retention, deterministic history limits, underlying store recovery unchanged, no replay claim | done: commit `ef52cfe`; focused workflow `16 passed`; combined feature gate `199 passed` |
-| 19 | Bounded conversation session store | Chief Architect / Backend / Security | `docs/adr/017-*`, session stores/tests, autonomy exports, API docs, README, changelog | Validated IDs/roles, bounded messages and metadata, immutable snapshots, atomic file restart persistence, optimistic append conflicts, no replay claim | done: pending commit; focused sessions `9 passed`; combined feature gate `208 passed` |
+| 19 | Bounded conversation session store | Chief Architect / Backend / Security | `docs/adr/017-*`, session stores/tests, autonomy exports, API docs, README, changelog | Validated IDs/roles, bounded messages and metadata, immutable snapshots, atomic file restart persistence, optimistic append conflicts, no replay claim | done: commit `0648efa`; focused sessions `9 passed`; combined feature gate `208 passed` |
 | 19 | Bounded conversation session store | Chief Architect / Backend / Security | `docs/adr/017-*`, session stores/tests, autonomy exports, API docs, README, changelog | Validated IDs/roles, bounded messages and metadata, immutable snapshots, atomic file restart persistence, optimistic append conflicts, no replay claim | doing: design accepted; implementation next |
 
 ## Threat sketch
@@ -67,9 +67,8 @@ interoperability, bounded artifacts, native LLM streaming, deterministic async
 tool result ordering, durable approval, and workflow fan-out/fan-in; slice
 review/QA artifacts are filed. Slice 18 bounded workflow history is committed
 and verified.
-Release hardening remains in progress. Slice 19 is implemented and verified in
-the working tree; agent binding and the run-server surface remain follow-on
-slices pending commit.
+Release hardening remains in progress. Slice 19 is committed and verified;
+agent binding and the run-server surface remain follow-on slices.
 Focused feature gates (199 LLM/autonomy/CLI tests, including 22 MCP, 5
 artifact, 5 stream, async tool fan-out, durable approval, workflow fan-out,
 vector retrieval, and checkpoint-history regressions),

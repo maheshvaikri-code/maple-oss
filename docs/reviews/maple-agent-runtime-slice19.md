@@ -1,4 +1,4 @@
-# Code Review - MAPLE Agent Runtime Slice 19 @ working tree
+# Code Review - MAPLE Agent Runtime Slice 19 @ `0648efa`
 
 **Reviewer role:** Code Reviewer · **Date:** 2026-08-24
 **Reviewed against:** [brief](../briefs/maple-agent-runtime-release.md),
