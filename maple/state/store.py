@@ -16,10 +16,8 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 # maple/state/store.py
 # Creator: Mahesh Vaikri
 
-"""
-State Storage for MAPLE
-Provides distributed state management with different storage backends
-"""
+# State Storage for MAPLE.
+# Provides distributed state management with different storage backends.
 
 import json
 import logging

@@ -16,15 +16,13 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 # maple/security/audit.py
 # Creator: Mahesh Vaikri
 
-"""
-Security audit logging and compliance for MAPLE.
-"""
+# Security audit logging and compliance for MAPLE.
 
 import json
 import threading
 import time
 import uuid
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional, cast

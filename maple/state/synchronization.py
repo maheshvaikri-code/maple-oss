@@ -16,17 +16,15 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 # maple/state/synchronization.py
 # Creator: Mahesh Vaikri
 
-"""
-State Synchronization for MAPLE
-Provides distributed state synchronization between agents
-"""
+# State Synchronization for MAPLE.
+# Provides distributed state synchronization between agents.
 
 import logging
 import threading
 import time
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any, Dict, Optional, Set
 
 from ..core.message import Message
 from ..core.result import Result

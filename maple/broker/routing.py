@@ -16,17 +16,15 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 # maple/broker/routing.py
 # Creator: Mahesh Vaikri
 
-"""
-Message Routing for MAPLE Brokers
-Provides intelligent message routing and load balancing
-"""
+# Message Routing for MAPLE Brokers.
+# Provides intelligent message routing and load balancing.
 
 import random
 import threading
 import time
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from ..core.message import Message
 from ..core.result import Result

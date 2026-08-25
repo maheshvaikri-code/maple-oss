@@ -16,16 +16,14 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 # maple/communication/request_response.py
 # Creator: Mahesh Vaikri
 
-"""
-Request-Response Communication Pattern for MAPLE
-Provides structured request-response interactions between agents
-"""
+# Request-Response Communication Pattern for MAPLE.
+# Provides structured request-response interactions between agents.
 
 import threading
 import time
 import uuid
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Optional, TypedDict, cast
+from typing import Any, Dict, Optional, TypedDict, cast
 
 from ..core.message import Message
 from ..core.result import Result

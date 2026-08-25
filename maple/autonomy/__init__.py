@@ -13,7 +13,7 @@ received a copy of the GNU Affero General Public License along with MAPLE - Mult
 Language Engine. If not, see <https://www.gnu.org/licenses/>.
 """
 
-"""MAPLE Autonomy Layer - Autonomous agentic AI capabilities."""
+# MAPLE Autonomy Layer - Autonomous agentic AI capabilities.
 
 from .agent import AutonomousAgent, AutonomousConfig, Goal, ReasoningStep
 from .approval import (

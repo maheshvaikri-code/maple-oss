@@ -16,10 +16,8 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 # maple/communication/pubsub.py
 # Creator: Mahesh Vaikri
 
-"""
-Publish-Subscribe Communication Pattern for MAPLE
-Provides event-driven messaging between agents
-"""
+# Publish-Subscribe Communication Pattern for MAPLE.
+# Provides event-driven messaging between agents.
 
 import threading
 import time
