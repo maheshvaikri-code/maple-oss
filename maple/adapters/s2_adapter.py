@@ -44,7 +44,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass
-from typing import Any, AsyncIterator, Callable, Dict, List, Optional
+from typing import Any, AsyncIterator, Callable, Dict, List, Optional, cast
 
 from ..core.message import Message
 from ..core.result import Result
@@ -96,7 +96,7 @@ class S2Broker:
     - Topic-based pub/sub via dedicated topic streams
     """
 
-    def __init__(self, config: S2Config):
+    def __init__(self, config: S2Config) -> None:
         if not S2_AVAILABLE:
             raise ImportError(
                 "S2 SDK not available. Install with: pip install streamstore"
@@ -156,15 +156,16 @@ class S2Broker:
             self._client = None
         logger.info("S2Broker disconnected")
 
-    async def _ensure_stream(self, stream_name: str):
+    async def _ensure_stream(self, stream_name: str) -> Any:
         """Get or create a stream for an agent."""
+        basin = cast(Any, self._basin)
         if stream_name not in self._streams:
             if self.config.create_streams_on_demand:
                 try:
-                    await self._basin.create_stream(stream_name)
+                    await basin.create_stream(stream_name)
                 except Exception:
                     pass  # Stream may already exist
-            self._streams[stream_name] = self._basin.stream(stream_name)
+            self._streams[stream_name] = basin.stream(stream_name)
         return self._streams[stream_name]
 
     async def send(
@@ -313,7 +314,7 @@ class S2Broker:
                 }
             )
 
-    async def _topic_reader(self, stream, handler_key: str):
+    async def _topic_reader(self, stream: Any, handler_key: str) -> None:
         """Background task that reads from a topic stream and dispatches messages."""
         position = 0
         while self._running:
@@ -364,7 +365,7 @@ class S2StateBackend:
     type (set/delete).
     """
 
-    def __init__(self, config: S2Config):
+    def __init__(self, config: S2Config) -> None:
         if not S2_AVAILABLE:
             raise ImportError(
                 "S2 SDK not available. Install with: pip install streamstore"
@@ -422,12 +423,11 @@ class S2StateBackend:
             await self._client.close()
             self._client = None
 
-    async def _replay_log(self):
+    async def _replay_log(self) -> None:
         """Replay the state log to rebuild the in-memory cache."""
         try:
-            records = await self._stream.read(
-                start=SeqNum(0), limit=ReadLimit(count=100000)
-            )
+            stream = cast(Any, self._stream)
+            records = await stream.read(start=SeqNum(0), limit=ReadLimit(count=100000))
 
             if hasattr(records, "next_seq_num"):
                 return  # Empty stream
@@ -478,7 +478,8 @@ class S2StateBackend:
                 ],
             )
 
-            await self._stream.append(AppendInput(records=[record]))
+            stream = cast(Any, self._stream)
+            await stream.append(AppendInput(records=[record]))
             self._state_cache[key] = entry
 
             # Notify listeners
@@ -515,7 +516,8 @@ class S2StateBackend:
                 ],
             )
 
-            await self._stream.append(AppendInput(records=[record]))
+            stream = cast(Any, self._stream)
+            await stream.append(AppendInput(records=[record]))
             self._state_cache.pop(key, None)
 
             return Result.ok(True)
