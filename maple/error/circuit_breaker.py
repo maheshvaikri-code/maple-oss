@@ -53,7 +53,7 @@ class CircuitBreaker(Generic[T, E]):
         failure_threshold: int = 5,
         reset_timeout: float = 30.0,
         half_open_max_calls: int = 1,
-    ):
+    ) -> None:
         """
         Initialize the circuit breaker.
 
@@ -67,9 +67,9 @@ class CircuitBreaker(Generic[T, E]):
         self.half_open_max_calls = half_open_max_calls
 
         self.state = CircuitState.CLOSED
-        self.failure_count = 0
-        self.last_failure_time = 0
-        self.half_open_calls = 0
+        self.failure_count: int = 0
+        self.last_failure_time: float = 0.0
+        self.half_open_calls: int = 0
 
         self._lock = threading.RLock()
 
