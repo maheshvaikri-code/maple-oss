@@ -76,7 +76,7 @@ class Task:
     result: Optional[Any] = None
     error: Optional[str] = None
 
-    def __lt__(self, other):
+    def __lt__(self, other: "Task") -> bool:
         """For priority queue ordering."""
         return self.priority.value < other.priority.value
 
@@ -98,7 +98,7 @@ class QueueStats:
 class TaskQueue:
     """High-performance task queue with priority support."""
 
-    def __init__(self, max_queue_size: int = 10000):
+    def __init__(self, max_queue_size: int = 10000) -> None:
         self.max_queue_size = max_queue_size
 
         # Multiple priority queues for different priority levels
@@ -126,7 +126,7 @@ class TaskQueue:
         # sleeping out its full interval (otherwise stop() blocks on join).
         self._stop_event = threading.Event()
 
-    def start(self):
+    def start(self) -> None:
         """Start the task queue background processing."""
         with self._lock:
             if self._running:
@@ -139,7 +139,7 @@ class TaskQueue:
             )
             self._cleanup_thread.start()
 
-    def stop(self):
+    def stop(self) -> None:
         """Stop the task queue."""
         with self._lock:
             self._running = False
@@ -155,10 +155,10 @@ class TaskQueue:
         task_type: str,
         payload: Dict[str, Any],
         priority: TaskPriority = TaskPriority.NORMAL,
-        requirements: List[str] = None,
+        requirements: Optional[List[str]] = None,
         timeout_seconds: int = 300,
         max_retries: int = 3,
-        metadata: Dict[str, Any] = None,
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> Result[str, str]:
         """Submit a new task to the queue."""
 
@@ -205,14 +205,18 @@ class TaskQueue:
             return Result.ok(task.task_id)
 
     def get_next_task(
-        self, agent_capabilities: List[str] = None, timeout_seconds: float = None
+        self,
+        agent_capabilities: Optional[List[str]] = None,
+        timeout_seconds: Optional[float] = None,
     ) -> Result[Optional[Task], str]:
         """Get the next available task that matches agent capabilities."""
 
         agent_capabilities = agent_capabilities or []
 
         with self._condition:
-            end_time = time.time() + timeout_seconds if timeout_seconds else None
+            end_time = (
+                time.time() + timeout_seconds if timeout_seconds is not None else None
+            )
 
             while self._running:
                 # Try to get a task from priority queues (highest priority first)
@@ -247,6 +251,7 @@ class TaskQueue:
                 if timeout_seconds is None:
                     self._condition.wait()
                 else:
+                    assert end_time is not None
                     remaining = end_time - time.time()
                     if remaining <= 0:
                         return Result.ok(None)  # Timeout
@@ -273,9 +278,9 @@ class TaskQueue:
         self,
         task_id: str,
         status: TaskStatus,
-        assigned_agent: str = None,
+        assigned_agent: Optional[str] = None,
         result: Any = None,
-        error: str = None,
+        error: Optional[str] = None,
     ) -> Result[Task, str]:
         """Update the status of a task."""
 
@@ -418,7 +423,10 @@ class TaskQueue:
             return stats
 
     def list_tasks(
-        self, status: TaskStatus = None, task_type: str = None, limit: int = 100
+        self,
+        status: Optional[TaskStatus] = None,
+        task_type: Optional[str] = None,
+        limit: int = 100,
     ) -> List[Task]:
         """List tasks with optional filtering."""
 
@@ -451,7 +459,7 @@ class TaskQueue:
             self.task_callbacks[task_id].append(callback)
             return Result.ok(None)
 
-    def _notify_task_callbacks(self, task_id: str, task: Task):
+    def _notify_task_callbacks(self, task_id: str, task: Task) -> None:
         """Notify callbacks of task status change."""
 
         if task_id in self.task_callbacks:
@@ -461,7 +469,7 @@ class TaskQueue:
                 except Exception:
                     pass  # Don't let callback errors affect task processing
 
-    def _cleanup_loop(self):
+    def _cleanup_loop(self) -> None:
         """Background cleanup of completed tasks."""
 
         while self._running:
