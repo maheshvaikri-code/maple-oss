@@ -22,7 +22,7 @@ import json
 import logging
 import re
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Callable, Dict, List, Mapping, Optional
+from typing import Any, Callable, Coroutine, Dict, List, Mapping, Optional, cast
 
 from ..core.result import Result
 from .tools import Tool, ToolRegistry
@@ -57,16 +57,17 @@ def sanitize_tool_name(name: str, max_len: int = 64) -> str:
     return _UNSAFE_TOOL.sub("", str(name or ""))[:max_len]
 
 
-def _run_async(value):
+def _run_async(value: Any) -> Any:
     """Resolve an awaitable from sync discovery without nesting an event loop."""
     if not inspect.isawaitable(value):
         return value
+    coroutine = cast(Coroutine[Any, Any, Any], value)
     try:
         asyncio.get_running_loop()
     except RuntimeError:
-        return asyncio.run(value)
+        return asyncio.run(coroutine)
     with ThreadPoolExecutor(max_workers=1) as pool:
-        return pool.submit(asyncio.run, value).result(timeout=60)
+        return pool.submit(asyncio.run, coroutine).result(timeout=60)
 
 
 def _bounded_json(
@@ -145,7 +146,7 @@ def _bounded_schema(
 
 
 def _validate_descriptor(
-    descriptor: Any, seen_names: set
+    descriptor: Any, seen_names: set[str]
 ) -> Result[Dict[str, Any], Dict[str, Any]]:
     if not isinstance(descriptor, Mapping):
         return Result.err(
@@ -228,13 +229,18 @@ def _validate_descriptor(
     )
 
 
-def _legacy_standard_tools(mcp_server_url: str, client) -> List[Tool]:
+def _legacy_standard_tools(mcp_server_url: str, client: Any) -> List[Tool]:
     """Preserve the historical offline helper until the next major API cycle."""
 
-    def _make_mcp_handler(tool_name):
-        def handler(**kwargs) -> Result:
+    def _make_mcp_handler(
+        tool_name: str,
+    ) -> Callable[..., Result[Any, Dict[str, Any]]]:
+        def handler(**kwargs: Any) -> Result[Any, Dict[str, Any]]:
             try:
-                return _run_async(client.call_mcp_tool(tool_name, kwargs))
+                return cast(
+                    Result[Any, Dict[str, Any]],
+                    _run_async(client.call_mcp_tool(tool_name, kwargs)),
+                )
             except Exception as exc:
                 return Result.err(
                     {
@@ -286,10 +292,10 @@ def _legacy_standard_tools(mcp_server_url: str, client) -> List[Tool]:
 
 def discover_mcp_tools(
     mcp_server_url: str,
-    agent,
+    agent: Any,
     *,
-    client=None,
-    transport=None,
+    client: Any = None,
+    transport: Any = None,
     max_tools: int = MAX_DISCOVERED_TOOLS,
 ) -> Result[List[Tool], Dict[str, Any]]:
     """
@@ -322,11 +328,11 @@ def discover_mcp_tools(
                 max_tools=max_tools,
             )
         if not live_requested:
-            tools = _legacy_standard_tools(mcp_server_url, client)
+            legacy_tools = _legacy_standard_tools(mcp_server_url, client)
             logger.info(
                 "Using offline MCP compatibility descriptors for %s", mcp_server_url
             )
-            return Result.ok(tools)
+            return Result.ok(legacy_tools)
 
         descriptors = _run_async(client.list_mcp_tools())
         if not isinstance(descriptors, Result):
@@ -346,15 +352,15 @@ def discover_mcp_tools(
                     "message": f"MCP server returned more than {max_tools} tools",
                 }
             )
-        seen_names = set()
-        validated = []
+        seen_names: set[str] = set()
+        validated: List[Dict[str, Any]] = []
         for descriptor in raw_tools:
             checked = _validate_descriptor(descriptor, seen_names)
             if checked.is_err():
                 return Result.err(checked.unwrap_err())
             validated.append(checked.unwrap())
 
-        tools = []
+        tools: List[Tool] = []
         for tool_def in validated:
             tool = Tool(
                 name=tool_def["name"],
