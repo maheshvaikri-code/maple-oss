@@ -16,16 +16,14 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 # maple/monitoring/health_monitor.py
 # Creator: Mahesh Vaikri
 
-"""
-Health monitoring and metrics collection for MAPLE agents and brokers.
-"""
+# Health monitoring and metrics collection for MAPLE agents and brokers.
 
 import statistics
 import threading
 import time
 from collections import deque
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 
 @dataclass
@@ -48,44 +46,44 @@ class HealthMonitor:
     Monitors health and performance of MAPLE components.
     """
 
-    def __init__(self, component_id: str, collection_interval: float = 5.0):
+    def __init__(self, component_id: str, collection_interval: float = 5.0) -> None:
         self.component_id = component_id
         self.collection_interval = collection_interval
-        self.metrics_history = deque(maxlen=100)  # Keep last 100 metrics
+        self.metrics_history: deque[HealthMetrics] = deque(maxlen=100)
         self.running = False
-        self.monitor_thread = None
-        self.callbacks = []
+        self.monitor_thread: Optional[threading.Thread] = None
+        self.callbacks: List[Callable[[HealthMetrics], None]] = []
 
         # Performance tracking
         self.message_count = 0
         self.error_count = 0
-        self.response_times = deque(maxlen=50)
+        self.response_times: deque[float] = deque(maxlen=50)
         self.start_time = time.time()
 
-    def start(self):
+    def start(self) -> None:
         """Start health monitoring."""
         self.running = True
         self.monitor_thread = threading.Thread(target=self._monitor_loop)
         self.monitor_thread.daemon = True
         self.monitor_thread.start()
 
-    def stop(self):
+    def stop(self) -> None:
         """Stop health monitoring."""
         self.running = False
         if self.monitor_thread:
             self.monitor_thread.join(timeout=1.0)
 
-    def record_message(self, processing_time: float = None):
+    def record_message(self, processing_time: Optional[float] = None) -> None:
         """Record a processed message."""
         self.message_count += 1
         if processing_time:
             self.response_times.append(processing_time)
 
-    def record_error(self):
+    def record_error(self) -> None:
         """Record an error."""
         self.error_count += 1
 
-    def add_callback(self, callback: Callable[[HealthMetrics], None]):
+    def add_callback(self, callback: Callable[[HealthMetrics], None]) -> None:
         """Add a callback for health metric updates."""
         self.callbacks.append(callback)
 
@@ -126,7 +124,7 @@ class HealthMonitor:
             connection_status="connected",  # Simplified for now
         )
 
-    def _monitor_loop(self):
+    def _monitor_loop(self) -> None:
         """Background monitoring loop."""
         while self.running:
             try:
