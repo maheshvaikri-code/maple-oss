@@ -77,6 +77,7 @@
 | 64 | Transport and serialization security boundary hardening | Security / Interop / Backend / QA | A2A adapter, MCP transport, serializer, security regressions, changelog, review/QA artifacts | Security regressions, cross-surface regression, isolated `pip check`, `pip-audit`, Bandit `-ll`, Black/isort/Ruff/mypy/compile | done: commit `d3e5358`; bounded A2A registry timeout, explicit MCP URL-boundary regression, restricted size-bounded pickle loading, and malicious-payload coverage; security regression `37 passed`; cross-surface `621 passed, 1 skipped`; isolated dependency audit clean; Bandit medium/high gate exit 0 |
 | 65 | Safe legacy lint and FIPA translation closure | Backend / QA / Release | MAPLE package initializers, ACP/FIPA adapters, queue, health monitor, cryptography, consistency, FIPA regression, changelog, review/QA artifacts | Affected regression, changed-file Ruff/Black/isort/mypy, broad Ruff inventory, diff check | done: commit `25001b0`; affected regression `131 passed in 48.43s`; changed files pass Ruff/Black/isort/mypy; broad `ruff check maple` reduced from `250` to `171` diagnostics (`E402 140`, `F401 31`) |
 | 66 | Legacy header/import lint closure | Backend / QA / Release | autonomy package initializer, state store/synchronization, broker routing, communication pubsub/request-response, security audit, changelog, review/QA artifacts | Affected regression, changed-file Ruff/Black/isort/mypy/compile, broad Ruff inventory, diff check | done: commit `c42cf58`; affected regression `628 passed, 1 skipped in 16.35s`; changed files pass quality/type checks; broad `ruff check maple` reduced from `171` to `95` diagnostics (`E402 69`, `F401 26`) |
+| 67 | Verified unused-import and optional-probe closure | Backend / QA / Release | adapters, agent/config, broker, communication, discovery, error, resources, security, task management, changelog, review/QA artifacts | Affected regression, S2/resource/link revalidation, changed-file Ruff/Black/isort/mypy/compile, broad Ruff inventory, diff check | done: commit `6ebac24`; affected suite `777 passed, 1 skipped`; current S2/resource/link revalidation `130 passed`; changed files pass all quality/type checks; broad `ruff check maple` reduced from `95` to `58` diagnostics (`E402 58`) with zero F401 findings |
 
 ## Threat sketch
 
@@ -227,3 +228,11 @@ runtime files. The affected regression reports `628 passed, 1 skipped in
 16.35s`; changed-file Ruff, Black, isort, mypy, and compile checks pass. Broad
 `ruff check maple` decreased from `171` diagnostics to `95` (`E402 69`,
 `F401 26`). Remaining legacy lint is still an open release gate.
+
+2026-08-25 verified import closure: commit `6ebac24` removes imports proven
+unused by Ruff across 13 runtime files and preserves the S2 optional SDK
+availability probe with a narrow line-level `F401` exception for `StreamConfig`.
+The affected suite reports `777 passed, 1 skipped in 237.84s`; current S2,
+resource, and link revalidation reports `130 passed in 0.37s`. Changed-file
+Ruff, Black, isort, mypy, and compile checks pass. Broad `ruff check maple`
+decreased from `95` diagnostics to `58` (`E402 58`), with zero F401 findings.

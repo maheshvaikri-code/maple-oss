@@ -10,6 +10,13 @@
 
 ### Additions
 
+- **Verified unused-import closure**: removed imports proven unused by Ruff
+  across 13 runtime files, preserved the S2 optional SDK compatibility probe
+  with a narrow line-level exception, and closed two secondary module headers.
+  The affected suite reports `777 passed, 1 skipped`; current S2/resource/link
+  revalidation reports `130 passed`. Broad `ruff check maple` decreased from
+  `95` diagnostics to `58` (`E402 58`) with zero F401 findings. Remaining E402
+  debt remains a release gate.
 - **Legacy header/import lint closure**: converted secondary module headers to
   comments and removed verified unused imports across seven runtime files. The
   affected regression reports `628 passed, 1 skipped in 16.35s`; changed-file

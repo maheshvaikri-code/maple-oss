@@ -140,6 +140,10 @@ Doctor:
   `F401 26`) by removing secondary module-header and verified unused-import
   debt. The affected regression reports `628 passed, 1 skipped in 16.35s` and
   changed-file quality/type checks pass.
+- Slice 67 reduced the broad inventory from 95 to 58 diagnostics (`E402 58`,
+  `F401 0`) by removing verified unused imports across 13 runtime files. The
+  affected suite reports `777 passed, 1 skipped`; current S2/resource/link
+  revalidation reports `130 passed in 0.37s`.
 
 ## Verdict
 

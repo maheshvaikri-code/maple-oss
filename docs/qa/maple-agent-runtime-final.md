@@ -27,7 +27,7 @@
 | Local readiness | PASS | `maple doctor --json` returned all six checks true and `network:false`. |
 | Full repository regression | OPEN | Latest bounded run: `1049 passed, 8 warnings in 839.17s` before interruption in remaining Doctrine gold cases; no assertion failure. Fresh temp-repo Git profiling shows roughly 5–15s per command, with slowest gold cases at 166.96s, 159.74s, 115.61s, and 56.04s. |
 | Dependency consistency | PASS | Isolated MAPLE environment is consistent; shared-interpreter conflicts are unrelated and non-authoritative. |
-| Repository-wide lint | OPEN | Slice 65 reduced broad `ruff check maple` from 250 to 171 diagnostics (`E402 140`, `F401 31`); remaining package-init/legacy debt is still open. |
+| Repository-wide lint | OPEN | Slices 65–67 reduced broad `ruff check maple` from 250 to 58 diagnostics; all remaining findings are E402 legacy header/import debt. |
 | Independent review | OPEN | Fresh verifier sessions are unavailable in this tool context. |
 | External publish / website | NOT RUN | Explicitly outside current authorization and scope. |
 
@@ -77,6 +77,16 @@
 - Broad `ruff check maple` decreased from `171` diagnostics to `95`
   (`E402 69`, `F401 26`). Remaining repository-wide lint remains an open
   release gate; no publication or website change was performed.
+
+## Slice 67 revalidation
+
+- The affected adapter/agent/broker/communication/discovery/error/resource/
+  security/task suite reports `777 passed, 1 skipped in 237.84s`.
+- Current S2/resource/link revalidation reports `130 passed in 0.37s`.
+- Changed-file Ruff, Black, isort, mypy, and compile checks pass.
+- Broad `ruff check maple` decreased from `95` diagnostics to `58` (`E402 58`),
+  with zero F401 findings. The remaining E402 debt is still an open release
+  gate; no publication or website change was performed.
 
 ## Security conclusions
 
