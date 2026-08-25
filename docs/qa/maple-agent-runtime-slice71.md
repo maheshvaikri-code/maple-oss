@@ -23,6 +23,7 @@ Existing JSON-Schema tools retain their prior execution and validation path.
 - Doctor: `ready: true`, `network: false`, version `1.1.3`, all eight checks
   true.
 - Wheel and sdist built successfully; Twine reported `PASSED` for both.
+- README and API-reference usage documentation was added in commit `9236bc4`.
 
 ## Boundary review
 

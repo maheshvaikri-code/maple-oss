@@ -22,7 +22,8 @@
 
 Focused contract/tool/agent coverage reports `43 passed in 0.37s`; the full
 autonomy surface reports `212 passed in 3.26s`. Mypy, Ruff, Black, isort,
-compile, package, Twine, and network-free doctor checks pass.
+compile, package, Twine, and network-free doctor checks pass. Public usage
+documentation is recorded in `9236bc4`.
 
 ## Decision
 
