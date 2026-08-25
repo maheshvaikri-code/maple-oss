@@ -95,6 +95,11 @@
   contracts. The communication regression surface passes 49 tests, all three
   changed-file mypy checks are clean, and the aggregate audit is now
   `152 errors` in 22 files.
+- **Agent handler type boundary**: clarified message-handler construction,
+  registry storage and lookup, handler predicates, and list results without
+  changing dispatch behavior. The agent regression surface passes 33 tests,
+  the changed-file mypy check is clean, and the aggregate audit is now
+  `150 errors` in 21 files.
 - **Repository formatter gate closure**: normalized the tracked `maple/`
   source tree with the configured Black and isort profiles. Both checks are
   now idempotent, the focused runtime gate remains `240 passed`, and a fresh
