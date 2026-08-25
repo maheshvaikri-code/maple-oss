@@ -35,6 +35,7 @@
 | 26 | Warning-free legacy test gate | QA / Backend / Code Reviewer | `tests/test_basic.py`, `tests/adapters/test_s2_adapter.py`, review/QA artifacts | Targeted pytest, standalone basic runner, Ruff, compile; no targeted warnings | done: commit `948b9ea`; targeted `22 passed`; standalone `6 passed, 0 failed`; review/QA filed |
 | 27 | Fail-closed CI quality and security gates | DevOps / QA / Security / Code Reviewer | `.github/workflows/`, CI contract test, release plan, changelog, review/QA artifacts | Workflow YAML parse, gate-semantics contracts, read-only permissions, Ruff, compile, diff check | done: commits `6499244` + `b989a4b`; required checks no longer mask failures; existing Black/isort/mypy/Bandit debt is now release-visible |
 | 28 | Repository Black and isort formatter closure | DevOps / QA / Code Reviewer | tracked `maple/` source, release plan, changelog, review/QA artifacts | Black idempotence, isort check, compile, focused runtime regression, fresh build, Twine check | done: commit `76b619a`; 82 source files normalized; focused `240 passed`; fresh wheel/sdist and Twine checks pass; full repository regression remains incomplete |
+| 29 | Foundational public-runtime type boundary cleanup | Backend / Security / QA | core Result/message/types, autonomy runtime, MCP discovery, state store, security, core agent, task queue, monitoring, review/QA artifacts | Explicit Python 3.10-target mypy on changed modules, focused regressions, Black/isort/Ruff/compile, aggregate type audit | done: commits `947c8a9`, `8bce55d`, `81c64b1`, `3ae1af0`, `d7e0e2a`, `e09f006`, `46712f9`, `13c6834`, `7448315`, `ced52e0`, `7ab3132`, `31b7402`, `0b91102`, `b03031f`, `9fe26de`, `42c343e`, `3a72934`; focused evidence filed; aggregate reduced to `313 errors in 46 files`; legacy type debt and mypy-target mismatch remain open` |
 
 ## Threat sketch
 
@@ -106,7 +107,10 @@ Black/isort/mypy/Bandit and pip-audit checks fail closed; the local audit
 currently reports 459 mypy errors across 66 files and no installed Bandit
 executable. The full repository regression remains incomplete after the
 formatter run reached 86% with no reported assertion failure before a bounded
-manual interruption. Dependency-audit disposition and unavailable independent
-fresh-context verification remain open.
+manual interruption. Slice 29's explicit Python 3.10-target type audit now
+reports `313 errors in 46 files`, down from the pre-cleanup baseline; the
+installed mypy 2.3 rejects the configured Python 3.8 target, so the support
+matrix/toolchain decision remains open. Dependency-audit disposition and
+unavailable independent fresh-context verification remain open.
 External publishing, cloud selection, and website changes remain explicitly out
 of scope until human approval.

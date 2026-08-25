@@ -10,6 +10,13 @@
 
 ### Additions
 
+- **Foundational runtime type-boundary cleanup**: narrowed `Result` unions,
+  message/ID builders, autonomy tools and workflows, MCP discovery, state
+  storage, security/audit/authentication, core-agent queues, task scheduling,
+  and health-monitoring state without weakening runtime behavior. Focused
+  regressions and changed-surface quality checks are recorded in the slice 29
+  review/QA artifacts. The aggregate type audit is still open at `313 errors`
+  in 46 files, and the installed mypy target mismatch remains a release gate.
 - **Repository formatter gate closure**: normalized the tracked `maple/`
   source tree with the configured Black and isort profiles. Both checks are
   now idempotent, the focused runtime gate remains `240 passed`, and a fresh
