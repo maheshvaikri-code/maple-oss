@@ -381,7 +381,7 @@ class StateSynchronizer:
 
                 if conflict_resolved:
                     # Apply the change
-                    result = self.state_store.set(
+                    set_result = self.state_store.set(
                         key=event.key,
                         value=event.value,
                         metadata={
@@ -390,16 +390,16 @@ class StateSynchronizer:
                         },
                     )
 
-                    if result.is_err():
+                    if set_result.is_err():
                         logger.error(
-                            f"Failed to apply sync event: {result.unwrap_err()}"
+                            f"Failed to apply sync event: {set_result.unwrap_err()}"
                         )
 
             elif event.operation == "delete":
-                result = self.state_store.delete(event.key)
-                if result.is_err():
+                delete_result = self.state_store.delete(event.key)
+                if delete_result.is_err():
                     logger.error(
-                        f"Failed to delete key {event.key}: {result.unwrap_err()}"
+                        f"Failed to delete key {event.key}: {delete_result.unwrap_err()}"
                     )
 
             # Update version vector
