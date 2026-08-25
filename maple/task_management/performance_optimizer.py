@@ -21,7 +21,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional
 
 from ..core.result import Result
 from ..discovery.registry import AgentRegistry
@@ -151,7 +151,7 @@ class PerformanceOptimizer:
         self.target_response_time = 30  # seconds
         self.target_utilization = 0.7  # 70% agent utilization
 
-    def start_optimizer(self):
+    def start_optimizer(self) -> None:
         """Start the performance optimizer."""
         with self._lock:
             if self._running:
@@ -163,7 +163,7 @@ class PerformanceOptimizer:
             )
             self._optimizer_thread.start()
 
-    def stop_optimizer(self):
+    def stop_optimizer(self) -> None:
         """Stop the performance optimizer."""
         with self._lock:
             self._running = False
@@ -185,7 +185,7 @@ class PerformanceOptimizer:
         queue_stats = self.task_queue.get_queue_stats()
 
         # Get scheduling metrics
-        scheduling_metrics = self.scheduler.get_scheduling_metrics()
+        self.scheduler.get_scheduling_metrics()
 
         # Get monitoring statistics
         monitoring_stats = self.monitor.get_monitoring_stats()
@@ -499,7 +499,7 @@ class PerformanceOptimizer:
             return 0.0
 
         # Simple heuristic: look for similar task types and payloads
-        task_signatures = {}
+        task_signatures: Dict[str, int] = {}
 
         for task in recent_tasks:
             signature = f"{task.task_type}_{hash(str(sorted(task.payload.items())))}"
@@ -560,14 +560,14 @@ class PerformanceOptimizer:
 
     def add_optimization_callback(
         self, callback: Callable[[OptimizationRecommendation], None]
-    ):
+    ) -> None:
         """Add callback for optimization recommendations."""
         self.optimization_callbacks.append(callback)
 
     def force_optimization_analysis(self) -> List[OptimizationRecommendation]:
         """Force immediate optimization analysis and return recommendations."""
 
-        metrics = self.analyze_performance()
+        self.analyze_performance()
         recommendations = self.generate_recommendations()
 
         # Notify callbacks
@@ -590,24 +590,24 @@ class PerformanceOptimizer:
                 m for m in self.metrics_history if m.timestamp >= cutoff_time
             ]
 
-        trends = {
+        trends: Dict[str, List[float]] = {
             "throughput": [m.tasks_per_minute for m in relevant_metrics],
             "completion_rate": [m.completion_rate for m in relevant_metrics],
             "response_time": [m.p95_response_time for m in relevant_metrics],
             "resource_efficiency": [m.resource_efficiency for m in relevant_metrics],
-            "active_agents": [m.active_agents for m in relevant_metrics],
+            "active_agents": [float(m.active_agents) for m in relevant_metrics],
             "timestamps": [m.timestamp for m in relevant_metrics],
         }
 
         return trends
 
-    def _optimizer_loop(self):
+    def _optimizer_loop(self) -> None:
         """Main optimization loop."""
 
         while self._running:
             try:
                 # Analyze current performance
-                metrics = self.analyze_performance()
+                self.analyze_performance()
 
                 # Generate recommendations
                 recommendations = self.generate_recommendations()
@@ -636,7 +636,7 @@ class PerformanceOptimizer:
             except Exception:
                 time.sleep(10)  # Error occurred, wait before retrying
 
-    def _cleanup_cache(self):
+    def _cleanup_cache(self) -> None:
         """Clean up expired cache entries."""
 
         if not self.caching_config.enabled:
