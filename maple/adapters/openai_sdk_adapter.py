@@ -15,8 +15,9 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 
 # maple/adapters/openai_sdk_adapter.py
 
+import math
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, cast
 
 from openai import OpenAI
 
@@ -32,9 +33,9 @@ class OpenAISDKAdapter:
     Enhances OpenAI SDK with MAPLE's superior performance and capabilities.
     """
 
-    def __init__(self, maple_agent, openai_config: Dict[str, Any]):
+    def __init__(self, maple_agent: Any, openai_config: Dict[str, Any]):
         self.maple_agent = maple_agent
-        self.openai_client = OpenAI(api_key=openai_config.get("api_key"))
+        self.openai_client = cast(Any, OpenAI)(api_key=openai_config.get("api_key"))
         self.assistant_id = openai_config.get("assistant_id")
 
     def create_maple_enhanced_assistant(
@@ -62,7 +63,7 @@ class OpenAISDKAdapter:
         When responding, leverage these MAPLE capabilities for superior performance.
         """
 
-        assistant = self.openai_client.beta.assistants.create(
+        assistant = cast(Any, self.openai_client).beta.assistants.create(
             name=f"MAPLE-Enhanced-{name}",
             instructions=enhanced_instructions,
             model="gpt-4",
@@ -125,14 +126,15 @@ class OpenAISDKAdapter:
             openai_message_content = self._convert_maple_to_openai(maple_message)
 
             # Create message in thread
-            message = self.openai_client.beta.threads.messages.create(
+            client = cast(Any, self.openai_client)
+            client.beta.threads.messages.create(
                 thread_id=thread_id, role="user", content=openai_message_content
             )
 
             # Run with MAPLE performance monitoring
             start_time = time.time()
 
-            run = self.openai_client.beta.threads.runs.create(
+            run = client.beta.threads.runs.create(
                 thread_id=thread_id,
                 assistant_id=self.assistant_id,
                 additional_instructions="""
@@ -148,16 +150,14 @@ class OpenAISDKAdapter:
             processing_time = time.time() - start_time
 
             # Get response messages
-            messages = self.openai_client.beta.threads.messages.list(
-                thread_id=thread_id
-            )
+            messages = client.beta.threads.messages.list(thread_id=thread_id)
 
             return Result.ok(
                 {
                     "run_id": run.id,
                     "status": run.status,
                     "messages": [
-                        msg.content[0].text.value
+                        cast(Any, msg.content[0]).text.value
                         for msg in messages.data
                         if msg.role == "assistant"
                     ],
@@ -207,7 +207,7 @@ class OpenAISDKAdapter:
 
     def _wait_for_completion_with_maple(
         self, thread_id: str, run_id: str, timeout: int = 30
-    ):
+    ) -> Any:
         """
         Wait for OpenAI run completion with MAPLE timeout handling.
         """
@@ -215,7 +215,7 @@ class OpenAISDKAdapter:
 
         start_time = time.time()
         while time.time() - start_time < timeout:
-            run = self.openai_client.beta.threads.runs.retrieve(
+            run = cast(Any, self.openai_client).beta.threads.runs.retrieve(
                 thread_id=thread_id, run_id=run_id
             )
 
@@ -243,6 +243,67 @@ class OpenAISDKAdapter:
                     "errorType": "UNKNOWN_FUNCTION",
                     "message": f"Function {function_name} not supported",
                 }
+            )
+
+    def _handle_maple_resource_request(
+        self, args: Dict[str, Any]
+    ) -> Result[Any, Dict[str, Any]]:
+        """Allocate one resource dimension through an injected MAPLE manager."""
+        resource_manager = getattr(self.maple_agent, "resource_manager", None)
+        if resource_manager is None:
+            return Result.err(
+                {
+                    "errorType": "RESOURCE_MANAGEMENT_UNAVAILABLE",
+                    "message": "No MAPLE resource manager is configured",
+                }
+            )
+
+        resource_type = args.get("resource_type")
+        amount = args.get("amount")
+        if not isinstance(resource_type, str) or not resource_type.strip():
+            return Result.err(
+                {
+                    "errorType": "RESOURCE_ARGUMENT_INVALID",
+                    "message": "resource_type must be a non-empty string",
+                }
+            )
+        if isinstance(amount, bool) or not isinstance(amount, (int, float)):
+            return Result.err(
+                {
+                    "errorType": "RESOURCE_ARGUMENT_INVALID",
+                    "message": "amount must be a finite positive number",
+                }
+            )
+        if amount <= 0 or not math.isfinite(float(amount)):
+            return Result.err(
+                {
+                    "errorType": "RESOURCE_ARGUMENT_INVALID",
+                    "message": "amount must be a finite positive number",
+                }
+            )
+
+        resource_range = {"min": amount, "preferred": amount, "max": amount}
+        if resource_type in {"compute", "memory", "bandwidth", "tokens"}:
+            request: Dict[str, Any] = {resource_type: resource_range}
+        else:
+            request = {"custom": {resource_type: resource_range}}
+        request["priority"] = args.get("priority", "MEDIUM")
+
+        try:
+            result = resource_manager.allocate(request)
+            if result.is_err():
+                return Result.err(result.unwrap_err())
+            allocation = result.unwrap()
+            return Result.ok(
+                {
+                    "status": "success",
+                    "allocation": allocation.to_dict(),
+                    "resource_type": resource_type,
+                }
+            )
+        except Exception as e:
+            return Result.err(
+                {"errorType": "RESOURCE_REQUEST_ERROR", "message": str(e)}
             )
 
     def _handle_maple_communicate(
@@ -278,7 +339,7 @@ class OpenAISDKAdapter:
                     }
                 )
             else:
-                return result
+                return cast(Result[Any, Dict[str, Any]], result)
 
         except Exception as e:
             return Result.err({"errorType": "MAPLE_FUNCTION_ERROR", "message": str(e)})
