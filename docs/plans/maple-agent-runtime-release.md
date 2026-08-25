@@ -27,7 +27,7 @@
 | 18 | Bounded workflow checkpoint history | Backend / ML Engineer | `docs/adr/016-*`, workflow history decorator/tests, API docs, README, changelog | Immutable version snapshots, bounded retention, deterministic history limits, underlying store recovery unchanged, no replay claim | done: commit `ef52cfe`; focused workflow `16 passed`; combined feature gate `199 passed` |
 | 19 | Bounded conversation session store | Chief Architect / Backend / Security | `docs/adr/017-*`, session stores/tests, autonomy exports, API docs, README, changelog | Validated IDs/roles, bounded messages and metadata, immutable snapshots, atomic file restart persistence, optimistic append conflicts, no replay claim | done: commit `0648efa`; focused sessions `9 passed`; combined feature gate `208 passed` |
 | 20 | Loopback workflow run server | Chief Architect / Interop / Backend / Security | `docs/adr/018-*`, server/registry/tests, autonomy exports, API docs, README, changelog | Health, bounded JSON run/resume/inspect routes, stable HTTP errors, workflow reuse, loopback safety, deterministic shutdown | done: commit `7665eaf`; focused server `4 passed`; combined feature gate `212 passed` |
-| 21 | Session-aware agent turns | Chief Architect / Backend / Security / ML Engineer | `docs/adr/019-*`, autonomous agent/session tests, API docs, README, changelog | Opt-in sync/async session binding, CAS user turn, user/assistant-only replay, surfaced post-execution persistence errors, no trace/tool replay | doing: design accepted; implementation next |
+| 21 | Session-aware agent turns | Chief Architect / Backend / Security / ML Engineer | `docs/adr/019-*`, autonomous agent/session tests, API docs, README, changelog | Opt-in sync/async session binding, CAS user turn, user/assistant-only replay, surfaced post-execution persistence errors, no trace/tool replay | done: commit `0b794ba`; focused `7 passed`; combined feature gate `219 passed` |
 
 ## Threat sketch
 
@@ -62,18 +62,18 @@ privileged action without approval.
 
 ## Status snapshot
 
-Done (with evidence): G0 brief, G1 ADR, G2 plan, and eighteen committed G3
-feature slices through dependency-free vector retrieval, including MCP
+Done (with evidence): G0 brief, G1 ADR, G2 plan, and twenty-one committed G3
+feature slices through opt-in session-aware agent turns, including MCP
 interoperability, bounded artifacts, native LLM streaming, deterministic async
-tool result ordering, durable approval, and workflow fan-out/fan-in; slice
-review/QA artifacts are filed. Slice 18 bounded workflow history is committed
-and verified.
-Release hardening remains in progress. Slices 19 and 20 are committed and
-verified. Slice 21 is in G3 implementation for opt-in session-aware agent
-turns; replay execution and RAG evaluation remain separate follow-on slices.
-Focused feature gates (199 LLM/autonomy/CLI tests, including 22 MCP, 5
+tool result ordering, durable approval, workflow fan-out/fan-in, checkpoint
+history, and bounded conversation sessions; slice review/QA artifacts are
+filed. Replay-safe execution and RAG evaluation remain separate follow-on
+slices.
+Release hardening remains in progress. Slices 19, 20, and 21 are committed and
+verified.
+Focused feature gates (219 LLM/autonomy/CLI tests, including 22 MCP, 5
 artifact, 5 stream, async tool fan-out, durable approval, workflow fan-out,
-vector retrieval, and checkpoint-history regressions),
+vector retrieval, checkpoint history, and session-aware agent regressions),
 compile, changed-surface Ruff/Flake8, metadata-clean wheel/sdist builds, Twine
 checks, a clean-venv wheel doctor smoke pass, and a fresh `.[dev,security]`
 environment with `pip check` reporting no broken requirements all pass.
