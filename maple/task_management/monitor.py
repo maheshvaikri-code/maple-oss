@@ -19,11 +19,10 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 import threading
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, List, Optional
 
 from ..core.result import Result
-from .task_queue import Task, TaskQueue, TaskStatus
+from .task_queue import TaskQueue, TaskStatus
 
 
 @dataclass
@@ -73,7 +72,7 @@ class MonitoringStats:
 class TaskMonitor:
     """Real-time task execution monitor with alerting."""
 
-    def __init__(self, task_queue: TaskQueue):
+    def __init__(self, task_queue: TaskQueue) -> None:
         self.task_queue = task_queue
 
         # Monitoring data
@@ -99,7 +98,7 @@ class TaskMonitor:
         self._completed_tasks = 0
         self._failed_tasks = 0
 
-    def start_monitoring(self):
+    def start_monitoring(self) -> None:
         """Start the task monitoring system."""
         with self._lock:
             if self._running:
@@ -111,7 +110,7 @@ class TaskMonitor:
             )
             self._monitor_thread.start()
 
-    def stop_monitoring(self):
+    def stop_monitoring(self) -> None:
         """Stop the task monitoring system."""
         with self._lock:
             self._running = False
@@ -154,8 +153,8 @@ class TaskMonitor:
         self,
         task_id: str,
         progress_percentage: float,
-        current_step: str = None,
-        custom_metrics: Dict[str, Any] = None,
+        current_step: Optional[str] = None,
+        custom_metrics: Optional[Dict[str, Any]] = None,
     ) -> Result[None, str]:
         """Update progress for a monitored task."""
 
@@ -164,7 +163,6 @@ class TaskMonitor:
                 return Result.err(f"Task {task_id} is not being monitored")
 
             metrics = self.task_metrics[task_id]
-            old_progress = metrics.progress_percentage
 
             # Update metrics
             metrics.progress_percentage = max(0, min(100, progress_percentage))
@@ -194,10 +192,10 @@ class TaskMonitor:
     def update_task_resources(
         self,
         task_id: str,
-        memory_usage_mb: float = None,
-        cpu_usage_percentage: float = None,
-        messages_processed: int = None,
-        errors_encountered: int = None,
+        memory_usage_mb: Optional[float] = None,
+        cpu_usage_percentage: Optional[float] = None,
+        messages_processed: Optional[int] = None,
+        errors_encountered: Optional[int] = None,
     ) -> Result[None, str]:
         """Update resource usage for a monitored task."""
 
@@ -338,7 +336,7 @@ class TaskMonitor:
 
             return stats
 
-    def get_alerts(self, acknowledged: bool = None) -> List[TaskAlert]:
+    def get_alerts(self, acknowledged: Optional[bool] = None) -> List[TaskAlert]:
         """Get alerts, optionally filtered by acknowledgment status."""
 
         with self._lock:
@@ -359,15 +357,15 @@ class TaskMonitor:
             else:
                 return Result.err("Invalid alert index")
 
-    def add_alert_callback(self, callback: Callable[[TaskAlert], None]):
+    def add_alert_callback(self, callback: Callable[[TaskAlert], None]) -> None:
         """Add callback for new alerts."""
         self.alert_callbacks.append(callback)
 
-    def add_progress_callback(self, callback: Callable[[str, float], None]):
+    def add_progress_callback(self, callback: Callable[[str, float], None]) -> None:
         """Add callback for progress updates."""
         self.progress_callbacks.append(callback)
 
-    def _check_resource_limits(self, task_id: str, metrics: TaskMetrics):
+    def _check_resource_limits(self, task_id: str, metrics: TaskMetrics) -> None:
         """Check for resource limit violations and generate alerts."""
 
         # Memory limit check
@@ -402,7 +400,7 @@ class TaskMonitor:
 
     def _generate_alert(
         self, task_id: str, agent_id: str, alert_type: str, severity: str, message: str
-    ):
+    ) -> None:
         """Generate a new alert."""
 
         alert = TaskAlert(
@@ -427,7 +425,7 @@ class TaskMonitor:
             except Exception:
                 pass
 
-    def _monitor_loop(self):
+    def _monitor_loop(self) -> None:
         """Main monitoring loop."""
 
         while self._running:

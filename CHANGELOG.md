@@ -36,6 +36,10 @@
   missing services remain fail-closed. The focused MCP/resource suite passes
   97 tests, and the explicit Python 3.10-target aggregate type audit is now
   `266 errors` in 40 files. See ADR-023 and the slice 33 review/QA evidence.
+- **Task monitoring type boundary**: completed public Optional and return
+  annotations in `TaskMonitor` without changing monitoring behavior. The
+  monitoring/task-management regression surface passes 156 tests, and the
+  aggregate explicit Python 3.10-target audit is now `252 errors` in 39 files.
 - **Repository formatter gate closure**: normalized the tracked `maple/`
   source tree with the configured Black and isort profiles. Both checks are
   now idempotent, the focused runtime gate remains `240 passed`, and a fresh
