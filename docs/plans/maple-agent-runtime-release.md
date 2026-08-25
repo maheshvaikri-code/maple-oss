@@ -36,6 +36,7 @@
 | 27 | Fail-closed CI quality and security gates | DevOps / QA / Security / Code Reviewer | `.github/workflows/`, CI contract test, release plan, changelog, review/QA artifacts | Workflow YAML parse, gate-semantics contracts, read-only permissions, Ruff, compile, diff check | done: commits `6499244` + `b989a4b`; required checks no longer mask failures; existing Black/isort/mypy/Bandit debt is now release-visible |
 | 28 | Repository Black and isort formatter closure | DevOps / QA / Code Reviewer | tracked `maple/` source, release plan, changelog, review/QA artifacts | Black idempotence, isort check, compile, focused runtime regression, fresh build, Twine check | done: commit `76b619a`; 82 source files normalized; focused `240 passed`; fresh wheel/sdist and Twine checks pass; full repository regression remains incomplete |
 | 29 | Foundational public-runtime type boundary cleanup | Backend / Security / QA | core Result/message/types, autonomy runtime, MCP discovery, state store, security, core agent, task queue, monitoring, review/QA artifacts | Explicit Python 3.10-target mypy on changed modules, focused regressions, Black/isort/Ruff/compile, aggregate type audit | done: commits `947c8a9`, `8bce55d`, `81c64b1`, `3ae1af0`, `d7e0e2a`, `e09f006`, `46712f9`, `13c6834`, `7448315`, `ced52e0`, `7ab3132`, `31b7402`, `0b91102`, `b03031f`, `9fe26de`, `42c343e`, `3a72934`; focused evidence filed; aggregate reduced to `313 errors in 46 files`; legacy type debt and mypy-target mismatch remain open` |
+| 30 | Broker and MCP adapter release boundary cleanup | Backend / Interop / Security / QA | broker core/queue/routing/factory, MCP adapter, adapter regression, review/QA artifacts | Broker suite, MCP suite, fail-closed resource-management regression, explicit target mypy, Black/isort/Ruff/compile | done: commits `c98e871`, `72496ad`, `7a80472`; broker `62 passed`; MCP/adapter `17 passed`; aggregate reduced to `287 errors in 44 files`; remaining legacy type debt stays open` |
 
 ## Threat sketch
 
@@ -108,7 +109,7 @@ currently reports 459 mypy errors across 66 files and no installed Bandit
 executable. The full repository regression remains incomplete after the
 formatter run reached 86% with no reported assertion failure before a bounded
 manual interruption. Slice 29's explicit Python 3.10-target type audit now
-reports `313 errors in 46 files`, down from the pre-cleanup baseline; the
+reports `287 errors in 44 files`, down from the pre-cleanup baseline; the
 installed mypy 2.3 rejects the configured Python 3.8 target, so the support
 matrix/toolchain decision remains open. Dependency-audit disposition and
 unavailable independent fresh-context verification remain open.
