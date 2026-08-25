@@ -21,6 +21,9 @@ Security module for MAPLE providing authentication, authorization, and encryptio
 """
 
 import time
+from typing import Any, Dict, List, Optional
+
+from ..core.result import Result
 
 try:
     from .authentication import (
@@ -36,13 +39,19 @@ except ImportError as e:  # pragma: no cover
     AUTH_AVAILABLE = False
 
     # Provide fallback classes for testing
-    class AuthMethod:
+    class AuthMethod:  # type: ignore[no-redef]
         JWT = "jwt"
 
-    class AuthToken:
+    class AuthToken:  # type: ignore[no-redef]
         def __init__(
-            self, token, principal, method, issued_at, expires_at=None, permissions=None
-        ):
+            self,
+            token: str,
+            principal: str,
+            method: Any,
+            issued_at: float,
+            expires_at: Optional[float] = None,
+            permissions: Optional[List[str]] = None,
+        ) -> None:
             self.token = token
             self.principal = principal
             self.method = method
@@ -50,35 +59,43 @@ except ImportError as e:  # pragma: no cover
             self.expires_at = expires_at
             self.permissions = permissions or []
 
-        def is_valid(self):
+        def is_valid(self) -> bool:
             if self.expires_at is None:
                 return True
             return time.time() < self.expires_at
 
-    class AuthCredentials:
+    class AuthCredentials:  # type: ignore[no-redef]
         def __init__(
-            self, method, principal, credentials, expires_at=None, metadata=None
-        ):
+            self,
+            method: Any,
+            principal: str,
+            credentials: Any,
+            expires_at: Optional[float] = None,
+            metadata: Optional[Dict[str, Any]] = None,
+        ) -> None:
             self.method = method
             self.principal = principal
             self.credentials = credentials
             self.expires_at = expires_at
             self.metadata = metadata or {}
 
-        def is_expired(self):
+        def is_expired(self) -> bool:
             if self.expires_at is None:
                 return False
             return time.time() > self.expires_at
 
-    class AuthenticationManager:
-        def __init__(self, config=None):
-            self.active_tokens = {}
+    class AuthenticationManager:  # type: ignore[no-redef]
+        def __init__(self, config: Any = None) -> None:
+            self.active_tokens: Dict[str, AuthToken] = {}
             self.jwt_secret = "test-secret"
             self.jwt_expiry = 3600
 
-        def generate_jwt(self, principal, permissions=None, expires_in=None):
-            from ..core.result import Result
-
+        def generate_jwt(
+            self,
+            principal: str,
+            permissions: Optional[List[str]] = None,
+            expires_in: Optional[float] = None,
+        ) -> Result[str, Dict[str, Any]]:
             token = f"test-jwt-{principal}-{int(time.time())}"
             expires_in = expires_in or self.jwt_expiry
 
@@ -94,9 +111,7 @@ except ImportError as e:  # pragma: no cover
             self.active_tokens[token] = auth_token
             return Result.ok(token)
 
-        def verify_token(self, token):
-            from ..core.result import Result
-
+        def verify_token(self, token: str) -> Result[Any, Dict[str, Any]]:
             if token in self.active_tokens:
                 auth_token = self.active_tokens[token]
                 if auth_token.is_valid():
@@ -111,9 +126,7 @@ except ImportError as e:  # pragma: no cover
                     {"errorType": "INVALID_TOKEN", "message": "Token not found"}
                 )
 
-        def revoke_token(self, token):
-            from ..core.result import Result
-
+        def revoke_token(self, token: str) -> Result[None, Dict[str, Any]]:
             if token in self.active_tokens:
                 del self.active_tokens[token]
                 return Result.ok(None)
@@ -130,10 +143,8 @@ try:
 except ImportError:  # pragma: no cover
     AUTHZ_AVAILABLE = False
 
-    class AuthorizationManager:
-        def authorize_message(self, message):
-            from ..core.result import Result
-
+    class AuthorizationManager:  # type: ignore[no-redef]
+        def authorize_message(self, message: Any) -> Result[bool, Dict[str, Any]]:
             return Result.ok(True)
 
 
@@ -144,13 +155,15 @@ try:
 except ImportError:  # pragma: no cover
     LINK_AVAILABLE = False
 
-    class LinkState:
+    class LinkState:  # type: ignore[no-redef]
         INITIATING = "INITIATING"
         ESTABLISHED = "ESTABLISHED"
         TERMINATED = "TERMINATED"
 
-    class Link:
-        def __init__(self, agent_a, agent_b, link_id=None):
+    class Link:  # type: ignore[no-redef]
+        def __init__(
+            self, agent_a: str, agent_b: str, link_id: Optional[str] = None
+        ) -> None:
             import uuid
 
             self.agent_a = agent_a
@@ -158,24 +171,24 @@ except ImportError:  # pragma: no cover
             self.link_id = link_id or str(uuid.uuid4())
             self.state = LinkState.INITIATING
 
-        def establish(self, lifetime_seconds=3600):
+        def establish(self, lifetime_seconds: int = 3600) -> None:
             self.state = LinkState.ESTABLISHED
 
-        def is_expired(self):
+        def is_expired(self) -> bool:
             return False
 
-    class LinkManager:
-        def __init__(self):
-            self.links = {}
+    class LinkManager:  # type: ignore[no-redef]
+        def __init__(self) -> None:
+            self.links: Dict[str, Link] = {}
 
-        def initiate_link(self, agent_a, agent_b):
+        def initiate_link(self, agent_a: str, agent_b: str) -> Link:
             link = Link(agent_a, agent_b)
             self.links[link.link_id] = link
             return link
 
-        def establish_link(self, link_id, lifetime_seconds=3600):
-            from ..core.result import Result
-
+        def establish_link(
+            self, link_id: str, lifetime_seconds: int = 3600
+        ) -> Result[Link, Dict[str, Any]]:
             if link_id in self.links:
                 link = self.links[link_id]
                 link.establish(lifetime_seconds)
@@ -185,9 +198,9 @@ except ImportError:  # pragma: no cover
                     {"errorType": "UNKNOWN_LINK", "message": "Link not found"}
                 )
 
-        def validate_link(self, link_id, sender, receiver):
-            from ..core.result import Result
-
+        def validate_link(
+            self, link_id: str, sender: str, receiver: str
+        ) -> Result[Link, Dict[str, Any]]:
             if link_id in self.links:
                 link = self.links[link_id]
                 if link.state == LinkState.ESTABLISHED:
