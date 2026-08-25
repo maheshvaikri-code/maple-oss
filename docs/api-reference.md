@@ -531,16 +531,26 @@ tool. Handlers that need cancellation should close over the token and check
 
 ## Typed Agent Contracts (preview)
 
-MAPLE can validate tool inputs and outputs against a bounded JSON-Schema subset,
-parse structured model responses, and apply synchronous guardrails at agent and
-tool boundaries. Guardrails may return `True`/`None` to allow a value, `False`
-to reject it, or a `Result`. Exceptions and malformed guardrail results fail
-closed. The validator enforces depth and collection-size limits; regular
-expression `pattern` constraints are rejected because they cannot be given a
-reliable execution deadline by the standard library.
+MAPLE can validate tool inputs and outputs against a bounded JSON-Schema subset
+or optional Pydantic-style models, parse structured model responses, and apply
+synchronous guardrails at agent and tool boundaries. Guardrails may return
+`True`/`None` to allow a value, `False` to reject it, or a `Result`. Exceptions
+and malformed guardrail results fail closed. The validator enforces depth and
+collection-size limits; regular expression `pattern` constraints are rejected
+because they cannot be given a reliable execution deadline by the standard
+library. When `input_model` is set, its JSON Schema is advertised to the model,
+validated arguments are normalized before the handler runs, and invalid input
+cannot invoke the handler. When `output_model` is set, the tool returns a
+validated model instance and rejects invalid handler results.
 
 ```python
-from maple import AutonomousConfig, Tool, parse_structured_output
+from maple import (
+    AutonomousConfig,
+    Tool,
+    parse_structured_output,
+    parse_typed_output,
+)
+from pydantic import BaseModel
 
 report_schema = {
     "type": "object",
@@ -564,6 +574,22 @@ config = AutonomousConfig(
     output_guardrails=[lambda value: value["answer"] != ""],
 )
 parsed = parse_structured_output('{"answer":"ready"}', report_schema)
+
+class LookupArgs(BaseModel):
+    topic: str
+
+class LookupResult(BaseModel):
+    answer: str
+
+typed_tool = Tool(
+    name="typed_lookup",
+    description="Look up a topic",
+    parameters={"type": "object"},
+    handler=produce_typed_report,
+    input_model=LookupArgs,
+    output_model=LookupResult,
+)
+typed = parse_typed_output('{"answer":"ready"}', LookupResult)
 ```
 
 ## Retrieval and Source References (preview)
