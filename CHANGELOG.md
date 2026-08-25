@@ -49,6 +49,11 @@
   optimization behavior. The performance-optimizer regression surface passes
   37 tests, and the aggregate explicit Python 3.10-target audit is now
   `239 errors` in 37 files.
+- **Fault-tolerance boundary**: completed circuit-breaker, executor lifecycle,
+  retry, recovery-handler, and callback contracts. Also fixed the executor's
+  half-open circuit transition to use a writable validated state boundary;
+  fault-tolerance tests pass 10, and the aggregate audit is now `221 errors`
+  in 36 files.
 - **Repository formatter gate closure**: normalized the tracked `maple/`
   source tree with the configured Black and isort profiles. Both checks are
   now idempotent, the focused runtime gate remains `240 passed`, and a fresh

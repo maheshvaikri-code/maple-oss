@@ -24,6 +24,7 @@ from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
 
 from ..core.result import Result
+from ..discovery.registry import AgentInfo
 from ..error.circuit_breaker import CircuitBreaker, CircuitState
 from .scheduler import TaskScheduler
 from .task_queue import Task, TaskQueue, TaskStatus
@@ -82,24 +83,35 @@ class FailureRecord:
 class CircuitBreakerState:
     """Wrapper around shared CircuitBreaker for backwards compatibility."""
 
-    def __init__(self, agent_id: str, threshold: int = 5, timeout: float = 60.0):
+    def __init__(
+        self, agent_id: str, threshold: int = 5, timeout: float = 60.0
+    ) -> None:
         self.agent_id = agent_id
-        self._cb = CircuitBreaker(failure_threshold=threshold, reset_timeout=timeout)
+        self._cb: CircuitBreaker[Any, Any] = CircuitBreaker(
+            failure_threshold=threshold, reset_timeout=timeout
+        )
 
     @property
-    def failure_count(self):
+    def failure_count(self) -> int:
         return self._cb.failure_count
 
     @property
-    def last_failure_time(self):
+    def last_failure_time(self) -> float:
         return self._cb.last_failure_time
 
     @property
-    def state(self):
+    def state(self) -> str:
         return self._cb.state.value.lower()
 
+    @state.setter
+    def state(self, value: str) -> None:
+        try:
+            self._cb.state = CircuitState[value.upper()]
+        except KeyError as exc:
+            raise ValueError(f"Unknown circuit breaker state: {value}") from exc
+
     @property
-    def next_attempt_time(self):
+    def next_attempt_time(self) -> float:
         return self._cb.last_failure_time + self._cb.reset_timeout
 
 
@@ -110,8 +122,8 @@ class FaultTolerantExecutor:
         self,
         task_queue: TaskQueue,
         scheduler: TaskScheduler,
-        policy: FaultTolerancePolicy = None,
-    ):
+        policy: Optional[FaultTolerancePolicy] = None,
+    ) -> None:
         self.task_queue = task_queue
         self.scheduler = scheduler
         self.policy = policy or FaultTolerancePolicy()
@@ -140,7 +152,7 @@ class FaultTolerantExecutor:
         # Initialize default recovery handlers
         self._initialize_default_handlers()
 
-    def start_executor(self):
+    def start_executor(self) -> None:
         """Start the fault-tolerant executor."""
         with self._lock:
             if self._running:
@@ -152,7 +164,7 @@ class FaultTolerantExecutor:
             )
             self._executor_thread.start()
 
-    def stop_executor(self):
+    def stop_executor(self) -> None:
         """Stop the fault-tolerant executor."""
         with self._lock:
             self._running = False
@@ -211,7 +223,7 @@ class FaultTolerantExecutor:
 
         return Result.ok("handled")
 
-    def _record_failure(self, failure_record: FailureRecord):
+    def _record_failure(self, failure_record: FailureRecord) -> None:
         """Record a failure for analysis and tracking."""
 
         with self._lock:
@@ -359,7 +371,10 @@ class FaultTolerantExecutor:
         return self._schedule_retry(task, failure_record)
 
     def _schedule_retry(
-        self, task: Task, failure_record: FailureRecord, delay_override: float = None
+        self,
+        task: Task,
+        failure_record: FailureRecord,
+        delay_override: Optional[float] = None,
     ) -> Result[str, str]:
         """Schedule a task for retry with appropriate delay."""
 
@@ -368,7 +383,7 @@ class FaultTolerantExecutor:
         else:
             delay = self._calculate_retry_delay(failure_record.retry_attempt)
 
-        def retry_task():
+        def retry_task() -> None:
             time.sleep(delay)
 
             # Requeue the task
@@ -434,7 +449,7 @@ class FaultTolerantExecutor:
         elif recent_failures < 0.1:  # Low failure rate
             base_delay *= 0.8
 
-        return base_delay
+        return float(base_delay)
 
     def _get_recent_failure_rate(self) -> float:
         """Calculate recent failure rate for adaptive strategies."""
@@ -492,7 +507,7 @@ class FaultTolerantExecutor:
                 f"Failed to assign task to alternative agent: {assign_result.unwrap_err()}"
             )
 
-    def _can_agent_handle_task(self, agent, task: Task) -> bool:
+    def _can_agent_handle_task(self, agent: AgentInfo, task: Task) -> bool:
         """Check if an agent can handle a specific task."""
 
         if not task.requirements:
@@ -504,7 +519,7 @@ class FaultTolerantExecutor:
 
         return True
 
-    def _update_circuit_breaker(self, agent_id: str):
+    def _update_circuit_breaker(self, agent_id: str) -> None:
         """Update circuit breaker state for an agent."""
 
         with self._lock:
@@ -540,11 +555,11 @@ class FaultTolerantExecutor:
 
     def register_recovery_handler(
         self, failure_type: FailureType, handler: Callable[[Task, FailureRecord], bool]
-    ):
+    ) -> None:
         """Register a custom recovery handler for a failure type."""
         self.recovery_handlers[failure_type] = handler
 
-    def add_failure_callback(self, callback: Callable[[FailureRecord], None]):
+    def add_failure_callback(self, callback: Callable[[FailureRecord], None]) -> None:
         """Add callback for failure events."""
         self.failure_callbacks.append(callback)
 
@@ -569,7 +584,7 @@ class FaultTolerantExecutor:
                 "active_tasks_with_failures": len(self.failure_history),
             }
 
-    def _initialize_default_handlers(self):
+    def _initialize_default_handlers(self) -> None:
         """Initialize default recovery handlers."""
 
         def handle_validation_error(task: Task, failure_record: FailureRecord) -> bool:
@@ -588,7 +603,7 @@ class FaultTolerantExecutor:
             handle_dependency_failure
         )
 
-    def _executor_loop(self):
+    def _executor_loop(self) -> None:
         """Main executor loop for background circuit breaker management."""
 
         while self._running:
