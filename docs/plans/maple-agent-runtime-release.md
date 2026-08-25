@@ -72,6 +72,8 @@
 
 | 61 | CrewAI tool-boundary closure | Interop / Resource / Security / QA | CrewAI adapter, CrewAI tool regression, changelog, review/QA artifacts | Offline adapter tests, explicit changed-file mypy with skipped imports, Black/isort/Ruff/compile, aggregate audit | done: commit `31e408a`; implemented communication/resource/secure-link/priority tools and typed optional CrewAI fallback without changing crew execution flow; focused `3 passed`; aggregate reduced to `27 errors in 1 file` |
 
+| 62 | NATS broker optional-transport type closure | Broker / Interop / QA | NATS broker, offline NATS regression, changelog, review/QA artifacts | Offline config/not-connected tests, explicit changed-file mypy with skipped imports, Black/isort/Ruff/compile, aggregate audit | done: commit `5f57e50`; typed optional NATS SDK/error aliases, nullable config defaults, stable message IDs/results, callback payloads, and sync event-loop wrapper; focused `1 passed, 1 skipped`; aggregate audit clean for all `93 source files` |
+
 ## Threat sketch
 
 Assets touched: workflow state, tool arguments, model outputs, checkpoint
@@ -171,6 +173,7 @@ LLM-provider slice 58's follow-up audit now reports `62 errors in 5 files`;
 OpenAI-SDK slice 59's follow-up audit now reports `51 errors in 4 files`;
 LangGraph slice 60's follow-up audit now reports `42 errors in 3 files`;
 CrewAI slice 61's follow-up audit now reports `27 errors in 1 file`;
+NATS slice 62's follow-up audit reports `Success: no issues found in 93 source files`;
 installed mypy 2.3 rejects the configured Python 3.8 target, so the support
 matrix/toolchain decision remains open. Dependency-audit disposition and
 unavailable independent fresh-context verification remain open.

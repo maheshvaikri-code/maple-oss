@@ -27,6 +27,12 @@
   failures for unavailable services and a type-safe optional CrewAI fallback.
   The offline adapter regression passes 3 tests, changed-file checks are clean,
   and the aggregate audit is now `27 errors` in 1 file.
+- **NATS optional-transport type closure**: typed nullable NATS configuration,
+  optional SDK/error aliases, message-ID/result boundaries, callback payloads,
+  and the synchronous event-loop wrapper without attempting network access.
+  The offline NATS checks report `1 passed, 1 skipped` because `nats-py` is not
+  installed, and the explicit Python 3.10-target audit is clean across all 93
+  source files.
 - **LLM provider SDK type boundaries**: clarified optional OpenAI and Anthropic
   client configuration, compatible request payload containers, and response
   parsing boundaries without changing provider behavior. The native provider
