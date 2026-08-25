@@ -13,19 +13,11 @@ received a copy of the GNU Affero General Public License along with MAPLE - Mult
 Language Engine. If not, see <https://www.gnu.org/licenses/>.
 """
 
-"""
-MAPLE - Multi Agent Protocol Language Engine
-Created by: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
-
-Multi-agent communication protocol with:
-- Advanced Resource Management
-- Type-safe Result<T,E> Error Handling
-- Link Identification Security
-- Multi-Agent Communication
-
-Copyright 2024 Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
-Licensed under the AGPL License, Version 3.0
-"""
+# MAPLE - Multi Agent Protocol Language Engine.
+# Created by: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri).
+# Multi-agent communication protocol with advanced resource management,
+# type-safe Result<T,E> error handling, link identification security, and
+# multi-agent communication.
 
 import warnings
 from typing import Any, Dict
@@ -136,7 +128,7 @@ from .broker.broker import MessageBroker
 from .communication.streaming import Stream, StreamOptions
 from .core.message import Message, Priority
 from .core.result import Result
-from .core.types import AgentID, Duration, MessageID, Priority, Size
+from .core.types import AgentID, Duration, MessageID, Size
 from .error.circuit_breaker import CircuitBreaker
 from .error.recovery import RetryOptions, exponential_backoff, retry
 from .error.types import Error, ErrorType, Severity
@@ -325,9 +317,9 @@ def validate_installation() -> Dict[str, Any]:
     try:
         # Test core functionality
         config = Config(agent_id="validation_test", broker_url="memory://test")
-        agent = Agent(config)
+        Agent(config)
 
-        message = Message(message_type="VALIDATION_TEST", payload={"test": True})
+        Message(message_type="VALIDATION_TEST", payload={"test": True})
 
         # Basic validation passed
         return {

@@ -23,9 +23,9 @@ import heapq
 import logging
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from ..core.message import Message
 from ..core.result import Result
@@ -364,7 +364,6 @@ class MessageQueue:
 
     def _cleanup_expired(self) -> None:
         """Remove expired messages from the queue."""
-        current_time = time.time()
         cleaned_messages = []
 
         # Rebuild the queue without expired messages

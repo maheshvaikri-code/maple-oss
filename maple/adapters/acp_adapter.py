@@ -15,9 +15,8 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 
 # maple/adapters/acp_adapter.py
 
-import asyncio
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 import aiohttp
 
@@ -109,7 +108,7 @@ class ACPAdapter:
         return {
             "agent_config": {
                 "name": self.maple_agent.agent_id,
-                "description": f"MAPLE-enhanced agent with superior capabilities",
+                "description": "MAPLE-enhanced agent with superior capabilities",
                 "workflows": [
                     {
                         "name": "maple_workflow",

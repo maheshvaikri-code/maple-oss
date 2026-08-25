@@ -16,36 +16,31 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 # maple/security/cryptography_impl.py
 # Creator: Mahesh Vaikri
 
-"""
-Production Cryptographic Implementation for MAPLE Security
-Provides enterprise-grade encryption, signing, and certificate management
-"""
+# Production cryptographic implementation for MAPLE Security.
+# Provides encryption, signing, and certificate management.
 
 import base64
 import json
 import logging
-import os
 import time
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, Optional, Tuple, Union, cast
+from typing import Any, Dict, Optional, Union, cast
 
 try:
     import secrets
 
-    from cryptography import x509
     from cryptography.hazmat.primitives import hashes, serialization
     from cryptography.hazmat.primitives.asymmetric import ec, padding, rsa
     from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
     from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
     from cryptography.x509 import (
         BasicConstraints,
         CertificateBuilder,
         Name,
         NameAttribute,
     )
-    from cryptography.x509.oid import ExtensionOID, NameOID
+    from cryptography.x509.oid import NameOID
 
     CRYPTO_AVAILABLE = True
 except ImportError:
@@ -391,7 +386,7 @@ class CryptographyManager:
 
             return Result.ok(True)
 
-        except Exception as e:
+        except Exception:
             # Verification failed
             return Result.ok(False)
 

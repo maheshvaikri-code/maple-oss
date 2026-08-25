@@ -16,17 +16,15 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 # maple/state/consistency.py
 # Creator: Mahesh Vaikri
 
-"""
-Consistency Management for MAPLE
-Provides different consistency models for distributed state
-"""
+# Consistency management for MAPLE.
+# Provides different consistency models for distributed state.
 
 import logging
 import threading
 import time
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from ..core.result import Result
 from .store import StateEntry, StateStore
@@ -351,7 +349,7 @@ class ConsistencyManager:
                     return Result.err(
                         {
                             "errorType": "READ_YOUR_WRITES_VIOLATION",
-                            "message": f"Read does not reflect recent write",
+                            "message": "Read does not reflect recent write",
                             "details": {
                                 "value_timestamp": entry.timestamp,
                                 "write_timestamp": last_write,

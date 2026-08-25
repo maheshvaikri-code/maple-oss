@@ -19,7 +19,6 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 import threading
 import time
 from dataclasses import dataclass
-from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, List, Optional
 
 from ..core.result import Result
@@ -316,7 +315,7 @@ class HealthMonitor:
                         for callback in self.health_callbacks:
                             try:
                                 callback(agent.agent_id, health)
-                            except Exception as e:
+                            except Exception:
                                 # Don't let callback errors stop monitoring
                                 pass
 
@@ -324,6 +323,6 @@ class HealthMonitor:
                     self.heartbeat_interval / 2
                 )  # Check twice per heartbeat interval
 
-            except Exception as e:
+            except Exception:
                 # Log error and continue monitoring
                 time.sleep(1)

@@ -16,9 +16,8 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 # maple/adapters/fipa_acl_adapter.py
 
 import time
-import xml.etree.ElementTree as ET
 from enum import Enum
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, Dict, cast
 
 from maple.core.types import Priority
 
@@ -76,7 +75,7 @@ class FIPAACLAdapter:
 
         # Create FIPA ACL message
         fipa_message = f"""
-        (inform
+        ({performative}
             :sender {maple_message.sender}
             :receiver {maple_message.receiver}
             :content "{self._encode_maple_content(maple_message.payload)}"
