@@ -105,6 +105,11 @@
   runtime error payloads and failure transitions are unchanged. The error suite
   passes 42 tests, both changed-file mypy checks are clean, and the aggregate
   audit is now `147 errors` in 19 files.
+- **State synchronization result boundary**: separated the set and delete
+  operation results in the synchronizer so their concrete state-store result
+  types do not collide during static analysis. The synchronization regression
+  passes 9 tests, the changed-file mypy check is clean, and the aggregate audit
+  is now `146 errors` in 18 files.
 - **Repository formatter gate closure**: normalized the tracked `maple/`
   source tree with the configured Black and isort profiles. Both checks are
   now idempotent, the focused runtime gate remains `240 passed`, and a fresh
