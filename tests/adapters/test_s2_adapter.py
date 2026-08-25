@@ -148,7 +148,7 @@ class TestS2StateBackendUnit(unittest.TestCase):
         """Test get on empty cache returns None."""
         import asyncio
         backend = self._make_backend()
-        result = asyncio.get_event_loop().run_until_complete(backend.get("nonexistent"))
+        result = asyncio.run(backend.get("nonexistent"))
         self.assertTrue(result.is_ok())
         self.assertIsNone(result.unwrap())
 
@@ -156,7 +156,7 @@ class TestS2StateBackendUnit(unittest.TestCase):
         """Test list_keys on empty cache returns empty list."""
         import asyncio
         backend = self._make_backend()
-        result = asyncio.get_event_loop().run_until_complete(backend.list_keys())
+        result = asyncio.run(backend.list_keys())
         self.assertTrue(result.is_ok())
         self.assertEqual(result.unwrap(), [])
 
@@ -170,7 +170,7 @@ class TestS2StateBackendUnit(unittest.TestCase):
             "user:2": {"value": "b"},
             "system:config": {"value": "c"},
         }
-        result = asyncio.get_event_loop().run_until_complete(backend.list_keys("user:"))
+        result = asyncio.run(backend.list_keys("user:"))
         self.assertTrue(result.is_ok())
         keys = result.unwrap()
         self.assertEqual(len(keys), 2)

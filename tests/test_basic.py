@@ -37,11 +37,10 @@ def test_imports():
         from maple.core.message import Message  # noqa: F401
         from maple.agent.config import Config, SecurityConfig  # noqa: F401
         print("[PASS] Core imports successful")
-        return True
     except Exception as e:
         print(f"[FAIL] Import failed: {e}")
         traceback.print_exc()
-        return False
+        raise
 
 def test_types():
     """Test the type system."""
@@ -69,11 +68,10 @@ def test_types():
         assert Priority.HIGH.value == "HIGH"
         
         print("[PASS] Type system tests passed")
-        return True
     except Exception as e:
         print(f"[FAIL] Type system test failed: {e}")
         traceback.print_exc()
-        return False
+        raise
 
 def test_result():
     """Test the Result<T,E> type."""
@@ -102,11 +100,10 @@ def test_result():
         assert err_result.unwrap_or("default") == "default"
         
         print("[PASS] Result<T,E> tests passed")
-        return True
     except Exception as e:
         print(f"[FAIL] Result<T,E> test failed: {e}")
         traceback.print_exc()
-        return False
+        raise
 
 def test_message():
     """Test message creation and serialization."""
@@ -146,11 +143,10 @@ def test_message():
         assert reconstructed.payload == msg.payload
         
         print("[PASS] Message system tests passed")
-        return True
     except Exception as e:
         print(f"[FAIL] Message test failed: {e}")
         traceback.print_exc()
-        return False
+        raise
 
 def test_config():
     """Test configuration system."""
@@ -188,11 +184,10 @@ def test_config():
         assert link_config.default_lifetime == 3600
         
         print("[PASS] Configuration tests passed")
-        return True
     except Exception as e:
         print(f"[FAIL] Configuration test failed: {e}")
         traceback.print_exc()
-        return False
+        raise
 
 def test_link_management():
     """Test link management system."""
@@ -222,11 +217,10 @@ def test_link_management():
         assert established_link.state == LinkState.ESTABLISHED
         
         print("[PASS] Link management tests passed")
-        return True
     except Exception as e:
         print(f"[FAIL] Link management test failed: {e}")
         traceback.print_exc()
-        return False
+        raise
 
 def main():
     """Run all tests."""
@@ -248,10 +242,8 @@ def main():
     
     for test in tests:
         try:
-            if test():
-                passed += 1
-            else:
-                failed += 1
+            test()
+            passed += 1
         except Exception as e:
             print(f"[FAIL] Test {test.__name__} crashed: {e}")
             failed += 1
