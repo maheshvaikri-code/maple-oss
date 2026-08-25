@@ -62,6 +62,7 @@
 | 53 | Production broker factory type boundary cleanup | Broker / Backend / QA | production broker factory, S2/broker regression, changelog, review/QA artifacts | S2/broker suite, explicit changed-file mypy with skipped imports, Black/isort/compile, aggregate audit | done: commit `4114386`; separated in-memory, NATS, and S2 broker locals so concrete factory types do not collide; focused `16 passed`; aggregate reduced to `130 errors in 11 files` |
 | 54 | AutoGen adapter type boundary cleanup | Interop / Backend / QA | AutoGen adapter, import/compile evidence, changelog, review/QA artifacts | Explicit changed-file mypy with skipped imports, Black/isort/compile, import smoke, aggregate audit | done: commit `7395bd4`; typed adapter constructors, agent registry, group-chat inputs, and mixed numeric performance metrics; import smoke passed with `AUTOGEN_AVAILABLE: True`; aggregate reduced to `126 errors in 10 files` |
 | 55 | Doctrine adapter result-boundary cleanup | Interop / Security / QA | doctrine adapter builders/validators, doctrine adapter regression, changelog, review/QA artifacts | Doctrine adapter suite, explicit changed-file mypy with skipped imports, Black/isort/compile, aggregate audit | done: commit `0128070`; narrowed artifact references, validation error propagation, and agent send results without changing fail-closed behavior; focused `34 passed`; aggregate reduced to `119 errors in 9 files` |
+| 56 | Security compatibility façade type closure | Security / Backend / QA | `maple/security/__init__.py`, security-init regression, changelog, review/QA artifacts | Security-init suite, explicit changed-file mypy with skipped imports, Black/isort/compile, aggregate audit | done: commit `bfbb203`; typed intentional fallback classes, token/link state, result contracts, and compatibility imports; focused `30 passed`; aggregate reduced to `95 errors in 8 files` |
 
 ## Threat sketch
 
@@ -156,6 +157,7 @@ legacy-interop slice 52's follow-up audit now reports `132 errors in 12 files`;
 production-broker slice 53's follow-up audit now reports `130 errors in 11 files`;
 AutoGen slice 54's follow-up audit now reports `126 errors in 10 files`;
 doctrine-adapter slice 55's follow-up audit now reports `119 errors in 9 files`;
+security-facade slice 56's follow-up audit now reports `95 errors in 8 files`;
 installed mypy 2.3 rejects the configured Python 3.8 target, so the support
 matrix/toolchain decision remains open. Dependency-audit disposition and
 unavailable independent fresh-context verification remain open.

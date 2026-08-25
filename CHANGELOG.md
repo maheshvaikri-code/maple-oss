@@ -143,6 +143,11 @@
   fail-closed schema validation or routability behavior. The doctrine adapter
   suite passes 34 tests, the changed-file mypy check is clean, and the aggregate
   audit is now `119 errors` in 9 files.
+- **Security compatibility façade typing**: typed intentional authentication,
+  authorization, and link fallbacks, including token/link state and result
+  contracts, without changing fallback behavior. The security-init regression
+  passes 30 tests, the changed-file mypy check is clean, and the aggregate audit
+  is now `95 errors` in 8 files.
 - **Repository formatter gate closure**: normalized the tracked `maple/`
   source tree with the configured Black and isort profiles. Both checks are
   now idempotent, the focused runtime gate remains `240 passed`, and a fresh
