@@ -19,11 +19,10 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 import threading
 import time
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional
 
 from ..core.result import Result
 from ..discovery.capability_matcher import (
-    CapabilityMatch,
     CapabilityMatcher,
     CapabilityRequirement,
 )
@@ -57,7 +56,7 @@ class SchedulingMetrics:
     average_scheduling_time: float = 0.0
     queue_length: int = 0
     active_agents: int = 0
-    load_distribution: Dict[str, float] = None
+    load_distribution: Optional[Dict[str, float]] = None
 
 
 class TaskScheduler:
@@ -68,8 +67,8 @@ class TaskScheduler:
         task_queue: TaskQueue,
         agent_registry: AgentRegistry,
         capability_matcher: CapabilityMatcher,
-        policy: SchedulingPolicy = None,
-    ):
+        policy: Optional[SchedulingPolicy] = None,
+    ) -> None:
         self.task_queue = task_queue
         self.agent_registry = agent_registry
         self.capability_matcher = capability_matcher
@@ -96,7 +95,7 @@ class TaskScheduler:
         self._metrics = SchedulingMetrics()
         self._scheduling_times: List[float] = []
 
-    def start_scheduler(self):
+    def start_scheduler(self) -> None:
         """Start the automatic task scheduler."""
         with self._lock:
             if self._running:
@@ -108,7 +107,7 @@ class TaskScheduler:
             )
             self._scheduler_thread.start()
 
-    def stop_scheduler(self):
+    def stop_scheduler(self) -> None:
         """Stop the automatic task scheduler."""
         with self._lock:
             self._running = False
@@ -511,11 +510,11 @@ class TaskScheduler:
 
             return Result.ok(moves)
 
-    def add_scheduling_callback(self, callback: Callable[[str, str], None]):
+    def add_scheduling_callback(self, callback: Callable[[str, str], None]) -> None:
         """Add callback for scheduling events."""
         self.scheduling_callbacks.append(callback)
 
-    def _scheduler_loop(self):
+    def _scheduler_loop(self) -> None:
         """Main scheduling loop."""
 
         while self._running:
@@ -525,8 +524,10 @@ class TaskScheduler:
                     timeout_seconds=self.policy.scheduling_interval
                 )
 
-                if task_result.is_ok() and task_result.unwrap():
+                if task_result.is_ok() and task_result.unwrap() is not None:
                     task = task_result.unwrap()
+                    if task is None:
+                        continue
 
                     # Schedule the task
                     schedule_result = self.schedule_task(task.task_id)

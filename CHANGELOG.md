@@ -40,6 +40,10 @@
   annotations in `TaskMonitor` without changing monitoring behavior. The
   monitoring/task-management regression surface passes 156 tests, and the
   aggregate explicit Python 3.10-target audit is now `252 errors` in 39 files.
+- **Task scheduler type boundary**: completed scheduler policy, metrics,
+  lifecycle, callback, and queued-task narrowing without changing scheduling
+  behavior. The scheduler regression surface passes 27 tests, and the
+  aggregate explicit Python 3.10-target audit is now `246 errors` in 38 files.
 - **Repository formatter gate closure**: normalized the tracked `maple/`
   source tree with the configured Black and isort profiles. Both checks are
   now idempotent, the focused runtime gate remains `240 passed`, and a fresh
