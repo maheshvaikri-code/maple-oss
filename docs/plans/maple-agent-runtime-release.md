@@ -31,6 +31,7 @@
 | 22 | Deterministic retrieval/citation evaluation | ML Engineer / Backend / QA | `docs/adr/020-*`, evaluation module/tests, API docs, README, changelog | Bounded golden queries, lexical/vector hit support, source URI precision/recall/F1, malformed runner isolation, no faithfulness claim | done: commit `a682656`; focused `10 passed`; combined feature gate `225 passed` |
 | 23 | Bounded workflow execution journal | Chief Architect / Backend / Security | `docs/adr/021-*`, replay journal/workflow runtime/tests, API docs, README, changelog | Opt-in normalized-output replay, deterministic execution keys/input digests, memory/file bounds, conflict/malformed failure paths, no exactly-once claim | done: commit `1af7f3a`; focused `10 passed`; combined gate `235 passed`; review/QA filed |
 | 24 | Deterministic grounded-answer evaluation | ML Engineer / Backend / QA | `docs/adr/022-*`, evaluation module/tests, API docs, README, changelog | Bounded source text, deterministic claim segmentation/token overlap, threshold errors, malformed runner isolation, explicit no semantic-faithfulness claim | done: commit `90203f8`; focused `5 passed`; combined gate `240 passed`; review/QA/build evidence filed |
+| 25 | Repository-wide Ruff lint gate closure | DevOps / QA / Code Reviewer | tracked `tests/`, release plan, changelog, review/QA artifacts | `python -m ruff check tools tests`, compile, changed-test regression, focused MAPLE gate | done: commit `cd13435`; Ruff clean; changed surface `621 passed`; focused gate `240 passed`; review/QA filed |
 
 ## Threat sketch
 
@@ -65,8 +66,9 @@ privileged action without approval.
 
 ## Status snapshot
 
-Done (with evidence): G0 brief, G1 ADR, G2 plan, and twenty-four committed G3
-feature slices through bounded workflow execution recovery, including MCP
+Done (with evidence): G0 brief, G1 ADR, G2 plan, twenty-four committed G3
+feature slices through bounded workflow execution recovery, and slice 25
+release-hardening evidence, including MCP
 interoperability, bounded artifacts, native LLM streaming, deterministic async
 tool result ordering, durable approval, workflow fan-out/fan-in, checkpoint
 history, bounded conversation sessions, and retrieval/source evaluation; slice
@@ -85,13 +87,16 @@ workflow execution-journal, and grounded-answer evaluation regressions),
 compile, changed-surface Ruff/Flake8, metadata-clean wheel/sdist builds, Twine
 checks, a clean-venv wheel doctor smoke pass, and a fresh `.[dev,security]`
 environment with `pip check` reporting no broken requirements all pass.
-The full repository regression is not complete: the latest bounded attempt
+The repository-wide Ruff gate is now clean across `tools` and `tests`, and the
+changed tracked-test regression reports `621 passed, 7 warnings`. The full
+repository regression is not complete: the latest bounded attempt
 reported `1049 passed, 8 warnings in 839.17s` before interruption in the
 remaining Doctrine gold cases. Fresh-repository profiling shows individual
 Git commands taking roughly 5–15 seconds on this Windows environment, with
 the slowest gold cases at 166.96s, 159.74s, 115.61s, and 56.04s. No assertion
 failure was reported. The shared interpreter still has unrelated `pip check`
-conflicts, but the isolated dependency gate is clean. Repository-wide Ruff
-debt and unavailable independent fresh-context verification remain open.
+conflicts, but the isolated dependency gate is clean. Seven legacy test
+warnings, dependency-audit disposition, and unavailable independent
+fresh-context verification remain open.
 External publishing, cloud selection, and website changes remain explicitly out
 of scope until human approval.

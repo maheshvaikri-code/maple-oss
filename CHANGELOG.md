@@ -10,6 +10,10 @@
 
 ### Additions
 
+- **Repository lint gate closure**: cleared the 154 repository Ruff findings
+  across the tracked test surface without weakening import-smoke coverage;
+  `python -m ruff check tools tests` now passes, with a 621-test changed
+  surface regression and the focused MAPLE gate still green.
 - **CI/release preflight**: GitHub Actions now enforces isolated dependency
   consistency, compilation, the network-free doctor, changed-runtime Flake8,
   focused regressions, and built-wheel verification before package release.
