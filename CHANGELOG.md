@@ -22,6 +22,10 @@
   fail-closed result for unconfigured resource management instead of an
   attribute error. Broker and MCP regressions are recorded in the slice 30
   evidence; aggregate type debt remains open at `287 errors` in 44 files.
+- **Resource primitive typing**: clarified resource specification serialization,
+  manager initialization, and negotiation request/offer queues without changing
+  allocation behavior. The resource package passes 92 tests; aggregate type
+  debt remains open at `277 errors` in 43 files.
 - **Repository formatter gate closure**: normalized the tracked `maple/`
   source tree with the configured Black and isort profiles. Both checks are
   now idempotent, the focused runtime gate remains `240 passed`, and a fresh
