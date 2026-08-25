@@ -20,7 +20,7 @@ import logging
 import threading
 import time
 from enum import Enum
-from typing import Any, Callable, Dict, Generic, Optional, TypeVar
+from typing import Any, Callable, Dict, Generic, Optional, TypeVar, cast
 
 from ..core.result import Result
 
@@ -96,15 +96,18 @@ class CircuitBreaker(Generic[T, E]):
                         f"Circuit open, blocking request (reset in {self.reset_timeout - (time.time() - self.last_failure_time):.1f}s)"
                     )
                     return Result.err(
-                        {
-                            "errorType": "CIRCUIT_OPEN",
-                            "message": "Circuit breaker is open",
-                            "details": {
-                                "resetTimeout": self.reset_timeout,
-                                "timeRemaining": self.reset_timeout
-                                - (time.time() - self.last_failure_time),
+                        cast(
+                            E,
+                            {
+                                "errorType": "CIRCUIT_OPEN",
+                                "message": "Circuit breaker is open",
+                                "details": {
+                                    "resetTimeout": self.reset_timeout,
+                                    "timeRemaining": self.reset_timeout
+                                    - (time.time() - self.last_failure_time),
+                                },
                             },
-                        }
+                        )
                     )
 
             # Check if we've reached the limit of half-open calls
@@ -114,11 +117,14 @@ class CircuitBreaker(Generic[T, E]):
             ):
                 logger.debug("Half-open call limit reached, blocking request")
                 return Result.err(
-                    {
-                        "errorType": "CIRCUIT_HALF_OPEN",
-                        "message": "Circuit breaker is half-open and call limit reached",
-                        "details": {"maxCalls": self.half_open_max_calls},
-                    }
+                    cast(
+                        E,
+                        {
+                            "errorType": "CIRCUIT_HALF_OPEN",
+                            "message": "Circuit breaker is half-open and call limit reached",
+                            "details": {"maxCalls": self.half_open_max_calls},
+                        },
+                    )
                 )
 
             # Increment half-open calls if applicable

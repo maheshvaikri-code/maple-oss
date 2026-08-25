@@ -20,7 +20,7 @@ import logging
 import random
 import time
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Generic, Optional, TypeVar
+from typing import Any, Callable, Dict, Generic, Optional, TypeVar, cast
 
 from ..core.result import Result
 
@@ -97,7 +97,7 @@ def retry(func: Callable[[], Result[T, E]], options: RetryOptions) -> Result[T, 
         time.sleep(delay)
 
     # This should never be reached, but just in case
-    return Result.err(last_error)
+    return Result.err(cast(E, last_error))
 
 
 def exponential_backoff(
