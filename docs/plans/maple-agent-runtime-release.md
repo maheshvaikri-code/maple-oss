@@ -44,7 +44,7 @@
 | 35 | Task-scheduler type boundary cleanup | Backend / QA | task scheduler, changelog, review/QA artifacts | Scheduler suite, explicit target mypy on changed module, Black/isort/Ruff/compile, aggregate audit | done: commit `ed46678`; behavior-preserving policy/metrics/lifecycle annotations and queued-task narrowing; focused `27 passed`; aggregate reduced to `246 errors in 38 files` |
 | 36 | Performance-optimizer type boundary cleanup | Backend / QA | performance optimizer, changelog, review/QA artifacts | Performance-optimizer suite, explicit target mypy on changed module, Black/isort/Ruff/compile, aggregate audit | done: commit `58379dd`; behavior-preserving lifecycle/callback/cache/trend annotations; focused `37 passed`; aggregate reduced to `239 errors in 37 files` |
 | 37 | Fault-tolerance execution boundary cleanup | Backend / Reliability / QA | fault-tolerance executor, circuit-breaker state boundary, regression test, changelog, review/QA artifacts | Fault-tolerance suite, circuit-state regression, explicit target mypy on changed module, Black/isort/Ruff/compile, aggregate audit | done: commit `4c7d348`; executor/retry/recovery annotations plus validated half-open transition; focused `10 passed`; aggregate reduced to `221 errors in 36 files` |
-| 38 | Result-collector aggregation boundary cleanup | Backend / QA | result collector, custom-aggregator guard, changelog, review/QA artifacts | Result-collector suite, explicit target mypy on changed module, Black/isort/Ruff/compile, aggregate audit | in progress: behavior-preserving lifecycle/callback/filter annotations plus structured absent-callable error; focused `33 passed`; aggregate reduced to `205 errors in 35 files` |
+| 38 | Result-collector aggregation boundary cleanup | Backend / QA | result collector, custom-aggregator guard, changelog, review/QA artifacts | Result-collector suite, explicit target mypy on changed module, Black/isort/Ruff/compile, aggregate audit | done: commit `24a8808`; behavior-preserving lifecycle/callback/filter annotations plus structured absent-callable error; focused `33 passed`; aggregate reduced to `205 errors in 35 files` |
 
 ## Threat sketch
 
@@ -81,7 +81,7 @@ privileged action without approval.
 
 Done (with evidence): G0 brief, G1 ADR, G2 plan, committed G3 feature slices
 through bounded workflow execution recovery, and release-hardening evidence
-through slice 36, including MCP
+through slice 38, including MCP
 interoperability, bounded artifacts, native LLM streaming, deterministic async
 tool result ordering, durable approval, workflow fan-out/fan-in, checkpoint
 history, bounded conversation sessions, and retrieval/source evaluation; slice
@@ -120,7 +120,8 @@ manual interruption. Slices 29–31's explicit Python 3.10-target type audit now
 reports `277 errors in 43 files`; slice 33's follow-up audit now reports
 `266 errors in 40 files`, down from the pre-cleanup baseline; slice 36's
 follow-up audit now reports `239 errors in 37 files`; slice 37's follow-up
-audit now reports `221 errors in 36 files`; the
+audit now reports `221 errors in 36 files`; slice 38's follow-up audit now
+reports `205 errors in 35 files`; the
 installed mypy 2.3 rejects the configured Python 3.8 target, so the support
 matrix/toolchain decision remains open. Dependency-audit disposition and
 unavailable independent fresh-context verification remain open.
