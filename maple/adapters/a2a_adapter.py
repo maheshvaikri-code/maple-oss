@@ -15,15 +15,15 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 
 # maple/adapters/a2a_adapter.py
 
-import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 import requests
 
 from ..core.message import Message
 from ..core.result import Result
 from ..core.types import Priority
-from ..resources.specification import ResourceRequest
+
+A2A_REQUEST_TIMEOUT_SECONDS = 30
 
 
 class A2AAdapter:
@@ -188,6 +188,7 @@ class A2AAdapter:
                 f"{registry_url}/agents",
                 json=self.agent_card,
                 headers={"Content-Type": "application/json"},
+                timeout=A2A_REQUEST_TIMEOUT_SECONDS,
             )
 
             if response.status_code == 201:

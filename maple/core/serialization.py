@@ -16,21 +16,48 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 # maple/core/serialization.py
 # Creator: Mahesh Vaikri
 
-"""
-Serialization utilities for MAPLE messages and data structures
-Provides multiple serialization formats and efficient encoding/decoding
-"""
+# Serialization utilities for MAPLE messages and data structures.
+# Provides multiple formats and efficient encoding/decoding.
 
 import base64
+import importlib.util
+import io
 import json
 import logging
 import pickle
 from enum import Enum
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional
 
 from .result import Result
 
 logger = logging.getLogger(__name__)
+
+MAX_PICKLE_BYTES = 1_048_576
+
+
+class _RestrictedUnpickler(pickle.Unpickler):
+    """Unpickle only inert built-in containers and scalar values."""
+
+    _SAFE_GLOBALS = {
+        ("builtins", "bytearray"),
+        ("builtins", "bytes"),
+        ("builtins", "complex"),
+        ("builtins", "dict"),
+        ("builtins", "float"),
+        ("builtins", "frozenset"),
+        ("builtins", "int"),
+        ("builtins", "list"),
+        ("builtins", "set"),
+        ("builtins", "str"),
+        ("builtins", "tuple"),
+    }
+
+    def find_class(self, module: str, name: str) -> Any:
+        if (module, name) not in self._SAFE_GLOBALS:
+            raise pickle.UnpicklingError(
+                f"pickle global is not allowed: {module}.{name}"
+            )
+        return super().find_class(module, name)
 
 
 class SerializationFormat(Enum):
@@ -48,7 +75,9 @@ class Serializer:
 
     Supports multiple formats:
     - JSON: Human-readable, widely compatible
-    - Pickle: Python-specific, supports complex objects
+    - Pickle: Python-specific, supports bounded built-in containers; inbound
+      pickle globals are restricted and arbitrary object reconstruction is not
+      supported
     - MessagePack: Binary, compact and fast
     - Protocol Buffers: Type-safe, cross-language
     """
@@ -68,19 +97,10 @@ class Serializer:
         self.msgpack_available = False
         self.protobuf_available = False
 
-        try:
-            import msgpack
-
-            self.msgpack_available = True
-        except ImportError:
-            pass
-
-        try:
-            import google.protobuf
-
-            self.protobuf_available = True
-        except ImportError:
-            pass
+        self.msgpack_available = importlib.util.find_spec("msgpack") is not None
+        self.protobuf_available = (
+            importlib.util.find_spec("google.protobuf") is not None
+        )
 
     def serialize(
         self, data: Any, format: Optional[SerializationFormat] = None
@@ -207,9 +227,18 @@ class Serializer:
             )
 
     def _deserialize_pickle(self, data: bytes) -> Result[Any, Dict[str, Any]]:
-        """Deserialize pickle data."""
+        """Deserialize a bounded pickle containing only safe built-ins."""
+        if len(data) > MAX_PICKLE_BYTES:
+            return Result.err(
+                {
+                    "errorType": "PICKLE_DESERIALIZATION_ERROR",
+                    "message": "Pickle payload exceeds the configured size limit",
+                }
+            )
         try:
-            unpickled_data = pickle.loads(data)
+            # The restricted global allowlist prevents module/callable loads;
+            # the size check above bounds the input before interpretation.
+            unpickled_data = _RestrictedUnpickler(io.BytesIO(data)).load()  # nosec B301
             return Result.ok(unpickled_data)
         except Exception as e:
             return Result.err(

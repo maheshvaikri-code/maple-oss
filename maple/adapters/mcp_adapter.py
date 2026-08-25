@@ -565,7 +565,9 @@ class StreamableHTTPTransport:
         return Result.ok(response)
 
     def _send(self, request: Request) -> Tuple[int, str, Any, bytes]:
-        with urlopen(request, timeout=self.timeout) as response:
+        # The constructor rejects every scheme except absolute http(s), so
+        # this dependency-free transport cannot open file:/ or custom URLs.
+        with urlopen(request, timeout=self.timeout) as response:  # nosec B310
             body = response.read(self.max_response_bytes + 1)
             if len(body) > self.max_response_bytes:
                 raise ValueError("MCP response exceeds the configured body limit")

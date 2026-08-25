@@ -1,8 +1,11 @@
 """Tests for maple.core.serialization - Serializer."""
 
+import pickle
+
 import pytest
-from maple.core.serialization import Serializer, SerializationFormat
+
 from maple.core.message import Message
+from maple.core.serialization import SerializationFormat, Serializer
 from maple.core.types import Priority
 
 
@@ -36,8 +39,8 @@ class TestJSONSerialization:
         result = serializer.deserialize(serialized, SerializationFormat.JSON)
         assert result.is_ok()
         restored = result.unwrap()
-        assert restored['key'] == "value"
-        assert restored['number'] == 42
+        assert restored["key"] == "value"
+        assert restored["number"] == 42
 
     def test_roundtrip_list(self, serializer):
         data = [1, "two", 3.0, None, True]
@@ -55,19 +58,19 @@ class TestJSONSerialization:
         data = {"items": (1, 2, 3)}
         serialized = serializer.serialize(data, SerializationFormat.JSON).unwrap()
         restored = serializer.deserialize(serialized, SerializationFormat.JSON).unwrap()
-        assert restored['items'] == (1, 2, 3)
+        assert restored["items"] == (1, 2, 3)
 
     def test_set_preservation(self, serializer):
         data = {"items": {1, 2, 3}}
         serialized = serializer.serialize(data, SerializationFormat.JSON).unwrap()
         restored = serializer.deserialize(serialized, SerializationFormat.JSON).unwrap()
-        assert restored['items'] == {1, 2, 3}
+        assert restored["items"] == {1, 2, 3}
 
     def test_bytes_preservation(self, serializer):
         data = {"raw": b"hello bytes"}
         serialized = serializer.serialize(data, SerializationFormat.JSON).unwrap()
         restored = serializer.deserialize(serialized, SerializationFormat.JSON).unwrap()
-        assert restored['raw'] == b"hello bytes"
+        assert restored["raw"] == b"hello bytes"
 
     def test_invalid_json_deserialize(self, serializer):
         result = serializer.deserialize(b"not json", SerializationFormat.JSON)
@@ -77,7 +80,7 @@ class TestJSONSerialization:
         data = {"text": "Hello \u4e16\u754c"}
         serialized = serializer.serialize(data, SerializationFormat.JSON).unwrap()
         restored = serializer.deserialize(serialized, SerializationFormat.JSON).unwrap()
-        assert restored['text'] == "Hello \u4e16\u754c"
+        assert restored["text"] == "Hello \u4e16\u754c"
 
 
 class TestPickleSerialization:
@@ -86,17 +89,37 @@ class TestPickleSerialization:
     def test_roundtrip_dict(self, serializer):
         data = {"key": "value", "number": 42}
         serialized = serializer.serialize(data, SerializationFormat.PICKLE).unwrap()
-        restored = serializer.deserialize(serialized, SerializationFormat.PICKLE).unwrap()
+        restored = serializer.deserialize(
+            serialized, SerializationFormat.PICKLE
+        ).unwrap()
         assert restored == data
 
     def test_roundtrip_complex_objects(self, serializer):
         data = {"set": {1, 2, 3}, "tuple": (4, 5), "bytes": b"raw"}
         serialized = serializer.serialize(data, SerializationFormat.PICKLE).unwrap()
-        restored = serializer.deserialize(serialized, SerializationFormat.PICKLE).unwrap()
+        restored = serializer.deserialize(
+            serialized, SerializationFormat.PICKLE
+        ).unwrap()
         assert restored == data
 
     def test_invalid_pickle(self, serializer):
         result = serializer.deserialize(b"not pickle data", SerializationFormat.PICKLE)
+        assert result.is_err()
+
+    def test_pickle_rejects_callable_globals(self, serializer):
+        class Dangerous:
+            def __reduce__(self):
+                return eval, ("1 + 1",)
+
+        payload = pickle.dumps(Dangerous())
+        result = serializer.deserialize(payload, SerializationFormat.PICKLE)
+        assert result.is_err()
+        assert "PICKLE_DESERIALIZATION_ERROR" in result.unwrap_err()["errorType"]
+
+    def test_pickle_rejects_oversized_payload(self, serializer):
+        result = serializer.deserialize(
+            b"x" * (1_048_576 + 1), SerializationFormat.PICKLE
+        )
         assert result.is_err()
 
 
@@ -107,7 +130,7 @@ class TestMsgPackSerialization:
         if not serializer.msgpack_available:
             result = serializer.serialize({"a": 1}, SerializationFormat.MSGPACK)
             assert result.is_err()
-            assert "MSGPACK_UNAVAILABLE" in result.unwrap_err()['errorType']
+            assert "MSGPACK_UNAVAILABLE" in result.unwrap_err()["errorType"]
 
 
 class TestProtobufSerialization:
@@ -116,7 +139,7 @@ class TestProtobufSerialization:
     def test_protobuf_not_implemented(self, serializer):
         result = serializer.serialize({"a": 1}, SerializationFormat.PROTOBUF)
         assert result.is_err()
-        assert "PROTOBUF_NOT_IMPLEMENTED" in result.unwrap_err()['errorType']
+        assert "PROTOBUF_NOT_IMPLEMENTED" in result.unwrap_err()["errorType"]
 
     def test_protobuf_deserialize_not_implemented(self, serializer):
         result = serializer.deserialize(b"data", SerializationFormat.PROTOBUF)
@@ -146,11 +169,7 @@ class TestMessageSerialization:
     """Test message serialization/deserialization."""
 
     def test_serialize_message(self, serializer):
-        msg = Message(
-            message_type="TEST",
-            receiver="agent_2",
-            payload={"data": "test"}
-        )
+        msg = Message(message_type="TEST", receiver="agent_2", payload={"data": "test"})
         result = serializer.serialize_message(msg)
         assert result.is_ok()
         assert isinstance(result.unwrap(), bytes)
@@ -160,7 +179,7 @@ class TestMessageSerialization:
             message_type="TEST",
             receiver="agent_2",
             priority=Priority.HIGH,
-            payload={"data": "test"}
+            payload={"data": "test"},
         )
         serialized = serializer.serialize_message(msg).unwrap()
         result = serializer.deserialize_message(serialized)
@@ -168,7 +187,7 @@ class TestMessageSerialization:
         restored = result.unwrap()
         assert restored.message_type == "TEST"
         assert restored.receiver == "agent_2"
-        assert restored.payload['data'] == "test"
+        assert restored.payload["data"] == "test"
 
     def test_deserialize_invalid_bytes(self, serializer):
         result = serializer.deserialize_message(b"garbage")
@@ -180,12 +199,12 @@ class TestGetFormatInfo:
 
     def test_format_info(self, serializer):
         info = serializer.get_format_info()
-        assert info['default_format'] == 'json'
-        assert info['available_formats']['json'] is True
-        assert info['available_formats']['pickle'] is True
-        assert 'recommendations' in info
-        assert info['recommendations']['human_readable'] == 'json'
-        assert info['recommendations']['cross_language'] == 'json'
+        assert info["default_format"] == "json"
+        assert info["available_formats"]["json"] is True
+        assert info["available_formats"]["pickle"] is True
+        assert "recommendations" in info
+        assert info["recommendations"]["human_readable"] == "json"
+        assert info["recommendations"]["cross_language"] == "json"
 
 
 class TestObjectSerialization:
@@ -200,6 +219,8 @@ class TestObjectSerialization:
         data = {"obj": Dummy()}
         result = serializer.serialize(data, SerializationFormat.JSON)
         assert result.is_ok()
-        restored = serializer.deserialize(result.unwrap(), SerializationFormat.JSON).unwrap()
-        assert restored['obj']['x'] == 10
-        assert restored['obj']['y'] == "hello"
+        restored = serializer.deserialize(
+            result.unwrap(), SerializationFormat.JSON
+        ).unwrap()
+        assert restored["obj"]["x"] == 10
+        assert restored["obj"]["y"] == "hello"

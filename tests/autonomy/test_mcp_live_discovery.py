@@ -5,6 +5,8 @@ import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+import pytest
+
 from maple.adapters.mcp_adapter import MCPClient, StreamableHTTPTransport
 from maple.autonomy.mcp_tools import discover_mcp_tools
 from maple.core.result import Result
@@ -12,6 +14,20 @@ from maple.core.result import Result
 
 class FakeAgent:
     agent_id = "test-agent"
+
+
+@pytest.mark.parametrize(
+    "server_url",
+    [
+        "file:///tmp/maple-mcp",
+        "ftp://example.test/mcp",
+        "http://user:password@example.test/mcp",
+        "http://example.test/mcp#fragment",
+    ],
+)
+def test_streamable_http_transport_rejects_non_http_or_ambiguous_urls(server_url):
+    with pytest.raises(ValueError):
+        StreamableHTTPTransport(server_url)
 
 
 class RecordingTransport:
@@ -39,9 +55,7 @@ class RecordingTransport:
             result = {"tools": self.pages[index]}
             if index == 0 and len(self.pages) > 1:
                 result["nextCursor"] = "page-2"
-            return Result.ok(
-                {"jsonrpc": "2.0", "id": payload["id"], "result": result}
-            )
+            return Result.ok({"jsonrpc": "2.0", "id": payload["id"], "result": result})
         if payload["method"] == "tools/call":
             return Result.ok(
                 {
