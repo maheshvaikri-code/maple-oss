@@ -29,6 +29,7 @@
 | 20 | Loopback workflow run server | Chief Architect / Interop / Backend / Security | `docs/adr/018-*`, server/registry/tests, autonomy exports, API docs, README, changelog | Health, bounded JSON run/resume/inspect routes, stable HTTP errors, workflow reuse, loopback safety, deterministic shutdown | done: commit `7665eaf`; focused server `4 passed`; combined feature gate `212 passed` |
 | 21 | Session-aware agent turns | Chief Architect / Backend / Security / ML Engineer | `docs/adr/019-*`, autonomous agent/session tests, API docs, README, changelog | Opt-in sync/async session binding, CAS user turn, user/assistant-only replay, surfaced post-execution persistence errors, no trace/tool replay | done: commit `0b794ba`; focused `7 passed`; combined feature gate `219 passed` |
 | 22 | Deterministic retrieval/citation evaluation | ML Engineer / Backend / QA | `docs/adr/020-*`, evaluation module/tests, API docs, README, changelog | Bounded golden queries, lexical/vector hit support, source URI precision/recall/F1, malformed runner isolation, no faithfulness claim | done: commit `a682656`; focused `10 passed`; combined feature gate `225 passed` |
+| 23 | Bounded workflow execution journal | Chief Architect / Backend / Security | `docs/adr/021-*`, replay journal/workflow runtime/tests, API docs, README, changelog | Opt-in normalized-output replay, deterministic execution keys/input digests, memory/file bounds, conflict/malformed failure paths, no exactly-once claim | done: implementation complete; focused `10 passed`; combined gate `235 passed`; final evidence pending |
 
 ## Threat sketch
 
@@ -63,21 +64,22 @@ privileged action without approval.
 
 ## Status snapshot
 
-Done (with evidence): G0 brief, G1 ADR, G2 plan, and twenty-one committed G3
-feature slices through opt-in session-aware agent turns, including MCP
+Done (with evidence): G0 brief, G1 ADR, G2 plan, and twenty-three committed G3
+feature slices through bounded workflow execution recovery, including MCP
 interoperability, bounded artifacts, native LLM streaming, deterministic async
 tool result ordering, durable approval, workflow fan-out/fan-in, checkpoint
-history, and bounded conversation sessions; slice review/QA artifacts are
-filed. Replay-safe execution and RAG evaluation remain separate follow-on
-slices.
+history, bounded conversation sessions, and retrieval/source evaluation; slice
+review/QA artifacts are filed. Slice 23 adds an opt-in bounded execution journal
+and public running-checkpoint recovery.
 Release hardening remains in progress. Slices 19, 20, and 21 are committed and
 verified. Slice 22 is committed and verified with deterministic
-retrieval/source coverage evaluation; generation faithfulness and replay-safe
-execution remain separate follow-on capabilities.
-Focused feature gates (225 LLM/autonomy/CLI tests, including 22 MCP, 5
+retrieval/source coverage evaluation. Slice 23 is implemented and awaiting
+review/QA/build evidence; generation faithfulness remains a separate follow-on
+capability.
+Focused feature gates (235 LLM/autonomy/CLI tests, including 22 MCP, 5
 artifact, 5 stream, async tool fan-out, durable approval, workflow fan-out,
-vector retrieval, checkpoint history, session-aware agent, and retrieval
-evaluation regressions),
+vector retrieval, checkpoint history, session-aware agent, retrieval evaluation,
+and workflow execution-journal regressions),
 compile, changed-surface Ruff/Flake8, metadata-clean wheel/sdist builds, Twine
 checks, a clean-venv wheel doctor smoke pass, and a fresh `.[dev,security]`
 environment with `pip check` reporting no broken requirements all pass.

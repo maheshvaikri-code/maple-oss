@@ -97,6 +97,15 @@ from .sessions import (
     SessionStore,
 )
 from .server import RunServer, WorkflowRegistry
+from .replay import (
+    DEFAULT_MAX_RECORD_BYTES,
+    DEFAULT_MAX_RECORDS,
+    DEFAULT_MAX_RUN_RECORDS,
+    ExecutionJournal,
+    ExecutionRecord,
+    FileExecutionJournal,
+    InMemoryExecutionJournal,
+)
 
 __all__ = [
     "Tool",
@@ -180,4 +189,11 @@ __all__ = [
     "SessionStore",
     "RunServer",
     "WorkflowRegistry",
+    "DEFAULT_MAX_RECORD_BYTES",
+    "DEFAULT_MAX_RECORDS",
+    "DEFAULT_MAX_RUN_RECORDS",
+    "ExecutionJournal",
+    "ExecutionRecord",
+    "FileExecutionJournal",
+    "InMemoryExecutionJournal",
 ]

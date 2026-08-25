@@ -136,6 +136,15 @@ from .autonomy.sessions import (
     SessionStore,
 )
 from .autonomy.server import RunServer, WorkflowRegistry
+from .autonomy.replay import (
+    DEFAULT_MAX_RECORD_BYTES,
+    DEFAULT_MAX_RECORDS,
+    DEFAULT_MAX_RUN_RECORDS,
+    ExecutionJournal,
+    ExecutionRecord,
+    FileExecutionJournal,
+    InMemoryExecutionJournal,
+)
 from .llm.types import LLMConfig, ChatMessage, ChatRole
 from .llm.registry import LLMProviderRegistry
 from .llm.capabilities import (
@@ -277,6 +286,13 @@ __all__ = [
     "SessionStore",
     "RunServer",
     "WorkflowRegistry",
+    "DEFAULT_MAX_RECORD_BYTES",
+    "DEFAULT_MAX_RECORDS",
+    "DEFAULT_MAX_RUN_RECORDS",
+    "ExecutionJournal",
+    "ExecutionRecord",
+    "FileExecutionJournal",
+    "InMemoryExecutionJournal",
     "LLMConfig",
     "ChatMessage",
     "ChatRole",

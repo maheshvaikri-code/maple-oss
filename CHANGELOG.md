@@ -77,6 +77,11 @@
   and async binding to bounded session stores, CAS-protected user-turn
   persistence, user/assistant-only replay, and explicit `Goal.session_error`
   reporting when post-execution persistence fails.
+- **Bounded workflow execution journal** (`maple.autonomy.replay`,
+  `maple.autonomy.workflow`): added deterministic execution keys, bounded
+  in-memory and atomic file journals, normalized-output recovery through
+  `Workflow.recover`, conflict/malformed-record fail-closed behavior, and
+  explicit documentation that this is not an exactly-once side-effect claim.
 - **Release metadata hardening**: `pyproject.toml` is now the single source
   for package metadata, the legacy `setup.py` delegates to it, and the source
   manifest includes only files present in the repository. Wheel/sdist builds

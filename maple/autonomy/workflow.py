@@ -14,6 +14,7 @@ from __future__ import annotations
 # Small, dependency-free workflow runtime for MAPLE agent applications.
 
 import concurrent.futures
+import hashlib
 import json
 import math
 import os
@@ -38,6 +39,7 @@ from typing import (
 )
 
 from ..core.result import Result
+from .replay import ExecutionJournal, ExecutionRecord
 
 END = "__end__"
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
@@ -178,6 +180,7 @@ class WorkflowContext:
     run_id: str
     node_name: str
     resume_value: Any = None
+    execution_key: Optional[str] = None
 
 
 class WorkflowPause(Exception):
@@ -584,6 +587,7 @@ class Workflow:
         max_state_bytes: int = 1_048_576,
         max_parallel_branches: int = 8,
         checkpoint_store: Optional[CheckpointStore] = None,
+        execution_journal: Optional[ExecutionJournal] = None,
     ) -> None:
         identifier_error = _valid_identifier(name, "workflow_name")
         if identifier_error:
@@ -603,6 +607,7 @@ class Workflow:
         self.checkpoint_store: CheckpointStore = (
             checkpoint_store or InMemoryCheckpointStore()
         )
+        self.execution_journal = execution_journal
         self._nodes: Dict[str, NodeHandler] = {}
         self._direct_edges: Dict[str, Optional[str]] = {}
         self._conditional_edges: Dict[str, Dict[str, Optional[str]]] = {}
@@ -1025,6 +1030,50 @@ class Workflow:
             return Result.err(saved_result.unwrap_err())
         return self._execute(saved_result.unwrap(), store, resume_value=resume_value)
 
+    def recover(
+        self,
+        run_id: str,
+        *,
+        checkpoint_store: Optional[CheckpointStore] = None,
+    ) -> Result[WorkflowRun, Error]:
+        """Continue a running checkpoint after a crash or storage failure.
+
+        This is intended for hosts that persisted a running checkpoint but did
+        not receive the final node-boundary commit. When an execution journal
+        is configured, normalized outputs already recorded before that crash
+        are reused by :meth:`_execute`.
+        """
+        validation = self.validate()
+        if validation.is_err():
+            return Result.err(validation.unwrap_err())
+        run_error = _valid_identifier(run_id, "run_id")
+        if run_error:
+            return Result.err(run_error)
+        store = checkpoint_store or self.checkpoint_store
+        loaded_result = store.load(run_id)
+        if loaded_result.is_err():
+            return Result.err(loaded_result.unwrap_err())
+        checkpoint = loaded_result.unwrap()
+        if checkpoint is None:
+            return Result.err(
+                _error("RUN_NOT_FOUND", "Workflow run was not found.", run_id=run_id)
+            )
+        if checkpoint.workflow_name != self.name:
+            return Result.err(
+                _error("WORKFLOW_MISMATCH", "Checkpoint belongs to another workflow.")
+            )
+        if checkpoint.status != "running" or checkpoint.next_node is None:
+            return Result.err(
+                _error(
+                    "INVALID_RECOVERY",
+                    "Only running workflow checkpoints can be recovered.",
+                )
+            )
+        state_error = _validate_json_value(checkpoint.state)
+        if state_error:
+            return Result.err(state_error)
+        return self._execute(checkpoint, store)
+
     def _execute(
         self,
         checkpoint: WorkflowCheckpoint,
@@ -1056,47 +1105,76 @@ class Workflow:
             )
             if state_result.is_err():
                 return Result.err(state_result.unwrap_err())
+            node_resume_value = resume_value if first_node else None
+            execution_key = self._execution_key(
+                current.run_id, current.step_count, node_name
+            )
             context = WorkflowContext(
                 state=state_result.unwrap(),
                 run_id=current.run_id,
                 node_name=node_name,
-                resume_value=resume_value if first_node else None,
+                resume_value=node_resume_value,
+                execution_key=execution_key,
             )
-            node_resume_value = resume_value if first_node else None
             first_node = False
-            try:
-                output = handler(context)
-            except WorkflowPause as pause:
-                payload_error = _validate_json_value(pause.payload)
-                if payload_error:
-                    return self._fail(current, store, payload_error)
-                paused = replace(
-                    current,
-                    status="interrupted",
-                    interrupt_payload=pause.payload,
-                    error=None,
-                    updated_at=time.time(),
-                )
-                saved_result = store.save(paused, expected_version=current.version)
-                if saved_result.is_err():
-                    return Result.err(saved_result.unwrap_err())
-                return Result.ok(WorkflowRun.from_checkpoint(saved_result.unwrap()))
-            except Exception as exc:
-                return self._fail(
-                    current,
-                    store,
-                    _error(
-                        "NODE_EXECUTION_ERROR",
-                        "Workflow node execution failed.",
-                        node=node_name,
-                        reason=str(exc)[:256],
-                    ),
-                )
+            replay_result = self._load_replay(
+                execution_key,
+                current.run_id,
+                current.step_count,
+                node_name,
+                state_result.unwrap(),
+                node_resume_value,
+            )
+            if replay_result.is_err():
+                return self._fail(current, store, replay_result.unwrap_err())
+            cached_updates = replay_result.unwrap()
+            if cached_updates is not None:
+                updates = cached_updates
+            else:
+                try:
+                    output = handler(context)
+                except WorkflowPause as pause:
+                    payload_error = _validate_json_value(pause.payload)
+                    if payload_error:
+                        return self._fail(current, store, payload_error)
+                    paused = replace(
+                        current,
+                        status="interrupted",
+                        interrupt_payload=pause.payload,
+                        error=None,
+                        updated_at=time.time(),
+                    )
+                    saved_result = store.save(paused, expected_version=current.version)
+                    if saved_result.is_err():
+                        return Result.err(saved_result.unwrap_err())
+                    return Result.ok(WorkflowRun.from_checkpoint(saved_result.unwrap()))
+                except Exception as exc:
+                    return self._fail(
+                        current,
+                        store,
+                        _error(
+                            "NODE_EXECUTION_ERROR",
+                            "Workflow node execution failed.",
+                            node=node_name,
+                            reason=str(exc)[:256],
+                        ),
+                    )
 
-            output_result = self._normalize_output(output)
-            if output_result.is_err():
-                return self._fail(current, store, output_result.unwrap_err())
-            updates = output_result.unwrap()
+                output_result = self._normalize_output(output)
+                if output_result.is_err():
+                    return self._fail(current, store, output_result.unwrap_err())
+                updates = output_result.unwrap()
+                journal_result = self._save_replay(
+                    execution_key,
+                    current.run_id,
+                    current.step_count,
+                    node_name,
+                    updates,
+                    state_result.unwrap(),
+                    node_resume_value,
+                )
+                if journal_result.is_err():
+                    return self._fail(current, store, journal_result.unwrap_err())
             prospective_state = dict(current.state)
             prospective_state.update(updates)
             parallel_route = self._parallel_edges.get(node_name)
@@ -1107,6 +1185,7 @@ class Workflow:
                         branches,
                         prospective_state,
                         current.run_id,
+                        current.step_count,
                         resume_value=node_resume_value,
                     )
                 except WorkflowPause as pause:
@@ -1181,6 +1260,7 @@ class Workflow:
         branches: Tuple[str, ...],
         state: Mapping[str, Any],
         run_id: str,
+        step_count: int,
         *,
         resume_value: Any = None,
     ) -> Result[Dict[str, Any], Error]:
@@ -1199,12 +1279,27 @@ class Workflow:
             branch_state = _copy_json(state, max_state_bytes=self.max_state_bytes)
             if branch_state.is_err():
                 return ("error", branch_state.unwrap_err())
+            execution_key = self._execution_key(run_id, step_count, branch)
             context = WorkflowContext(
                 state=branch_state.unwrap(),
                 run_id=run_id,
                 node_name=branch,
                 resume_value=resume_value,
+                execution_key=execution_key,
             )
+            replay_result = self._load_replay(
+                execution_key,
+                run_id,
+                step_count,
+                branch,
+                branch_state.unwrap(),
+                resume_value,
+            )
+            if replay_result.is_err():
+                return ("error", replay_result.unwrap_err())
+            cached_updates = replay_result.unwrap()
+            if cached_updates is not None:
+                return ("ok", cached_updates)
             try:
                 output = handler(context)
             except WorkflowPause as pause:
@@ -1222,7 +1317,19 @@ class Workflow:
             output_result = self._normalize_output(output)
             if output_result.is_err():
                 return ("error", output_result.unwrap_err())
-            return ("ok", output_result.unwrap())
+            updates = output_result.unwrap()
+            journal_result = self._save_replay(
+                execution_key,
+                run_id,
+                step_count,
+                branch,
+                updates,
+                branch_state.unwrap(),
+                resume_value,
+            )
+            if journal_result.is_err():
+                return ("error", journal_result.unwrap_err())
+            return ("ok", updates)
 
         with concurrent.futures.ThreadPoolExecutor(
             max_workers=min(len(branches), self.max_parallel_branches),
@@ -1306,6 +1413,112 @@ class Workflow:
                 )
             )
         return Result.ok(dict(output))
+
+    @staticmethod
+    def _execution_key(run_id: str, step_count: int, node_name: str) -> str:
+        return f"{run_id}:{step_count}:{node_name}"
+
+    def _execution_input_digest(
+        self, state: Mapping[str, Any], resume_value: Any
+    ) -> Result[str, Error]:
+        input_error = _validate_json_value(resume_value)
+        if input_error:
+            return Result.err(
+                _error(
+                    "REPLAY_INPUT_INVALID",
+                    "Workflow resume value is not JSON-compatible.",
+                    cause=input_error,
+                )
+            )
+        try:
+            encoded = json.dumps(
+                {"state": dict(state), "resume_value": resume_value},
+                ensure_ascii=False,
+                allow_nan=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        except (TypeError, ValueError) as exc:
+            return Result.err(
+                _error(
+                    "REPLAY_INPUT_INVALID",
+                    "Workflow execution input is not JSON-serializable.",
+                    reason=str(exc)[:256],
+                )
+            )
+        if len(encoded) > self.max_state_bytes:
+            return Result.err(
+                _error(
+                    "REPLAY_INPUT_SIZE",
+                    "Workflow execution input exceeds the state byte limit.",
+                    max_state_bytes=self.max_state_bytes,
+                )
+            )
+        return Result.ok(hashlib.sha256(encoded).hexdigest())
+
+    def _load_replay(
+        self,
+        execution_key: str,
+        run_id: str,
+        step_count: int,
+        node_name: str,
+        state: Mapping[str, Any],
+        resume_value: Any,
+    ) -> Result[Optional[Dict[str, Any]], Error]:
+        if self.execution_journal is None:
+            return Result.ok(None)
+        digest_result = self._execution_input_digest(state, resume_value)
+        if digest_result.is_err():
+            return Result.err(digest_result.unwrap_err())
+        loaded = self.execution_journal.load(execution_key, digest_result.unwrap())
+        if loaded.is_err():
+            return Result.err(loaded.unwrap_err())
+        record = loaded.unwrap()
+        if record is None:
+            return Result.ok(None)
+        if (
+            record.run_id != run_id
+            or record.workflow_name != self.name
+            or record.node_name != node_name
+            or record.step_count != step_count
+        ):
+            return Result.err(
+                _error(
+                    "REPLAY_RECORD_INVALID",
+                    "Replay record metadata does not match the workflow invocation.",
+                    execution_key=execution_key,
+                )
+            )
+        return Result.ok(dict(record.output))
+
+    def _save_replay(
+        self,
+        execution_key: str,
+        run_id: str,
+        step_count: int,
+        node_name: str,
+        output: Mapping[str, Any],
+        state: Mapping[str, Any],
+        resume_value: Any,
+    ) -> Result[None, Error]:
+        if self.execution_journal is None:
+            return Result.ok(None)
+        digest_result = self._execution_input_digest(state, resume_value)
+        if digest_result.is_err():
+            return Result.err(digest_result.unwrap_err())
+        record = ExecutionRecord(
+            execution_key=execution_key,
+            run_id=run_id,
+            workflow_name=self.name,
+            node_name=node_name,
+            step_count=step_count,
+            input_digest=digest_result.unwrap(),
+            output=dict(output),
+        )
+        saved = self.execution_journal.save(record)
+        if saved.is_err():
+            return Result.err(saved.unwrap_err())
+        return Result.ok(None)
 
     def _next_node(
         self, source: str, state: Mapping[str, Any]

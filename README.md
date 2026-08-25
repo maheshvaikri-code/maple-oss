@@ -7,7 +7,7 @@
 <p>
 <a href="https://github.com/maheshvaikri-code/maple-oss"><img src="https://img.shields.io/badge/version-1.1.3-brightgreen" alt="Version"></a>
 <a href="https://github.com/maheshvaikri-code/maple-oss"><img src="https://img.shields.io/badge/Python-3.8%20|%203.9%20|%203.10%20|%203.11%20|%203.12%20|%203.13-brightgreen" alt="Python"></a>
-<a href="https://github.com/maheshvaikri-code/maple-oss"><img src="https://img.shields.io/badge/Focused%20tests-219%20passed-brightgreen" alt="Focused tests"></a>
+<a href="https://github.com/maheshvaikri-code/maple-oss"><img src="https://img.shields.io/badge/Focused%20tests-235%20passed-brightgreen" alt="Focused tests"></a>
 <a href="https://github.com/maheshvaikri-code/maple-oss/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-AGPL%203.0-blue.svg" alt="License"></a>
 <a href="https://mapleagent.org"><img src="https://img.shields.io/badge/Docs-mapleagent.org-blue" alt="Documentation"></a>
 </p>
@@ -50,13 +50,14 @@ Most agent frameworks give you either **infrastructure** (messaging, security, f
 - **Bounded Conversation Sessions (preview)** — Persist JSON-safe turn messages in thread-safe in-memory or atomic file-backed stores with bounded quotas, immutable snapshots, and optimistic version conflicts; opt-in sync/async agent turns replay only stored user/assistant messages and surface post-run persistence errors.
 - **Loopback Workflow Run Server (preview)** — Expose registered workflows through a dependency-free local HTTP server for health, run, resume, and checkpoint inspection; requests are bounded and non-loopback binding is rejected.
 - **Bounded Workflow Fan-Out/Fan-In (preview)** — Run independent workflow branches concurrently with isolated state snapshots, deterministic collision-free merging, and a checkpointed join boundary.
+- **Bounded Workflow Execution Journal (preview)** — Record normalized node outputs before checkpoint commits and recover persisted running checkpoints after a crash-window failure through deterministic execution keys and bounded in-memory or atomic file journals; arbitrary external side effects still require idempotent handlers.
 - **Interop Envelope + Doctor CLI (preview)** — Strict adapter round-trip envelopes and a network-free `maple doctor --json` readiness report for the runtime surfaces.
 - **Artifacts and Code Blocks (preview)** — Store immutable SHA-256-addressed files with bounded in-memory or file-backed stores, and extract Markdown code blocks as data without executing them.
 - **Three-Tier Memory** — Working memory (context window), episodic memory (task history), semantic memory (learned facts). LLM-assisted summarization when context fills up.
 - **Multi-Agent Orchestration** — Form teams by capability, execute via supervisor delegation or consensus voting.
 - **MCP Tool Discovery** — Discover live `tools/list` descriptors over bounded Streamable HTTP and use approved external tools as native MAPLE tools; the legacy URL-only helper remains offline for compatibility.
 - **Observability** — Full decision traces, agent snapshots, token usage tracking.
-- **Workflow Runtime (preview)** — Define validated workflows with stable run IDs, JSON-safe node-boundary checkpoints, bounded fan-out/fan-in, interruption, conditional routing, local file-backed resume, and bounded in-process history inspection.
+- **Workflow Runtime (preview)** — Define validated workflows with stable run IDs, JSON-safe node-boundary checkpoints, bounded fan-out/fan-in, interruption, conditional routing, local file-backed resume, bounded in-process history inspection, and opt-in crash-window output recovery.
 
 ### Production Infrastructure
 
@@ -487,8 +488,9 @@ python -m pytest tests/security/ -v       # Security tests
 python -m pytest tests/broker/ -v         # Broker tests
 ```
 
-Current status: focused LLM/autonomy/CLI regression **183 passed**, including
-focused MCP/governance and artifact tests, and local compile/doctor/package
+Current status: focused LLM/autonomy/CLI regression **235 passed**, including
+focused MCP/governance, artifact, retrieval evaluation, session, server, and
+execution-journal tests, and local compile/doctor/package
 preflight gates pass. The full repository regression remains open; the latest
 bounded attempt reported **1049 passed** before interruption in slow Doctrine
 gold cases. Coverage is not being treated as a release gate until the full

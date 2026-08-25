@@ -793,9 +793,9 @@ restored as data rather than executable objects. The current file store is
 atomic and thread-safe within one process. Fan-out uses bounded trusted
 in-process threads; it is not a hard sandbox, and a pause before the group
 checkpoint may repeat branch side effects when resumed. Cross-process
-coordination, per-branch retry, replay, and durable history remain planned
-follow-on capabilities. The history decorator below provides only bounded
-current-process inspection.
+coordination and per-branch retry remain planned follow-on capabilities. The
+history decorator below provides bounded current-process inspection, while the
+optional execution journal provides a separate crash-window recovery surface.
 
 Wrap any checkpoint store with `HistoryCheckpointStore` to retain bounded
 immutable snapshots for current-process inspection:
@@ -814,6 +814,37 @@ snapshots = history_store.history(run_id, limit=20)
 History is ordered by checkpoint version and returns JSON-safe copies. It is an
 inspection surface, not executable replay: node handlers are never re-run, and
 the history decorator does not claim cross-process or restart persistence.
+
+### Bounded workflow execution journal
+
+Pass an `InMemoryExecutionJournal` or `FileExecutionJournal` to `Workflow` to
+record normalized node outputs before their checkpoint commit. If a host keeps
+a `running` checkpoint after a crash or checkpoint-store failure, call
+`workflow.recover(run_id)`; the journal can reuse the recorded output and avoid
+re-running that handler. `WorkflowContext.execution_key` exposes the stable
+`run_id:step_count:node_name` key for logging or idempotency coordination.
+
+```python
+from maple import FileCheckpointStore, FileExecutionJournal, Workflow
+
+checkpoint_store = FileCheckpointStore("./.maple-checkpoints")
+execution_journal = FileExecutionJournal("./.maple-replay")
+workflow = Workflow(
+    "recoverable_flow",
+    checkpoint_store=checkpoint_store,
+    execution_journal=execution_journal,
+)
+# ... define the workflow and run it ...
+recovered = workflow.recover("run-1")
+```
+
+Journal records and inputs are JSON-safe, hashed, atomically persisted, and
+bounded by record and run quotas. The journal closes the normalized-output
+crash window only when its record was saved before the crash; it does not claim
+exactly-once execution or make arbitrary external side effects safe. Handlers
+that call external systems still need idempotency keys or transactional
+coordination. Use `execution_journal.clear(run_id)` after retention is no
+longer required.
 
 ### Durable tool approvals
 
