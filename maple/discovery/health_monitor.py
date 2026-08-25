@@ -20,7 +20,7 @@ import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from ..core.result import Result
 from .registry import AgentInfo, AgentRegistry
@@ -48,13 +48,13 @@ class HealthStatus:
     status: str  # healthy, degraded, unhealthy, offline
     score: float  # 0.0 to 1.0, higher is better
     last_check: float
-    issues: List[str] = None  # List of health issues
+    issues: Optional[List[str]] = None  # List of health issues
 
 
 class HealthMonitor:
     """Monitors agent health and manages heartbeats."""
 
-    def __init__(self, registry: AgentRegistry, heartbeat_interval: int = 30):
+    def __init__(self, registry: AgentRegistry, heartbeat_interval: int = 30) -> None:
         self.registry = registry
         self.heartbeat_interval = heartbeat_interval
         self.health_metrics: Dict[str, HealthMetrics] = {}
@@ -72,7 +72,7 @@ class HealthMonitor:
         self.error_rate_threshold = 10.0  # 10%
         self.heartbeat_timeout = heartbeat_interval * 2
 
-    def start_monitoring(self):
+    def start_monitoring(self) -> None:
         """Start the health monitoring system."""
         with self._lock:
             if self._monitoring:
@@ -84,7 +84,7 @@ class HealthMonitor:
             )
             self._monitor_thread.start()
 
-    def stop_monitoring(self):
+    def stop_monitoring(self) -> None:
         """Stop the health monitoring system."""
         with self._lock:
             self._monitoring = False
@@ -92,7 +92,7 @@ class HealthMonitor:
                 self._monitor_thread.join(timeout=5.0)
 
     def record_heartbeat(
-        self, agent_id: str, metrics: Dict = None
+        self, agent_id: str, metrics: Optional[Dict[str, Any]] = None
     ) -> Result[None, str]:
         """Record a heartbeat from an agent with optional metrics."""
 
@@ -270,7 +270,9 @@ class HealthMonitor:
 
         return summary
 
-    def add_health_callback(self, callback: Callable[[str, HealthStatus], None]):
+    def add_health_callback(
+        self, callback: Callable[[str, HealthStatus], None]
+    ) -> None:
         """Add a callback to be notified of health status changes."""
         self.health_callbacks.append(callback)
 
@@ -293,7 +295,7 @@ class HealthMonitor:
 
             return Result.ok(trend)
 
-    def _monitor_loop(self):
+    def _monitor_loop(self) -> None:
         """Main monitoring loop running in background thread."""
 
         while self._monitoring:
