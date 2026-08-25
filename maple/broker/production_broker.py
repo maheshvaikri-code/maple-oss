@@ -64,7 +64,7 @@ class ProductionBrokerManager:
 
     @staticmethod
     def create_broker(
-        config, preferred_type: BrokerType = BrokerType.IN_MEMORY
+        config: Any, preferred_type: BrokerType = BrokerType.IN_MEMORY
     ) -> Result[Any, Dict[str, Any]]:
         """Create a broker instance."""
         try:
@@ -125,7 +125,9 @@ class ProductionBrokerManager:
             return Result.err({"errorType": "BROKER_CREATION_ERROR", "message": str(e)})
 
 
-def create_production_broker(config, preferred_type: BrokerType = BrokerType.IN_MEMORY):
+def create_production_broker(
+    config: Any, preferred_type: BrokerType = BrokerType.IN_MEMORY
+) -> Result[Any, Dict[str, Any]]:
     """
     Create a production broker instance.
 
