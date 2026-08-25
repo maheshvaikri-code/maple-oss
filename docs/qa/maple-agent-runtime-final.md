@@ -69,6 +69,15 @@
   (`E402 140`, `F401 31`). Remaining legacy lint is still an open release
   gate, and no publication or website change was performed.
 
+## Slice 66 revalidation
+
+- The autonomy/state/broker/communication/security regression reports `628
+  passed, 1 skipped in 16.35s`.
+- Changed-file Ruff, Black, isort, mypy, and compile checks pass.
+- Broad `ruff check maple` decreased from `171` diagnostics to `95`
+  (`E402 69`, `F401 26`). Remaining repository-wide lint remains an open
+  release gate; no publication or website change was performed.
+
 ## Security conclusions
 
 - No new dependency, credential, cloud call, website mutation, or publication

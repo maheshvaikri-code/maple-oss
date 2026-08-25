@@ -136,6 +136,10 @@ Doctor:
 - Slice 65 reduced broad legacy `ruff check maple` from 250 to 171 diagnostics
   (`E402 140`, `F401 31`) while keeping changed implementation surfaces clean.
   Remaining legacy lint remains an open release gate.
+- Slice 66 reduced the broad inventory from 171 to 95 diagnostics (`E402 69`,
+  `F401 26`) by removing secondary module-header and verified unused-import
+  debt. The affected regression reports `628 passed, 1 skipped in 16.35s` and
+  changed-file quality/type checks pass.
 
 ## Verdict
 

@@ -10,6 +10,12 @@
 
 ### Additions
 
+- **Legacy header/import lint closure**: converted secondary module headers to
+  comments and removed verified unused imports across seven runtime files. The
+  affected regression reports `628 passed, 1 skipped in 16.35s`; changed-file
+  Ruff, Black, isort, mypy, and compile checks pass. Broad `ruff check maple`
+  decreased from `171` diagnostics to `95` (`E402 69`, `F401 26`). Remaining
+  legacy lint remains a release gate.
 - **Safe legacy lint and FIPA closure**: removed verified unused imports and
   locals, redundant formatting, and secondary module-header lint debt across
   seven runtime files; corrected FIPA ACL translation to emit the mapped
