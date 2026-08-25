@@ -1,7 +1,7 @@
 # ADR-024: Optional bounded Protobuf serialization
 
-**Date:** 2026-08-25  
-**Status:** accepted  
+**Date:** 2026-08-25
+**Status:** accepted
 **Deciders:** Chief Architect
 
 ## Context
