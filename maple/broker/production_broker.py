@@ -71,8 +71,8 @@ class ProductionBrokerManager:
             if preferred_type == BrokerType.IN_MEMORY:
                 from .broker import MessageBroker
 
-                broker = MessageBroker(config)
-                return Result.ok(broker)
+                in_memory_broker = MessageBroker(config)
+                return Result.ok(in_memory_broker)
             elif preferred_type == BrokerType.NATS:
                 try:
                     from .nats_broker import NATSBrokerSync, NATSConfig
@@ -83,8 +83,8 @@ class ProductionBrokerManager:
                         else ["nats://localhost:4222"]
                     )
                     nats_config = NATSConfig(servers=servers)
-                    broker = NATSBrokerSync(config, nats_config)
-                    return Result.ok(broker)
+                    nats_broker = NATSBrokerSync(config, nats_config)
+                    return Result.ok(nats_broker)
                 except ImportError:
                     return Result.err(
                         {
@@ -105,8 +105,8 @@ class ProductionBrokerManager:
                         config, "s2_access_token", None
                     ) or __import__("os").environ.get("S2_ACCESS_TOKEN", "")
                     s2_config = S2Config(access_token=access_token, basin_name=basin)
-                    broker = S2Broker(s2_config)
-                    return Result.ok(broker)
+                    s2_broker = S2Broker(s2_config)
+                    return Result.ok(s2_broker)
                 except ImportError:
                     return Result.err(
                         {
