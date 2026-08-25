@@ -23,3 +23,4 @@ def test_doctor_json_output(monkeypatch, capsys):
     assert exit_code == 0
     assert output["status"] == "SUCCESS"
     assert output["checks"]["interop"] is True
+    assert output["checks"]["server"] is True

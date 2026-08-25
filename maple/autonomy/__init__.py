@@ -89,6 +89,7 @@ from .sessions import (
     SessionSnapshot,
     SessionStore,
 )
+from .server import RunServer, WorkflowRegistry
 
 __all__ = [
     "Tool",
@@ -169,4 +170,6 @@ __all__ = [
     "SessionMessage",
     "SessionSnapshot",
     "SessionStore",
+    "RunServer",
+    "WorkflowRegistry",
 ]

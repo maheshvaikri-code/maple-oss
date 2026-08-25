@@ -848,6 +848,36 @@ thread-safe within one process; encryption, cross-process leases, automatic
 agent binding, summarization, and executable conversation replay remain
 separate host/runtime decisions.
 
+### Loopback workflow run server
+
+`WorkflowRegistry` and `RunServer` expose configured workflows to local tools
+without adding an HTTP framework. Register workflows before starting the
+server; the server binds to `127.0.0.1` by default and owns a daemon request
+thread that `close()` shuts down.
+
+```python
+from maple import RunServer, WorkflowRegistry
+
+registry = WorkflowRegistry()
+registry.register(workflow)
+
+with RunServer(registry) as server:
+    print(server.url)
+    # POST /v1/workflows/<workflow>/runs
+    # POST /v1/workflows/<workflow>/runs/<run_id>/resume
+    # GET  /v1/workflows/<workflow>/runs/<run_id>
+```
+
+`GET /healthz` returns `{"status": "ok", "service":
+"maple-run-server"}`. Run creation returns `201` and resume/inspection return
+`200`; errors use `{"error": {"errorType": ..., "message": ...}}` with
+`400`, `404`, `409`, `413`, or `500` status codes. Run bodies require
+`application/json`; request and response bytes are bounded, and workflow
+state/resume values still pass through the workflow JSON boundary. This is a
+local host surface, not an authenticated or TLS-enabled remote service: no
+non-loopback host, arbitrary workflow registration, streaming transport,
+multi-tenant authorization, or hard sandbox is claimed.
+
 ## Usage Example
 
 ```python

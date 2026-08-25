@@ -1,0 +1,156 @@
+"""Tests for the bounded loopback workflow server."""
+
+import json
+import urllib.error
+import urllib.request
+
+import pytest
+
+from maple.autonomy import (
+    InMemoryCheckpointStore,
+    RunServer,
+    Workflow,
+    WorkflowPause,
+    WorkflowRegistry,
+)
+
+
+def _workflow(name="echo"):
+    workflow = Workflow(name, checkpoint_store=InMemoryCheckpointStore())
+    assert workflow.add_node(
+        "echo", lambda context: {"echo": context.state["value"]}
+    ).is_ok()
+    assert workflow.set_entry_point("echo").is_ok()
+    assert workflow.add_edge("echo").is_ok()
+    return workflow
+
+
+def _request(url, *, method="GET", payload=None):
+    data = None
+    headers = {}
+    if payload is not None:
+        data = json.dumps(payload).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    request = urllib.request.Request(url, data=data, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(request, timeout=2) as response:
+            return response.status, json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        return exc.code, json.loads(exc.read().decode("utf-8"))
+
+
+def test_run_server_health_run_and_inspect_routes():
+    registry = WorkflowRegistry()
+    assert registry.register(_workflow()).is_ok()
+    server = RunServer(registry)
+    base_url = server.start()
+
+    try:
+        health_status, health = _request(f"{base_url}/healthz")
+        run_status, run_payload = _request(
+            f"{base_url}/v1/workflows/echo/runs",
+            method="POST",
+            payload={"run_id": "server-run", "state": {"value": "MAPLE"}},
+        )
+        inspect_status, inspect_payload = _request(
+            f"{base_url}/v1/workflows/echo/runs/server-run"
+        )
+    finally:
+        server.close()
+
+    assert health_status == 200
+    assert health == {"status": "ok", "service": "maple-run-server"}
+    assert run_status == 201
+    assert run_payload["run"]["status"] == "completed"
+    assert run_payload["run"]["state"]["echo"] == "MAPLE"
+    assert inspect_status == 200
+    assert inspect_payload["run"]["run_id"] == "server-run"
+
+
+def test_run_server_resumes_interrupted_workflow():
+    workflow = Workflow("approval", checkpoint_store=InMemoryCheckpointStore())
+
+    def approval(context):
+        if context.resume_value is None:
+            raise WorkflowPause({"question": "approve?"})
+        return {"approved": context.resume_value}
+
+    assert workflow.add_node("approval", approval).is_ok()
+    assert workflow.set_entry_point("approval").is_ok()
+    assert workflow.add_edge("approval").is_ok()
+    registry = WorkflowRegistry()
+    assert registry.register(workflow).is_ok()
+    server = RunServer(registry)
+    base_url = server.start()
+
+    try:
+        first_status, first = _request(
+            f"{base_url}/v1/workflows/approval/runs",
+            method="POST",
+            payload={"run_id": "approval-run", "state": {}},
+        )
+        resumed_status, resumed = _request(
+            f"{base_url}/v1/workflows/approval/runs/approval-run/resume",
+            method="POST",
+            payload={"value": True},
+        )
+    finally:
+        server.close()
+
+    assert first_status == 201
+    assert first["run"]["status"] == "interrupted"
+    assert resumed_status == 200
+    assert resumed["run"]["status"] == "completed"
+    assert resumed["run"]["state"]["approved"] is True
+
+
+def test_run_server_rejects_unknown_routes_workflows_and_oversized_bodies():
+    registry = WorkflowRegistry()
+    assert registry.register(_workflow()).is_ok()
+    server = RunServer(registry, max_body_bytes=128)
+    base_url = server.start()
+
+    try:
+        missing_status, missing = _request(
+            f"{base_url}/v1/workflows/missing/runs",
+            method="POST",
+            payload={"state": {}},
+        )
+        oversized_status, oversized = _request(
+            f"{base_url}/v1/workflows/echo/runs",
+            method="POST",
+            payload={"state": {"value": "x" * 1_000}},
+        )
+    finally:
+        server.close()
+
+    assert missing_status == 404
+    assert missing["error"]["errorType"] == "WORKFLOW_NOT_FOUND"
+    assert oversized_status == 413
+    assert oversized["error"]["errorType"] == "REQUEST_TOO_LARGE"
+
+
+def test_run_server_rejects_non_loopback_host_and_malformed_json():
+    with pytest.raises(ValueError):
+        RunServer(WorkflowRegistry(), host="0.0.0.0")
+
+    registry = WorkflowRegistry()
+    assert registry.register(_workflow()).is_ok()
+    server = RunServer(registry)
+    base_url = server.start()
+    request = urllib.request.Request(
+        f"{base_url}/v1/workflows/echo/runs",
+        data=b"not-json",
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+
+    try:
+        with pytest.raises(urllib.error.HTTPError) as error:
+            urllib.request.urlopen(request, timeout=2)
+        payload = json.loads(error.value.read().decode("utf-8"))
+    finally:
+        server.close()
+
+    assert error.value.code == 400
+    assert payload["error"]["errorType"] == "REQUEST_BODY_INVALID"

@@ -65,6 +65,10 @@
   in-memory and atomic file-backed stores with quotas, optimistic append/clear
   conflicts, and typed LLM tool-call conversion. Agent binding and replay stay
   explicit follow-on capabilities.
+- **Loopback workflow run server** (`maple.autonomy.server`): added a
+  dependency-free `WorkflowRegistry` and bounded local HTTP server with
+  health, run, resume, and checkpoint inspection routes, stable JSON errors,
+  loopback-only binding, and deterministic shutdown.
 - **Release metadata hardening**: `pyproject.toml` is now the single source
   for package metadata, the legacy `setup.py` delegates to it, and the source
   manifest includes only files present in the repository. Wheel/sdist builds

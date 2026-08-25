@@ -31,6 +31,8 @@ def doctor_report():
         InMemoryLexicalRetriever,
         InMemorySessionStore,
         InteropEnvelope,
+        RunServer,
+        WorkflowRegistry,
         TrustedLocalExecutor,
         __version__,
     )
@@ -40,6 +42,7 @@ def doctor_report():
         "execution": isinstance(TrustedLocalExecutor(), TrustedLocalExecutor),
         "retrieval": isinstance(InMemoryLexicalRetriever(), InMemoryLexicalRetriever),
         "sessions": isinstance(InMemorySessionStore(), InMemorySessionStore),
+        "server": isinstance(RunServer(WorkflowRegistry()), RunServer),
         "events": isinstance(EventStream(), EventStream),
         "evaluation": isinstance(
             EvalCase("doctor", True, expected_output=True), EvalCase
