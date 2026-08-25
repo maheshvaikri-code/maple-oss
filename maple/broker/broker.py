@@ -16,15 +16,15 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 # mapl/broker/broker.py
 # Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
 
-import json
 import logging
 import threading
 import time
 import uuid
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, cast
 
 from ..agent.config import Config
 from ..core.message import Message
+from ..core.types import MessageID
 
 # NOTE: a LIBRARY must not configure the root logger (that hijacks the host's logging
 # and emits INFO noise). Use a module logger; the host owns logging config.
@@ -196,7 +196,7 @@ class MessageBroker:
 
         # Ensure the message has an ID
         if not message.message_id:
-            message.message_id = str(uuid.uuid4())
+            message.message_id = MessageID(str(uuid.uuid4()))
 
         # Separation-of-duties enforcement (fresh-context verifier preset):
         # broker-enforced sender allowlist + artifact-ref-only payloads.
@@ -215,7 +215,9 @@ class MessageBroker:
 
                 # If no link ID is provided, check if there's an existing link
                 if not link_id:
-                    links_result = self.link_manager.get_links_for_agent(message.sender)
+                    links_result = self.link_manager.get_links_for_agent(
+                        cast(str, message.sender)
+                    )
                     if links_result.is_ok():
                         links = links_result.unwrap()
                         for link in links:
@@ -239,7 +241,7 @@ class MessageBroker:
                 # Validate the link if one is provided
                 if link_id:
                     link_result = self.link_manager.validate_link(
-                        link_id, message.sender, message.receiver
+                        link_id, cast(str, message.sender), cast(str, message.receiver)
                     )
 
                     if link_result.is_err():
@@ -270,9 +272,10 @@ class MessageBroker:
             enqueued = enq_result.is_ok()
         if not enqueued:
             with self._lock:
-                if message.receiver not in self._agent_queues:
-                    self._agent_queues[message.receiver] = []
-                self._agent_queues[message.receiver].append(message)
+                receiver = cast(str, message.receiver)
+                if receiver not in self._agent_queues:
+                    self._agent_queues[receiver] = []
+                self._agent_queues[receiver].append(message)
 
         logger.debug(
             f"Message {message.message_id} queued for delivery to {message.receiver}"
@@ -287,7 +290,7 @@ class MessageBroker:
 
         # Ensure the message has an ID
         if not message.message_id:
-            message.message_id = str(uuid.uuid4())
+            message.message_id = MessageID(str(uuid.uuid4()))
 
         # Send the message to all subscribers (thread-safe)
         with self._lock:
