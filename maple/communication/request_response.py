@@ -25,7 +25,7 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Optional, TypedDict, cast
 
 from ..core.message import Message
 from ..core.result import Result
@@ -42,6 +42,15 @@ class RequestConfig:
     correlation_tracking: bool = True
 
 
+class _PendingRequest(TypedDict):
+    """Runtime state tracked while waiting for a response."""
+
+    event: threading.Event
+    response: Optional[Message]
+    error: Optional[Dict[str, Any]]
+    timestamp: float
+
+
 class RequestResponsePattern:
     """
     Implements the request-response communication pattern for MAPLE agents.
@@ -53,7 +62,7 @@ class RequestResponsePattern:
     - Response tracking
     """
 
-    def __init__(self, agent, config: Optional[RequestConfig] = None):
+    def __init__(self, agent: Any, config: Optional[RequestConfig] = None) -> None:
         """
         Initialize the request-response pattern.
 
@@ -63,7 +72,7 @@ class RequestResponsePattern:
         """
         self.agent = agent
         self.config = config or RequestConfig()
-        self.pending_requests: Dict[str, Any] = {}
+        self.pending_requests: Dict[str, _PendingRequest] = {}
         self._lock = threading.RLock()
 
     def send_request(
@@ -101,7 +110,7 @@ class RequestResponsePattern:
 
         # Track the request
         response_event = threading.Event()
-        request_info = {
+        request_info: _PendingRequest = {
             "event": response_event,
             "response": None,
             "error": None,
@@ -113,7 +122,9 @@ class RequestResponsePattern:
 
         try:
             # Send the request
-            send_result = self.agent.send(request)
+            send_result = cast(
+                Result[Message, Dict[str, Any]], self.agent.send(request)
+            )
             if send_result.is_err():
                 return send_result
 

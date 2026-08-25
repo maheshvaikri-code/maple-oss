@@ -25,7 +25,7 @@ import threading
 import time
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any, Callable, Dict, List, Optional, Set, cast
 
 from ..core.message import Message
 from ..core.result import Result
@@ -64,7 +64,7 @@ class PublishSubscribePattern:
     - Event delivery guarantees
     """
 
-    def __init__(self, agent):
+    def __init__(self, agent: Any) -> None:
         """
         Initialize the publish-subscribe pattern.
 
@@ -117,7 +117,10 @@ class PublishSubscribePattern:
 
             # Use the broker's publish method if available
             if hasattr(self.agent.broker, "publish"):
-                result = self.agent.broker.publish(topic, message)
+                result = cast(
+                    Result[str, Dict[str, Any]],
+                    self.agent.broker.publish(topic, message),
+                )
                 if result.is_ok():
                     self._stats["messages_published"] += 1
                 return result
@@ -262,7 +265,7 @@ class PublishSubscribePattern:
                 self.agent.send(subscriber_message)
 
             self._stats["messages_published"] += 1
-            return Result.ok(message.message_id)
+            return Result.ok(str(message.message_id))
 
     def _handle_topic_message(self, topic: str, message: Message) -> None:
         """

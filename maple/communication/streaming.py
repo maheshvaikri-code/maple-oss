@@ -21,7 +21,7 @@ import queue
 import threading
 import time
 import uuid
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, cast
 
 from ..core.message import Message
 from ..core.result import Result
@@ -40,7 +40,7 @@ class StreamOptions:
         compression: bool = False,
         chunk_size: str = "1MB",
         buffer_size: str = "10MB",
-    ):
+    ) -> None:
         self.compression = compression
         self.chunk_size = chunk_size
         self.buffer_size = buffer_size
@@ -51,7 +51,9 @@ class Stream:
     Represents a continuous stream of data between agents.
     """
 
-    def __init__(self, agent, name: str, options: Optional[StreamOptions] = None):
+    def __init__(
+        self, agent: Any, name: str, options: Optional[StreamOptions] = None
+    ) -> None:
         """
         Create a new stream.
 
@@ -65,8 +67,8 @@ class Stream:
         self.options = options or StreamOptions()
         self.stream_id = str(uuid.uuid4())
         self.closed = False
-        self.buffer = queue.Queue()
-        self.subscribers = []
+        self.buffer: queue.Queue[Any] = queue.Queue()
+        self.subscribers: List[str] = []
 
         # Register the stream with the agent
         self.agent.register_stream_handler(name, self._handle_message)
@@ -75,7 +77,7 @@ class Stream:
 
     @classmethod
     def connect(
-        cls, agent, name: str, options: Optional[StreamOptions] = None
+        cls, agent: Any, name: str, options: Optional[StreamOptions] = None
     ) -> "Stream":
         """
         Connect to an existing stream.
@@ -221,7 +223,7 @@ class Stream:
         elif message.message_type == "STREAM_SUBSCRIBE":
             # Add the subscriber
             if message.sender not in self.subscribers:
-                self.subscribers.append(message.sender)
+                self.subscribers.append(cast(str, message.sender))
                 logger.info(f"Added subscriber {message.sender} to stream {self.name}")
         elif message.message_type == "STREAM_CLOSE":
             # Mark as closed if it's from the creator
