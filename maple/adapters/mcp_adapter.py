@@ -19,7 +19,7 @@
 import asyncio
 import json
 import time
-from typing import Any, Dict, List, Optional, Protocol, Set, Tuple
+from typing import Any, Awaitable, Dict, List, Optional, Protocol, Set, Tuple, cast
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
@@ -28,6 +28,9 @@ from maple.core.types import Priority
 
 from ..core.message import Message
 from ..core.result import Result
+from ..resources.manager import ResourceManager
+from ..resources.negotiation import ResourceNegotiator
+from ..resources.specification import ResourceRequest
 
 
 class MCPAdapter:
@@ -36,9 +39,18 @@ class MCPAdapter:
     Extends MCP with MAPLE's advanced agent communication capabilities.
     """
 
-    def __init__(self, maple_agent: Any, mcp_config: Dict[str, Any]) -> None:
+    def __init__(
+        self,
+        maple_agent: Any,
+        mcp_config: Dict[str, Any],
+        *,
+        resource_manager: Optional[ResourceManager] = None,
+        resource_negotiator: Optional[ResourceNegotiator] = None,
+    ) -> None:
         self.maple_agent = maple_agent
         self.mcp_config = mcp_config
+        self.resource_manager = resource_manager
+        self.resource_negotiator = resource_negotiator
         self.mcp_tools: Dict[str, Any] = {}
         self.mcp_resources: Dict[str, Any] = {}
 
@@ -85,8 +97,12 @@ class MCPAdapter:
                                 "enum": ["allocate", "release", "negotiate"],
                             },
                             "resources": {"type": "object"},
+                            "allocation_id": {"type": "string"},
+                            "agent_id": {"type": "string"},
+                            "timeout": {"type": "string"},
                             "priority": {"type": "string"},
                         },
+                        "required": ["action"],
                     },
                 },
             ],
@@ -170,7 +186,12 @@ class MCPAdapter:
                     }
                 )
             else:
-                return result
+                error = result.unwrap_err()
+                if isinstance(error, dict):
+                    return Result.err(error)
+                return Result.err(
+                    {"errorType": "MCP_COMMUNICATION_ERROR", "message": str(error)}
+                )
 
         except Exception as e:
             return Result.err(
@@ -180,14 +201,135 @@ class MCPAdapter:
     async def _handle_resource_management(
         self, args: Dict[str, Any]
     ) -> Result[Any, Dict[str, Any]]:
-        """Fail closed until a host wires a resource manager into the adapter."""
+        """Dispatch validated MCP resource actions to host-owned services."""
+        action = args.get("action")
+        if action not in {"allocate", "release", "negotiate"}:
+            return Result.err(
+                {
+                    "errorType": "MCP_RESOURCE_ACTION_INVALID",
+                    "message": "Resource action must be allocate, release, or negotiate",
+                    "details": {"action": action},
+                }
+            )
+
+        if action == "allocate":
+            if self.resource_manager is None:
+                return self._resource_management_unavailable(action)
+            request_result = self._resource_request(args)
+            if request_result.is_err():
+                return Result.err(request_result.unwrap_err())
+            allocation_result = self.resource_manager.allocate(request_result.unwrap())
+            if allocation_result.is_err():
+                return Result.err(allocation_result.unwrap_err())
+            return Result.ok(
+                {
+                    "status": "success",
+                    "action": action,
+                    "allocation": allocation_result.unwrap().to_dict(),
+                }
+            )
+
+        if action == "release":
+            if self.resource_manager is None:
+                return self._resource_management_unavailable(action)
+            allocation_id = args.get("allocation_id")
+            if not isinstance(allocation_id, str) or not allocation_id:
+                return Result.err(
+                    {
+                        "errorType": "MCP_RESOURCE_ARGUMENT_INVALID",
+                        "message": "Release requires a non-empty allocation_id",
+                    }
+                )
+            allocation = self.resource_manager.get_allocation(allocation_id)
+            if allocation is None:
+                return Result.err(
+                    {
+                        "errorType": "RESOURCE_ALLOCATION_NOT_FOUND",
+                        "message": "The requested resource allocation does not exist",
+                        "details": {"allocation_id": allocation_id},
+                    }
+                )
+            self.resource_manager.release(allocation)
+            return Result.ok(
+                {
+                    "status": "success",
+                    "action": action,
+                    "allocation_id": allocation_id,
+                }
+            )
+
+        if self.resource_negotiator is None:
+            return self._resource_management_unavailable(action)
+        agent_id = args.get("agent_id")
+        if not isinstance(agent_id, str) or not agent_id:
+            return Result.err(
+                {
+                    "errorType": "MCP_RESOURCE_ARGUMENT_INVALID",
+                    "message": "Negotiate requires a non-empty agent_id",
+                }
+            )
+        request_result = self._resource_request(args)
+        if request_result.is_err():
+            return Result.err(request_result.unwrap_err())
+        timeout = args.get("timeout", "30s")
+        if not isinstance(timeout, str) or not timeout:
+            return Result.err(
+                {
+                    "errorType": "MCP_RESOURCE_ARGUMENT_INVALID",
+                    "message": "Negotiate timeout must be a non-empty duration string",
+                }
+            )
+        loop = asyncio.get_running_loop()
+        negotiation_result = await loop.run_in_executor(
+            None,
+            self.resource_negotiator.request_resources,
+            request_result.unwrap(),
+            agent_id,
+            timeout,
+        )
+        if negotiation_result.is_err():
+            return Result.err(negotiation_result.unwrap_err())
+        return Result.ok(
+            {
+                "status": "success",
+                "action": action,
+                "agent_id": agent_id,
+                "resources": negotiation_result.unwrap(),
+            }
+        )
+
+    @staticmethod
+    def _resource_management_unavailable(action: str) -> Result[Any, Dict[str, Any]]:
         return Result.err(
             {
                 "errorType": "RESOURCE_MANAGEMENT_UNAVAILABLE",
                 "message": "MCP resource management is not configured for this adapter",
-                "details": {"action": args.get("action")},
+                "details": {"action": action},
             }
         )
+
+    @staticmethod
+    def _resource_request(
+        args: Dict[str, Any],
+    ) -> Result[ResourceRequest, Dict[str, Any]]:
+        resources = args.get("resources")
+        if not isinstance(resources, dict):
+            return Result.err(
+                {
+                    "errorType": "MCP_RESOURCE_ARGUMENT_INVALID",
+                    "message": "Resource action requires a resources object",
+                }
+            )
+        try:
+            return Result.ok(ResourceRequest.from_dict(resources))
+        except (KeyError, TypeError, ValueError, AttributeError) as exc:
+            return Result.err(
+                {
+                    "errorType": "MCP_RESOURCE_ARGUMENT_INVALID",
+                    "message": "The resources object is not a valid MAPLE request",
+                    "details": {"reason": str(exc)},
+                }
+            )
 
     def create_mcp_client_for_external_tools(self, mcp_server_url: str) -> "MCPClient":
         """
@@ -279,7 +421,7 @@ class StreamableHTTPTransport:
                 if self._protocol_version is None:
                     initialized = await self._initialize()
                     if initialized.is_err():
-                        return initialized
+                        return Result.err(initialized.unwrap_err())
         return await self._request_once(payload)
 
     async def _initialize(self) -> Result[None, Dict[str, Any]]:
@@ -589,13 +731,17 @@ class MCPClient:
         if params is not None:
             payload["params"] = params
         try:
-            response = self.transport.request(payload)
-            if hasattr(response, "__await__"):
-                response = await response
+            response_value: Any = self.transport.request(payload)
+            if hasattr(response_value, "__await__"):
+                response_value = await cast(Awaitable[Any], response_value)
         except Exception as exc:
             return Result.err({"errorType": "MCP_TRANSPORT_ERROR", "message": str(exc)})
-        if not isinstance(response, Result):
-            response = Result.ok(response)
+        if isinstance(response_value, Result):
+            response = cast(
+                Result[Optional[Dict[str, Any]], Dict[str, Any]], response_value
+            )
+        else:
+            response = Result.ok(cast(Optional[Dict[str, Any]], response_value))
         if response.is_err():
             return Result.err(response.unwrap_err())
         envelope = response.unwrap()

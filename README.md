@@ -528,6 +528,44 @@ discovery rejects malformed or duplicate descriptors. The default URL-only
 form preserves the historical two-tool offline compatibility behavior and is
 not live discovery.
 
+### MCP resource management
+
+MCP resource actions can use MAPLE's existing allocation and negotiation
+services when a host injects them into the adapter. The default remains
+fail-closed, so an adapter never pretends to manage resources it does not own:
+
+```python
+import asyncio
+
+from maple.adapters.mcp_adapter import MCPAdapter
+from maple.resources import ResourceManager
+
+manager = ResourceManager()
+manager.register_resource("compute", 8)
+adapter = MCPAdapter(agent, {}, resource_manager=manager)
+
+allocated = asyncio.run(
+    adapter.handle_mcp_tool_call(
+        "maple_resource_management",
+        {"action": "allocate", "resources": {"compute": {"min": 2}}},
+    )
+)
+allocation_id = allocated.unwrap()["allocation"]["allocation_id"]
+
+asyncio.run(
+    adapter.handle_mcp_tool_call(
+        "maple_resource_management",
+        {"action": "release", "allocation_id": allocation_id},
+    )
+)
+```
+
+The `negotiate` action uses an injected `ResourceNegotiator` and requires
+`agent_id`, `resources`, and an optional duration-string `timeout`. Calls are
+validated at the MCP boundary and synchronous negotiation is moved off the
+event loop. See [ADR-023](docs/adr/023-mcp-resource-management-boundary.md)
+for the ownership and failure contract.
+
 ### Artifacts and code blocks
 
 Code is treated as data until a separately approved isolation provider exists:

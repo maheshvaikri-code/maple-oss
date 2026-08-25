@@ -18,10 +18,10 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 import logging
 import threading
 from copy import deepcopy
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, Optional, Union
 
 from ..core.result import Result
-from .specification import ResourceRange, ResourceRequest
+from .specification import ResourceRequest
 
 # NOTE: a LIBRARY must not configure the root logger (that hijacks the host's logging
 # and emits INFO noise). Use a module logger; the host owns logging config.
@@ -132,6 +132,15 @@ class ResourceManager:
 
             return float(Size.parse(value))
 
+    @staticmethod
+    def _as_size_number(value: Any) -> Union[int, float]:
+        """Return a numeric size while preserving integer/float inputs."""
+        if isinstance(value, (int, float)):
+            return value
+        from ..core.types import Size
+
+        return Size.parse(value)
+
     def get_available_resources(self) -> Dict[str, Any]:
         """
         Get the currently available resources.
@@ -141,6 +150,11 @@ class ResourceManager:
         """
         with self._lock:
             return deepcopy(self.available_resources)
+
+    def get_allocation(self, allocation_id: str) -> Optional[ResourceAllocation]:
+        """Return a tracked allocation by ID, or ``None`` when it is unknown."""
+        with self._lock:
+            return self.allocations.get(allocation_id)
 
     def allocate(
         self, request: Union[ResourceRequest, Dict[str, Any]]
@@ -309,23 +323,9 @@ class ResourceManager:
 
         # Allocate memory
         if request.memory and "memory" in self.available_resources:
-            from ..core.types import Size
-
-            preferred = (
-                Size.parse(request.memory.preferred)
-                if isinstance(request.memory.preferred, str)
-                else request.memory.preferred
-            )
-            available = (
-                Size.parse(self.available_resources["memory"])
-                if isinstance(self.available_resources["memory"], str)
-                else self.available_resources["memory"]
-            )
-            minimum = (
-                Size.parse(request.memory.min)
-                if isinstance(request.memory.min, str)
-                else request.memory.min
-            )
+            preferred = self._as_size_number(request.memory.preferred)
+            available = self._as_size_number(self.available_resources["memory"])
+            minimum = self._as_size_number(request.memory.min)
 
             amount = min(preferred, available)
             amount = max(amount, minimum)  # But ensure at least minimum

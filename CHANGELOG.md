@@ -30,6 +30,12 @@
   wheel/sdist, both artifacts pass Twine validation, the network-free doctor
   reports `ready: true`, and the full Maple formatter plus tools/tests lint and
   compile checks pass. No external publish was performed.
+- **MCP resource-management integration**: `MCPAdapter` now accepts optional,
+  host-owned `ResourceManager` and `ResourceNegotiator` services. Validated
+  `allocate`, `release`, and `negotiate` actions return structured results;
+  missing services remain fail-closed. The focused MCP/resource suite passes
+  97 tests, and the explicit Python 3.10-target aggregate type audit is now
+  `266 errors` in 40 files. See ADR-023 and the slice 33 review/QA evidence.
 - **Repository formatter gate closure**: normalized the tracked `maple/`
   source tree with the configured Black and isort profiles. Both checks are
   now idempotent, the focused runtime gate remains `240 passed`, and a fresh

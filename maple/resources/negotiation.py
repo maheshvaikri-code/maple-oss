@@ -18,14 +18,13 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 import logging
 import queue
 import threading
-import time
 import uuid
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, Optional
 
 from ..core.message import Message
 from ..core.result import Result
 from ..core.types import Priority
-from .specification import ResourceRange, ResourceRequest, TimeConstraint
+from .specification import ResourceRequest
 
 # NOTE: a LIBRARY must not configure the root logger (that hijacks the host's logging
 # and emits INFO noise). Use a module logger; the host owns logging config.
@@ -87,7 +86,7 @@ class ResourceNegotiator:
 
         if send_result.is_err():
             logger.error(f"Failed to send resource request: {send_result.unwrap_err()}")
-            return send_result
+            return Result.err(send_result.unwrap_err())
 
         # Wait for the response
         try:
