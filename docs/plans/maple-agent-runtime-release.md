@@ -60,6 +60,7 @@
 | 51 | Health-monitor type boundary cleanup | Discovery / Backend / QA | health monitor, health regression, changelog, review/QA artifacts | Health-monitor suite, explicit changed-file mypy with skipped imports, Black/isort/compile, aggregate audit | done: commit `d8bdfa6`; clarified status defaults, monitor lifecycle returns, heartbeat metrics optionality, callback registration, and monitor-loop contracts; focused `15 passed`; aggregate reduced to `136 errors in 15 files` |
 | 52 | Legacy interop adapter type boundary cleanup | Interop / Backend / QA | A2A, ACP, FIPA ACL adapters, import/compile evidence, changelog, review/QA artifacts | Explicit changed-file mypy with skipped imports, Black/isort/compile, import smoke, aggregate audit | done: commit `4086f0d`; typed adapter constructors and JSON decode boundary without changing translation behavior; no dedicated adapter tests exist; import smoke passed; aggregate reduced to `132 errors in 12 files` |
 | 53 | Production broker factory type boundary cleanup | Broker / Backend / QA | production broker factory, S2/broker regression, changelog, review/QA artifacts | S2/broker suite, explicit changed-file mypy with skipped imports, Black/isort/compile, aggregate audit | done: commit `4114386`; separated in-memory, NATS, and S2 broker locals so concrete factory types do not collide; focused `16 passed`; aggregate reduced to `130 errors in 11 files` |
+| 54 | AutoGen adapter type boundary cleanup | Interop / Backend / QA | AutoGen adapter, import/compile evidence, changelog, review/QA artifacts | Explicit changed-file mypy with skipped imports, Black/isort/compile, import smoke, aggregate audit | done: commit `7395bd4`; typed adapter constructors, agent registry, group-chat inputs, and mixed numeric performance metrics; import smoke passed with `AUTOGEN_AVAILABLE: True`; aggregate reduced to `126 errors in 10 files` |
 
 ## Threat sketch
 
@@ -152,6 +153,7 @@ workflow slice 50's follow-up audit now reports `142 errors in 16 files`;
 health-monitor slice 51's follow-up audit now reports `136 errors in 15 files`;
 legacy-interop slice 52's follow-up audit now reports `132 errors in 12 files`;
 production-broker slice 53's follow-up audit now reports `130 errors in 11 files`;
+AutoGen slice 54's follow-up audit now reports `126 errors in 10 files`;
 installed mypy 2.3 rejects the configured Python 3.8 target, so the support
 matrix/toolchain decision remains open. Dependency-audit disposition and
 unavailable independent fresh-context verification remain open.

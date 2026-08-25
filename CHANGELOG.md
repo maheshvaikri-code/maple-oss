@@ -133,6 +133,11 @@
   S2 broker locals so optional backend implementations do not collide during
   static analysis. The S2/broker regression passes 16 tests, the changed-file
   mypy check is clean, and the aggregate audit is now `130 errors` in 11 files.
+- **AutoGen adapter typing**: clarified adapter construction, agent registry,
+  group-chat inputs, and mixed integer/float performance metrics without
+  changing AutoGen translation or send behavior. Import smoke reports
+  `AUTOGEN_AVAILABLE: True`, the changed-file mypy check is clean, and the
+  aggregate audit is now `126 errors` in 10 files.
 - **Repository formatter gate closure**: normalized the tracked `maple/`
   source tree with the configured Black and isort profiles. Both checks are
   now idempotent, the focused runtime gate remains `240 passed`, and a fresh
