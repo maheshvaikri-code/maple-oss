@@ -16,10 +16,8 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 # maple/broker/nats_broker.py
 # Creator: Mahesh Vaikri
 
-"""
-Production NATS Broker Implementation for MAPLE
-Provides enterprise-grade message routing with NATS backend
-"""
+# Production NATS Broker Implementation for MAPLE.
+# Provides enterprise-grade message routing with NATS backend.
 
 import asyncio
 import json
@@ -28,19 +26,21 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 
+from ..agent.config import Config
+from ..core.message import Message
+from ..core.result import Result
+from ..core.types import MessageID
+
 try:
-    import nats
-    from nats.aio.client import Client as NATS
-    from nats.aio.errors import ErrConnectionClosed, ErrNoServers, ErrTimeout
+    from nats.aio.client import Client as _NATS  # noqa: F401
+    from nats.aio.errors import ErrTimeout as _ErrTimeout  # noqa: F401
 
     NATS_AVAILABLE = True
 except ImportError:
     NATS_AVAILABLE = False
-    NATS = None
 
-from ..agent.config import Config
-from ..core.message import Message
-from ..core.result import Result
+NATS: Any = globals().get("_NATS")
+ErrTimeout: Any = globals().get("_ErrTimeout", TimeoutError)
 
 logger = logging.getLogger(__name__)
 
@@ -49,14 +49,14 @@ logger = logging.getLogger(__name__)
 class NATSConfig:
     """Configuration for NATS broker."""
 
-    servers: List[str] = None
+    servers: Optional[List[str]] = None
     cluster_name: str = "maple-cluster"
-    client_id: str = None
+    client_id: Optional[str] = None
     max_reconnect_attempts: int = 10
     reconnect_time_wait: float = 2.0
     max_payload: int = 1024 * 1024  # 1MB
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.servers is None:
             self.servers = ["nats://localhost:4222"]
         if self.client_id is None:
@@ -75,7 +75,9 @@ class NATSBroker:
     - Persistent message delivery
     """
 
-    def __init__(self, config: Config, nats_config: Optional[NATSConfig] = None):
+    def __init__(
+        self, config: Config, nats_config: Optional[NATSConfig] = None
+    ) -> None:
         if not NATS_AVAILABLE:
             raise ImportError(
                 "NATS is not installed. Install with: pip install nats-py"
@@ -83,7 +85,7 @@ class NATSBroker:
 
         self.config = config
         self.nats_config = nats_config or NATSConfig()
-        self.nc: Optional[NATS] = None
+        self.nc: Optional[Any] = None
         self.subscriptions: Dict[str, Any] = {}
         self.running = False
 
@@ -147,7 +149,7 @@ class NATSBroker:
         try:
             # Ensure message has ID
             if not message.message_id:
-                message.message_id = str(uuid.uuid4())
+                message.message_id = MessageID(str(uuid.uuid4()))
 
             # Create NATS subject for direct agent communication
             subject = f"maple.agent.{message.receiver}"
@@ -163,7 +165,7 @@ class NATSBroker:
                 await self.nc.publish(subject, payload)
 
             logger.debug(f"Message {message.message_id} sent to {subject}")
-            return Result.ok(message.message_id)
+            return Result.ok(str(message.message_id))
 
         except Exception as e:
             error = {
@@ -192,7 +194,7 @@ class NATSBroker:
         try:
             # Ensure message has ID
             if not message.message_id:
-                message.message_id = str(uuid.uuid4())
+                message.message_id = MessageID(str(uuid.uuid4()))
 
             # Create NATS subject for topic
             subject = f"maple.topic.{topic}"
@@ -205,7 +207,7 @@ class NATSBroker:
             await self.nc.publish(subject, payload)
 
             logger.debug(f"Message {message.message_id} published to topic {topic}")
-            return Result.ok(message.message_id)
+            return Result.ok(str(message.message_id))
 
         except Exception as e:
             error = {
@@ -231,7 +233,7 @@ class NATSBroker:
         try:
             subject = f"maple.agent.{agent_id}"
 
-            async def message_handler(msg):
+            async def message_handler(msg: Any) -> None:
                 try:
                     # Deserialize message
                     data = json.loads(msg.data.decode("utf-8"))
@@ -280,7 +282,7 @@ class NATSBroker:
             subject = f"maple.topic.{topic}"
             subscription_key = f"{agent_id}:{topic}"
 
-            async def topic_handler(msg):
+            async def topic_handler(msg: Any) -> None:
                 try:
                     # Deserialize message
                     data = json.loads(msg.data.decode("utf-8"))
@@ -328,7 +330,7 @@ class NATSBroker:
         try:
             # Ensure message has ID
             if not message.message_id:
-                message.message_id = str(uuid.uuid4())
+                message.message_id = MessageID(str(uuid.uuid4()))
 
             subject = f"maple.agent.{message.receiver}"
             payload = json.dumps(message.to_dict()).encode("utf-8")
@@ -384,15 +386,15 @@ class NATSBroker:
         }
 
     # Callback methods for NATS connection events
-    async def _error_callback(self, error):
+    async def _error_callback(self, error: Any) -> None:
         """Handle NATS errors."""
         logger.error(f"NATS error: {error}")
 
-    async def _disconnected_callback(self):
+    async def _disconnected_callback(self) -> None:
         """Handle NATS disconnection."""
         logger.warning("NATS disconnected - attempting to reconnect...")
 
-    async def _reconnected_callback(self):
+    async def _reconnected_callback(self) -> None:
         """Handle NATS reconnection."""
         logger.info("NATS reconnected successfully")
 
@@ -403,10 +405,10 @@ class NATSBrokerSync:
 
     def __init__(self, config: Config, nats_config: Optional[NATSConfig] = None):
         self.broker = NATSBroker(config, nats_config)
-        self.loop = None
+        self.loop: asyncio.AbstractEventLoop
         self._setup_event_loop()
 
-    def _setup_event_loop(self):
+    def _setup_event_loop(self) -> None:
         """Set up the event loop for async operations."""
         try:
             self.loop = asyncio.get_event_loop()
