@@ -22,7 +22,8 @@ MAPLE Adapters - Integration with external platforms and protocols.
 
 # S2.dev durable streaming integration
 try:
-    from .s2_adapter import S2Broker, S2StateBackend, S2Config  # noqa: F401
+    from .s2_adapter import S2Broker, S2Config, S2StateBackend  # noqa: F401
+
     S2_AVAILABLE = True
 except ImportError:  # pragma: no cover
     S2_AVAILABLE = False

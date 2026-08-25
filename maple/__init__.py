@@ -37,40 +37,23 @@ from .agent.config import (
     SecurityConfig,
     TracingConfig,
 )
-from .broker.broker import MessageBroker
-from .communication.streaming import Stream, StreamOptions
-from .core.message import Message, Priority
-from .core.result import Result
-from .core.types import AgentID, Duration, MessageID, Priority, Size
-from .error.circuit_breaker import CircuitBreaker
-from .error.recovery import RetryOptions, exponential_backoff, retry
-from .error.types import Error, ErrorType, Severity
-from .resources.manager import (
-    DEFAULT_LIFECYCLES,
-    ResourceAllocation,
-    ResourceLifecycle,
-    ResourceManager,
-)
-from .resources.lease import Lease, LeaseManager
-from .resources.negotiation import ResourceNegotiator
-from .resources.specification import ResourceRange, ResourceRequest, TimeConstraint
 
 # Autonomy layer (LLM + autonomous agents)
 from .autonomy.agent import AutonomousAgent, AutonomousConfig, Goal
-from .autonomy.tools import Tool, ToolRegistry
-from .autonomy.memory import MemoryManager
-from .autonomy.orchestrator import AgentOrchestrator
-from .autonomy.workflow import (
-    END,
-    CheckpointStore,
-    FileCheckpointStore,
-    HistoryCheckpointStore,
-    InMemoryCheckpointStore,
-    Workflow,
-    WorkflowCheckpoint,
-    WorkflowContext,
-    WorkflowPause,
-    WorkflowRun,
+from .autonomy.approval import (
+    ApprovalDecision,
+    ApprovalRequest,
+    ApprovalStore,
+    FileApprovalStore,
+    InMemoryApprovalStore,
+)
+from .autonomy.artifacts import (
+    Artifact,
+    ArtifactStore,
+    CodeBlock,
+    FileArtifactStore,
+    InMemoryArtifactStore,
+    extract_code_blocks,
 )
 from .autonomy.contracts import (
     Guardrail,
@@ -79,11 +62,35 @@ from .autonomy.contracts import (
     schema_guardrail,
     validate_json_schema,
 )
+from .autonomy.evaluation import (
+    EvalCase,
+    EvalObservation,
+    EvalReport,
+    EvalResult,
+    EvaluationHarness,
+    GroundednessEvalCase,
+    GroundednessObservation,
+    GroundingSource,
+    RetrievalEvalCase,
+)
+from .autonomy.events import AgentEvent, EventStream, RedactionPolicy
 from .autonomy.execution import (
     CancellationToken,
     ExecutionExecutor,
     ExecutionPolicy,
     TrustedLocalExecutor,
+)
+from .autonomy.interop import InteropEnvelope, round_trip_json
+from .autonomy.memory import MemoryManager
+from .autonomy.orchestrator import AgentOrchestrator
+from .autonomy.replay import (
+    DEFAULT_MAX_RECORD_BYTES,
+    DEFAULT_MAX_RECORDS,
+    DEFAULT_MAX_RUN_RECORDS,
+    ExecutionJournal,
+    ExecutionRecord,
+    FileExecutionJournal,
+    InMemoryExecutionJournal,
 )
 from .autonomy.retrieval import (
     ChunkingPolicy,
@@ -98,37 +105,10 @@ from .autonomy.retrieval import (
     TextChunker,
     VectorRetrievalHit,
 )
-from .autonomy.events import AgentEvent, EventStream, RedactionPolicy
-from .autonomy.evaluation import (
-    EvalCase,
-    EvalObservation,
-    EvalReport,
-    EvalResult,
-    EvaluationHarness,
-    GroundednessEvalCase,
-    GroundednessObservation,
-    GroundingSource,
-    RetrievalEvalCase,
-)
-from .autonomy.interop import InteropEnvelope, round_trip_json
-from .autonomy.artifacts import (
-    Artifact,
-    ArtifactStore,
-    CodeBlock,
-    FileArtifactStore,
-    InMemoryArtifactStore,
-    extract_code_blocks,
-)
-from .autonomy.approval import (
-    ApprovalDecision,
-    ApprovalRequest,
-    ApprovalStore,
-    FileApprovalStore,
-    InMemoryApprovalStore,
-)
+from .autonomy.server import RunServer, WorkflowRegistry
 from .autonomy.sessions import (
-    DEFAULT_MAX_MESSAGES,
     DEFAULT_MAX_MESSAGE_BYTES,
+    DEFAULT_MAX_MESSAGES,
     DEFAULT_MAX_METADATA_BYTES,
     DEFAULT_MAX_SESSION_BYTES,
     DEFAULT_MAX_SESSIONS,
@@ -138,28 +118,48 @@ from .autonomy.sessions import (
     SessionSnapshot,
     SessionStore,
 )
-from .autonomy.server import RunServer, WorkflowRegistry
-from .autonomy.replay import (
-    DEFAULT_MAX_RECORD_BYTES,
-    DEFAULT_MAX_RECORDS,
-    DEFAULT_MAX_RUN_RECORDS,
-    ExecutionJournal,
-    ExecutionRecord,
-    FileExecutionJournal,
-    InMemoryExecutionJournal,
+from .autonomy.tools import Tool, ToolRegistry
+from .autonomy.workflow import (
+    END,
+    CheckpointStore,
+    FileCheckpointStore,
+    HistoryCheckpointStore,
+    InMemoryCheckpointStore,
+    Workflow,
+    WorkflowCheckpoint,
+    WorkflowContext,
+    WorkflowPause,
+    WorkflowRun,
 )
-from .llm.types import LLMConfig, ChatMessage, ChatRole
-from .llm.registry import LLMProviderRegistry
+from .broker.broker import MessageBroker
+from .communication.streaming import Stream, StreamOptions
+from .core.message import Message, Priority
+from .core.result import Result
+from .core.types import AgentID, Duration, MessageID, Priority, Size
+from .error.circuit_breaker import CircuitBreaker
+from .error.recovery import RetryOptions, exponential_backoff, retry
+from .error.types import Error, ErrorType, Severity
 from .llm.capabilities import (
     ProviderCapabilities,
     ProviderDescriptor,
     ProviderRequirements,
     ProviderRouter,
 )
+from .llm.registry import LLMProviderRegistry
+from .llm.types import ChatMessage, ChatRole, LLMConfig
+from .resources.lease import Lease, LeaseManager
+from .resources.manager import (
+    DEFAULT_LIFECYCLES,
+    ResourceAllocation,
+    ResourceLifecycle,
+    ResourceManager,
+)
+from .resources.negotiation import ResourceNegotiator
+from .resources.specification import ResourceRange, ResourceRequest, TimeConstraint
 
 # S2.dev durable streaming integration (optional)
 try:
-    from .adapters.s2_adapter import S2Broker, S2StateBackend, S2Config  # noqa: F401
+    from .adapters.s2_adapter import S2Broker, S2Config, S2StateBackend  # noqa: F401
 except ImportError:  # pragma: no cover
     pass
 

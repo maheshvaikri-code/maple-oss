@@ -42,7 +42,7 @@ class LLMProvider(ABC):
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
         stop: Optional[List[str]] = None,
-    ) -> Result['LLMResponse', Dict[str, Any]]:
+    ) -> Result["LLMResponse", Dict[str, Any]]:
         """Send a completion request to the LLM."""
         ...
 
@@ -53,7 +53,7 @@ class LLMProvider(ABC):
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
         stop: Optional[List[str]] = None,
-    ) -> Result['LLMResponse', Dict[str, Any]]:
+    ) -> Result["LLMResponse", Dict[str, Any]]:
         """Async version of complete(). Default delegates to sync."""
         return self.complete(messages, tools, temperature, max_tokens, stop)
 
@@ -63,7 +63,7 @@ class LLMProvider(ABC):
         tools: Optional[List[ToolDefinition]] = None,
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
-    ) -> Result[AsyncIterator['LLMChunk'], Dict[str, Any]]:
+    ) -> Result[AsyncIterator["LLMChunk"], Dict[str, Any]]:
         """Return bounded chunks, with native providers free to override.
 
         The base implementation is a compatibility stream: it completes the
@@ -111,11 +111,11 @@ class LLMProvider(ABC):
     def get_usage_stats(self) -> Dict[str, Any]:
         """Get cumulative usage statistics."""
         return {
-            'total_prompt_tokens': self._total_prompt_tokens,
-            'total_completion_tokens': self._total_completion_tokens,
-            'total_cost_usd': self._total_cost,
-            'provider': self.config.provider,
-            'model': self.config.model,
+            "total_prompt_tokens": self._total_prompt_tokens,
+            "total_completion_tokens": self._total_completion_tokens,
+            "total_cost_usd": self._total_cost,
+            "provider": self.config.provider,
+            "model": self.config.model,
         }
 
     def _track_usage(self, response: LLMResponse) -> None:

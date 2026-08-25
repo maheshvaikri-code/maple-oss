@@ -230,6 +230,7 @@ def _validate_descriptor(
 
 def _legacy_standard_tools(mcp_server_url: str, client) -> List[Tool]:
     """Preserve the historical offline helper until the next major API cycle."""
+
     def _make_mcp_handler(tool_name):
         def handler(**kwargs) -> Result:
             try:
@@ -381,10 +382,12 @@ def discover_mcp_tools(
             }
         )
     except Exception as e:
-        return Result.err({
-            'errorType': 'MCP_DISCOVERY_ERROR',
-            'message': f'Failed to discover MCP tools: {str(e)}'
-        })
+        return Result.err(
+            {
+                "errorType": "MCP_DISCOVERY_ERROR",
+                "message": f"Failed to discover MCP tools: {str(e)}",
+            }
+        )
 
 
 def register_mcp_tools(

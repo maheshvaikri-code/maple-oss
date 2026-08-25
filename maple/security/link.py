@@ -13,19 +13,18 @@ received a copy of the GNU Affero General Public License along with MAPLE - Mult
 Language Engine. If not, see <https://www.gnu.org/licenses/>.
 """
 
-
 # maple/security/link.py
 
-from typing import Dict, Any, Optional
+import logging
 import time
 import uuid
-import logging
+from typing import Any, Dict, Optional
 
-from ..core.result import Result
 from ..core.message import Message
+from ..core.result import Result
 
 try:
-    from .cryptography_impl import CryptographyManager, CRYPTO_AVAILABLE
+    from .cryptography_impl import CRYPTO_AVAILABLE, CryptographyManager
 except ImportError:
     CRYPTO_AVAILABLE = False
 
@@ -34,6 +33,7 @@ logger = logging.getLogger(__name__)
 
 class LinkState:
     """Possible states for a communication link."""
+
     INITIATING = "INITIATING"
     ESTABLISHED = "ESTABLISHED"
     DEGRADED = "DEGRADED"
@@ -118,7 +118,7 @@ class LinkManager:
                 kp = kp_result.unwrap()
                 link._local_private_key = kp.private_key
                 link._local_public_key = kp.public_key
-                link.encryption_params['key_type'] = 'ECDH_P256'
+                link.encryption_params["key_type"] = "ECDH_P256"
 
         self.links[link.link_id] = link
 
@@ -134,7 +134,9 @@ class LinkManager:
         logger.info(f"Initiated link {link.link_id} between {agent_a} and {agent_b}")
         return link
 
-    def establish_link(self, link_id: str, lifetime_seconds: int = 3600) -> Result[Link, Dict[str, Any]]:
+    def establish_link(
+        self, link_id: str, lifetime_seconds: int = 3600
+    ) -> Result[Link, Dict[str, Any]]:
         """
         Establish a link after successful handshake.
 
@@ -143,10 +145,12 @@ class LinkManager:
         encrypted with a symmetric key.
         """
         if link_id not in self.links:
-            return Result.err({
-                "errorType": "UNKNOWN_LINK",
-                "message": f"Link {link_id} does not exist",
-            })
+            return Result.err(
+                {
+                    "errorType": "UNKNOWN_LINK",
+                    "message": f"Link {link_id} does not exist",
+                }
+            )
 
         link = self.links[link_id]
 
@@ -166,48 +170,63 @@ class LinkManager:
                 )
                 if secret_result.is_ok():
                     link.shared_key = secret_result.unwrap()
-                    link.encryption_params['has_shared_key'] = True
+                    link.encryption_params["has_shared_key"] = True
                     logger.info(f"ECDH key exchange completed for link {link_id}")
                 else:
-                    logger.warning(f"Key derivation failed for link {link_id}: {secret_result.unwrap_err()}")
+                    logger.warning(
+                        f"Key derivation failed for link {link_id}: {secret_result.unwrap_err()}"
+                    )
 
         link.establish(lifetime_seconds)
 
-        logger.info(f"Established link {link_id} between {link.agent_a} and {link.agent_b}")
+        logger.info(
+            f"Established link {link_id} between {link.agent_a} and {link.agent_b}"
+        )
         return Result.ok(link)
 
-    def validate_link(self, link_id: str, sender: str, receiver: str) -> Result[Link, Dict[str, Any]]:
+    def validate_link(
+        self, link_id: str, sender: str, receiver: str
+    ) -> Result[Link, Dict[str, Any]]:
         """Validate a link for a message exchange."""
         if link_id not in self.links:
-            return Result.err({
-                "errorType": "INVALID_LINK",
-                "message": f"Link {link_id} does not exist",
-            })
+            return Result.err(
+                {
+                    "errorType": "INVALID_LINK",
+                    "message": f"Link {link_id} does not exist",
+                }
+            )
 
         link = self.links[link_id]
 
         # Check if link is in correct state
         if link.state != LinkState.ESTABLISHED:
-            return Result.err({
-                "errorType": "LINK_NOT_ESTABLISHED",
-                "message": f"Link {link_id} is in state {link.state}, not ESTABLISHED",
-            })
+            return Result.err(
+                {
+                    "errorType": "LINK_NOT_ESTABLISHED",
+                    "message": f"Link {link_id} is in state {link.state}, not ESTABLISHED",
+                }
+            )
 
         # Check if link has expired
         if link.is_expired():
             link.state = LinkState.TERMINATED
-            return Result.err({
-                "errorType": "EXPIRED_LINK",
-                "message": f"Link {link_id} has expired",
-            })
+            return Result.err(
+                {
+                    "errorType": "EXPIRED_LINK",
+                    "message": f"Link {link_id} has expired",
+                }
+            )
 
         # Check if sender and receiver are part of this link
-        if (sender != link.agent_a and sender != link.agent_b) or \
-           (receiver != link.agent_a and receiver != link.agent_b):
-            return Result.err({
-                "errorType": "UNAUTHORIZED_LINK_USAGE",
-                "message": f"Agents {sender} and {receiver} are not authorized to use link {link_id}",
-            })
+        if (sender != link.agent_a and sender != link.agent_b) or (
+            receiver != link.agent_a and receiver != link.agent_b
+        ):
+            return Result.err(
+                {
+                    "errorType": "UNAUTHORIZED_LINK_USAGE",
+                    "message": f"Agents {sender} and {receiver} are not authorized to use link {link_id}",
+                }
+            )
 
         # Update last activity
         link.last_activity = time.time()
@@ -217,15 +236,19 @@ class LinkManager:
     def terminate_link(self, link_id: str) -> Result[None, Dict[str, Any]]:
         """Terminate a link and wipe its key material."""
         if link_id not in self.links:
-            return Result.err({
-                "errorType": "UNKNOWN_LINK",
-                "message": f"Link {link_id} does not exist",
-            })
+            return Result.err(
+                {
+                    "errorType": "UNKNOWN_LINK",
+                    "message": f"Link {link_id} does not exist",
+                }
+            )
 
         link = self.links[link_id]
         link.terminate()
 
-        logger.info(f"Terminated link {link_id} between {link.agent_a} and {link.agent_b}")
+        logger.info(
+            f"Terminated link {link_id} between {link.agent_a} and {link.agent_b}"
+        )
         return Result.ok(None)
 
     def get_links_for_agent(self, agent_id: str) -> Result[list, Dict[str, Any]]:
@@ -236,7 +259,8 @@ class LinkManager:
         links = [
             self.links[link_id]
             for link_id in self.agent_links[agent_id]
-            if link_id in self.links and self.links[link_id].state == LinkState.ESTABLISHED
+            if link_id in self.links
+            and self.links[link_id].state == LinkState.ESTABLISHED
         ]
 
         return Result.ok(links)

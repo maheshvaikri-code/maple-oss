@@ -201,9 +201,7 @@ class TypeValidator:
         if not isinstance(value, str):
             raise TypeError(f"Expected string, got {type(value).__name__}")
         if not (min_len <= len(value) <= max_len):
-            raise ValueError(
-                f"String length must be between {min_len} and {max_len}"
-            )
+            raise ValueError(f"String length must be between {min_len} and {max_len}")
         return value
 
     @staticmethod

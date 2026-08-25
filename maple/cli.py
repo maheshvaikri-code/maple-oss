@@ -32,8 +32,8 @@ def doctor_report():
         InMemorySessionStore,
         InteropEnvelope,
         RunServer,
-        WorkflowRegistry,
         TrustedLocalExecutor,
+        WorkflowRegistry,
         __version__,
     )
 
@@ -102,7 +102,7 @@ def main():
             return 1
 
     if args.command == "info":
-        from maple import __version__, __author__, __license__
+        from maple import __author__, __license__, __version__
 
         print(f"MAPLE v{__version__}")
         print(f"Author: {__author__}")

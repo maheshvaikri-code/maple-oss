@@ -15,12 +15,22 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 
 """MAPLE Autonomy Layer - Autonomous agentic AI capabilities."""
 
-from .tools import Tool, ToolRegistry
-from .memory import WorkingMemory, EpisodicMemory, SemanticMemory, MemoryManager
 from .agent import AutonomousAgent, AutonomousConfig, Goal, ReasoningStep
-from .orchestrator import AgentOrchestrator, TeamMember
-from .observability import DecisionTrace, DecisionLogger, AgentSnapshot
-from .mcp_tools import discover_mcp_tools, register_mcp_tools
+from .approval import (
+    ApprovalDecision,
+    ApprovalRequest,
+    ApprovalStore,
+    FileApprovalStore,
+    InMemoryApprovalStore,
+)
+from .artifacts import (
+    Artifact,
+    ArtifactStore,
+    CodeBlock,
+    FileArtifactStore,
+    InMemoryArtifactStore,
+    extract_code_blocks,
+)
 from .contracts import (
     Guardrail,
     parse_structured_output,
@@ -28,11 +38,37 @@ from .contracts import (
     schema_guardrail,
     validate_json_schema,
 )
+from .evaluation import (
+    EvalCase,
+    EvalObservation,
+    EvalReport,
+    EvalResult,
+    EvaluationHarness,
+    GroundednessEvalCase,
+    GroundednessObservation,
+    GroundingSource,
+    RetrievalEvalCase,
+)
+from .events import AgentEvent, EventStream, RedactionPolicy
 from .execution import (
     CancellationToken,
     ExecutionExecutor,
     ExecutionPolicy,
     TrustedLocalExecutor,
+)
+from .interop import InteropEnvelope, round_trip_json
+from .mcp_tools import discover_mcp_tools, register_mcp_tools
+from .memory import EpisodicMemory, MemoryManager, SemanticMemory, WorkingMemory
+from .observability import AgentSnapshot, DecisionLogger, DecisionTrace
+from .orchestrator import AgentOrchestrator, TeamMember
+from .replay import (
+    DEFAULT_MAX_RECORD_BYTES,
+    DEFAULT_MAX_RECORDS,
+    DEFAULT_MAX_RUN_RECORDS,
+    ExecutionJournal,
+    ExecutionRecord,
+    FileExecutionJournal,
+    InMemoryExecutionJournal,
 )
 from .retrieval import (
     ChunkingPolicy,
@@ -47,34 +83,20 @@ from .retrieval import (
     TextChunker,
     VectorRetrievalHit,
 )
-from .events import AgentEvent, EventStream, RedactionPolicy
-from .evaluation import (
-    EvalCase,
-    EvalObservation,
-    EvalReport,
-    EvalResult,
-    EvaluationHarness,
-    GroundednessEvalCase,
-    GroundednessObservation,
-    GroundingSource,
-    RetrievalEvalCase,
+from .server import RunServer, WorkflowRegistry
+from .sessions import (
+    DEFAULT_MAX_MESSAGE_BYTES,
+    DEFAULT_MAX_MESSAGES,
+    DEFAULT_MAX_METADATA_BYTES,
+    DEFAULT_MAX_SESSION_BYTES,
+    DEFAULT_MAX_SESSIONS,
+    FileSessionStore,
+    InMemorySessionStore,
+    SessionMessage,
+    SessionSnapshot,
+    SessionStore,
 )
-from .interop import InteropEnvelope, round_trip_json
-from .artifacts import (
-    Artifact,
-    ArtifactStore,
-    CodeBlock,
-    FileArtifactStore,
-    InMemoryArtifactStore,
-    extract_code_blocks,
-)
-from .approval import (
-    ApprovalDecision,
-    ApprovalRequest,
-    ApprovalStore,
-    FileApprovalStore,
-    InMemoryApprovalStore,
-)
+from .tools import Tool, ToolRegistry
 from .workflow import (
     END,
     CheckpointStore,
@@ -86,28 +108,6 @@ from .workflow import (
     WorkflowContext,
     WorkflowPause,
     WorkflowRun,
-)
-from .sessions import (
-    DEFAULT_MAX_MESSAGES,
-    DEFAULT_MAX_MESSAGE_BYTES,
-    DEFAULT_MAX_METADATA_BYTES,
-    DEFAULT_MAX_SESSION_BYTES,
-    DEFAULT_MAX_SESSIONS,
-    FileSessionStore,
-    InMemorySessionStore,
-    SessionMessage,
-    SessionSnapshot,
-    SessionStore,
-)
-from .server import RunServer, WorkflowRegistry
-from .replay import (
-    DEFAULT_MAX_RECORD_BYTES,
-    DEFAULT_MAX_RECORDS,
-    DEFAULT_MAX_RUN_RECORDS,
-    ExecutionJournal,
-    ExecutionRecord,
-    FileExecutionJournal,
-    InMemoryExecutionJournal,
 )
 
 __all__ = [

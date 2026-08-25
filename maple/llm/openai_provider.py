@@ -22,8 +22,13 @@ from typing import Any, AsyncIterator, Dict, List, Optional
 from ..core.result import Result
 from .provider import LLMProvider
 from .types import (
-    ChatMessage, LLMChunk, LLMConfig, LLMResponse,
-    ToolCall, ToolDefinition, TokenUsage,
+    ChatMessage,
+    LLMChunk,
+    LLMConfig,
+    LLMResponse,
+    TokenUsage,
+    ToolCall,
+    ToolDefinition,
 )
 
 logger = logging.getLogger(__name__)
@@ -41,19 +46,19 @@ class OpenAIProvider(LLMProvider):
         self.async_client = None
         try:
             import openai
+
             client_kwargs = {}
             if config.api_key:
-                client_kwargs['api_key'] = config.api_key
+                client_kwargs["api_key"] = config.api_key
             if config.api_base:
-                client_kwargs['base_url'] = config.api_base
+                client_kwargs["base_url"] = config.api_base
             if config.timeout:
-                client_kwargs['timeout'] = config.timeout
+                client_kwargs["timeout"] = config.timeout
             self.client = openai.OpenAI(**client_kwargs)
             self.async_client = openai.AsyncOpenAI(**client_kwargs)
         except ImportError:
             logger.warning(
-                "openai library not installed. Install with: "
-                "pip install openai"
+                "openai library not installed. Install with: " "pip install openai"
             )
 
     def complete(
@@ -65,39 +70,41 @@ class OpenAIProvider(LLMProvider):
         stop: Optional[List[str]] = None,
     ) -> Result[LLMResponse, Dict[str, Any]]:
         if not self.client:
-            return Result.err({
-                'errorType': 'PROVIDER_NOT_AVAILABLE',
-                'message': (
-                    'openai library not installed. Install with: '
-                    'pip install openai'
-                )
-            })
+            return Result.err(
+                {
+                    "errorType": "PROVIDER_NOT_AVAILABLE",
+                    "message": (
+                        "openai library not installed. Install with: "
+                        "pip install openai"
+                    ),
+                }
+            )
         try:
             kwargs = {
-                'model': self.config.model,
-                'messages': [self._format_message(m) for m in messages],
-                'temperature': (
-                    temperature
-                    if temperature is not None
-                    else self.config.temperature
+                "model": self.config.model,
+                "messages": [self._format_message(m) for m in messages],
+                "temperature": (
+                    temperature if temperature is not None else self.config.temperature
                 ),
-                'max_tokens': max_tokens or self.config.max_tokens,
+                "max_tokens": max_tokens or self.config.max_tokens,
             }
             if stop:
-                kwargs['stop'] = stop
+                kwargs["stop"] = stop
             if tools:
-                kwargs['tools'] = [self._format_tool(t) for t in tools]
-                kwargs['tool_choice'] = 'auto'
+                kwargs["tools"] = [self._format_tool(t) for t in tools]
+                kwargs["tool_choice"] = "auto"
 
             response = self.client.chat.completions.create(**kwargs)
             llm_response = self._parse_response(response)
             self._track_usage(llm_response)
             return Result.ok(llm_response)
         except Exception as e:
-            return Result.err({
-                'errorType': 'LLM_COMPLETION_ERROR',
-                'message': f'OpenAI completion failed: {str(e)}'
-            })
+            return Result.err(
+                {
+                    "errorType": "LLM_COMPLETION_ERROR",
+                    "message": f"OpenAI completion failed: {str(e)}",
+                }
+            )
 
     async def stream(
         self,
@@ -116,72 +123,74 @@ class OpenAIProvider(LLMProvider):
             )
 
         kwargs: Dict[str, Any] = {
-            'model': self.config.model,
-            'messages': [self._format_message(m) for m in messages],
-            'temperature': (
+            "model": self.config.model,
+            "messages": [self._format_message(m) for m in messages],
+            "temperature": (
                 temperature if temperature is not None else self.config.temperature
             ),
-            'max_tokens': max_tokens or self.config.max_tokens,
-            'stream': True,
+            "max_tokens": max_tokens or self.config.max_tokens,
+            "stream": True,
         }
         if tools:
-            kwargs['tools'] = [self._format_tool(t) for t in tools]
-            kwargs['tool_choice'] = 'auto'
+            kwargs["tools"] = [self._format_tool(t) for t in tools]
+            kwargs["tool_choice"] = "auto"
 
         try:
             response_stream = await self.async_client.chat.completions.create(**kwargs)
         except Exception as e:
-            return Result.err({
-                'errorType': 'LLM_STREAM_ERROR',
-                'message': f'OpenAI streaming failed: {str(e)}'
-            })
+            return Result.err(
+                {
+                    "errorType": "LLM_STREAM_ERROR",
+                    "message": f"OpenAI streaming failed: {str(e)}",
+                }
+            )
 
         async def _chunks() -> AsyncIterator[LLMChunk]:
             finish_reason = None
             try:
                 async for chunk in response_stream:
-                    choices = getattr(chunk, 'choices', None) or []
+                    choices = getattr(chunk, "choices", None) or []
                     if not choices:
                         continue
                     choice = choices[0]
-                    delta = getattr(choice, 'delta', None)
+                    delta = getattr(choice, "delta", None)
                     if delta is not None:
-                        content = getattr(delta, 'content', None) or ''
+                        content = getattr(delta, "content", None) or ""
                         for text in self._bounded_text_chunks(content):
                             yield LLMChunk(content=text)
-                        for tool_call in getattr(delta, 'tool_calls', None) or []:
-                            function = getattr(tool_call, 'function', None)
+                        for tool_call in getattr(delta, "tool_calls", None) or []:
+                            function = getattr(tool_call, "function", None)
                             yield LLMChunk(
                                 tool_call_delta={
-                                    'id': getattr(tool_call, 'id', None),
-                                    'name': getattr(function, 'name', None),
-                                    'arguments': getattr(function, 'arguments', None),
+                                    "id": getattr(tool_call, "id", None),
+                                    "name": getattr(function, "name", None),
+                                    "arguments": getattr(function, "arguments", None),
                                 }
                             )
-                    reason = getattr(choice, 'finish_reason', None)
+                    reason = getattr(choice, "finish_reason", None)
                     if reason:
                         finish_reason = reason
             except Exception as e:
-                raise RuntimeError(f'OpenAI stream iteration failed: {e}') from e
+                raise RuntimeError(f"OpenAI stream iteration failed: {e}") from e
             yield LLMChunk(finish_reason=finish_reason)
 
         return Result.ok(_chunks())
 
     def _format_message(self, msg: ChatMessage) -> Dict[str, Any]:
-        d: Dict[str, Any] = {'role': msg.role.value, 'content': msg.content or ""}
+        d: Dict[str, Any] = {"role": msg.role.value, "content": msg.content or ""}
         if msg.name:
-            d['name'] = msg.name
+            d["name"] = msg.name
         if msg.tool_call_id:
-            d['tool_call_id'] = msg.tool_call_id
+            d["tool_call_id"] = msg.tool_call_id
         if msg.tool_calls:
-            d['tool_calls'] = [
+            d["tool_calls"] = [
                 {
-                    'id': tc.id,
-                    'type': 'function',
-                    'function': {
-                        'name': tc.name,
-                        'arguments': json.dumps(tc.arguments)
-                    }
+                    "id": tc.id,
+                    "type": "function",
+                    "function": {
+                        "name": tc.name,
+                        "arguments": json.dumps(tc.arguments),
+                    },
                 }
                 for tc in msg.tool_calls
             ]
@@ -189,12 +198,12 @@ class OpenAIProvider(LLMProvider):
 
     def _format_tool(self, tool: ToolDefinition) -> Dict[str, Any]:
         return {
-            'type': 'function',
-            'function': {
-                'name': tool.name,
-                'description': tool.description,
-                'parameters': tool.parameters,
-            }
+            "type": "function",
+            "function": {
+                "name": tool.name,
+                "description": tool.description,
+                "parameters": tool.parameters,
+            },
         }
 
     def _parse_response(self, response) -> LLMResponse:
@@ -207,11 +216,13 @@ class OpenAIProvider(LLMProvider):
                     args = json.loads(tc.function.arguments)
                 except (json.JSONDecodeError, TypeError):
                     args = {}
-                tool_calls.append(ToolCall(
-                    id=tc.id,
-                    name=tc.function.name,
-                    arguments=args,
-                ))
+                tool_calls.append(
+                    ToolCall(
+                        id=tc.id,
+                        name=tc.function.name,
+                        arguments=args,
+                    )
+                )
         usage = None
         if response.usage:
             usage = TokenUsage(

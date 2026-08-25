@@ -25,21 +25,23 @@ from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
 from maple.core.types import Priority
+
 from ..core.message import Message
 from ..core.result import Result
+
 
 class MCPAdapter:
     """
     MAPLE adapter for Anthropic MCP (Model Context Protocol).
     Extends MCP with MAPLE's advanced agent communication capabilities.
     """
-    
+
     def __init__(self, maple_agent, mcp_config: Dict[str, Any]):
         self.maple_agent = maple_agent
         self.mcp_config = mcp_config
         self.mcp_tools = {}
         self.mcp_resources = {}
-    
+
     def register_maple_as_mcp_server(self) -> Dict[str, Any]:
         """
         Register MAPLE agent as an MCP server with enhanced capabilities.
@@ -65,10 +67,10 @@ class MCPAdapter:
                                 "enum": ["HIGH", "MEDIUM", "LOW"],
                             },
                             "resources": {"type": "object"},
-                            "link_security": {"type": "boolean"}
+                            "link_security": {"type": "boolean"},
                         },
-                        "required": ["target_agent", "message_type", "payload"]
-                    }
+                        "required": ["target_agent", "message_type", "payload"],
+                    },
                 },
                 {
                     "name": "maple_resource_management",
@@ -83,17 +85,17 @@ class MCPAdapter:
                                 "enum": ["allocate", "release", "negotiate"],
                             },
                             "resources": {"type": "object"},
-                            "priority": {"type": "string"}
-                        }
-                    }
-                }
+                            "priority": {"type": "string"},
+                        },
+                    },
+                },
             ],
             "resources": [
                 {
                     "uri": f"maple://{self.maple_agent.agent_id}/capabilities",
                     "name": "MAPLE Agent Capabilities",
                     "description": "Advanced capabilities provided by MAPLE protocol",
-                    "mimeType": "application/json"
+                    "mimeType": "application/json",
                 }
             ],
             # MAPLE-specific enhancements
@@ -102,11 +104,11 @@ class MCPAdapter:
                 "type_safety": "Complete Result<T,E> system",
                 "resource_awareness": "Integrated resource management",
                 "security": "Link Identification Mechanism (LIM)",
-                "error_handling": "Advanced recovery strategies"
-            }
+                "error_handling": "Advanced recovery strategies",
+            },
         }
         return mcp_server_config
-    
+
     async def handle_mcp_tool_call(
         self, tool_name: str, arguments: Dict[str, Any]
     ) -> Result[Any, Dict[str, Any]]:
@@ -118,11 +120,13 @@ class MCPAdapter:
         elif tool_name == "maple_resource_management":
             return await self._handle_resource_management(arguments)
         else:
-            return Result.err({
-                "errorType": "UNKNOWN_TOOL",
-                "message": f"Tool {tool_name} not supported"
-            })
-    
+            return Result.err(
+                {
+                    "errorType": "UNKNOWN_TOOL",
+                    "message": f"Tool {tool_name} not supported",
+                }
+            )
+
     async def _handle_agent_communication(
         self, args: Dict[str, Any]
     ) -> Result[Any, Dict[str, Any]]:
@@ -135,13 +139,13 @@ class MCPAdapter:
                 message_type=args["message_type"],
                 receiver=args["target_agent"],
                 priority=Priority(args.get("priority", "MEDIUM")),
-                payload=args["payload"]
+                payload=args["payload"],
             )
-            
+
             # Add resource requirements if specified
             if "resources" in args:
                 message.payload["resources"] = args["resources"]
-            
+
             # Establish secure link if requested
             if args.get("link_security", False):
                 link_result = await self.maple_agent.establish_link(
@@ -149,30 +153,31 @@ class MCPAdapter:
                 )
                 if link_result.is_ok():
                     message.metadata["linkId"] = link_result.unwrap()
-            
+
             # Send via MAPLE protocol
             result = await self.maple_agent.send(message)
-            
+
             if result.is_ok():
-                return Result.ok({
-                    "status": "success",
-                    "message_id": result.unwrap(),
-                    "maple_enhancements": {
-                        "type_safety": "Result<T,E> used",
-                        "performance": "High-speed MAPLE protocol",
-                        "security": "Optional link security applied"
+                return Result.ok(
+                    {
+                        "status": "success",
+                        "message_id": result.unwrap(),
+                        "maple_enhancements": {
+                            "type_safety": "Result<T,E> used",
+                            "performance": "High-speed MAPLE protocol",
+                            "security": "Optional link security applied",
+                        },
                     }
-                })
+                )
             else:
                 return result
-        
+
         except Exception as e:
-            return Result.err({
-                "errorType": "MCP_COMMUNICATION_ERROR",
-                "message": str(e)
-            })
-    
-    def create_mcp_client_for_external_tools(self, mcp_server_url: str) -> 'MCPClient':
+            return Result.err(
+                {"errorType": "MCP_COMMUNICATION_ERROR", "message": str(e)}
+            )
+
+    def create_mcp_client_for_external_tools(self, mcp_server_url: str) -> "MCPClient":
         """
         Create MCP client to access external tools with MAPLE enhancements.
         """
@@ -322,9 +327,7 @@ class StreamableHTTPTransport:
                 payload, ensure_ascii=False, separators=(",", ":"), allow_nan=False
             ).encode("utf-8")
         except (TypeError, ValueError) as exc:
-            return Result.err(
-                {"errorType": "MCP_REQUEST_INVALID", "message": str(exc)}
-            )
+            return Result.err({"errorType": "MCP_REQUEST_INVALID", "message": str(exc)})
         if len(encoded) > self.max_request_bytes:
             return Result.err(
                 {
@@ -357,9 +360,7 @@ class StreamableHTTPTransport:
                 }
             )
         except (OSError, URLError, TimeoutError, ValueError) as exc:
-            return Result.err(
-                {"errorType": "MCP_TRANSPORT_ERROR", "message": str(exc)}
-            )
+            return Result.err({"errorType": "MCP_TRANSPORT_ERROR", "message": str(exc)})
 
         session_id = response_headers.get("Mcp-Session-Id")
         if session_id:
@@ -391,8 +392,7 @@ class StreamableHTTPTransport:
                     {
                         "errorType": "MCP_CONTENT_TYPE_UNSUPPORTED",
                         "message": (
-                            "Unsupported MCP response content type: "
-                            f"{content_type}"
+                            "Unsupported MCP response content type: " f"{content_type}"
                         ),
                     }
                 )
@@ -442,11 +442,12 @@ class StreamableHTTPTransport:
         self._request_id += 1
         return self._request_id
 
+
 class MCPClient:
     """
     Enhanced MCP client with MAPLE capabilities.
     """
-    
+
     def __init__(
         self,
         maple_agent,
@@ -518,7 +519,7 @@ class MCPClient:
                 "message": "MCP tools/list exceeded the pagination limit",
             }
         )
-    
+
     async def call_mcp_tool(
         self, tool_name: str, arguments: Dict[str, Any]
     ) -> Result[Any, Dict[str, Any]]:

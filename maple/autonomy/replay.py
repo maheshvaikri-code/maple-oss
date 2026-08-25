@@ -72,16 +72,24 @@ def _validate_json_value(
     depth: int = 0,
 ) -> Optional[Error]:
     if depth > _MAX_JSON_DEPTH:
-        return _error("REPLAY_VALUE_INVALID", "Replay value is nested too deeply.", path=path)
+        return _error(
+            "REPLAY_VALUE_INVALID", "Replay value is nested too deeply.", path=path
+        )
     if value is None or isinstance(value, (bool, int, str)):
         return None
     if isinstance(value, float):
         if math.isfinite(value):
             return None
-        return _error("REPLAY_VALUE_INVALID", "Replay value contains a non-finite number.", path=path)
+        return _error(
+            "REPLAY_VALUE_INVALID",
+            "Replay value contains a non-finite number.",
+            path=path,
+        )
     if isinstance(value, list):
         if len(value) > _MAX_JSON_ITEMS:
-            return _error("REPLAY_VALUE_INVALID", "Replay list is too large.", path=path)
+            return _error(
+                "REPLAY_VALUE_INVALID", "Replay list is too large.", path=path
+            )
         for index, item in enumerate(value):
             error = _validate_json_value(item, path=f"{path}[{index}]", depth=depth + 1)
             if error:
@@ -89,10 +97,16 @@ def _validate_json_value(
         return None
     if isinstance(value, dict):
         if len(value) > _MAX_JSON_ITEMS:
-            return _error("REPLAY_VALUE_INVALID", "Replay object is too large.", path=path)
+            return _error(
+                "REPLAY_VALUE_INVALID", "Replay object is too large.", path=path
+            )
         for key, item in value.items():
             if not isinstance(key, str):
-                return _error("REPLAY_VALUE_INVALID", "Replay object keys must be strings.", path=path)
+                return _error(
+                    "REPLAY_VALUE_INVALID",
+                    "Replay object keys must be strings.",
+                    path=path,
+                )
             error = _validate_json_value(item, path=f"{path}.{key}", depth=depth + 1)
             if error:
                 return error
@@ -105,9 +119,13 @@ def _validate_json_value(
     )
 
 
-def _copy_json(value: Mapping[str, Any], max_bytes: int) -> Result[Dict[str, Any], Error]:
+def _copy_json(
+    value: Mapping[str, Any], max_bytes: int
+) -> Result[Dict[str, Any], Error]:
     if not isinstance(value, Mapping):
-        return Result.err(_error("REPLAY_VALUE_INVALID", "Replay output must be an object."))
+        return Result.err(
+            _error("REPLAY_VALUE_INVALID", "Replay output must be an object.")
+        )
     value_error = _validate_json_value(dict(value))
     if value_error:
         return Result.err(value_error)
@@ -181,7 +199,11 @@ class ExecutionRecord:
             if _valid_identifier(data[name], name):
                 raise ValueError(f"invalid replay {name}")
         step_count = data["step_count"]
-        if not isinstance(step_count, int) or isinstance(step_count, bool) or step_count < 0:
+        if (
+            not isinstance(step_count, int)
+            or isinstance(step_count, bool)
+            or step_count < 0
+        ):
             raise ValueError("invalid replay step count")
         if _valid_digest(data["input_digest"]):
             raise ValueError("invalid replay input digest")
@@ -213,14 +235,11 @@ class ExecutionJournal(Protocol):
 
     def load(
         self, execution_key: str, input_digest: str
-    ) -> Result[Optional[ExecutionRecord], Error]:
-        ...
+    ) -> Result[Optional[ExecutionRecord], Error]: ...
 
-    def save(self, record: ExecutionRecord) -> Result[ExecutionRecord, Error]:
-        ...
+    def save(self, record: ExecutionRecord) -> Result[ExecutionRecord, Error]: ...
 
-    def clear(self, run_id: str) -> Result[int, Error]:
-        ...
+    def clear(self, run_id: str) -> Result[int, Error]: ...
 
 
 class _ExecutionJournalSupport:
@@ -237,15 +256,22 @@ class _ExecutionJournalSupport:
         self.max_run_records = max_run_records
         self.max_record_bytes = max_record_bytes
 
-    def _validate_lookup(self, execution_key: str, input_digest: str) -> Optional[Error]:
+    def _validate_lookup(
+        self, execution_key: str, input_digest: str
+    ) -> Optional[Error]:
         return _valid_execution_key(execution_key) or _valid_digest(input_digest)
 
     def _copy_record(self, record: ExecutionRecord) -> Result[ExecutionRecord, Error]:
         if not isinstance(record, ExecutionRecord):
-            return Result.err(_error("REPLAY_RECORD_INVALID", "Expected an ExecutionRecord."))
+            return Result.err(
+                _error("REPLAY_RECORD_INVALID", "Expected an ExecutionRecord.")
+            )
         try:
             encoded = json.dumps(
-                record.to_dict(), ensure_ascii=False, allow_nan=False, separators=(",", ":")
+                record.to_dict(),
+                ensure_ascii=False,
+                allow_nan=False,
+                separators=(",", ":"),
             )
             if len(encoded.encode("utf-8")) > self.max_record_bytes:
                 return Result.err(
@@ -326,9 +352,13 @@ class InMemoryExecutionJournal(_ExecutionJournalSupport):
                 )
             if len(self._records) >= self.max_records:
                 return Result.err(
-                    _error("REPLAY_RECORD_LIMIT", "Replay journal record limit reached.")
+                    _error(
+                        "REPLAY_RECORD_LIMIT", "Replay journal record limit reached."
+                    )
                 )
-            run_count = sum(item.run_id == candidate.run_id for item in self._records.values())
+            run_count = sum(
+                item.run_id == candidate.run_id for item in self._records.values()
+            )
             if run_count >= self.max_run_records:
                 return Result.err(
                     _error(
@@ -345,7 +375,9 @@ class InMemoryExecutionJournal(_ExecutionJournalSupport):
         if validation:
             return Result.err(validation)
         with self._lock:
-            keys = [key for key, record in self._records.items() if record.run_id == run_id]
+            keys = [
+                key for key, record in self._records.items() if record.run_id == run_id
+            ]
             for key in keys:
                 del self._records[key]
             return Result.ok(len(keys))
@@ -397,10 +429,19 @@ class FileExecutionJournal(_ExecutionJournalSupport):
             record = ExecutionRecord.from_dict(data)
             if record.execution_key != execution_key:
                 return Result.err(
-                    _error("REPLAY_LOAD_ERROR", "Replay record key does not match its path.")
+                    _error(
+                        "REPLAY_LOAD_ERROR",
+                        "Replay record key does not match its path.",
+                    )
                 )
             return Result.ok(record)
-        except (OSError, TypeError, ValueError, OverflowError, json.JSONDecodeError) as exc:
+        except (
+            OSError,
+            TypeError,
+            ValueError,
+            OverflowError,
+            json.JSONDecodeError,
+        ) as exc:
             return Result.err(
                 _error(
                     "REPLAY_LOAD_ERROR",
@@ -409,13 +450,18 @@ class FileExecutionJournal(_ExecutionJournalSupport):
                 )
             )
 
-    def _write_unlocked(self, record: ExecutionRecord) -> Result[ExecutionRecord, Error]:
+    def _write_unlocked(
+        self, record: ExecutionRecord
+    ) -> Result[ExecutionRecord, Error]:
         copied = self._copy_record(record)
         if copied.is_err():
             return Result.err(copied.unwrap_err())
         candidate = copied.unwrap()
         payload = json.dumps(
-            candidate.to_dict(), ensure_ascii=False, allow_nan=False, separators=(",", ":")
+            candidate.to_dict(),
+            ensure_ascii=False,
+            allow_nan=False,
+            separators=(",", ":"),
         )
         temporary_path: Optional[Path] = None
         try:
@@ -485,7 +531,13 @@ class FileExecutionJournal(_ExecutionJournalSupport):
                     )
                 )
             return Result.ok(record)
-        except (OSError, TypeError, ValueError, OverflowError, json.JSONDecodeError) as exc:
+        except (
+            OSError,
+            TypeError,
+            ValueError,
+            OverflowError,
+            json.JSONDecodeError,
+        ) as exc:
             return Result.err(
                 _error(
                     "REPLAY_LOAD_ERROR",
@@ -543,9 +595,13 @@ class FileExecutionJournal(_ExecutionJournalSupport):
                 return Result.err(records.unwrap_err())
             if len(records.unwrap()) >= self.max_records:
                 return Result.err(
-                    _error("REPLAY_RECORD_LIMIT", "Replay journal record limit reached.")
+                    _error(
+                        "REPLAY_RECORD_LIMIT", "Replay journal record limit reached."
+                    )
                 )
-            run_count = sum(item.run_id == candidate.run_id for item in records.unwrap())
+            run_count = sum(
+                item.run_id == candidate.run_id for item in records.unwrap()
+            )
             if run_count >= self.max_run_records:
                 return Result.err(
                     _error(

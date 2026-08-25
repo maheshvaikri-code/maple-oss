@@ -16,12 +16,13 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 """LLM types for MAPLE autonomy layer."""
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
 from enum import Enum
+from typing import Any, Dict, List, Optional
 
 
 class ChatRole(Enum):
     """Role of a message in a conversation."""
+
     SYSTEM = "system"
     USER = "user"
     ASSISTANT = "assistant"
@@ -31,6 +32,7 @@ class ChatRole(Enum):
 @dataclass
 class ToolDefinition:
     """Tool definition passed to LLM for function calling."""
+
     name: str
     description: str
     parameters: Dict[str, Any]  # JSON Schema
@@ -39,6 +41,7 @@ class ToolDefinition:
 @dataclass
 class ToolCall:
     """A tool call requested by the LLM."""
+
     id: str
     name: str
     arguments: Dict[str, Any]
@@ -47,6 +50,7 @@ class ToolCall:
 @dataclass
 class ToolResult:
     """Result of executing a tool call."""
+
     tool_call_id: str
     content: str
     is_error: bool = False
@@ -55,6 +59,7 @@ class ToolResult:
 @dataclass
 class ChatMessage:
     """A single message in a conversation."""
+
     role: ChatRole
     content: str
     name: Optional[str] = None
@@ -65,6 +70,7 @@ class ChatMessage:
 @dataclass
 class TokenUsage:
     """Token usage statistics."""
+
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0
@@ -73,6 +79,7 @@ class TokenUsage:
 @dataclass
 class LLMResponse:
     """Response from an LLM provider."""
+
     content: Optional[str] = None
     tool_calls: List[ToolCall] = field(default_factory=list)
     usage: Optional[TokenUsage] = None
@@ -84,6 +91,7 @@ class LLMResponse:
 @dataclass
 class LLMChunk:
     """A single chunk from a streaming LLM response."""
+
     content: str = ""
     tool_call_delta: Optional[Dict[str, Any]] = None
     finish_reason: Optional[str] = None
@@ -92,6 +100,7 @@ class LLMChunk:
 @dataclass
 class LLMConfig:
     """Configuration for an LLM provider."""
+
     provider: str
     model: str
     api_key: Optional[str] = None

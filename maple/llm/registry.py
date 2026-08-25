@@ -41,19 +41,18 @@ class LLMProviderRegistry:
         """Create an LLM provider instance from config."""
         cls._ensure_registered()
         if config.provider not in cls._providers:
-            return Result.err({
-                'errorType': 'UNKNOWN_PROVIDER',
-                'message': f'LLM provider "{config.provider}" not registered. '
-                           f'Available: {list(cls._providers.keys())}'
-            })
+            return Result.err(
+                {
+                    "errorType": "UNKNOWN_PROVIDER",
+                    "message": f'LLM provider "{config.provider}" not registered. '
+                    f"Available: {list(cls._providers.keys())}",
+                }
+            )
         try:
             provider = cls._providers[config.provider](config)
             return Result.ok(provider)
         except Exception as e:
-            return Result.err({
-                'errorType': 'PROVIDER_INIT_ERROR',
-                'message': str(e)
-            })
+            return Result.err({"errorType": "PROVIDER_INIT_ERROR", "message": str(e)})
 
     @classmethod
     def available_providers(cls) -> list:
@@ -68,11 +67,13 @@ class LLMProviderRegistry:
             return
         try:
             from .openai_provider import OpenAIProvider
+
             cls._providers["openai"] = OpenAIProvider
         except ImportError:
             pass
         try:
             from .anthropic_provider import AnthropicProvider
+
             cls._providers["anthropic"] = AnthropicProvider
         except ImportError:
             pass

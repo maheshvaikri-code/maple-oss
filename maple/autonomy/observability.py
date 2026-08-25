@@ -25,6 +25,7 @@ from typing import Any, Dict, List, Optional
 @dataclass
 class DecisionTrace:
     """A single decision trace from the ReAct loop."""
+
     agent_id: str
     goal_id: str
     step_number: int
@@ -63,9 +64,7 @@ class DecisionLogger:
         if not traces:
             return {"goal_id": goal_id, "steps": 0}
 
-        total_tokens = sum(
-            t.token_usage.get("total_tokens", 0) for t in traces
-        )
+        total_tokens = sum(t.token_usage.get("total_tokens", 0) for t in traces)
         total_duration = sum(t.duration_ms for t in traces)
         tool_call_count = sum(len(t.tool_calls) for t in traces)
 

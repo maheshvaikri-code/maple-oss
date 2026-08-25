@@ -269,12 +269,7 @@ class GroundednessEvalCase:
                     finite = False
             else:
                 finite = False
-            if (
-                not is_number
-                or not finite
-                or value < 0.0
-                or value > 1.0
-            ):
+            if not is_number or not finite or value < 0.0 or value > 1.0:
                 return {
                     "errorType": "GROUNDING_CASE_INVALID",
                     "message": f"{name} must be a finite number between 0 and 1.",

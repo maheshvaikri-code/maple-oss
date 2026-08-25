@@ -51,19 +51,29 @@ class Agent:
     def __init__(self, config: Config, broker: Optional[MessageBroker] = None):
         self.config = config
         self.agent_id = config.agent_id
-        self.capabilities = getattr(config, 'capabilities', [])
+        self.capabilities = getattr(config, "capabilities", [])
         self.registry = None
         self._crypto_manager = None
 
         # Auto-detect broker type from broker_url
         if broker:
             self.broker = broker
-        elif hasattr(config, 'broker_url') and config.broker_url and config.broker_url.startswith("nats://"):
-            from ..broker.production_broker import ProductionBrokerManager, BrokerType
+        elif (
+            hasattr(config, "broker_url")
+            and config.broker_url
+            and config.broker_url.startswith("nats://")
+        ):
+            from ..broker.production_broker import BrokerType, ProductionBrokerManager
+
             result = ProductionBrokerManager.create_broker(config, BrokerType.NATS)
             self.broker = result.unwrap() if result.is_ok() else MessageBroker(config)
-        elif hasattr(config, 'broker_url') and config.broker_url and config.broker_url.startswith("s2://"):
-            from ..broker.production_broker import ProductionBrokerManager, BrokerType
+        elif (
+            hasattr(config, "broker_url")
+            and config.broker_url
+            and config.broker_url.startswith("s2://")
+        ):
+            from ..broker.production_broker import BrokerType, ProductionBrokerManager
+
             result = ProductionBrokerManager.create_broker(config, BrokerType.S2)
             self.broker = result.unwrap() if result.is_ok() else MessageBroker(config)
         else:
@@ -101,6 +111,7 @@ class Agent:
         """Auto-register this agent in the global AgentRegistry."""
         try:
             from ..discovery.registry import AgentRegistry
+
             if Agent._shared_registry is None:
                 Agent._shared_registry = AgentRegistry()
             self.registry = Agent._shared_registry
@@ -108,12 +119,14 @@ class Agent:
                 agent_id=self.agent_id,
                 name=self.agent_id,
                 capabilities=self.capabilities,
-                metadata={'broker_url': self.config.broker_url}
+                metadata={"broker_url": self.config.broker_url},
             )
             if result.is_ok():
                 logger.info(f"Agent {self.agent_id} auto-registered in AgentRegistry")
             else:
-                logger.debug(f"Agent {self.agent_id} registration note: {result.unwrap_err()}")
+                logger.debug(
+                    f"Agent {self.agent_id} registration note: {result.unwrap_err()}"
+                )
         except Exception as e:
             logger.debug(f"Auto-registration skipped: {e}")
 
@@ -239,9 +252,7 @@ class Agent:
             # Unsubscribe the temporary handler
             self.broker.unsubscribe_temporary(self.agent_id, response_handler)
 
-    def receive(
-        self, timeout: Optional[str] = None
-    ) -> Result[Message, Dict[str, Any]]:
+    def receive(self, timeout: Optional[str] = None) -> Result[Message, Dict[str, Any]]:
         """Receive a message from the queue."""
         try:
             if timeout:
@@ -385,8 +396,7 @@ class Agent:
 
             # Wait for a challenge response
             response_result = self.receive_filtered(
-                lambda m: m.message_type == "LINK_CHALLENGE"
-                and m.sender == agent_id,
+                lambda m: m.message_type == "LINK_CHALLENGE" and m.sender == agent_id,
                 timeout="10s",
             )
 
@@ -404,9 +414,7 @@ class Agent:
             challenge = response_result.unwrap()
 
             # Verify the challenge contains our nonce
-            if not self._verify_nonce(
-                challenge.payload["encryptedNonce"], nonce_a
-            ):
+            if not self._verify_nonce(challenge.payload["encryptedNonce"], nonce_a):
                 logger.error("Failed to verify nonce in link challenge")
                 return Result.err(
                     {
@@ -443,8 +451,7 @@ class Agent:
 
             # Wait for establishment confirmation
             establish_result = self.receive_filtered(
-                lambda m: m.message_type == "LINK_ESTABLISHED"
-                and m.sender == agent_id,
+                lambda m: m.message_type == "LINK_ESTABLISHED" and m.sender == agent_id,
                 timeout="10s",
             )
 
@@ -494,9 +501,7 @@ class Agent:
             link_id = message.metadata["linkId"]
         else:
             # Find an existing link
-            links_result = self.broker.link_manager.get_links_for_agent(
-                self.agent_id
-            )
+            links_result = self.broker.link_manager.get_links_for_agent(self.agent_id)
             if links_result.is_ok():
                 links = links_result.unwrap()
                 for link in links:
@@ -521,7 +526,11 @@ class Agent:
         """Get or create a CryptographyManager for this agent."""
         if self._crypto_manager is None:
             try:
-                from ..security.cryptography_impl import CryptographyManager, CRYPTO_AVAILABLE
+                from ..security.cryptography_impl import (
+                    CRYPTO_AVAILABLE,
+                    CryptographyManager,
+                )
+
                 if CRYPTO_AVAILABLE:
                     self._crypto_manager = CryptographyManager()
             except (ImportError, Exception):
@@ -533,9 +542,11 @@ class Agent:
         crypto = self._get_crypto_manager()
         if crypto is not None:
             try:
-                security_config = getattr(self.config, 'security', None)
+                security_config = getattr(self.config, "security", None)
                 if security_config and security_config.private_key:
-                    result = crypto.decrypt_data(encrypted_nonce, security_config.private_key)
+                    result = crypto.decrypt_data(
+                        encrypted_nonce, security_config.private_key
+                    )
                     if result.is_ok():
                         return result.unwrap() == original_nonce
             except Exception:
@@ -543,6 +554,7 @@ class Agent:
         # Fallback to base64 for compatibility
         try:
             import base64
+
             decoded = base64.b64decode(encrypted_nonce.encode()).decode()
             return decoded == original_nonce
         except Exception:
@@ -553,7 +565,7 @@ class Agent:
         crypto = self._get_crypto_manager()
         if crypto is not None:
             try:
-                security_config = getattr(self.config, 'security', None)
+                security_config = getattr(self.config, "security", None)
                 if security_config and security_config.public_key:
                     result = crypto.encrypt_data(nonce, security_config.public_key)
                     if result.is_ok():
@@ -563,6 +575,7 @@ class Agent:
         # Fallback to base64 for compatibility
         try:
             import base64
+
             return base64.b64encode(nonce.encode()).decode()
         except Exception:
             return nonce
@@ -572,6 +585,7 @@ class Agent:
         try:
             import base64
             import json
+
             decoded = base64.b64decode(encrypted_params.encode()).decode()
             decoded_params = json.loads(decoded)
             return decoded_params == params
@@ -622,7 +636,9 @@ class Agent:
         handler registered as ``"work.package"`` would silently never fire for
         an incoming ``WORK.PACKAGE`` (the "case trap").
         """
-        normalized = message_type.upper() if isinstance(message_type, str) else message_type
+        normalized = (
+            message_type.upper() if isinstance(message_type, str) else message_type
+        )
         self.message_handlers[normalized] = handler
         logger.info(f"Registered handler for message type {normalized}")
 
@@ -728,32 +744,28 @@ class Agent:
         else:
             logger.warning(f"No handler found for topic {topic}")
 
-    def handler(
-        self, message_type: str
-    ) -> Callable[
+    def handler(self, message_type: str) -> Callable[
         [Callable[[Message], Optional[Message]]],
         Callable[[Message], Optional[Message]],
     ]:
         """Decorator for registering message handlers."""
 
         def decorator(
-            func: Callable[[Message], Optional[Message]]
+            func: Callable[[Message], Optional[Message]],
         ) -> Callable[[Message], Optional[Message]]:
             self.register_handler(message_type, func)
             return func
 
         return decorator
 
-    def topic_handler(
-        self, topic: str
-    ) -> Callable[
+    def topic_handler(self, topic: str) -> Callable[
         [Callable[[Message], Optional[Message]]],
         Callable[[Message], Optional[Message]],
     ]:
         """Decorator for registering topic handlers."""
 
         def decorator(
-            func: Callable[[Message], Optional[Message]]
+            func: Callable[[Message], Optional[Message]],
         ) -> Callable[[Message], Optional[Message]]:
             self.register_topic_handler(topic, func)
             return func
@@ -765,9 +777,7 @@ class Agent:
     ) -> Callable[[Callable[[Message], None]], Callable[[Message], None]]:
         """Decorator for registering stream handlers."""
 
-        def decorator(
-            func: Callable[[Message], None]
-        ) -> Callable[[Message], None]:
+        def decorator(func: Callable[[Message], None]) -> Callable[[Message], None]:
             self.register_stream_handler(stream_name, func)
             return func
 

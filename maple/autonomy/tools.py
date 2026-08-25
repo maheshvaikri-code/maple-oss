@@ -68,7 +68,9 @@ class Tool:
             if self.executor is None:
                 result = self.handler(**kwargs)
             else:
-                execution = self.executor.execute(self.name, self.handler, kwargs=kwargs)
+                execution = self.executor.execute(
+                    self.name, self.handler, kwargs=kwargs
+                )
                 if execution.is_err():
                     return Result.err(execution.unwrap_err())
                 result = execution.unwrap()

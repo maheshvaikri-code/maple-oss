@@ -13,7 +13,6 @@ received a copy of the GNU Affero General Public License along with MAPLE - Mult
 Language Engine. If not, see <https://www.gnu.org/licenses/>.
 """
 
-
 # maple/adapters/doctrine_adapter.py
 # Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
 
@@ -41,10 +40,10 @@ from ..core.message import Message
 from ..core.result import Result
 from ..core.types import Priority
 from ..security.separation import (
+    GATE_RESULT,
+    WORK_PACKAGE,
     ArtifactRef,
     is_artifact_ref,
-    WORK_PACKAGE,
-    GATE_RESULT,
 )
 
 # Canonical gate verdicts. Honest reporting is a doctrine non-negotiable:
@@ -64,15 +63,15 @@ def _ref_dict(ref: Any) -> Optional[Dict[str, str]]:
 
 
 def _err(error_type: str, message: str, **details: Any) -> Result:
-    return Result.err(
-        {"errorType": error_type, "message": message, "details": details}
-    )
+    return Result.err({"errorType": error_type, "message": message, "details": details})
 
 
 # --------------------------------------------------------------------------- #
 # WORK.PACKAGE
 # --------------------------------------------------------------------------- #
-def validate_work_package_payload(payload: Any) -> Result[Dict[str, Any], Dict[str, Any]]:
+def validate_work_package_payload(
+    payload: Any,
+) -> Result[Dict[str, Any], Dict[str, Any]]:
     """Validate a WORK.PACKAGE payload dict; return it on success."""
     if not isinstance(payload, dict):
         return _err("INVALID_WORK_PACKAGE", "payload must be a dict")
@@ -126,7 +125,9 @@ def build_work_package(
     payload = {
         "package_id": package_id,
         "role": role,
-        "file_scope": list(file_scope) if isinstance(file_scope, (list, tuple)) else file_scope,
+        "file_scope": (
+            list(file_scope) if isinstance(file_scope, (list, tuple)) else file_scope
+        ),
         "brief": brief_dict,
     }
 
@@ -162,7 +163,9 @@ def validate_work_package(message: Any) -> Result[Dict[str, Any], Dict[str, Any]
 # --------------------------------------------------------------------------- #
 # GATE.RESULT
 # --------------------------------------------------------------------------- #
-def validate_gate_result_payload(payload: Any) -> Result[Dict[str, Any], Dict[str, Any]]:
+def validate_gate_result_payload(
+    payload: Any,
+) -> Result[Dict[str, Any], Dict[str, Any]]:
     """Validate a GATE.RESULT payload dict; return it on success."""
     if not isinstance(payload, dict):
         return _err("INVALID_GATE_RESULT", "payload must be a dict")

@@ -11,8 +11,6 @@ Foundation, either version 3 of the License, or (at your option) any later versi
 
 from __future__ import annotations
 
-# Small, dependency-free workflow runtime for MAPLE agent applications.
-
 import concurrent.futures
 import hashlib
 import json
@@ -40,6 +38,9 @@ from typing import (
 
 from ..core.result import Result
 from .replay import ExecutionJournal, ExecutionRecord
+
+# Small, dependency-free workflow runtime for MAPLE agent applications.
+
 
 END = "__end__"
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
@@ -507,9 +508,7 @@ class HistoryCheckpointStore:
     handlers or claim cross-process durability.
     """
 
-    def __init__(
-        self, store: CheckpointStore, *, max_history: int = 100
-    ) -> None:
+    def __init__(self, store: CheckpointStore, *, max_history: int = 100) -> None:
         if not 0 < max_history <= 10_000:
             raise ValueError("max_history must be between 1 and 10000")
         self.store = store
@@ -1206,9 +1205,7 @@ class Workflow:
                 if parallel_result.is_err():
                     return self._fail(current, store, parallel_result.unwrap_err())
                 branch_updates = parallel_result.unwrap()
-                conflicting_keys = [
-                    key for key in updates if key in branch_updates
-                ]
+                conflicting_keys = [key for key in updates if key in branch_updates]
                 if conflicting_keys:
                     return self._fail(
                         current,
@@ -1265,6 +1262,7 @@ class Workflow:
         resume_value: Any = None,
     ) -> Result[Dict[str, Any], Error]:
         """Execute one fan-out group and merge its results deterministically."""
+
         def execute_branch(branch: str) -> Tuple[str, Any]:
             handler = self._nodes.get(branch)
             if handler is None:

@@ -35,11 +35,11 @@ from ..llm.types import (
     ToolCall,
     ToolResult,
 )
-from .memory import MemoryManager
 from .approval import ApprovalRequest, ApprovalStore
+from .contracts import Guardrail, parse_structured_output, run_guardrails
+from .memory import MemoryManager
 from .sessions import SessionMessage, SessionSnapshot, SessionStore
 from .tools import Tool, ToolRegistry, create_builtin_tools
-from .contracts import Guardrail, parse_structured_output, run_guardrails
 
 logger = logging.getLogger(__name__)
 
@@ -161,8 +161,7 @@ class AutonomousAgent(Agent):
         if store is not None:
             required_methods = ("create", "load", "append", "clear")
             if any(
-                not callable(getattr(store, name, None))
-                for name in required_methods
+                not callable(getattr(store, name, None)) for name in required_methods
             ):
                 raise TypeError(
                     "session store must implement create, load, append, and clear"
@@ -180,8 +179,7 @@ class AutonomousAgent(Agent):
                 "list_pending",
             )
             if any(
-                not callable(getattr(store, name, None))
-                for name in required_methods
+                not callable(getattr(store, name, None)) for name in required_methods
             ):
                 raise TypeError(
                     "approval store must implement get, create, decide, and consume"
@@ -232,9 +230,11 @@ class AutonomousAgent(Agent):
             error_type = (
                 "APPROVAL_PENDING"
                 if request.status == "pending"
-                else "APPROVAL_DENIED"
-                if request.status == "denied"
-                else "APPROVAL_CONSUMED"
+                else (
+                    "APPROVAL_DENIED"
+                    if request.status == "denied"
+                    else "APPROVAL_CONSUMED"
+                )
             )
             return self._approval_error(
                 request.tool_call_id,
@@ -654,38 +654,42 @@ class AutonomousAgent(Agent):
             elif self._approval_callback is None:
                 return ToolResult(
                     tool_call_id=tool_call.id,
-                    content=json.dumps({
-                        "errorType": "APPROVAL_REQUIRED",
-                        "message": "Tool execution requires approval.",
-                        "details": {"tool": tool_call.name},
-                    }),
+                    content=json.dumps(
+                        {
+                            "errorType": "APPROVAL_REQUIRED",
+                            "message": "Tool execution requires approval.",
+                            "details": {"tool": tool_call.name},
+                        }
+                    ),
                     is_error=True,
                 )
             try:
-                approved = self._approval_callback(
-                    tool_call.name, tool_call.arguments
-                )
+                approved = self._approval_callback(tool_call.name, tool_call.arguments)
             except Exception as exc:
                 return ToolResult(
                     tool_call_id=tool_call.id,
-                    content=json.dumps({
-                        "errorType": "APPROVAL_ERROR",
-                        "message": "Approval failed closed.",
-                        "details": {
-                            "tool": tool_call.name,
-                            "exception": type(exc).__name__,
-                        },
-                    }),
+                    content=json.dumps(
+                        {
+                            "errorType": "APPROVAL_ERROR",
+                            "message": "Approval failed closed.",
+                            "details": {
+                                "tool": tool_call.name,
+                                "exception": type(exc).__name__,
+                            },
+                        }
+                    ),
                     is_error=True,
                 )
             if not approved:
                 return ToolResult(
                     tool_call_id=tool_call.id,
-                    content=json.dumps({
-                        "errorType": "APPROVAL_DENIED",
-                        "message": "Action was not approved by the operator.",
-                        "details": {"tool": tool_call.name},
-                    }),
+                    content=json.dumps(
+                        {
+                            "errorType": "APPROVAL_DENIED",
+                            "message": "Action was not approved by the operator.",
+                            "details": {"tool": tool_call.name},
+                        }
+                    ),
                     is_error=True,
                 )
 
@@ -945,9 +949,7 @@ Instructions:
             else:
                 goal.status = "failed"
                 goal.result = result.unwrap_err()
-            session_record = await self._record_session_turn_async(
-                session_turn, goal
-            )
+            session_record = await self._record_session_turn_async(session_turn, goal)
             if session_record.is_err():
                 goal.session_error = session_record.unwrap_err()
             return Result.ok(goal)
@@ -1013,9 +1015,7 @@ Instructions:
                 loop = asyncio.get_running_loop()
                 tool_results = await asyncio.gather(
                     *[
-                        loop.run_in_executor(
-                            None, self._execute_tool_call, tool_call
-                        )
+                        loop.run_in_executor(None, self._execute_tool_call, tool_call)
                         for tool_call in tool_calls
                     ],
                     return_exceptions=True,
@@ -1024,14 +1024,16 @@ Instructions:
                     if isinstance(tool_result, Exception):
                         tool_result = ToolResult(
                             tool_call_id=tool_call.id,
-                            content=json.dumps({
-                                "errorType": "TOOL_EXECUTION_ERROR",
-                                "message": "Tool execution worker failed.",
-                                "details": {
-                                    "tool": tool_call.name,
-                                    "exception": type(tool_result).__name__,
-                                },
-                            }),
+                            content=json.dumps(
+                                {
+                                    "errorType": "TOOL_EXECUTION_ERROR",
+                                    "message": "Tool execution worker failed.",
+                                    "details": {
+                                        "tool": tool_call.name,
+                                        "exception": type(tool_result).__name__,
+                                    },
+                                }
+                            ),
                             is_error=True,
                         )
                     step.tool_results.append(tool_result)

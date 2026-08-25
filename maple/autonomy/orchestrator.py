@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class TeamMember:
     """A member of an agent team."""
+
     agent: Any  # AutonomousAgent
     role: str = "worker"  # "supervisor", "worker", "specialist"
     capabilities: List[str] = field(default_factory=list)
@@ -54,17 +55,21 @@ class AgentOrchestrator:
     ) -> Result[str, Dict[str, Any]]:
         """Form a team from explicitly provided members."""
         if not members:
-            return Result.err({
-                'errorType': 'INVALID_TEAM',
-                'message': 'Team must have at least one member',
-            })
+            return Result.err(
+                {
+                    "errorType": "INVALID_TEAM",
+                    "message": "Team must have at least one member",
+                }
+            )
 
         supervisors = [m for m in members if m.role == "supervisor"]
         if len(supervisors) > 1:
-            return Result.err({
-                'errorType': 'INVALID_TEAM',
-                'message': 'Team can have at most one supervisor',
-            })
+            return Result.err(
+                {
+                    "errorType": "INVALID_TEAM",
+                    "message": "Team can have at most one supervisor",
+                }
+            )
 
         team_id = str(uuid.uuid4())
         self._teams[team_id] = {
@@ -73,7 +78,9 @@ class AgentOrchestrator:
             "supervisor": supervisors[0] if supervisors else None,
             "workers": [m for m in members if m.role != "supervisor"],
         }
-        logger.info(f"Formed team '{team_name}' ({team_id}) with {len(members)} members")
+        logger.info(
+            f"Formed team '{team_name}' ({team_id}) with {len(members)} members"
+        )
         return Result.ok(team_id)
 
     def form_team_by_capability(
@@ -90,28 +97,34 @@ class AgentOrchestrator:
         members = []
 
         if supervisor:
-            members.append(TeamMember(
-                agent=supervisor,
-                role="supervisor",
-                capabilities=getattr(supervisor, "capabilities", []),
-            ))
+            members.append(
+                TeamMember(
+                    agent=supervisor,
+                    role="supervisor",
+                    capabilities=getattr(supervisor, "capabilities", []),
+                )
+            )
 
         # Match agents to capabilities
         for agent in available_agents:
             agent_caps = getattr(agent, "capabilities", [])
             matched = [c for c in required_capabilities if c in agent_caps]
             if matched:
-                members.append(TeamMember(
-                    agent=agent,
-                    role="specialist" if len(matched) == 1 else "worker",
-                    capabilities=agent_caps,
-                ))
+                members.append(
+                    TeamMember(
+                        agent=agent,
+                        role="specialist" if len(matched) == 1 else "worker",
+                        capabilities=agent_caps,
+                    )
+                )
 
         if not members:
-            return Result.err({
-                'errorType': 'NO_MATCHING_AGENTS',
-                'message': f'No agents match required capabilities: {required_capabilities}',
-            })
+            return Result.err(
+                {
+                    "errorType": "NO_MATCHING_AGENTS",
+                    "message": f"No agents match required capabilities: {required_capabilities}",
+                }
+            )
 
         return self.form_team(team_name, members)
 
@@ -130,28 +143,35 @@ class AgentOrchestrator:
         """
         team = self._teams.get(team_id)
         if not team:
-            return Result.err({
-                'errorType': 'TEAM_NOT_FOUND',
-                'message': f'Team {team_id} not found',
-            })
+            return Result.err(
+                {
+                    "errorType": "TEAM_NOT_FOUND",
+                    "message": f"Team {team_id} not found",
+                }
+            )
 
         supervisor = team["supervisor"]
         workers = team["workers"]
 
         if not supervisor:
-            return Result.err({
-                'errorType': 'NO_SUPERVISOR',
-                'message': 'Supervised execution requires a supervisor agent',
-            })
+            return Result.err(
+                {
+                    "errorType": "NO_SUPERVISOR",
+                    "message": "Supervised execution requires a supervisor agent",
+                }
+            )
 
         if not workers:
-            return Result.err({
-                'errorType': 'NO_WORKERS',
-                'message': 'Supervised execution requires at least one worker',
-            })
+            return Result.err(
+                {
+                    "errorType": "NO_WORKERS",
+                    "message": "Supervised execution requires at least one worker",
+                }
+            )
 
         # Step 1: Supervisor decomposes the goal
         from .agent import Goal
+
         goal = Goal(goal_id=str(uuid.uuid4()), description=goal_description)
         decompose_result = supervisor.agent.decompose_goal(goal)
 
@@ -160,11 +180,13 @@ class AgentOrchestrator:
             result = supervisor.agent.pursue_goal(goal_description)
             if result.is_ok():
                 goal_obj = result.unwrap()
-                return Result.ok({
-                    "strategy": "supervisor_solo",
-                    "result": goal_obj.result,
-                    "status": goal_obj.status,
-                })
+                return Result.ok(
+                    {
+                        "strategy": "supervisor_solo",
+                        "result": goal_obj.result,
+                        "status": goal_obj.status,
+                    }
+                )
             return result
 
         sub_goals = decompose_result.unwrap()
@@ -200,14 +222,18 @@ class AgentOrchestrator:
                     "worker": worker_agent.agent_id,
                 }
 
-        return Result.ok({
-            "strategy": "supervised",
-            "goal": goal_description,
-            "sub_results": results,
-            "completed": sum(1 for r in results.values() if r["status"] == "completed"),
-            "failed": sum(1 for r in results.values() if r["status"] == "failed"),
-            "total": len(results),
-        })
+        return Result.ok(
+            {
+                "strategy": "supervised",
+                "goal": goal_description,
+                "sub_results": results,
+                "completed": sum(
+                    1 for r in results.values() if r["status"] == "completed"
+                ),
+                "failed": sum(1 for r in results.values() if r["status"] == "failed"),
+                "total": len(results),
+            }
+        )
 
     def execute_consensus(
         self,
@@ -222,17 +248,21 @@ class AgentOrchestrator:
         """
         team = self._teams.get(team_id)
         if not team:
-            return Result.err({
-                'errorType': 'TEAM_NOT_FOUND',
-                'message': f'Team {team_id} not found',
-            })
+            return Result.err(
+                {
+                    "errorType": "TEAM_NOT_FOUND",
+                    "message": f"Team {team_id} not found",
+                }
+            )
 
         all_members = team["members"]
         if len(all_members) < 2:
-            return Result.err({
-                'errorType': 'INSUFFICIENT_MEMBERS',
-                'message': 'Consensus requires at least 2 members',
-            })
+            return Result.err(
+                {
+                    "errorType": "INSUFFICIENT_MEMBERS",
+                    "message": "Consensus requires at least 2 members",
+                }
+            )
 
         # Step 1: All agents independently pursue the question
         responses = {}
@@ -260,7 +290,7 @@ class AgentOrchestrator:
         )
 
         synthesis_goal = (
-            f"Multiple agents were asked: \"{question}\"\n"
+            f'Multiple agents were asked: "{question}"\n'
             f"Their responses:\n{response_summary}\n\n"
             f"Synthesize these into a single best answer."
         )
@@ -270,22 +300,28 @@ class AgentOrchestrator:
         if synthesis_result.is_ok():
             synthesis = synthesis_result.unwrap().result
 
-        return Result.ok({
-            "strategy": "consensus",
-            "question": question,
-            "individual_responses": responses,
-            "synthesis": synthesis,
-            "responding_agents": len(responses),
-        })
+        return Result.ok(
+            {
+                "strategy": "consensus",
+                "question": question,
+                "individual_responses": responses,
+                "synthesis": synthesis,
+                "responding_agents": len(responses),
+            }
+        )
 
-    def share_memory(self, team_id: str, key: str, value: Any) -> Result[int, Dict[str, Any]]:
+    def share_memory(
+        self, team_id: str, key: str, value: Any
+    ) -> Result[int, Dict[str, Any]]:
         """Share a fact across all team members' semantic memory."""
         team = self._teams.get(team_id)
         if not team:
-            return Result.err({
-                'errorType': 'TEAM_NOT_FOUND',
-                'message': f'Team {team_id} not found',
-            })
+            return Result.err(
+                {
+                    "errorType": "TEAM_NOT_FOUND",
+                    "message": f"Team {team_id} not found",
+                }
+            )
 
         shared_count = 0
         for member in team["members"]:
@@ -302,30 +338,36 @@ class AgentOrchestrator:
         """Get team information."""
         team = self._teams.get(team_id)
         if not team:
-            return Result.err({
-                'errorType': 'TEAM_NOT_FOUND',
-                'message': f'Team {team_id} not found',
-            })
-        return Result.ok({
-            "name": team["name"],
-            "member_count": len(team["members"]),
-            "has_supervisor": team["supervisor"] is not None,
-            "members": [
+            return Result.err(
                 {
-                    "agent_id": m.agent.agent_id,
-                    "role": m.role,
-                    "capabilities": m.capabilities,
+                    "errorType": "TEAM_NOT_FOUND",
+                    "message": f"Team {team_id} not found",
                 }
-                for m in team["members"]
-            ],
-        })
+            )
+        return Result.ok(
+            {
+                "name": team["name"],
+                "member_count": len(team["members"]),
+                "has_supervisor": team["supervisor"] is not None,
+                "members": [
+                    {
+                        "agent_id": m.agent.agent_id,
+                        "role": m.role,
+                        "capabilities": m.capabilities,
+                    }
+                    for m in team["members"]
+                ],
+            }
+        )
 
     def disband_team(self, team_id: str) -> Result[None, Dict[str, Any]]:
         """Disband a team."""
         if team_id not in self._teams:
-            return Result.err({
-                'errorType': 'TEAM_NOT_FOUND',
-                'message': f'Team {team_id} not found',
-            })
+            return Result.err(
+                {
+                    "errorType": "TEAM_NOT_FOUND",
+                    "message": f"Team {team_id} not found",
+                }
+            )
         del self._teams[team_id]
         return Result.ok(None)

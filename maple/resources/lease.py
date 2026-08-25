@@ -13,7 +13,6 @@ received a copy of the GNU Affero General Public License along with MAPLE - Mult
 Language Engine. If not, see <https://www.gnu.org/licenses/>.
 """
 
-
 # maple/resources/lease.py
 # Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
 #
@@ -28,10 +27,10 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 # someone else is detectably out of date (is_valid() -> False) and will not act on a
 # resource another agent now owns. This is the standard fencing-token pattern.
 
-from dataclasses import dataclass
-from typing import Callable, Dict, Optional
 import threading
 import time
+from dataclasses import dataclass
+from typing import Callable, Dict, Optional
 
 from ..core.result import Result
 
@@ -48,6 +47,7 @@ class Lease:
             and been re-granted) presents an older token and is rejected.
         expires_at: Absolute deadline on the owning LeaseManager's monotonic clock.
     """
+
     resource: str
     holder: str
     token: int
@@ -92,50 +92,66 @@ class LeaseManager:
         time remaining if another agent holds a live lease.
         """
         if ttl_seconds <= 0:
-            return Result.err({
-                'errorType': 'INVALID_TTL',
-                'message': 'ttl_seconds must be positive',
-                'details': {'ttl_seconds': ttl_seconds},
-            })
+            return Result.err(
+                {
+                    "errorType": "INVALID_TTL",
+                    "message": "ttl_seconds must be positive",
+                    "details": {"ttl_seconds": ttl_seconds},
+                }
+            )
         with self._lock:
             now = self._clock()
             current = self._active(resource, now)
             if current is not None and current.holder != holder:
-                return Result.err({
-                    'errorType': 'RESOURCE_HELD',
-                    'message': f"Resource '{resource}' is held by '{current.holder}'",
-                    'details': {
-                        'holder': current.holder,
-                        'expires_in': max(0.0, current.expires_at - now),
-                    },
-                })
+                return Result.err(
+                    {
+                        "errorType": "RESOURCE_HELD",
+                        "message": f"Resource '{resource}' is held by '{current.holder}'",
+                        "details": {
+                            "holder": current.holder,
+                            "expires_in": max(0.0, current.expires_at - now),
+                        },
+                    }
+                )
             # Free, expired, or same-holder renewal -> grant a fresh fencing token.
             token = self._next_token(resource)
-            lease = Lease(resource=resource, holder=holder, token=token,
-                          expires_at=now + ttl_seconds)
+            lease = Lease(
+                resource=resource,
+                holder=holder,
+                token=token,
+                expires_at=now + ttl_seconds,
+            )
             self._leases[resource] = lease
             return Result.ok(lease)
 
     def renew(self, lease: Lease, ttl_seconds: float) -> Result:
         """Extend a lease the caller still holds. Fails if it was lost (expired/preempted)."""
         if ttl_seconds <= 0:
-            return Result.err({
-                'errorType': 'INVALID_TTL',
-                'message': 'ttl_seconds must be positive',
-                'details': {'ttl_seconds': ttl_seconds},
-            })
+            return Result.err(
+                {
+                    "errorType": "INVALID_TTL",
+                    "message": "ttl_seconds must be positive",
+                    "details": {"ttl_seconds": ttl_seconds},
+                }
+            )
         with self._lock:
             now = self._clock()
             current = self._active(lease.resource, now)
             if current is None or current.token != lease.token:
-                return Result.err({
-                    'errorType': 'LEASE_LOST',
-                    'message': f"Lease on '{lease.resource}' is no longer held",
-                    'details': {'resource': lease.resource, 'token': lease.token},
-                })
+                return Result.err(
+                    {
+                        "errorType": "LEASE_LOST",
+                        "message": f"Lease on '{lease.resource}' is no longer held",
+                        "details": {"resource": lease.resource, "token": lease.token},
+                    }
+                )
             token = self._next_token(lease.resource)
-            renewed = Lease(resource=lease.resource, holder=current.holder, token=token,
-                            expires_at=now + ttl_seconds)
+            renewed = Lease(
+                resource=lease.resource,
+                holder=current.holder,
+                token=token,
+                expires_at=now + ttl_seconds,
+            )
             self._leases[lease.resource] = renewed
             return Result.ok(renewed)
 

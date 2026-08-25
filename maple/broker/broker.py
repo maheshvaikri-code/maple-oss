@@ -101,7 +101,10 @@ class MessageBroker:
         self._message_queue = None
         try:
             from .queue import MessageQueue, QueueType
-            self._message_queue = MessageQueue(queue_type=QueueType.PRIORITY, max_size=10000)
+
+            self._message_queue = MessageQueue(
+                queue_type=QueueType.PRIORITY, max_size=10000
+            )
         except Exception:
             logger.debug("MessageQueue not available, using basic queue")
 
@@ -109,6 +112,7 @@ class MessageBroker:
         self._message_router = None
         try:
             from .routing import MessageRouter
+
             self._message_router = MessageRouter()
         except Exception:
             logger.debug("MessageRouter not available, using direct routing")
@@ -118,6 +122,7 @@ class MessageBroker:
         if self.security_config:
             try:
                 from ..security.authorization import AuthorizationManager
+
                 self._auth_manager = AuthorizationManager()
             except Exception:
                 logger.debug("AuthorizationManager not available")
@@ -198,9 +203,7 @@ class MessageBroker:
             sod_result = self._separation_policy.authorize_send(message)
             if sod_result.is_err():
                 error = sod_result.unwrap_err()
-                raise SecurityError(
-                    f"Separation-of-duties denied: {error['message']}"
-                )
+                raise SecurityError(f"Separation-of-duties denied: {error['message']}")
 
         # Check if link validation is required
         if self.security_config and getattr(
@@ -211,9 +214,7 @@ class MessageBroker:
 
                 # If no link ID is provided, check if there's an existing link
                 if not link_id:
-                    links_result = self.link_manager.get_links_for_agent(
-                        message.sender
-                    )
+                    links_result = self.link_manager.get_links_for_agent(message.sender)
                     if links_result.is_ok():
                         links = links_result.unwrap()
                         for link in links:
@@ -264,9 +265,7 @@ class MessageBroker:
         # both would deliver it twice.
         enqueued = False
         if self._message_queue is not None:
-            enq_result = self._message_queue.enqueue(
-                message, priority=message.priority
-            )
+            enq_result = self._message_queue.enqueue(message, priority=message.priority)
             enqueued = enq_result.is_ok()
         if not enqueued:
             with self._lock:

@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class MemoryEntry:
     """A single memory entry."""
+
     key: str
     content: Any
     memory_type: str
@@ -50,21 +51,28 @@ class WorkingMemory:
         self.entries: List[MemoryEntry] = []
         self._current_tokens = 0
 
-    def add(self, key: str, content: str, relevance: float = 1.0) -> Result[None, Dict[str, Any]]:
+    def add(
+        self, key: str, content: str, relevance: float = 1.0
+    ) -> Result[None, Dict[str, Any]]:
         """Add content to working memory, evicting old entries if needed."""
         tokens = len(content) // 4
         while self._current_tokens + tokens > self.max_tokens and self.entries:
             evicted = self.entries.pop(0)
             self._current_tokens -= len(str(evicted.content)) // 4
 
-        entry = MemoryEntry(key=key, content=content, memory_type="working", relevance_score=relevance)
+        entry = MemoryEntry(
+            key=key, content=content, memory_type="working", relevance_score=relevance
+        )
         self.entries.append(entry)
         self._current_tokens += tokens
         return Result.ok(None)
 
     def get_context(self) -> List[Dict[str, Any]]:
         """Get all working memory as context for LLM."""
-        return [{'key': e.key, 'content': e.content, 'relevance': e.relevance_score} for e in self.entries]
+        return [
+            {"key": e.key, "content": e.content, "relevance": e.relevance_score}
+            for e in self.entries
+        ]
 
     def clear(self) -> None:
         """Clear all working memory."""
@@ -90,12 +98,14 @@ class EpisodicMemory:
         self.store = store
         self._prefix = "episodic:"
 
-    def record(self, task_id: str, event: Dict[str, Any]) -> Result[None, Dict[str, Any]]:
+    def record(
+        self, task_id: str, event: Dict[str, Any]
+    ) -> Result[None, Dict[str, Any]]:
         """Record an episode (action + outcome) for a task."""
         key = f"{self._prefix}{task_id}"
         existing = self.store.get(key)
         episodes = existing.unwrap() if existing.is_ok() and existing.unwrap() else []
-        episodes.append({**event, 'timestamp': time.time()})
+        episodes.append({**event, "timestamp": time.time()})
         return self.store.set(key, episodes).map(lambda _: None)
 
     def recall(self, task_id: str) -> Result[List[Dict], Dict[str, Any]]:
@@ -134,9 +144,13 @@ class SemanticMemory:
         self.store = store
         self._prefix = "semantic:"
 
-    def store_fact(self, key: str, fact: Any, metadata: Optional[Dict] = None) -> Result[None, Dict]:
+    def store_fact(
+        self, key: str, fact: Any, metadata: Optional[Dict] = None
+    ) -> Result[None, Dict]:
         """Store a fact in semantic memory."""
-        return self.store.set(f"{self._prefix}{key}", fact, metadata=metadata).map(lambda _: None)
+        return self.store.set(f"{self._prefix}{key}", fact, metadata=metadata).map(
+            lambda _: None
+        )
 
     def recall_fact(self, key: str) -> Result[Any, Dict]:
         """Recall a fact from semantic memory."""
@@ -171,16 +185,25 @@ class MemoryManager:
         Requires an LLM provider for summarization.
         """
         if not llm_provider:
-            return Result.err({'errorType': 'NO_LLM', 'message': 'LLM provider required for summarization'})
+            return Result.err(
+                {
+                    "errorType": "NO_LLM",
+                    "message": "LLM provider required for summarization",
+                }
+            )
 
         context = self.working.get_context()
         if not context:
             return Result.ok("nothing to summarize")
 
         from ..llm.types import ChatMessage, ChatRole
+
         messages = [
-            ChatMessage(role=ChatRole.SYSTEM, content="Summarize the following working memory into key facts and outcomes. Be concise."),
-            ChatMessage(role=ChatRole.USER, content=json.dumps(context, default=str))
+            ChatMessage(
+                role=ChatRole.SYSTEM,
+                content="Summarize the following working memory into key facts and outcomes. Be concise.",
+            ),
+            ChatMessage(role=ChatRole.USER, content=json.dumps(context, default=str)),
         ]
 
         result = llm_provider.complete(messages)
@@ -188,6 +211,8 @@ class MemoryManager:
             return result
 
         summary = result.unwrap().content
-        self.episodic.record("memory_summary", {"summary": summary, "entries_count": len(context)})
+        self.episodic.record(
+            "memory_summary", {"summary": summary, "entries_count": len(context)}
+        )
         self.working.clear()
         return Result.ok(summary)

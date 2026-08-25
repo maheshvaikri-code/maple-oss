@@ -13,7 +13,6 @@ received a copy of the GNU Affero General Public License along with MAPLE - Mult
 Language Engine. If not, see <https://www.gnu.org/licenses/>.
 """
 
-
 # maple/security/separation.py
 # Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
 
@@ -158,9 +157,7 @@ class SeparationOfDutiesPolicy:
     """
 
     sender_allowlist: Dict[str, Set[str]] = field(default_factory=dict)
-    guarded_types: Set[str] = field(
-        default_factory=lambda: {WORK_PACKAGE, GATE_RESULT}
-    )
+    guarded_types: Set[str] = field(default_factory=lambda: {WORK_PACKAGE, GATE_RESULT})
     require_artifact_ref: bool = True
     max_prose_chars: int = 512
     default_allow_unlisted: bool = False
@@ -330,9 +327,7 @@ class SeparationOfDutiesPolicy:
             return any(self._has_artifact_ref(v, depth + 1) for v in value)
         return False
 
-    def _find_prose(
-        self, value: Any, path: str = "", depth: int = 0
-    ) -> Optional[str]:
+    def _find_prose(self, value: Any, path: str = "", depth: int = 0) -> Optional[str]:
         """Return a dotted field path to the first prose violation, or None.
 
         "Prose" is any string longer than ``max_prose_chars``, wherever it
