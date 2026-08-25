@@ -119,6 +119,11 @@
   value with its declared optional contract before sequential or parallel route
   assignment. Workflow and replay regressions pass 19 tests, the changed-file
   mypy check is clean, and the aggregate audit is now `142 errors` in 16 files.
+- **Health-monitor type boundary**: clarified status defaults, monitor lifecycle
+  returns, optional heartbeat metrics, callback registration, and background
+  loop contracts without changing health evaluation behavior. The health
+  regression passes 15 tests, the changed-file mypy check is clean, and the
+  aggregate audit is now `136 errors` in 15 files.
 - **Repository formatter gate closure**: normalized the tracked `maple/`
   source tree with the configured Black and isort profiles. Both checks are
   now idempotent, the focused runtime gate remains `240 passed`, and a fresh
