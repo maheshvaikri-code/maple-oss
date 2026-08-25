@@ -35,7 +35,7 @@ import hashlib
 import logging
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 from ..core.result import Result
 from .cryptography_impl import CRYPTO_AVAILABLE, CryptographyManager
@@ -61,7 +61,7 @@ class AuthCredentials:
     principal: str  # Agent ID or username
     credentials: Dict[str, Any]
     expires_at: Optional[float] = None
-    metadata: Dict[str, Any] = None
+    metadata: Optional[Dict[str, Any]] = None
 
     def is_expired(self) -> bool:
         """Check if credentials have expired."""
@@ -79,7 +79,7 @@ class AuthToken:
     method: AuthMethod
     issued_at: float
     expires_at: Optional[float] = None
-    permissions: list = None
+    permissions: Optional[List[str]] = None
 
     def is_valid(self) -> bool:
         """Check if token is still valid."""
@@ -110,11 +110,11 @@ class AuthenticationManager:
     - Integration with cryptographic backend
     """
 
-    def __init__(self, config=None):
+    def __init__(self, config: Any = None) -> None:
         self.config = config
         self.crypto_manager = None
         self.active_tokens: Dict[str, AuthToken] = {}
-        self.revoked_tokens: set = set()  # Track revoked tokens
+        self.revoked_tokens: set[str] = set()  # Track revoked tokens
         self.trusted_certificates: Dict[str, Any] = {}
         self.api_keys: Dict[str, Dict[str, Any]] = {}
 
@@ -491,7 +491,7 @@ class AuthenticationManager:
                 }
             )
 
-    def verify_message_sender(self, message) -> Result[AuthToken, Dict[str, Any]]:
+    def verify_message_sender(self, message: Any) -> Result[AuthToken, Dict[str, Any]]:
         """
         Verify that a message sender is authenticated.
 
@@ -541,7 +541,10 @@ class AuthenticationManager:
         return Result.ok(None)
 
     def generate_jwt(
-        self, principal: str, permissions: list = None, expires_in: int = None
+        self,
+        principal: str,
+        permissions: Optional[List[str]] = None,
+        expires_in: Optional[int] = None,
     ) -> Result[str, Dict[str, Any]]:
         """
         Generate a JWT token for a principal.
@@ -591,7 +594,10 @@ class AuthenticationManager:
             return Result.err(error)
 
     def add_trusted_certificate(
-        self, certificate_pem: str, principal: str, permissions: list = None
+        self,
+        certificate_pem: str,
+        principal: str,
+        permissions: Optional[List[str]] = None,
     ) -> None:
         """Add a trusted certificate."""
         self.trusted_certificates[certificate_pem] = {
@@ -605,8 +611,8 @@ class AuthenticationManager:
         self,
         api_key: str,
         principal: str,
-        permissions: list = None,
-        expires_at: float = None,
+        permissions: Optional[List[str]] = None,
+        expires_at: Optional[float] = None,
     ) -> None:
         """Add an API key."""
         self.api_keys[api_key] = {
