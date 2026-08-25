@@ -18,18 +18,20 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 import time
 from typing import Any, Dict, List, Optional, TypedDict
 
+from ..core.message import Message
+
 try:
-    from langchain.schema import BaseMessage
-    from langgraph.graph import END, StateGraph
+    from langchain.schema import BaseMessage as _BaseMessage  # noqa: F401
+    from langgraph.graph import END as _END  # noqa: F401
+    from langgraph.graph import StateGraph as _StateGraph  # noqa: F401
 
     LANGGRAPH_AVAILABLE = True
 except ImportError:
-    StateGraph = None
-    END = None
-    BaseMessage = None
     LANGGRAPH_AVAILABLE = False
-from ..core.message import Message
-from ..core.result import Result
+
+StateGraph: Any = globals().get("_StateGraph")
+END: Any = globals().get("_END")
+BaseMessage: Any = globals().get("_BaseMessage", Any)
 
 
 class MAPLEGraphState(TypedDict):
@@ -50,11 +52,11 @@ class LangGraphAdapter:
     Enhances LangGraph with superior performance and resource management.
     """
 
-    def __init__(self, maple_agent):
+    def __init__(self, maple_agent: Any):
         self.maple_agent = maple_agent
         self.graph_state = MAPLEGraphState
 
-    def create_maple_enhanced_graph(self) -> StateGraph:
+    def create_maple_enhanced_graph(self) -> Any:
         """
         Create LangGraph enhanced with MAPLE capabilities.
         """
@@ -193,6 +195,25 @@ class LangGraphAdapter:
                 state["error_context"] = None
 
         return state
+
+    @staticmethod
+    def _determine_recovery_strategy(error: Dict[str, Any]) -> str:
+        """Choose a bounded recovery action from structured error metadata."""
+        error_type = str(error.get("errorType", "")).lower()
+        if "resource" in error_type or error.get("resource_exhausted"):
+            return "resource_reallocation"
+        if error.get("recoverable", True):
+            return "retry"
+        return "graceful_degradation"
+
+    @staticmethod
+    def _reallocate_resources(state: MAPLEGraphState) -> None:
+        """Record a local resource reallocation decision for the next retry."""
+        resource_state = state["resource_state"]
+        resource_state["optimization_level"] = "maximum"
+        resource_state["reallocation_count"] = (
+            resource_state.get("reallocation_count", 0) + 1
+        )
 
     def _should_handle_error(self, state: MAPLEGraphState) -> bool:
         """
