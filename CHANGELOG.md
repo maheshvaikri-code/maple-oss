@@ -26,6 +26,10 @@
   manager initialization, and negotiation request/offer queues without changing
   allocation behavior. The resource package passes 92 tests; aggregate type
   debt remains open at `277 errors` in 43 files.
+- **Fresh release-gate revalidation**: the current tree builds the 1.1.3
+  wheel/sdist, both artifacts pass Twine validation, the network-free doctor
+  reports `ready: true`, and the full Maple formatter plus tools/tests lint and
+  compile checks pass. No external publish was performed.
 - **Repository formatter gate closure**: normalized the tracked `maple/`
   source tree with the configured Black and isort profiles. Both checks are
   now idempotent, the focused runtime gate remains `240 passed`, and a fresh

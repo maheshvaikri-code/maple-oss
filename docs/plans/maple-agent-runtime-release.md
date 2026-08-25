@@ -38,6 +38,7 @@
 | 29 | Foundational public-runtime type boundary cleanup | Backend / Security / QA | core Result/message/types, autonomy runtime, MCP discovery, state store, security, core agent, task queue, monitoring, review/QA artifacts | Explicit Python 3.10-target mypy on changed modules, focused regressions, Black/isort/Ruff/compile, aggregate type audit | done: commits `947c8a9`, `8bce55d`, `81c64b1`, `3ae1af0`, `d7e0e2a`, `e09f006`, `46712f9`, `13c6834`, `7448315`, `ced52e0`, `7ab3132`, `31b7402`, `0b91102`, `b03031f`, `9fe26de`, `42c343e`, `3a72934`; focused evidence filed; aggregate reduced to `313 errors in 46 files`; legacy type debt and mypy-target mismatch remain open` |
 | 30 | Broker and MCP adapter release boundary cleanup | Backend / Interop / Security / QA | broker core/queue/routing/factory, MCP adapter, adapter regression, review/QA artifacts | Broker suite, MCP suite, fail-closed resource-management regression, explicit target mypy, Black/isort/Ruff/compile | done: commits `c98e871`, `72496ad`, `7a80472`; broker `62 passed`; MCP/adapter `17 passed`; aggregate reduced to `287 errors in 44 files`; remaining legacy type debt stays open` |
 | 31 | Resource-management primitive type closure | Backend / Resource / QA | resource specification, manager, negotiation, review/QA artifacts | Full resource suite, explicit target mypy, Black/isort/Ruff/compile, aggregate audit | done: commit `a7d40b1`; resource suite `92 passed`; changed modules type/lint/compile clean; aggregate reduced to `277 errors in 43 files` |
+| 32 | Fresh package and deterministic release-gate revalidation | Release / DevOps / QA | `dist/`, package metadata, CLI doctor, release plan, review/QA artifacts | `python -m build --wheel --sdist`, Twine check, network-free doctor, full Maple Black/isort, tools/tests Ruff, compile | done: current tree built wheel/sdist `1.1.3`; Twine both `PASSED`; doctor `ready: true`; formatter/lint/compile checks pass; no publish performed |
 
 ## Threat sketch
 
@@ -74,7 +75,7 @@ privileged action without approval.
 
 Done (with evidence): G0 brief, G1 ADR, G2 plan, committed G3 feature slices
 through bounded workflow execution recovery, and release-hardening evidence
-through slice 27, including MCP
+through slice 32, including MCP
 interoperability, bounded artifacts, native LLM streaming, deterministic async
 tool result ordering, durable approval, workflow fan-out/fan-in, checkpoint
 history, bounded conversation sessions, and retrieval/source evaluation; slice
@@ -109,8 +110,8 @@ Black/isort/mypy/Bandit and pip-audit checks fail closed; the local audit
 currently reports 459 mypy errors across 66 files and no installed Bandit
 executable. The full repository regression remains incomplete after the
 formatter run reached 86% with no reported assertion failure before a bounded
-manual interruption. Slice 29's explicit Python 3.10-target type audit now
-reports `287 errors in 44 files`, down from the pre-cleanup baseline; the
+manual interruption. Slices 29–31's explicit Python 3.10-target type audit now
+reports `277 errors in 43 files`, down from the pre-cleanup baseline; the
 installed mypy 2.3 rejects the configured Python 3.8 target, so the support
 matrix/toolchain decision remains open. Dependency-audit disposition and
 unavailable independent fresh-context verification remain open.
