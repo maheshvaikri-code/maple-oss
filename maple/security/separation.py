@@ -46,12 +46,12 @@ consult the policy — attach it on the in-memory broker, or treat those
 transports as out of the guarantee until they wire it in.
 """
 
-import hashlib
-import re
-from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, Optional, Set
+import hashlib  # noqa: E402
+import re  # noqa: E402
+from dataclasses import dataclass, field  # noqa: E402
+from typing import Any, Dict, Iterable, Optional, Set  # noqa: E402
 
-from ..core.result import Result
+from ..core.result import Result  # noqa: E402
 
 # Doctrine protocol message types that must carry artifact references only.
 # Message.__init__ upper-cases message_type, so these match verbatim.

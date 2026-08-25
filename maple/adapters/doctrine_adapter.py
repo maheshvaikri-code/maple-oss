@@ -34,17 +34,15 @@ message built here already satisfies the fresh-context verifier preset
   ``artifact`` ref, and optional short ``evidence``.
 """
 
-from typing import Any, Dict, List, Optional, Union, cast
+from typing import Any, Dict, List, Optional, Union, cast  # noqa: E402
 
-from ..core.message import Message
-from ..core.result import Result
-from ..core.types import Priority
-from ..security.separation import (
-    GATE_RESULT,
-    WORK_PACKAGE,
-    ArtifactRef,
-    is_artifact_ref,
-)
+from ..core.message import Message  # noqa: E402
+from ..core.result import Result  # noqa: E402
+from ..core.types import Priority  # noqa: E402
+from ..security.separation import GATE_RESULT  # noqa: E402
+from ..security.separation import WORK_PACKAGE  # noqa: E402
+from ..security.separation import ArtifactRef  # noqa: E402
+from ..security.separation import is_artifact_ref  # noqa: E402
 
 # Canonical gate verdicts. Honest reporting is a doctrine non-negotiable:
 # "blocked" and "failed" are first-class, respectable statuses.

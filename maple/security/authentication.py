@@ -21,8 +21,16 @@ Production Authentication Manager for MAPLE
 Provides enterprise-grade authentication with multiple methods
 """
 
-import time
-from typing import Any, Dict, List, Optional, Union
+import base64  # noqa: E402
+import hashlib  # noqa: E402
+import logging  # noqa: E402
+import time  # noqa: E402
+from dataclasses import dataclass  # noqa: E402
+from enum import Enum  # noqa: E402
+from typing import Any, Dict, List, Optional, Union  # noqa: E402
+
+from ..core.result import Result  # noqa: E402
+from .cryptography_impl import CRYPTO_AVAILABLE, CryptographyManager  # noqa: E402
 
 try:
     import jwt as jwt_module
@@ -32,14 +40,6 @@ try:
 except ImportError:
     jwt = None
     JWT_AVAILABLE = False
-import base64
-import hashlib
-import logging
-from dataclasses import dataclass
-from enum import Enum
-
-from ..core.result import Result
-from .cryptography_impl import CRYPTO_AVAILABLE, CryptographyManager
 
 logger = logging.getLogger(__name__)
 
