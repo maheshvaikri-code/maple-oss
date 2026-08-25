@@ -10,6 +10,11 @@
 
 ### Additions
 
+- **LLM provider SDK type boundaries**: clarified optional OpenAI and Anthropic
+  client configuration, compatible request payload containers, and response
+  parsing boundaries without changing provider behavior. The native provider
+  streaming regression passes 3 tests, changed-file mypy is clean with skipped
+  imports, and the aggregate audit is now `62 errors` in 5 files.
 - **Foundational runtime type-boundary cleanup**: narrowed `Result` unions,
   message/ID builders, autonomy tools and workflows, MCP discovery, state
   storage, security/audit/authentication, core-agent queues, task scheduling,
