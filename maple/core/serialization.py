@@ -33,6 +33,7 @@ from .result import Result
 logger = logging.getLogger(__name__)
 
 MAX_PICKLE_BYTES = 1_048_576
+MAX_PROTOBUF_BYTES = 1_048_576
 
 
 class _RestrictedUnpickler(pickle.Unpickler):
@@ -295,22 +296,77 @@ class Serializer:
             )
 
     def _serialize_protobuf(self, data: Any) -> Result[bytes, Dict[str, Any]]:
-        """Serialize data using Protocol Buffers."""
-        return Result.err(
-            {
-                "errorType": "PROTOBUF_NOT_IMPLEMENTED",
-                "message": "Protocol Buffers serialization not yet implemented",
-            }
-        )
+        """Serialize JSON-compatible MAPLE data in a protobuf envelope."""
+        if not self.protobuf_available:
+            return Result.err(
+                {
+                    "errorType": "PROTOBUF_UNAVAILABLE",
+                    "message": "Protocol Buffers library is not available.",
+                }
+            )
+        try:
+            from google.protobuf.struct_pb2 import Struct
+
+            prepared = self._prepare_for_json(data)
+            payload = json.dumps(prepared, separators=(",", ":"), ensure_ascii=False)
+            envelope = Struct()
+            envelope.update({"maple_json": payload})
+            encoded = envelope.SerializeToString(deterministic=True)
+            if len(encoded) > MAX_PROTOBUF_BYTES:
+                return Result.err(
+                    {
+                        "errorType": "PROTOBUF_SERIALIZATION_ERROR",
+                        "message": "Protocol Buffers payload exceeds the size limit.",
+                    }
+                )
+            return Result.ok(encoded)
+        except Exception as exc:
+            return Result.err(
+                {
+                    "errorType": "PROTOBUF_SERIALIZATION_ERROR",
+                    "message": f"Protocol Buffers serialization failed: {str(exc)}",
+                }
+            )
 
     def _deserialize_protobuf(self, data: bytes) -> Result[Any, Dict[str, Any]]:
-        """Deserialize Protocol Buffers data."""
-        return Result.err(
-            {
-                "errorType": "PROTOBUF_NOT_IMPLEMENTED",
-                "message": "Protocol Buffers deserialization not yet implemented",
-            }
-        )
+        """Deserialize a bounded protobuf MAPLE envelope."""
+        if not self.protobuf_available:
+            return Result.err(
+                {
+                    "errorType": "PROTOBUF_UNAVAILABLE",
+                    "message": "Protocol Buffers library is not available.",
+                }
+            )
+        if len(data) > MAX_PROTOBUF_BYTES:
+            return Result.err(
+                {
+                    "errorType": "PROTOBUF_DESERIALIZATION_ERROR",
+                    "message": "Protocol Buffers payload exceeds the size limit.",
+                }
+            )
+        try:
+            from google.protobuf.json_format import MessageToDict
+            from google.protobuf.struct_pb2 import Struct
+
+            envelope = Struct()
+            envelope.ParseFromString(data)
+            decoded = MessageToDict(envelope, preserving_proto_field_name=True)
+            payload = decoded.get("maple_json")
+            if not isinstance(payload, str):
+                return Result.err(
+                    {
+                        "errorType": "PROTOBUF_DESERIALIZATION_ERROR",
+                        "message": "Protocol Buffers envelope is missing maple_json.",
+                    }
+                )
+            return Result.ok(self._restore_from_json(json.loads(payload)))
+        except Exception as exc:
+            return Result.err(
+                {
+                    "errorType": "PROTOBUF_DESERIALIZATION_ERROR",
+                    "message": f"Protocol Buffers deserialization failed: {str(exc)}",
+                }
+            )
 
     def _prepare_for_json(self, data: Any) -> Any:
         """Prepare data for JSON serialization by handling special types."""

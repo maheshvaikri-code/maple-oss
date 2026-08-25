@@ -134,16 +134,59 @@ class TestMsgPackSerialization:
 
 
 class TestProtobufSerialization:
-    """Test Protobuf serialization (not implemented)."""
+    """Test optional bounded Protocol Buffers serialization."""
 
-    def test_protobuf_not_implemented(self, serializer):
-        result = serializer.serialize({"a": 1}, SerializationFormat.PROTOBUF)
-        assert result.is_err()
-        assert "PROTOBUF_NOT_IMPLEMENTED" in result.unwrap_err()["errorType"]
+    def test_protobuf_roundtrip_preserves_json_special_types(self, serializer):
+        if not serializer.protobuf_available:
+            pytest.skip("protobuf is not installed")
+        data = {
+            "key": "value",
+            "number": 42,
+            "nested": {"items": (1, 2), "raw": b"bytes"},
+        }
 
-    def test_protobuf_deserialize_not_implemented(self, serializer):
+        serialized = serializer.serialize(data, SerializationFormat.PROTOBUF)
+        assert serialized.is_ok()
+        restored = serializer.deserialize(
+            serialized.unwrap(), SerializationFormat.PROTOBUF
+        )
+
+        assert restored.is_ok()
+        assert restored.unwrap() == data
+
+    def test_protobuf_malformed_envelope_fails_closed(self, serializer):
+        if not serializer.protobuf_available:
+            pytest.skip("protobuf is not installed")
         result = serializer.deserialize(b"data", SerializationFormat.PROTOBUF)
+
         assert result.is_err()
+        assert result.unwrap_err()["errorType"] == "PROTOBUF_DESERIALIZATION_ERROR"
+
+    def test_protobuf_oversized_payload_is_rejected(self, serializer):
+        if not serializer.protobuf_available:
+            pytest.skip("protobuf is not installed")
+        serialized = serializer.serialize(
+            {"text": "x" * (1_048_576 + 1)}, SerializationFormat.PROTOBUF
+        )
+        result = serializer.deserialize(
+            b"x" * (1_048_576 + 1), SerializationFormat.PROTOBUF
+        )
+
+        assert serialized.is_err()
+        assert serialized.unwrap_err()["errorType"] == "PROTOBUF_SERIALIZATION_ERROR"
+        assert result.is_err()
+        assert result.unwrap_err()["errorType"] == "PROTOBUF_DESERIALIZATION_ERROR"
+
+    def test_protobuf_unavailable_fails_closed(self, serializer):
+        serializer.protobuf_available = False
+
+        serialized = serializer.serialize({"a": 1}, SerializationFormat.PROTOBUF)
+        deserialized = serializer.deserialize(b"data", SerializationFormat.PROTOBUF)
+
+        assert serialized.is_err()
+        assert deserialized.is_err()
+        assert serialized.unwrap_err()["errorType"] == "PROTOBUF_UNAVAILABLE"
+        assert deserialized.unwrap_err()["errorType"] == "PROTOBUF_UNAVAILABLE"
 
 
 class TestDefaultFormat:
