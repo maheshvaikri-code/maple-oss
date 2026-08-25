@@ -29,6 +29,15 @@ class TypedReport(BaseModel):
     count: int
 
 
+class TypedToolInput(BaseModel):
+    title: str
+    count: int
+
+
+class TypedToolOutput(BaseModel):
+    summary: str
+
+
 def test_json_schema_accepts_valid_nested_value():
     result = validate_json_schema({"title": "Report", "count": 2}, REPORT_SCHEMA)
 
@@ -130,6 +139,50 @@ def test_tool_rejects_invalid_output():
         parameters={"type": "object"},
         handler=lambda: Result.ok({"count": "not-an-integer"}),
         result_schema={"type": "object", "properties": {"count": {"type": "integer"}}},
+    )
+
+    result = tool.execute()
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "TOOL_OUTPUT_INVALID"
+
+
+def test_tool_typed_models_validate_arguments_results_and_llm_schema():
+    calls = []
+
+    def handler(title, count):
+        calls.append((title, count))
+        return Result.ok({"summary": f"{title}:{count}"})
+
+    tool = Tool(
+        name="typed_report",
+        description="Create a typed report",
+        parameters={"type": "object"},
+        handler=handler,
+        input_model=TypedToolInput,
+        output_model=TypedToolOutput,
+    )
+
+    definition = tool.to_llm_definition()
+    valid = tool.execute(title="Report", count=2)
+    invalid = tool.execute(title="Missing count")
+
+    assert "properties" in definition.parameters
+    assert valid.is_ok()
+    assert isinstance(valid.unwrap(), TypedToolOutput)
+    assert valid.unwrap().summary == "Report:2"
+    assert invalid.is_err()
+    assert invalid.unwrap_err()["errorType"] == "TOOL_INPUT_INVALID"
+    assert calls == [("Report", 2)]
+
+
+def test_tool_typed_output_rejects_invalid_result():
+    tool = Tool(
+        name="typed_report",
+        description="Create a typed report",
+        parameters={"type": "object"},
+        handler=lambda: Result.ok({"unexpected": True}),
+        output_model=TypedToolOutput,
     )
 
     result = tool.execute()

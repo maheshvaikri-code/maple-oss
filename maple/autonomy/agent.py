@@ -88,7 +88,12 @@ class _SessionTurn:
 
 @dataclass
 class AutonomousConfig:
-    """Extended configuration for autonomous agents."""
+    """Extended configuration for autonomous agents.
+
+    ``output_model`` is an optional Pydantic-style model class. When set, a
+    completed response is returned as a validated model instance; the legacy
+    ``response_schema`` dictionary remains unchanged when it is unset.
+    """
 
     llm: LLMConfig
     max_reasoning_steps: int = 20

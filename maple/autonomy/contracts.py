@@ -287,6 +287,37 @@ def structured_model_schema(model: Any) -> Result[Dict[str, Any], Error]:
     return Result.ok(dict(schema))
 
 
+def validate_typed_value(value: Any, model: Type[Any]) -> Result[Any, Error]:
+    """Validate an in-memory value with a Pydantic-style model class."""
+    if not isinstance(model, type):
+        return Result.err(
+            _error(
+                "STRUCTURED_OUTPUT_MODEL_INVALID",
+                "model must be a model class.",
+            )
+        )
+    validator = getattr(model, "model_validate", None)
+    if not callable(validator):
+        validator = getattr(model, "parse_obj", None)
+    if not callable(validator):
+        return Result.err(
+            _error(
+                "STRUCTURED_OUTPUT_MODEL_INVALID",
+                "model must expose model_validate() or parse_obj().",
+            )
+        )
+    try:
+        return Result.ok(validator(value))
+    except Exception as exc:
+        return Result.err(
+            _error(
+                "STRUCTURED_OUTPUT_MODEL_INVALID",
+                "Value did not satisfy model.",
+                exception=type(exc).__name__,
+            )
+        )
+
+
 def parse_typed_output(
     content: Optional[str],
     model: Type[Any],
@@ -302,26 +333,12 @@ def parse_typed_output(
     parsed = _parse_json_value(content, max_bytes=max_bytes)
     if parsed.is_err():
         return Result.err(parsed.unwrap_err())
-    validator = getattr(model, "model_validate", None)
-    if not callable(validator):
-        validator = getattr(model, "parse_obj", None)
-    if not callable(validator):
-        return Result.err(
-            _error(
-                "STRUCTURED_OUTPUT_MODEL_INVALID",
-                "output_model must expose model_validate() or parse_obj().",
-            )
-        )
-    try:
-        return Result.ok(validator(parsed.unwrap()))
-    except Exception as exc:
-        return Result.err(
-            _error(
-                "STRUCTURED_OUTPUT_MODEL_INVALID",
-                "Structured output did not satisfy output_model.",
-                exception=type(exc).__name__,
-            )
-        )
+    validated = validate_typed_value(parsed.unwrap(), model)
+    if validated.is_err():
+        error = validated.unwrap_err()
+        error["message"] = "Structured output did not satisfy output_model."
+        return Result.err(error)
+    return validated
 
 
 def run_guardrails(

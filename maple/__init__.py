@@ -56,6 +56,7 @@ from .autonomy.contracts import (
     schema_guardrail,
     structured_model_schema,
     validate_json_schema,
+    validate_typed_value,
 )
 from .autonomy.evaluation import (
     EvalCase,
@@ -237,6 +238,7 @@ __all__ = [
     "schema_guardrail",
     "structured_model_schema",
     "validate_json_schema",
+    "validate_typed_value",
     "CancellationToken",
     "ExecutionExecutor",
     "ExecutionPolicy",

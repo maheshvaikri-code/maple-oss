@@ -15,11 +15,17 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Type
 
 from ..core.result import Result
 from ..llm.types import ToolDefinition
-from .contracts import Guardrail, run_guardrails, validate_json_schema
+from .contracts import (
+    Guardrail,
+    run_guardrails,
+    structured_model_schema,
+    validate_json_schema,
+    validate_typed_value,
+)
 from .execution import ExecutionExecutor
 
 if TYPE_CHECKING:
@@ -30,7 +36,12 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class Tool:
-    """A tool that can be called by an autonomous agent."""
+    """A tool that can be called by an autonomous agent.
+
+    ``input_model`` and ``output_model`` optionally provide Pydantic-style
+    typed boundaries. When omitted, the existing JSON-Schema contracts and
+    handler values are preserved.
+    """
 
     name: str
     description: str
@@ -42,37 +53,95 @@ class Tool:
     input_guardrails: List[Guardrail] = field(default_factory=list)
     output_guardrails: List[Guardrail] = field(default_factory=list)
     executor: Optional[ExecutionExecutor] = None
+    input_model: Optional[Type[Any]] = None
+    output_model: Optional[Type[Any]] = None
+    _input_model_schema: Optional[Dict[str, Any]] = field(
+        default=None, init=False, repr=False
+    )
+
+    def __post_init__(self) -> None:
+        """Validate typed model configuration once at tool registration time."""
+        if self.input_model is not None:
+            schema = structured_model_schema(self.input_model)
+            if schema.is_err():
+                raise ValueError(schema.unwrap_err()["message"])
+            self._input_model_schema = schema.unwrap()
+        if self.output_model is not None:
+            schema = structured_model_schema(self.output_model)
+            if schema.is_err():
+                raise ValueError(schema.unwrap_err()["message"])
 
     def to_llm_definition(self) -> ToolDefinition:
         """Convert to LLM-compatible tool definition."""
         return ToolDefinition(
             name=self.name,
             description=self.description,
-            parameters=self.parameters,
+            parameters=self._input_model_schema or self.parameters,
         )
 
     def execute(self, **kwargs: Any) -> Result[Any, Dict[str, Any]]:
         """Execute this tool with the given arguments."""
-        input_validation = validate_json_schema(kwargs, self.parameters)
-        if input_validation.is_err():
-            return Result.err(
-                {
-                    "errorType": "TOOL_INPUT_INVALID",
-                    "message": f'Tool "{self.name}" received invalid arguments',
-                    "details": input_validation.unwrap_err(),
-                }
-            )
+        call_kwargs = kwargs
+        if self.input_model is not None:
+            input_validation = validate_typed_value(kwargs, self.input_model)
+            if input_validation.is_err():
+                return Result.err(
+                    {
+                        "errorType": "TOOL_INPUT_INVALID",
+                        "message": f'Tool "{self.name}" received invalid arguments',
+                        "details": input_validation.unwrap_err(),
+                    }
+                )
+            model_value = input_validation.unwrap()
+            dump = getattr(model_value, "model_dump", None)
+            if not callable(dump):
+                dump = getattr(model_value, "dict", None)
+            if not callable(dump):
+                return Result.err(
+                    {
+                        "errorType": "TOOL_INPUT_INVALID",
+                        "message": f'Tool "{self.name}" model cannot produce arguments',
+                    }
+                )
+            try:
+                dumped = dump()
+            except Exception as exc:
+                return Result.err(
+                    {
+                        "errorType": "TOOL_INPUT_INVALID",
+                        "message": f'Tool "{self.name}" model could not produce arguments',
+                        "details": {"exception": type(exc).__name__},
+                    }
+                )
+            if not isinstance(dumped, dict):
+                return Result.err(
+                    {
+                        "errorType": "TOOL_INPUT_INVALID",
+                        "message": f'Tool "{self.name}" model must produce an object',
+                    }
+                )
+            call_kwargs = dumped
+        else:
+            input_validation = validate_json_schema(kwargs, self.parameters)
+            if input_validation.is_err():
+                return Result.err(
+                    {
+                        "errorType": "TOOL_INPUT_INVALID",
+                        "message": f'Tool "{self.name}" received invalid arguments',
+                        "details": input_validation.unwrap_err(),
+                    }
+                )
         input_guardrails = run_guardrails(
-            kwargs, self.input_guardrails, stage=f"tool:{self.name}:input"
+            call_kwargs, self.input_guardrails, stage=f"tool:{self.name}:input"
         )
         if input_guardrails.is_err():
             return Result.err(input_guardrails.unwrap_err())
         try:
             if self.executor is None:
-                result = self.handler(**kwargs)
+                result = self.handler(**call_kwargs)
             else:
                 execution = self.executor.execute(
-                    self.name, self.handler, kwargs=kwargs
+                    self.name, self.handler, kwargs=call_kwargs
                 )
                 if execution.is_err():
                     return Result.err(execution.unwrap_err())
@@ -95,7 +164,10 @@ class Tool:
         if result.is_err():
             return result
         output = result.unwrap()
-        output_validation = validate_json_schema(output, self.result_schema)
+        if self.output_model is not None:
+            output_validation = validate_typed_value(output, self.output_model)
+        else:
+            output_validation = validate_json_schema(output, self.result_schema)
         if output_validation.is_err():
             return Result.err(
                 {
@@ -104,6 +176,9 @@ class Tool:
                     "details": output_validation.unwrap_err(),
                 }
             )
+        if self.output_model is not None:
+            output = output_validation.unwrap()
+            result = Result.ok(output)
         output_guardrails = run_guardrails(
             output, self.output_guardrails, stage=f"tool:{self.name}:output"
         )
