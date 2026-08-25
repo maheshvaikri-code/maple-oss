@@ -109,13 +109,13 @@ class RedactionPolicy:
                             "event array exceeds the item limit.",
                         )
                     )
-                output = []
+                output_list: List[Any] = []
                 for item in current:
                     item_result = visit(item, depth + 1)
                     if item_result.is_err():
                         return item_result
-                    output.append(item_result.unwrap())
-                return Result.ok(output)
+                    output_list.append(item_result.unwrap())
+                return Result.ok(output_list)
             if isinstance(current, Mapping):
                 if len(current) > self.max_items:
                     return Result.err(
@@ -124,7 +124,7 @@ class RedactionPolicy:
                             "event object exceeds the item limit.",
                         )
                     )
-                output: Dict[str, Any] = {}
+                output_mapping: Dict[str, Any] = {}
                 sensitive = {key.casefold() for key in self.sensitive_keys}
                 for key, item in current.items():
                     if not isinstance(key, str):
@@ -135,13 +135,13 @@ class RedactionPolicy:
                             )
                         )
                     if key.casefold() in sensitive:
-                        output[key] = self.replacement
+                        output_mapping[key] = self.replacement
                         continue
                     item_result = visit(item, depth + 1)
                     if item_result.is_err():
                         return item_result
-                    output[key] = item_result.unwrap()
-                return Result.ok(output)
+                    output_mapping[key] = item_result.unwrap()
+                return Result.ok(output_mapping)
             return Result.err(
                 _error(
                     "EVENT_NON_JSON_PAYLOAD",
