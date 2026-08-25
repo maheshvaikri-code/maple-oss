@@ -33,6 +33,7 @@
 | 24 | Deterministic grounded-answer evaluation | ML Engineer / Backend / QA | `docs/adr/022-*`, evaluation module/tests, API docs, README, changelog | Bounded source text, deterministic claim segmentation/token overlap, threshold errors, malformed runner isolation, explicit no semantic-faithfulness claim | done: commit `90203f8`; focused `5 passed`; combined gate `240 passed`; review/QA/build evidence filed |
 | 25 | Repository-wide Ruff lint gate closure | DevOps / QA / Code Reviewer | tracked `tests/`, release plan, changelog, review/QA artifacts | `python -m ruff check tools tests`, compile, changed-test regression, focused MAPLE gate | done: commit `cd13435`; Ruff clean; changed surface `621 passed`; focused gate `240 passed`; review/QA filed |
 | 26 | Warning-free legacy test gate | QA / Backend / Code Reviewer | `tests/test_basic.py`, `tests/adapters/test_s2_adapter.py`, review/QA artifacts | Targeted pytest, standalone basic runner, Ruff, compile; no targeted warnings | done: commit `948b9ea`; targeted `22 passed`; standalone `6 passed, 0 failed`; review/QA filed |
+| 27 | Fail-closed CI quality and security gates | DevOps / QA / Security / Code Reviewer | `.github/workflows/`, CI contract test, release plan, changelog, review/QA artifacts | Workflow YAML parse, gate-semantics contracts, read-only permissions, Ruff, compile, diff check | done: commits `6499244` + `b989a4b`; required checks no longer mask failures; existing Black/isort/mypy/Bandit debt is now release-visible |
 
 ## Threat sketch
 
@@ -67,9 +68,9 @@ privileged action without approval.
 
 ## Status snapshot
 
-Done (with evidence): G0 brief, G1 ADR, G2 plan, twenty-four committed G3
-feature slices through bounded workflow execution recovery, and slice 25
-release-hardening evidence, including MCP
+Done (with evidence): G0 brief, G1 ADR, G2 plan, committed G3 feature slices
+through bounded workflow execution recovery, and release-hardening evidence
+through slice 27, including MCP
 interoperability, bounded artifacts, native LLM streaming, deterministic async
 tool result ordering, durable approval, workflow fan-out/fan-in, checkpoint
 history, bounded conversation sessions, and retrieval/source evaluation; slice
@@ -88,8 +89,9 @@ workflow execution-journal, and grounded-answer evaluation regressions),
 compile, changed-surface Ruff/Flake8, metadata-clean wheel/sdist builds, Twine
 checks, a clean-venv wheel doctor smoke pass, and a fresh `.[dev,security]`
 environment with `pip check` reporting no broken requirements all pass.
-The repository-wide Ruff gate is now clean across `tools` and `tests`, and the
-changed tracked-test regression reports `621 passed, 7 warnings`. The full
+The repository-wide Ruff gate is now clean across `tools` and `tests`. Slice 25
+recorded `621 passed, 7 warnings` on its changed tracked-test regression; Slice
+26 separately recorded `22 passed` with no targeted warning output. The full
 repository regression is not complete: the latest bounded attempt
 reported `1049 passed, 8 warnings in 839.17s` before interruption in the
 remaining Doctrine gold cases. Fresh-repository profiling shows individual
@@ -97,7 +99,10 @@ Git commands taking roughly 5–15 seconds on this Windows environment, with
 the slowest gold cases at 166.96s, 159.74s, 115.61s, and 56.04s. No assertion
 failure was reported. The shared interpreter still has unrelated `pip check`
 conflicts, but the isolated dependency gate is clean. The targeted legacy test
-warnings are cleared; dependency-audit disposition and unavailable independent
-fresh-context verification remain open.
+warnings are cleared. Slice 27 makes the previously advisory repository
+Black/isort/mypy/Bandit and pip-audit checks fail closed; the local audit
+currently reports Black/isort drift, 459 mypy errors across 66 files, and no
+installed Bandit executable. Dependency-audit disposition and unavailable
+independent fresh-context verification remain open.
 External publishing, cloud selection, and website changes remain explicitly out
 of scope until human approval.
