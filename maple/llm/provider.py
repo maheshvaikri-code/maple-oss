@@ -16,7 +16,7 @@
 """Abstract LLM provider base class."""
 
 from abc import ABC, abstractmethod
-from typing import Any, AsyncIterator, Dict, List, Optional
+from typing import Any, AsyncIterator, Dict, Iterator, List, Optional
 
 from ..core.result import Result
 from .types import ChatMessage, LLMChunk, LLMConfig, LLMResponse, ToolDefinition
@@ -84,8 +84,8 @@ class LLMProvider(ABC):
 
         async def _chunks() -> AsyncIterator[LLMChunk]:
             content = response.content or ""
-            for offset in range(0, len(content), 256):
-                yield LLMChunk(content=content[offset : offset + 256])
+            for text in self._bounded_text_chunks(content):
+                yield LLMChunk(content=text)
             for tool_call in response.tool_calls:
                 yield LLMChunk(
                     tool_call_delta={
@@ -97,6 +97,12 @@ class LLMProvider(ABC):
             yield LLMChunk(finish_reason=response.finish_reason or None)
 
         return Result.ok(_chunks())
+
+    @staticmethod
+    def _bounded_text_chunks(content: str) -> Iterator[str]:
+        """Split provider text into bounded chunks for the shared contract."""
+        for offset in range(0, len(content), 256):
+            yield content[offset : offset + 256]
 
     def count_tokens(self, text: str) -> int:
         """Estimate token count (provider-specific override recommended)."""

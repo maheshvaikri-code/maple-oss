@@ -29,6 +29,11 @@
   `stream()` contract now yields bounded text chunks, tool-call deltas, and a
   finish event after a successful completion, while preserving typed provider
   errors. Native low-latency provider streams remain explicit overrides.
+- **Provider-native LLM streaming** (`maple.llm.openai_provider`,
+  `maple.llm.anthropic_provider`): OpenAI-compatible and Anthropic async SDK
+  streams now map native text, tool-use/function-call, and finish events into
+  the shared bounded contract. Typed request failures and completion-backed
+  compatibility fallback remain available when async clients are absent.
 - **Release metadata hardening**: `pyproject.toml` is now the single source
   for package metadata, the legacy `setup.py` delegates to it, and the source
   manifest includes only files present in the repository. Wheel/sdist builds

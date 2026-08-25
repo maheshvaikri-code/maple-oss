@@ -1,28 +1,28 @@
-"""
-Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
-
-This file is part of MAPLE - Multi Agent Protocol Language Engine.
-
-MAPLE - Multi Agent Protocol Language Engine is free software: you can redistribute it and/or
-modify it under the terms of the GNU Affero General Public License as published by the Free Software
-Foundation, either version 3 of the License, or (at your option) any later version.
-MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
-PARTICULAR PURPOSE. See the GNU Affero General Public License for more details. You should have
-received a copy of the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
-Language Engine. If not, see <https://www.gnu.org/licenses/>.
-"""
+# Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
+#
+# This file is part of MAPLE - Multi Agent Protocol Language Engine.
+#
+# MAPLE - Multi Agent Protocol Language Engine is free software: you can
+# redistribute it and/or modify it under the terms of the GNU Affero General
+# Public License as published by the Free Software Foundation, either version 3
+# of the License, or (at your option) any later version.
+# MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that
+# it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+# of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero
+# General Public License for more details. You should have received a copy of
+# the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
+# Language Engine. If not, see <https://www.gnu.org/licenses/>.
 
 """OpenAI-compatible LLM provider."""
 
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional
 
 from ..core.result import Result
 from .provider import LLMProvider
 from .types import (
-    ChatMessage, ChatRole, LLMConfig, LLMResponse,
+    ChatMessage, LLMChunk, LLMConfig, LLMResponse,
     ToolCall, ToolDefinition, TokenUsage,
 )
 
@@ -88,6 +88,72 @@ class OpenAIProvider(LLMProvider):
                 'errorType': 'LLM_COMPLETION_ERROR',
                 'message': f'OpenAI completion failed: {str(e)}'
             })
+
+    async def stream(
+        self,
+        messages: List[ChatMessage],
+        tools: Optional[List[ToolDefinition]] = None,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+    ) -> Result[AsyncIterator[LLMChunk], Dict[str, Any]]:
+        """Return native OpenAI-compatible chat completion deltas."""
+        if not self.async_client:
+            return await super().stream(
+                messages,
+                tools=tools,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+
+        kwargs: Dict[str, Any] = {
+            'model': self.config.model,
+            'messages': [self._format_message(m) for m in messages],
+            'temperature': temperature if temperature is not None else self.config.temperature,
+            'max_tokens': max_tokens or self.config.max_tokens,
+            'stream': True,
+        }
+        if tools:
+            kwargs['tools'] = [self._format_tool(t) for t in tools]
+            kwargs['tool_choice'] = 'auto'
+
+        try:
+            response_stream = await self.async_client.chat.completions.create(**kwargs)
+        except Exception as e:
+            return Result.err({
+                'errorType': 'LLM_STREAM_ERROR',
+                'message': f'OpenAI streaming failed: {str(e)}'
+            })
+
+        async def _chunks() -> AsyncIterator[LLMChunk]:
+            finish_reason = None
+            try:
+                async for chunk in response_stream:
+                    choices = getattr(chunk, 'choices', None) or []
+                    if not choices:
+                        continue
+                    choice = choices[0]
+                    delta = getattr(choice, 'delta', None)
+                    if delta is not None:
+                        content = getattr(delta, 'content', None) or ''
+                        for text in self._bounded_text_chunks(content):
+                            yield LLMChunk(content=text)
+                        for tool_call in getattr(delta, 'tool_calls', None) or []:
+                            function = getattr(tool_call, 'function', None)
+                            yield LLMChunk(
+                                tool_call_delta={
+                                    'id': getattr(tool_call, 'id', None),
+                                    'name': getattr(function, 'name', None),
+                                    'arguments': getattr(function, 'arguments', None),
+                                }
+                            )
+                    reason = getattr(choice, 'finish_reason', None)
+                    if reason:
+                        finish_reason = reason
+            except Exception as e:
+                raise RuntimeError(f'OpenAI stream iteration failed: {e}') from e
+            yield LLMChunk(finish_reason=finish_reason)
+
+        return Result.ok(_chunks())
 
     def _format_message(self, msg: ChatMessage) -> Dict[str, Any]:
         d: Dict[str, Any] = {'role': msg.role.value, 'content': msg.content or ""}

@@ -1,28 +1,27 @@
-"""
-Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
-
-This file is part of MAPLE - Multi Agent Protocol Language Engine.
-
-MAPLE - Multi Agent Protocol Language Engine is free software: you can redistribute it and/or
-modify it under the terms of the GNU Affero General Public License as published by the Free Software
-Foundation, either version 3 of the License, or (at your option) any later version.
-MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
-PARTICULAR PURPOSE. See the GNU Affero General Public License for more details. You should have
-received a copy of the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
-Language Engine. If not, see <https://www.gnu.org/licenses/>.
-"""
+# Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
+#
+# This file is part of MAPLE - Multi Agent Protocol Language Engine.
+#
+# MAPLE - Multi Agent Protocol Language Engine is free software: you can
+# redistribute it and/or modify it under the terms of the GNU Affero General
+# Public License as published by the Free Software Foundation, either version 3
+# of the License, or (at your option) any later version.
+# MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that
+# it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+# of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero
+# General Public License for more details. You should have received a copy of
+# the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
+# Language Engine. If not, see <https://www.gnu.org/licenses/>.
 
 """Anthropic Claude LLM provider."""
 
-import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional
 
 from ..core.result import Result
 from .provider import LLMProvider
 from .types import (
-    ChatMessage, ChatRole, LLMConfig, LLMResponse,
+    ChatMessage, ChatRole, LLMChunk, LLMConfig, LLMResponse,
     ToolCall, ToolDefinition, TokenUsage,
 )
 
@@ -35,6 +34,7 @@ class AnthropicProvider(LLMProvider):
     def __init__(self, config: LLMConfig):
         super().__init__(config)
         self.client = None
+        self.async_client = None
         try:
             import anthropic
             client_kwargs = {}
@@ -45,6 +45,9 @@ class AnthropicProvider(LLMProvider):
             if config.timeout:
                 client_kwargs['timeout'] = config.timeout
             self.client = anthropic.Anthropic(**client_kwargs)
+            async_client_type = getattr(anthropic, 'AsyncAnthropic', None)
+            if async_client_type is not None:
+                self.async_client = async_client_type(**client_kwargs)
         except ImportError:
             logger.warning("anthropic library not installed. Install with: pip install anthropic")
 
@@ -118,6 +121,110 @@ class AnthropicProvider(LLMProvider):
                 'message': f'Anthropic completion failed: {str(e)}'
             })
 
+    async def stream(
+        self,
+        messages: List[ChatMessage],
+        tools: Optional[List[ToolDefinition]] = None,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+    ) -> Result[AsyncIterator[LLMChunk], Dict[str, Any]]:
+        """Return native Anthropic Messages API streaming deltas."""
+        if not self.async_client:
+            return await super().stream(
+                messages,
+                tools=tools,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+
+        system_prompt = None
+        conversation = []
+        for msg in messages:
+            if msg.role == ChatRole.SYSTEM:
+                system_prompt = msg.content
+            elif msg.role == ChatRole.TOOL:
+                conversation.append({
+                    'role': 'user',
+                    'content': [{
+                        'type': 'tool_result',
+                        'tool_use_id': msg.tool_call_id,
+                        'content': msg.content,
+                    }]
+                })
+            elif msg.role == ChatRole.ASSISTANT and msg.tool_calls:
+                content = []
+                if msg.content:
+                    content.append({'type': 'text', 'text': msg.content})
+                for tc in msg.tool_calls:
+                    content.append({
+                        'type': 'tool_use',
+                        'id': tc.id,
+                        'name': tc.name,
+                        'input': tc.arguments,
+                    })
+                conversation.append({'role': 'assistant', 'content': content})
+            else:
+                conversation.append({
+                    'role': msg.role.value,
+                    'content': msg.content or '',
+                })
+
+        kwargs: Dict[str, Any] = {
+            'model': self.config.model,
+            'messages': conversation,
+            'max_tokens': max_tokens or self.config.max_tokens,
+            'temperature': temperature if temperature is not None else self.config.temperature,
+            'stream': True,
+        }
+        if system_prompt:
+            kwargs['system'] = system_prompt
+        if tools:
+            kwargs['tools'] = [self._format_tool(t) for t in tools]
+
+        try:
+            response_stream = await self.async_client.messages.create(**kwargs)
+        except Exception as e:
+            return Result.err({
+                'errorType': 'LLM_STREAM_ERROR',
+                'message': f'Anthropic streaming failed: {str(e)}'
+            })
+
+        async def _chunks() -> AsyncIterator[LLMChunk]:
+            finish_reason = None
+            try:
+                async for event in response_stream:
+                    event_type = getattr(event, 'type', '')
+                    if event_type == 'content_block_start':
+                        block = getattr(event, 'content_block', None)
+                        if getattr(block, 'type', None) == 'tool_use':
+                            yield LLMChunk(tool_call_delta={
+                                'id': getattr(block, 'id', None),
+                                'name': getattr(block, 'name', None),
+                                'arguments': {},
+                            })
+                    elif event_type == 'content_block_delta':
+                        delta = getattr(event, 'delta', None)
+                        delta_type = getattr(delta, 'type', '')
+                        if delta_type == 'text_delta':
+                            for text in self._bounded_text_chunks(
+                                getattr(delta, 'text', '') or ''
+                            ):
+                                yield LLMChunk(content=text)
+                        elif delta_type == 'input_json_delta':
+                            yield LLMChunk(tool_call_delta={
+                                'arguments': getattr(delta, 'partial_json', '') or '',
+                            })
+                    elif event_type == 'message_delta':
+                        delta = getattr(event, 'delta', None)
+                        reason = getattr(delta, 'stop_reason', None)
+                        if reason:
+                            finish_reason = self._normalize_finish_reason(reason)
+            except Exception as e:
+                raise RuntimeError(f'Anthropic stream iteration failed: {e}') from e
+            yield LLMChunk(finish_reason=finish_reason)
+
+        return Result.ok(_chunks())
+
     def _format_tool(self, tool: ToolDefinition) -> Dict[str, Any]:
         return {
             'name': tool.name,
@@ -147,11 +254,7 @@ class AnthropicProvider(LLMProvider):
                 total_tokens=response.usage.input_tokens + response.usage.output_tokens,
             )
 
-        finish_reason = response.stop_reason or ""
-        if finish_reason == "end_turn":
-            finish_reason = "stop"
-        elif finish_reason == "tool_use":
-            finish_reason = "tool_calls"
+        finish_reason = self._normalize_finish_reason(response.stop_reason or "")
 
         return LLMResponse(
             content=content_text or None,
@@ -161,3 +264,11 @@ class AnthropicProvider(LLMProvider):
             finish_reason=finish_reason,
             raw_response=response,
         )
+
+    @staticmethod
+    def _normalize_finish_reason(reason: str) -> str:
+        if reason == "end_turn":
+            return "stop"
+        if reason == "tool_use":
+            return "tool_calls"
+        return reason
