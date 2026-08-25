@@ -46,6 +46,7 @@
 | 37 | Fault-tolerance execution boundary cleanup | Backend / Reliability / QA | fault-tolerance executor, circuit-breaker state boundary, regression test, changelog, review/QA artifacts | Fault-tolerance suite, circuit-state regression, explicit target mypy on changed module, Black/isort/Ruff/compile, aggregate audit | done: commit `4c7d348`; executor/retry/recovery annotations plus validated half-open transition; focused `10 passed`; aggregate reduced to `221 errors in 36 files` |
 | 38 | Result-collector aggregation boundary cleanup | Backend / QA | result collector, custom-aggregator guard, changelog, review/QA artifacts | Result-collector suite, explicit target mypy on changed module, Black/isort/Ruff/compile, aggregate audit | done: commit `24a8808`; behavior-preserving lifecycle/callback/filter annotations plus structured absent-callable error; focused `33 passed`; aggregate reduced to `205 errors in 35 files` |
 | 39 | CLI and package validation type boundary cleanup | Backend / QA | CLI doctor, package validation/banner contracts, changelog, review/QA artifacts | CLI/basic suite, explicit changed-file mypy with skipped imports, Black/isort/compile, aggregate audit | done: commit `bc6a31e`; behavior-preserving return annotations; focused `8 passed`; aggregate reduced to `201 errors in 33 files` |
+| 40 | Serialization and provider-registry type boundary cleanup | Backend / QA | serializer dependency/message boundary, provider registry lifecycle, changelog, review/QA artifacts | Serialization/provider suite, explicit changed-file mypy with skipped imports, Black/isort/compile, aggregate audit | done: commit `91a0502`; behavior-preserving dependency/message/registration annotations; focused `32 passed`; aggregate reduced to `198 errors in 31 files` |
 
 ## Threat sketch
 
@@ -123,7 +124,8 @@ reports `277 errors in 43 files`; slice 33's follow-up audit now reports
 follow-up audit now reports `239 errors in 37 files`; slice 37's follow-up
 audit now reports `221 errors in 36 files`; slice 38's follow-up audit now
 reports `205 errors in 35 files`; slice 39's follow-up audit now reports
-`201 errors in 33 files`; the
+`201 errors in 33 files`; slice 40's follow-up audit now reports
+`198 errors in 31 files`; the
 installed mypy 2.3 rejects the configured Python 3.8 target, so the support
 matrix/toolchain decision remains open. Dependency-audit disposition and
 unavailable independent fresh-context verification remain open.
