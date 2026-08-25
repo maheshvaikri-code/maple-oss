@@ -51,7 +51,10 @@ class OpenAIProvider(LLMProvider):
             self.client = openai.OpenAI(**client_kwargs)
             self.async_client = openai.AsyncOpenAI(**client_kwargs)
         except ImportError:
-            logger.warning("openai library not installed. Install with: pip install openai")
+            logger.warning(
+                "openai library not installed. Install with: "
+                "pip install openai"
+            )
 
     def complete(
         self,
@@ -64,13 +67,20 @@ class OpenAIProvider(LLMProvider):
         if not self.client:
             return Result.err({
                 'errorType': 'PROVIDER_NOT_AVAILABLE',
-                'message': 'openai library not installed. Install with: pip install openai'
+                'message': (
+                    'openai library not installed. Install with: '
+                    'pip install openai'
+                )
             })
         try:
             kwargs = {
                 'model': self.config.model,
                 'messages': [self._format_message(m) for m in messages],
-                'temperature': temperature if temperature is not None else self.config.temperature,
+                'temperature': (
+                    temperature
+                    if temperature is not None
+                    else self.config.temperature
+                ),
                 'max_tokens': max_tokens or self.config.max_tokens,
             }
             if stop:
@@ -108,7 +118,9 @@ class OpenAIProvider(LLMProvider):
         kwargs: Dict[str, Any] = {
             'model': self.config.model,
             'messages': [self._format_message(m) for m in messages],
-            'temperature': temperature if temperature is not None else self.config.temperature,
+            'temperature': (
+                temperature if temperature is not None else self.config.temperature
+            ),
             'max_tokens': max_tokens or self.config.max_tokens,
             'stream': True,
         }

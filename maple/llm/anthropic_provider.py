@@ -49,7 +49,10 @@ class AnthropicProvider(LLMProvider):
             if async_client_type is not None:
                 self.async_client = async_client_type(**client_kwargs)
         except ImportError:
-            logger.warning("anthropic library not installed. Install with: pip install anthropic")
+            logger.warning(
+                "anthropic library not installed. Install with: "
+                "pip install anthropic"
+            )
 
     def complete(
         self,
@@ -62,7 +65,10 @@ class AnthropicProvider(LLMProvider):
         if not self.client:
             return Result.err({
                 'errorType': 'PROVIDER_NOT_AVAILABLE',
-                'message': 'anthropic library not installed. Install with: pip install anthropic'
+                'message': (
+                    'anthropic library not installed. Install with: '
+                    'pip install anthropic'
+                )
             })
         try:
             # Anthropic uses system as a separate parameter
@@ -102,7 +108,11 @@ class AnthropicProvider(LLMProvider):
                 'model': self.config.model,
                 'messages': conversation,
                 'max_tokens': max_tokens or self.config.max_tokens,
-                'temperature': temperature if temperature is not None else self.config.temperature,
+                'temperature': (
+                    temperature
+                    if temperature is not None
+                    else self.config.temperature
+                ),
             }
             if system_prompt:
                 kwargs['system'] = system_prompt
@@ -173,7 +183,9 @@ class AnthropicProvider(LLMProvider):
             'model': self.config.model,
             'messages': conversation,
             'max_tokens': max_tokens or self.config.max_tokens,
-            'temperature': temperature if temperature is not None else self.config.temperature,
+            'temperature': (
+                temperature if temperature is not None else self.config.temperature
+            ),
             'stream': True,
         }
         if system_prompt:
