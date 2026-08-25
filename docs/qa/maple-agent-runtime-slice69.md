@@ -1,7 +1,7 @@
 # MAPLE Agent Runtime - Slice 69 QA Evidence
 
-**Role:** Release / QA  
-**Date:** 2026-08-25  
+**Role:** Release / QA
+**Date:** 2026-08-25
 **Scope:** Final repository-wide legacy import-boundary lint closure
 
 ## Evidence

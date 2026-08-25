@@ -1,6 +1,6 @@
 # MAPLE Agent Runtime - Slice 69 Review
 
-**Role:** Code Reviewer / Release  
+**Role:** Code Reviewer / Release
 **Date:** 2026-08-25
 
 ## Review scope
