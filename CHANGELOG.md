@@ -138,6 +138,11 @@
   changing AutoGen translation or send behavior. Import smoke reports
   `AUTOGEN_AVAILABLE: True`, the changed-file mypy check is clean, and the
   aggregate audit is now `126 errors` in 10 files.
+- **Doctrine adapter result boundaries**: narrowed artifact-reference values,
+  validation error propagation, and agent send results without changing
+  fail-closed schema validation or routability behavior. The doctrine adapter
+  suite passes 34 tests, the changed-file mypy check is clean, and the aggregate
+  audit is now `119 errors` in 9 files.
 - **Repository formatter gate closure**: normalized the tracked `maple/`
   source tree with the configured Black and isort profiles. Both checks are
   now idempotent, the focused runtime gate remains `240 passed`, and a fresh
