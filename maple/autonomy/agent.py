@@ -20,7 +20,7 @@ import logging
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Type
 
 from ..agent.agent import Agent
 from ..agent.config import Config
@@ -37,7 +37,13 @@ from ..llm.types import (
     ToolResult,
 )
 from .approval import ApprovalRequest, ApprovalStore
-from .contracts import Guardrail, parse_structured_output, run_guardrails
+from .contracts import (
+    Guardrail,
+    parse_structured_output,
+    parse_typed_output,
+    run_guardrails,
+    structured_model_schema,
+)
 from .memory import MemoryManager
 from .sessions import SessionMessage, SessionSnapshot, SessionStore
 from .tools import Tool, ToolRegistry, create_builtin_tools
@@ -92,6 +98,7 @@ class AutonomousConfig:
     reflection_frequency: int = 5
     system_prompt: Optional[str] = None
     response_schema: Optional[Dict[str, Any]] = None
+    output_model: Optional[Type[Any]] = None
     input_guardrails: List[Guardrail] = field(default_factory=list)
     output_guardrails: List[Guardrail] = field(default_factory=list)
 
@@ -118,6 +125,13 @@ class AutonomousAgent(Agent):
     ) -> None:
         super().__init__(config, broker)
         self.autonomy_config = autonomy_config
+        self._output_schema: Optional[Dict[str, Any]] = autonomy_config.response_schema
+        if autonomy_config.output_model is not None:
+            output_schema = structured_model_schema(autonomy_config.output_model)
+            if output_schema.is_err():
+                error = output_schema.unwrap_err()
+                raise ValueError(error.get("message", "Invalid output_model"))
+            self._output_schema = output_schema.unwrap()
 
         # Initialize LLM provider
         provider_result = LLMProviderRegistry.create(autonomy_config.llm)
@@ -795,10 +809,10 @@ class AutonomousAgent(Agent):
             f"- {t.name}: {t.description}" for t in self.tool_registry.list_tools()
         )
         output_instruction = ""
-        if self.autonomy_config.response_schema is not None:
+        if self._output_schema is not None:
             output_instruction = (
                 "\nReturn the final response as JSON matching this schema:\n"
-                f"{json.dumps(self.autonomy_config.response_schema, default=str)}\n"
+                f"{json.dumps(self._output_schema, default=str)}\n"
             )
         return (
             f"""You are an autonomous MAPLE agent (ID: {self.agent_id}).
@@ -819,7 +833,12 @@ Instructions:
 
     def _finalize_output(self, content: Optional[str]) -> Result[Any, Dict[str, Any]]:
         """Parse structured output and apply output guardrails at the boundary."""
-        parsed = parse_structured_output(content, self.autonomy_config.response_schema)
+        if self.autonomy_config.output_model is not None:
+            parsed = parse_typed_output(content, self.autonomy_config.output_model)
+        else:
+            parsed = parse_structured_output(
+                content, self.autonomy_config.response_schema
+            )
         if parsed.is_err():
             return Result.err(parsed.unwrap_err())
         guardrails = run_guardrails(

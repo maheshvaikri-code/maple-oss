@@ -1,14 +1,17 @@
 """Tests for typed JSON-schema and guardrail boundaries."""
 
+from pydantic import BaseModel
+
 from maple.autonomy.contracts import (
     parse_structured_output,
+    parse_typed_output,
     run_guardrails,
     schema_guardrail,
+    structured_model_schema,
     validate_json_schema,
 )
 from maple.autonomy.tools import Tool
 from maple.core.result import Result
-
 
 REPORT_SCHEMA = {
     "type": "object",
@@ -19,6 +22,11 @@ REPORT_SCHEMA = {
     "required": ["title", "count"],
     "additionalProperties": False,
 }
+
+
+class TypedReport(BaseModel):
+    title: str
+    count: int
 
 
 def test_json_schema_accepts_valid_nested_value():
@@ -46,6 +54,27 @@ def test_structured_output_parses_and_validates_json():
     assert result.is_ok()
     assert result.unwrap()["count"] == 2
     assert invalid.is_err()
+
+
+def test_typed_output_returns_validated_model_and_advertises_schema():
+    schema = structured_model_schema(TypedReport)
+    result = parse_typed_output('{"title":"Report","count":2}', TypedReport)
+
+    assert schema.is_ok()
+    assert "properties" in schema.unwrap()
+    assert result.is_ok()
+    assert isinstance(result.unwrap(), TypedReport)
+    assert result.unwrap().count == 2
+
+
+def test_typed_output_rejects_invalid_model_and_model_class():
+    invalid = parse_typed_output('{"title":"Report"}', TypedReport)
+    invalid_class = structured_model_schema(object())
+
+    assert invalid.is_err()
+    assert invalid.unwrap_err()["errorType"] == "STRUCTURED_OUTPUT_MODEL_INVALID"
+    assert invalid_class.is_err()
+    assert invalid_class.unwrap_err()["errorType"] == "STRUCTURED_OUTPUT_MODEL_INVALID"
 
 
 def test_guardrail_rejects_and_exception_fails_closed():

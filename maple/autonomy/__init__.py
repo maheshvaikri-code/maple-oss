@@ -34,8 +34,10 @@ from .artifacts import (
 from .contracts import (
     Guardrail,
     parse_structured_output,
+    parse_typed_output,
     run_guardrails,
     schema_guardrail,
+    structured_model_schema,
     validate_json_schema,
 )
 from .evaluation import (
@@ -130,8 +132,10 @@ __all__ = [
     "register_mcp_tools",
     "Guardrail",
     "parse_structured_output",
+    "parse_typed_output",
     "run_guardrails",
     "schema_guardrail",
+    "structured_model_schema",
     "validate_json_schema",
     "CancellationToken",
     "ExecutionExecutor",

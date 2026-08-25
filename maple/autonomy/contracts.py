@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Callable, Dict, List, Mapping, Optional, Union
+from typing import Any, Callable, Dict, List, Mapping, Optional, Type, Union
 
 from ..core.result import Result
 
@@ -188,18 +188,22 @@ def validate_json_schema(
     return Result.ok(None)
 
 
-def parse_structured_output(
+def _parse_json_value(
     content: Optional[str],
-    schema: Optional[Mapping[str, Any]],
     *,
-    max_bytes: int = 1_048_576,
+    max_bytes: int,
 ) -> Result[Any, Error]:
-    """Parse and validate a model response when a structured schema is set."""
-    if schema is None:
-        return Result.ok(content or "")
+    """Parse one bounded JSON response without applying a schema."""
     if not isinstance(content, str) or not content.strip():
         return Result.err(
             _error("STRUCTURED_OUTPUT_EMPTY", "Structured output was empty.")
+        )
+    if not isinstance(max_bytes, int) or isinstance(max_bytes, bool) or max_bytes <= 0:
+        return Result.err(
+            _error(
+                "STRUCTURED_OUTPUT_CONFIG_INVALID",
+                "max_bytes must be a positive integer.",
+            )
         )
     if len(content.encode("utf-8")) > max_bytes:
         return Result.err(
@@ -209,7 +213,7 @@ def parse_structured_output(
             )
         )
     try:
-        value = json.loads(content)
+        return Result.ok(json.loads(content))
     except (TypeError, ValueError) as exc:
         return Result.err(
             _error(
@@ -218,10 +222,106 @@ def parse_structured_output(
                 reason=str(exc)[:256],
             )
         )
+
+
+def parse_structured_output(
+    content: Optional[str],
+    schema: Optional[Mapping[str, Any]],
+    *,
+    max_bytes: int = 1_048_576,
+) -> Result[Any, Error]:
+    """Parse and validate a model response when a structured schema is set."""
+    if schema is None:
+        return Result.ok(content or "")
+    parsed = _parse_json_value(content, max_bytes=max_bytes)
+    if parsed.is_err():
+        return Result.err(parsed.unwrap_err())
+    value = parsed.unwrap()
     validation = validate_json_schema(value, schema)
     if validation.is_err():
         return Result.err(validation.unwrap_err())
     return Result.ok(value)
+
+
+def structured_model_schema(model: Any) -> Result[Dict[str, Any], Error]:
+    """Return the JSON Schema advertised by a Pydantic-style model class.
+
+    Pydantic v2 exposes ``model_json_schema`` while v1 exposes ``schema``.
+    Supporting both keeps the MAPLE boundary additive for hosts that still
+    carry a v1 model, without importing or reconstructing arbitrary classes.
+    """
+    if not isinstance(model, type):
+        return Result.err(
+            _error(
+                "STRUCTURED_OUTPUT_MODEL_INVALID",
+                "output_model must be a model class.",
+            )
+        )
+    schema_factory = getattr(model, "model_json_schema", None)
+    if not callable(schema_factory):
+        schema_factory = getattr(model, "schema", None)
+    if not callable(schema_factory):
+        return Result.err(
+            _error(
+                "STRUCTURED_OUTPUT_MODEL_INVALID",
+                "output_model must expose model_json_schema() or schema().",
+            )
+        )
+    try:
+        schema = schema_factory()
+    except Exception as exc:
+        return Result.err(
+            _error(
+                "STRUCTURED_OUTPUT_MODEL_INVALID",
+                "output_model schema generation failed.",
+                exception=type(exc).__name__,
+            )
+        )
+    if not isinstance(schema, Mapping):
+        return Result.err(
+            _error(
+                "STRUCTURED_OUTPUT_MODEL_INVALID",
+                "output_model schema must be a mapping.",
+            )
+        )
+    return Result.ok(dict(schema))
+
+
+def parse_typed_output(
+    content: Optional[str],
+    model: Type[Any],
+    *,
+    max_bytes: int = 1_048_576,
+) -> Result[Any, Error]:
+    """Parse bounded JSON and return a validated Pydantic model instance.
+
+    Model validation is performed by the model itself rather than by the
+    intentionally small JSON-Schema validator above. This preserves nested
+    ``$ref`` semantics and the model's own field constraints.
+    """
+    parsed = _parse_json_value(content, max_bytes=max_bytes)
+    if parsed.is_err():
+        return Result.err(parsed.unwrap_err())
+    validator = getattr(model, "model_validate", None)
+    if not callable(validator):
+        validator = getattr(model, "parse_obj", None)
+    if not callable(validator):
+        return Result.err(
+            _error(
+                "STRUCTURED_OUTPUT_MODEL_INVALID",
+                "output_model must expose model_validate() or parse_obj().",
+            )
+        )
+    try:
+        return Result.ok(validator(parsed.unwrap()))
+    except Exception as exc:
+        return Result.err(
+            _error(
+                "STRUCTURED_OUTPUT_MODEL_INVALID",
+                "Structured output did not satisfy output_model.",
+                exception=type(exc).__name__,
+            )
+        )
 
 
 def run_guardrails(

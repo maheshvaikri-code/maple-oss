@@ -5,6 +5,9 @@ import json
 import threading
 
 import pytest
+from pydantic import BaseModel
+
+from maple.agent.config import Config
 from maple.autonomy.agent import (
     AutonomousAgent,
     AutonomousConfig,
@@ -12,11 +15,10 @@ from maple.autonomy.agent import (
     ReasoningStep,
 )
 from maple.autonomy.approval import InMemoryApprovalStore
-from maple.agent.config import Config
-from maple.llm.types import LLMConfig, LLMResponse, TokenUsage, ToolCall
+from maple.core.result import Result
 from maple.llm.provider import LLMProvider
 from maple.llm.registry import LLMProviderRegistry
-from maple.core.result import Result
+from maple.llm.types import LLMConfig, LLMResponse, TokenUsage, ToolCall
 
 
 class MockLLMProvider(LLMProvider):
@@ -61,6 +63,11 @@ def make_auto_config(**kwargs):
     }
     defaults.update(kwargs)
     return AutonomousConfig(**defaults)
+
+
+class TypedAnswer(BaseModel):
+    answer: str
+    confidence: int
 
 
 @pytest.fixture(autouse=True)
@@ -154,6 +161,41 @@ class TestAutonomousAgent:
 
         assert result.is_ok()
         assert result.unwrap().result == {"answer": "42"}
+
+    def test_output_model_returns_validated_pydantic_instance(self):
+        config = make_config()
+        auto_config = make_auto_config(output_model=TypedAnswer)
+        agent = AutonomousAgent(config, auto_config)
+        agent.llm = MockLLMProvider(
+            auto_config.llm,
+            responses=[
+                LLMResponse(
+                    content='{"answer":"42","confidence":9}',
+                    finish_reason="stop",
+                ),
+            ],
+        )
+
+        result = agent.pursue_goal("Return a typed answer")
+
+        assert result.is_ok()
+        assert isinstance(result.unwrap().result, TypedAnswer)
+        assert result.unwrap().result.answer == "42"
+
+    def test_output_model_rejects_invalid_response_at_boundary(self):
+        config = make_config()
+        auto_config = make_auto_config(output_model=TypedAnswer)
+        agent = AutonomousAgent(config, auto_config)
+        agent.llm = MockLLMProvider(
+            auto_config.llm,
+            responses=[LLMResponse(content='{"answer":"42"}', finish_reason="stop")],
+        )
+
+        result = agent.pursue_goal("Return an incomplete typed answer")
+
+        assert result.is_ok()
+        assert result.unwrap().status == "failed"
+        assert result.unwrap().result["errorType"] == "STRUCTURED_OUTPUT_MODEL_INVALID"
 
     def test_input_guardrail_rejects_before_goal_creation(self):
         config = make_config()

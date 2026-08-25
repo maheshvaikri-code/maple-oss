@@ -51,8 +51,10 @@ from .autonomy.artifacts import (
 from .autonomy.contracts import (
     Guardrail,
     parse_structured_output,
+    parse_typed_output,
     run_guardrails,
     schema_guardrail,
+    structured_model_schema,
     validate_json_schema,
 )
 from .autonomy.evaluation import (
@@ -230,8 +232,10 @@ __all__ = [
     "WorkflowRun",
     "Guardrail",
     "parse_structured_output",
+    "parse_typed_output",
     "run_guardrails",
     "schema_guardrail",
+    "structured_model_schema",
     "validate_json_schema",
     "CancellationToken",
     "ExecutionExecutor",
