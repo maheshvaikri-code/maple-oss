@@ -18,7 +18,7 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 import base64
 import json
 import logging
-from typing import Any, Dict, Union
+from typing import Any, Dict, Optional, Union
 
 from ..core.result import Result
 from .cryptography_impl import CRYPTO_AVAILABLE, CryptographyManager
@@ -37,10 +37,10 @@ class EncryptionManager:
     Falls back to base64 encoding (NOT secure) when the library is absent.
     """
 
-    def __init__(self, config):
+    def __init__(self, config: Any) -> None:
         self.config = config
         self.encryption_key = getattr(config, "encryption_key", None)
-        self._crypto: CryptographyManager = None
+        self._crypto: Optional[CryptographyManager] = None
         self._key_pair = None  # cached key pair
 
         if CRYPTO_AVAILABLE:
@@ -96,8 +96,10 @@ class EncryptionManager:
             else:
                 data_str = str(data)
 
-            if self.has_real_crypto:
-                return self._crypto.encrypt_data(data_str, self._key_pair.public_key)
+            crypto = self._crypto
+            key_pair = self._key_pair
+            if crypto is not None and key_pair is not None:
+                return crypto.encrypt_data(data_str, key_pair.public_key)
 
             # Fallback: base64 encoding (NOT secure)
             encrypted = base64.b64encode(data_str.encode("utf-8")).decode("utf-8")
@@ -120,10 +122,10 @@ class EncryptionManager:
         Falls back to base64 decoding otherwise.
         """
         try:
-            if self.has_real_crypto:
-                result = self._crypto.decrypt_data(
-                    encrypted_data, self._key_pair.private_key
-                )
+            crypto = self._crypto
+            key_pair = self._key_pair
+            if crypto is not None and key_pair is not None:
+                result = crypto.decrypt_data(encrypted_data, key_pair.private_key)
                 if result.is_ok():
                     return Result.ok(result.unwrap().decode("utf-8"))
                 return Result.err(result.unwrap_err())
@@ -177,7 +179,7 @@ class EncryptionManager:
             )
 
     def sign_message(
-        self, message: str, private_key: str = None
+        self, message: str, private_key: Optional[str] = None
     ) -> Result[str, Dict[str, Any]]:
         """
         Sign a message.
@@ -186,8 +188,10 @@ class EncryptionManager:
         Falls back to base64 encoding otherwise.
         """
         try:
-            if self.has_real_crypto:
-                return self._crypto.sign_data(message, self._key_pair.private_key)
+            crypto = self._crypto
+            key_pair = self._key_pair
+            if crypto is not None and key_pair is not None:
+                return crypto.sign_data(message, key_pair.private_key)
 
             # Fallback: base64 encoding (NOT a real signature)
             signature = base64.b64encode(f"{message}:{private_key}".encode()).decode()
@@ -202,7 +206,7 @@ class EncryptionManager:
             )
 
     def verify_signature(
-        self, message: str, signature: str, public_key: str = None
+        self, message: str, signature: str, public_key: Optional[str] = None
     ) -> Result[bool, Dict[str, Any]]:
         """
         Verify a message signature.
@@ -211,10 +215,10 @@ class EncryptionManager:
         Falls back to base64 check otherwise.
         """
         try:
-            if self.has_real_crypto:
-                return self._crypto.verify_signature(
-                    message, signature, self._key_pair.public_key
-                )
+            crypto = self._crypto
+            key_pair = self._key_pair
+            if crypto is not None and key_pair is not None:
+                return crypto.verify_signature(message, signature, key_pair.public_key)
 
             # Fallback: base64 check
             decoded = base64.b64decode(signature.encode()).decode()

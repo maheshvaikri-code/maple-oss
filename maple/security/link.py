@@ -43,14 +43,16 @@ class LinkState:
 class Link:
     """Represents a secure communication link between two agents."""
 
-    def __init__(self, agent_a: str, agent_b: str, link_id: str = None):
+    def __init__(
+        self, agent_a: str, agent_b: str, link_id: Optional[str] = None
+    ) -> None:
         self.agent_a = agent_a
         self.agent_b = agent_b
         self.link_id = link_id or f"link_{uuid.uuid4()}"
         self.state = LinkState.INITIATING
-        self.established_at = None
-        self.expires_at = None
-        self.encryption_params = {}
+        self.established_at: Optional[float] = None
+        self.expires_at: Optional[float] = None
+        self.encryption_params: Dict[str, Any] = {}
         self.last_activity = time.time()
 
         # Cryptographic key material (populated during establish)
@@ -89,7 +91,7 @@ class LinkManager:
     as a state-machine-only link manager.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.links: Dict[str, Link] = {}
         self.agent_links: Dict[str, set] = {}
 

@@ -84,6 +84,11 @@
   behavior. The combined registry/capability/health regression passes 43 tests,
   the explicit changed-file mypy checks are clean, and the aggregate audit is
   now `172 errors` in 27 files.
+- **Security link/encryption type boundary**: clarified optional link IDs and
+  lifecycle state, encryption metadata, crypto-manager narrowing, and signing
+  key inputs without changing cryptographic behavior. The link/encryption
+  regressions pass 34 tests, both explicit changed-file mypy checks are clean,
+  and the aggregate audit is now `163 errors` in 25 files.
 - **Repository formatter gate closure**: normalized the tracked `maple/`
   source tree with the configured Black and isort profiles. Both checks are
   now idempotent, the focused runtime gate remains `240 passed`, and a fresh
