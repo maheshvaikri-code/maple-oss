@@ -10,6 +10,11 @@
 
 ### Additions
 
+- **Repository formatter gate closure**: normalized the tracked `maple/`
+  source tree with the configured Black and isort profiles. Both checks are
+  now idempotent, the focused runtime gate remains `240 passed`, and a fresh
+  wheel/sdist build passes Twine validation. Full-repository regression is
+  still incomplete, and type/security debt remains explicitly open.
 - **Fail-closed CI quality and security gates**: removed silent success paths
   from the CI, quality, dependency-audit, and security workflows; security
   reports are still collected before the original audit status is returned.

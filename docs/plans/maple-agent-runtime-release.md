@@ -34,6 +34,7 @@
 | 25 | Repository-wide Ruff lint gate closure | DevOps / QA / Code Reviewer | tracked `tests/`, release plan, changelog, review/QA artifacts | `python -m ruff check tools tests`, compile, changed-test regression, focused MAPLE gate | done: commit `cd13435`; Ruff clean; changed surface `621 passed`; focused gate `240 passed`; review/QA filed |
 | 26 | Warning-free legacy test gate | QA / Backend / Code Reviewer | `tests/test_basic.py`, `tests/adapters/test_s2_adapter.py`, review/QA artifacts | Targeted pytest, standalone basic runner, Ruff, compile; no targeted warnings | done: commit `948b9ea`; targeted `22 passed`; standalone `6 passed, 0 failed`; review/QA filed |
 | 27 | Fail-closed CI quality and security gates | DevOps / QA / Security / Code Reviewer | `.github/workflows/`, CI contract test, release plan, changelog, review/QA artifacts | Workflow YAML parse, gate-semantics contracts, read-only permissions, Ruff, compile, diff check | done: commits `6499244` + `b989a4b`; required checks no longer mask failures; existing Black/isort/mypy/Bandit debt is now release-visible |
+| 28 | Repository Black and isort formatter closure | DevOps / QA / Code Reviewer | tracked `maple/` source, release plan, changelog, review/QA artifacts | Black idempotence, isort check, compile, focused runtime regression, fresh build, Twine check | done: commit `76b619a`; 82 source files normalized; focused `240 passed`; fresh wheel/sdist and Twine checks pass; full repository regression remains incomplete |
 
 ## Threat sketch
 
@@ -89,7 +90,8 @@ workflow execution-journal, and grounded-answer evaluation regressions),
 compile, changed-surface Ruff/Flake8, metadata-clean wheel/sdist builds, Twine
 checks, a clean-venv wheel doctor smoke pass, and a fresh `.[dev,security]`
 environment with `pip check` reporting no broken requirements all pass.
-The repository-wide Ruff gate is now clean across `tools` and `tests`. Slice 25
+The repository-wide Ruff gate is clean across `tools` and `tests`, and the
+repository Black/isort gates are now clean across `maple/`. Slice 25
 recorded `621 passed, 7 warnings` on its changed tracked-test regression; Slice
 26 separately recorded `22 passed` with no targeted warning output. The full
 repository regression is not complete: the latest bounded attempt
@@ -101,8 +103,10 @@ failure was reported. The shared interpreter still has unrelated `pip check`
 conflicts, but the isolated dependency gate is clean. The targeted legacy test
 warnings are cleared. Slice 27 makes the previously advisory repository
 Black/isort/mypy/Bandit and pip-audit checks fail closed; the local audit
-currently reports Black/isort drift, 459 mypy errors across 66 files, and no
-installed Bandit executable. Dependency-audit disposition and unavailable
-independent fresh-context verification remain open.
+currently reports 459 mypy errors across 66 files and no installed Bandit
+executable. The full repository regression remains incomplete after the
+formatter run reached 86% with no reported assertion failure before a bounded
+manual interruption. Dependency-audit disposition and unavailable independent
+fresh-context verification remain open.
 External publishing, cloud selection, and website changes remain explicitly out
 of scope until human approval.
