@@ -16,7 +16,7 @@
 """Anthropic Claude LLM provider."""
 
 import logging
-from typing import Any, AsyncIterator, Dict, List, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional, cast
 
 from ..core.result import Result
 from .provider import LLMProvider
@@ -44,17 +44,17 @@ class AnthropicProvider(LLMProvider):
         try:
             import anthropic
 
-            client_kwargs = {}
+            client_kwargs: Dict[str, Any] = {}
             if config.api_key:
                 client_kwargs["api_key"] = config.api_key
             if config.api_base:
                 client_kwargs["base_url"] = config.api_base
             if config.timeout:
                 client_kwargs["timeout"] = config.timeout
-            self.client = anthropic.Anthropic(**client_kwargs)
+            self.client = cast(Any, anthropic.Anthropic)(**client_kwargs)
             async_client_type = getattr(anthropic, "AsyncAnthropic", None)
             if async_client_type is not None:
-                self.async_client = async_client_type(**client_kwargs)
+                self.async_client = cast(Any, async_client_type)(**client_kwargs)
         except ImportError:
             logger.warning(
                 "anthropic library not installed. Install with: "
@@ -82,7 +82,7 @@ class AnthropicProvider(LLMProvider):
         try:
             # Anthropic uses system as a separate parameter
             system_prompt = None
-            conversation = []
+            conversation: List[Dict[str, Any]] = []
             for msg in messages:
                 if msg.role == ChatRole.SYSTEM:
                     system_prompt = msg.content
@@ -100,7 +100,7 @@ class AnthropicProvider(LLMProvider):
                         }
                     )
                 elif msg.role == ChatRole.ASSISTANT and msg.tool_calls:
-                    content = []
+                    content: List[Dict[str, Any]] = []
                     if msg.content:
                         content.append({"type": "text", "text": msg.content})
                     for tc in msg.tool_calls:
@@ -165,7 +165,7 @@ class AnthropicProvider(LLMProvider):
             )
 
         system_prompt = None
-        conversation = []
+        conversation: List[Dict[str, Any]] = []
         for msg in messages:
             if msg.role == ChatRole.SYSTEM:
                 system_prompt = msg.content
@@ -183,7 +183,7 @@ class AnthropicProvider(LLMProvider):
                     }
                 )
             elif msg.role == ChatRole.ASSISTANT and msg.tool_calls:
-                content = []
+                content: List[Dict[str, Any]] = []
                 if msg.content:
                     content.append({"type": "text", "text": msg.content})
                 for tc in msg.tool_calls:
@@ -276,7 +276,7 @@ class AnthropicProvider(LLMProvider):
             "input_schema": tool.parameters,
         }
 
-    def _parse_response(self, response) -> LLMResponse:
+    def _parse_response(self, response: Any) -> LLMResponse:
         content_text = ""
         tool_calls = []
 

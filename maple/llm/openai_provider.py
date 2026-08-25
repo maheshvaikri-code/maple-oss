@@ -17,7 +17,7 @@
 
 import json
 import logging
-from typing import Any, AsyncIterator, Dict, List, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional, cast
 
 from ..core.result import Result
 from .provider import LLMProvider
@@ -47,15 +47,15 @@ class OpenAIProvider(LLMProvider):
         try:
             import openai
 
-            client_kwargs = {}
+            client_kwargs: Dict[str, Any] = {}
             if config.api_key:
                 client_kwargs["api_key"] = config.api_key
             if config.api_base:
                 client_kwargs["base_url"] = config.api_base
             if config.timeout:
                 client_kwargs["timeout"] = config.timeout
-            self.client = openai.OpenAI(**client_kwargs)
-            self.async_client = openai.AsyncOpenAI(**client_kwargs)
+            self.client = cast(Any, openai.OpenAI)(**client_kwargs)
+            self.async_client = cast(Any, openai.AsyncOpenAI)(**client_kwargs)
         except ImportError:
             logger.warning(
                 "openai library not installed. Install with: " "pip install openai"
@@ -80,7 +80,7 @@ class OpenAIProvider(LLMProvider):
                 }
             )
         try:
-            kwargs = {
+            kwargs: Dict[str, Any] = {
                 "model": self.config.model,
                 "messages": [self._format_message(m) for m in messages],
                 "temperature": (
@@ -94,7 +94,7 @@ class OpenAIProvider(LLMProvider):
                 kwargs["tools"] = [self._format_tool(t) for t in tools]
                 kwargs["tool_choice"] = "auto"
 
-            response = self.client.chat.completions.create(**kwargs)
+            response = cast(Any, self.client).chat.completions.create(**kwargs)
             llm_response = self._parse_response(response)
             self._track_usage(llm_response)
             return Result.ok(llm_response)
@@ -136,7 +136,9 @@ class OpenAIProvider(LLMProvider):
             kwargs["tool_choice"] = "auto"
 
         try:
-            response_stream = await self.async_client.chat.completions.create(**kwargs)
+            response_stream = await cast(
+                Any, self.async_client
+            ).chat.completions.create(**kwargs)
         except Exception as e:
             return Result.err(
                 {
@@ -206,7 +208,7 @@ class OpenAIProvider(LLMProvider):
             },
         }
 
-    def _parse_response(self, response) -> LLMResponse:
+    def _parse_response(self, response: Any) -> LLMResponse:
         choice = response.choices[0]
         msg = choice.message
         tool_calls = []
