@@ -8,10 +8,11 @@
 
 | Gate | Result | Evidence / limitation |
 |---|---|---|
-| New feature regressions | PASS | 181 LLM/autonomy/CLI tests passed; one existing pytest config warning. |
+| New feature regressions | PASS | 182 LLM/autonomy/CLI tests passed; one existing pytest config warning. |
 | Live MCP interoperability | PASS | 22 focused tests cover live descriptors, pagination, malformed/unsupported schemas, RPC errors, approval defaults, and real localhost HTTP initialization/session headers. |
 | Artifact/code-block boundary | PASS | 5 focused tests cover bounded fence parsing, unclosed/oversized rejection, content-addressed deduplication, file persistence, quota, path validation, and tamper detection; no execution path exists. |
 | Provider stream contract | PASS | 5 focused tests cover completion fallback, native OpenAI/Anthropic text and tool-call deltas, 256-character bounds, finish events, async iteration, and typed request errors. |
+| Async tool fan-out | PASS | 1 regression test proves independent handlers overlap while results remain in original tool-call order. |
 | Compile/import | PASS | `python -m compileall -q maple`; top-level public import and doctor smoke test pass. |
 | Changed-file Ruff | PASS | New/behavior-touched implementation checks pass. |
 | Changed-file Flake8 | PASS | Exact CI-style command returned `0` for the changed runtime surface. |

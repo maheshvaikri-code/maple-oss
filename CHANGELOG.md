@@ -34,6 +34,10 @@
   streams now map native text, tool-use/function-call, and finish events into
   the shared bounded contract. Typed request failures and completion-backed
   compatibility fallback remain available when async clients are absent.
+- **Bounded async tool fan-out** (`maple.autonomy.agent`): async ReAct turns
+  now execute independent tool calls concurrently within the existing
+  per-step cap, preserve original tool-call order for the next model turn, and
+  isolate worker exceptions as typed tool results.
 - **Release metadata hardening**: `pyproject.toml` is now the single source
   for package metadata, the legacy `setup.py` delegates to it, and the source
   manifest includes only files present in the repository. Wheel/sdist builds

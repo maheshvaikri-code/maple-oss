@@ -1,5 +1,8 @@
 """Tests for the AutonomousAgent with ReAct loop."""
 
+import asyncio
+import threading
+
 import pytest
 from maple.autonomy.agent import (
     AutonomousAgent,
@@ -252,6 +255,55 @@ class TestAutonomousAgent:
         assert len(goal.reasoning_trace[0].tool_results) == 1
         assert goal.reasoning_trace[0].tool_results[0].is_error
 
+    def test_async_tool_calls_run_concurrently_and_preserve_call_order(self):
+        """Parallel tool calls must not serialize and reorder the LLM turn."""
+        config = make_config()
+        auto_config = make_auto_config()
+        agent = AutonomousAgent(config, auto_config)
+        rendezvous = threading.Barrier(2)
+
+        def parallel_handler(label):
+            rendezvous.wait(timeout=1)
+            return Result.ok({"label": label})
+
+        from maple.autonomy.tools import Tool
+
+        for name in ("first", "second"):
+            agent.register_tool(Tool(
+                name=name,
+                description=f"Run {name}",
+                parameters={
+                    "type": "object",
+                    "properties": {"label": {"type": "string"}},
+                    "required": ["label"],
+                },
+                handler=parallel_handler,
+            ))
+
+        agent.llm = MockLLMProvider(
+            auto_config.llm,
+            responses=[
+                LLMResponse(
+                    content="Run both tools.",
+                    tool_calls=[
+                        ToolCall("call-1", "first", {"label": "one"}),
+                        ToolCall("call-2", "second", {"label": "two"}),
+                    ],
+                    finish_reason="tool_calls",
+                ),
+                LLMResponse(content="Both finished.", finish_reason="stop"),
+            ],
+        )
+
+        result = asyncio.run(agent.pursue_goal_async("Run both tools"))
+
+        assert result.is_ok()
+        goal = result.unwrap()
+        assert goal.status == "completed"
+        tool_results = goal.reasoning_trace[0].tool_results
+        assert [item.tool_call_id for item in tool_results] == ["call-1", "call-2"]
+        assert all(not item.is_error for item in tool_results)
+
     def test_max_steps_reached(self):
         """Test that hitting max steps returns an error."""
         config = make_config()
@@ -414,7 +466,10 @@ class TestReflection:
                 ),
                 # Reflection response
                 LLMResponse(
-                    content='{"should_stop": true, "conclusion": "All done", "reason": "task complete"}',
+                    content=(
+                        '{"should_stop": true, "conclusion": "All done", '
+                        '"reason": "task complete"}'
+                    ),
                     finish_reason="stop",
                     usage=TokenUsage(
                         prompt_tokens=10, completion_tokens=10, total_tokens=20

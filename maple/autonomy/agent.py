@@ -1,18 +1,19 @@
-"""
-Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
+# Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
+#
+# This file is part of MAPLE - Multi Agent Protocol Language Engine.
+#
+# MAPLE - Multi Agent Protocol Language Engine is free software: you can
+# redistribute it and/or modify it under the terms of the GNU Affero General
+# Public License as published by the Free Software Foundation, either version 3
+# of the License, or (at your option) any later version.
+# MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that
+# it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+# of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero
+# General Public License for more details. You should have received a copy of
+# the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
+# Language Engine. If not, see <https://www.gnu.org/licenses/>.
 
-This file is part of MAPLE - Multi Agent Protocol Language Engine.
-
-MAPLE - Multi Agent Protocol Language Engine is free software: you can redistribute it and/or
-modify it under the terms of the GNU Affero General Public License as published by the Free Software
-Foundation, either version 3 of the License, or (at your option) any later version.
-MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
-PARTICULAR PURPOSE. See the GNU Affero General Public License for more details. You should have
-received a copy of the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
-Language Engine. If not, see <https://www.gnu.org/licenses/>.
-"""
-
+import asyncio
 import json
 import logging
 import time
@@ -266,7 +267,10 @@ class AutonomousAgent(Agent):
         return Result.err(
             {
                 "errorType": "MAX_STEPS_REACHED",
-                "message": f"Reached maximum reasoning steps ({self.autonomy_config.max_reasoning_steps})",
+                "message": (
+                    "Reached maximum reasoning steps "
+                    f"({self.autonomy_config.max_reasoning_steps})"
+                ),
             }
         )
 
@@ -323,7 +327,10 @@ class AutonomousAgent(Agent):
             messages.append(
                 ChatMessage(
                     role=ChatRole.SYSTEM,
-                    content=f"Current working memory:\n{json.dumps(context, default=str)}",
+                    content=(
+                        "Current working memory:\n"
+                        f"{json.dumps(context, default=str)}"
+                    ),
                 )
             )
 
@@ -346,7 +353,8 @@ class AutonomousAgent(Agent):
                 "\nReturn the final response as JSON matching this schema:\n"
                 f"{json.dumps(self.autonomy_config.response_schema, default=str)}\n"
             )
-        return f"""You are an autonomous MAPLE agent (ID: {self.agent_id}).
+        return (
+            f"""You are an autonomous MAPLE agent (ID: {self.agent_id}).
 You can reason step by step and use tools to accomplish goals.
 
 Available tools:
@@ -356,9 +364,11 @@ Instructions:
 1. Think carefully before acting.
 2. Use tools when you need information or need to take action.
 3. If a tool call fails, analyze the error and try a different approach.
-4. When you have completed the goal, respond with your final answer without calling any tools.
-5. If you cannot complete the goal, explain why.
-{output_instruction}"""
+"""
+            "4. When you have completed the goal, respond with your final "
+            "answer without calling any tools.\n"
+            f"5. If you cannot complete the goal, explain why.\n{output_instruction}"
+        )
 
     def _finalize_output(self, content: Optional[str]) -> Result[Any, Dict[str, Any]]:
         """Parse structured output and apply output guardrails at the boundary."""
@@ -376,13 +386,17 @@ Instructions:
 
     def _reflect(self, goal: Goal, messages: List[ChatMessage], step_num: int) -> Dict:
         """Ask the LLM to reflect on progress."""
+        reflection_prompt = (
+            f'Reflect on your progress toward the goal: "{goal.description}"\n'
+            f"Step {step_num + 1}/{self.autonomy_config.max_reasoning_steps}.\n"
+            "Are you making progress? Should you continue or stop?\n"
+            'Respond with JSON: {"should_stop": bool, "conclusion": '
+            '"your conclusion if stopping", "reason": "why"}'
+        )
         reflection_messages = messages + [
             ChatMessage(
                 role=ChatRole.USER,
-                content=f"""Reflect on your progress toward the goal: "{goal.description}"
-Step {step_num + 1}/{self.autonomy_config.max_reasoning_steps}.
-Are you making progress? Should you continue or stop?
-Respond with JSON: {{"should_stop": bool, "conclusion": "your conclusion if stopping", "reason": "why"}}""",
+                content=reflection_prompt,
             )
         ]
 
@@ -403,7 +417,10 @@ Respond with JSON: {{"should_stop": bool, "conclusion": "your conclusion if stop
         messages = [
             ChatMessage(
                 role=ChatRole.SYSTEM,
-                content="Decompose this goal into 2-5 sub-goals. Respond as a JSON array of strings.",
+                content=(
+                    "Decompose this goal into 2-5 sub-goals. "
+                    "Respond as a JSON array of strings."
+                ),
             ),
             ChatMessage(role=ChatRole.USER, content=goal.description),
         ]
@@ -535,10 +552,33 @@ Respond with JSON: {{"should_stop": bool, "conclusion": "your conclusion if stop
                     )
                 )
 
-                for tool_call in response.tool_calls[
+                tool_calls = response.tool_calls[
                     : self.autonomy_config.max_tool_calls_per_step
-                ]:
-                    tool_result = self._execute_tool_call(tool_call)
+                ]
+                loop = asyncio.get_running_loop()
+                tool_results = await asyncio.gather(
+                    *[
+                        loop.run_in_executor(
+                            None, self._execute_tool_call, tool_call
+                        )
+                        for tool_call in tool_calls
+                    ],
+                    return_exceptions=True,
+                )
+                for tool_call, tool_result in zip(tool_calls, tool_results):
+                    if isinstance(tool_result, Exception):
+                        tool_result = ToolResult(
+                            tool_call_id=tool_call.id,
+                            content=json.dumps({
+                                "errorType": "TOOL_EXECUTION_ERROR",
+                                "message": "Tool execution worker failed.",
+                                "details": {
+                                    "tool": tool_call.name,
+                                    "exception": type(tool_result).__name__,
+                                },
+                            }),
+                            is_error=True,
+                        )
                     step.tool_results.append(tool_result)
 
                     messages.append(
@@ -572,6 +612,9 @@ Respond with JSON: {{"should_stop": bool, "conclusion": "your conclusion if stop
         return Result.err(
             {
                 "errorType": "MAX_STEPS_REACHED",
-                "message": f"Reached maximum reasoning steps ({self.autonomy_config.max_reasoning_steps})",
+                "message": (
+                    "Reached maximum reasoning steps "
+                    f"({self.autonomy_config.max_reasoning_steps})"
+                ),
             }
         )

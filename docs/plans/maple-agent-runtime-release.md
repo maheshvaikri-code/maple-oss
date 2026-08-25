@@ -19,6 +19,7 @@
 | 10 | Bounded artifact store and code-block extraction | Chief Architect / Security / Backend | `docs/adr/008-*`, autonomy artifact module, artifact tests, README, changelog | Fence parsing, malformed/oversized input, content-addressed identity, file persistence, hash corruption, quota failures, no execution | done: artifact suite `5 passed`; new module Ruff/Flake8 and compile pass |
 | 11 | Provider-agnostic LLM stream contract | Chief Architect / ML Engineer / Backend | `docs/adr/009-*`, LLM provider base, stream tests, README, changelog | Text chunk bounds, tool-call deltas, finish event, completion error propagation, async iterator contract | done: stream suite `2 passed`; changed provider Ruff/Flake8 and compile pass |
 | 12 | Provider-native LLM streaming adapters | ML Engineer / Backend | `docs/adr/010-*`, OpenAI/Anthropic providers, native stream tests, README, changelog | Native provider events, bounded text, tool-call fragments, typed request errors, compatibility fallback | done: native stream suite `5 passed`; changed provider Ruff/Flake8 and compile pass |
+| 13 | Bounded async tool fan-out | Backend / ML Engineer | `docs/adr/011-*`, async ReAct loop, agent regression tests, README, changelog | Concurrent independent handlers, per-step cap, deterministic result order, worker error isolation | done: agent suite `15 passed`; changed agent Ruff/Flake8 and compile pass |
 
 ## Threat sketch
 
@@ -53,13 +54,13 @@ privileged action without approval.
 
 ## Status snapshot
 
-Done (with evidence): G0 brief, G1 ADR, G2 plan, and twelve G3 feature
-slices through the provider-native streaming implementation, including MCP
-interoperability, bounded artifacts, and both portable and native LLM
-streaming; slice review/QA artifacts are filed.
+Done (with evidence): G0 brief, G1 ADR, G2 plan, and thirteen G3 feature
+slices through bounded async tool fan-out, including MCP interoperability,
+bounded artifacts, native LLM streaming, and deterministic async tool result
+ordering; slice review/QA artifacts are filed.
 Release hardening remains in progress.
-Focused feature gates (181 LLM/autonomy/CLI tests, including 22 MCP, 5
-artifact, and 5 stream tests),
+Focused feature gates (182 LLM/autonomy/CLI tests, including 22 MCP, 5
+artifact, 5 stream, and the async tool fan-out regression),
 compile, changed-surface Ruff/Flake8, metadata-clean wheel/sdist builds, Twine
 checks, a clean-venv wheel doctor smoke pass, and a fresh `.[dev,security]`
 environment with `pip check` reporting no broken requirements all pass.
