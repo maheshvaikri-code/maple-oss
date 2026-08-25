@@ -27,7 +27,7 @@
 | Local readiness | PASS | `maple doctor --json` returned all six checks true and `network:false`. |
 | Full repository regression | OPEN | Latest bounded run: `1049 passed, 8 warnings in 839.17s` before interruption in remaining Doctrine gold cases; no assertion failure. Fresh temp-repo Git profiling shows roughly 5–15s per command, with slowest gold cases at 166.96s, 159.74s, 115.61s, and 56.04s. |
 | Dependency consistency | PASS | Isolated MAPLE environment is consistent; shared-interpreter conflicts are unrelated and non-authoritative. |
-| Repository-wide lint | OPEN | Existing package-init and legacy-test debt remains; no broad cleanup claimed. |
+| Repository-wide lint | OPEN | Slice 65 reduced broad `ruff check maple` from 250 to 171 diagnostics (`E402 140`, `F401 31`); remaining package-init/legacy debt is still open. |
 | Independent review | OPEN | Fresh verifier sessions are unavailable in this tool context. |
 | External publish / website | NOT RUN | Explicitly outside current authorization and scope. |
 
@@ -46,8 +46,9 @@
   vulnerabilities, and Bandit `-ll` exits 0 with no medium/high findings.
 - Full LLM suite: `36 passed in 0.24s`.
 - Repository Black/isort, `ruff check tools tests`, and compile checks pass;
-  changed-surface Ruff checks pass. A broad legacy `ruff check maple` remains
-  open at 264 existing diagnostics and was not weakened or hidden.
+  changed-surface Ruff checks pass. Slice 65 reduced broad legacy
+  `ruff check maple` to 171 diagnostics (`E402 140`, `F401 31`); the remaining
+  debt was not weakened or hidden.
 - The repository-wide command collected 1262 items and reached the slow
   Doctrine gold phase without assertion output, but its bounded terminal
   session ended before pytest emitted a final summary; it remains open.
@@ -57,6 +58,16 @@
 - Full repository completion, the 35 low-severity legacy Bandit findings,
   broad legacy lint, and independent fresh-context verification remain open. No
   publication or website change was performed.
+
+## Slice 65 revalidation
+
+- The affected adapter/queue/health/security/state regression reports `131
+  passed in 48.43s`.
+- Changed-file Ruff, Black, isort, and mypy checks pass; the FIPA regression
+  proves the mapped `REQUEST` performative is emitted as `(request`.
+- Broad `ruff check maple` decreased from `250` diagnostics to `171`
+  (`E402 140`, `F401 31`). Remaining legacy lint is still an open release
+  gate, and no publication or website change was performed.
 
 ## Security conclusions
 

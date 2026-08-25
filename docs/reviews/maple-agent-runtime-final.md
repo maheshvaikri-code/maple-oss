@@ -106,9 +106,10 @@ Doctor:
    conflicts (including `chromadb`, `fsspec`, `pydantic`, `openai`, and
    `langchain-core`), but a fresh environment installed `.[dev,security]` and
    returned `No broken requirements found.` The isolated dependency gate passes.
-3. Repository-wide Ruff is not clean because of existing package-initializer
-   and legacy-test lint debt. New implementation files are checked separately
-   and pass; broad cleanup remains out of scope for this capability program.
+3. Repository-wide Ruff is not clean because of remaining package-initializer
+   and legacy lint debt. Slice 65 reduced the inventory from 250 to 171
+   diagnostics (`E402 140`, `F401 31`); changed implementation files and the
+   new FIPA regression are clean.
 4. AGENTS.md requires G4/G5 verifiers as fresh sessions, but this tool context
     has no separate fresh-agent session facility. No independent-verifier claim
     is made.
@@ -132,14 +133,14 @@ Doctor:
 - Black/isort, the enforced `tools`/`tests` Ruff gate, compile, wheel/sdist,
   Twine, and network-free doctor gates pass. The doctor reports all checks true,
   `ready: true`, `network: false`, version `1.1.3`.
-- Broad legacy `ruff check maple` still reports 264 pre-existing diagnostics;
-  changed implementation surfaces remain clean and no broad cleanup was
-  claimed.
+- Slice 65 reduced broad legacy `ruff check maple` from 250 to 171 diagnostics
+  (`E402 140`, `F401 31`) while keeping changed implementation surfaces clean.
+  Remaining legacy lint remains an open release gate.
 
 ## Verdict
 
 **Feature review:** PASS for the eighteen implemented capability slices.
 **Publish readiness:** NOT YET APPROVED. A release manager should close the
-open full-suite, low-severity legacy lint/security debt, repository lint, and
+open full-suite, remaining legacy lint/security debt, repository lint, and
 fresh-verifier gates before publishing. External publication remains awaiting
 explicit human approval.

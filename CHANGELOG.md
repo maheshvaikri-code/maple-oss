@@ -10,6 +10,13 @@
 
 ### Additions
 
+- **Safe legacy lint and FIPA closure**: removed verified unused imports and
+  locals, redundant formatting, and secondary module-header lint debt across
+  seven runtime files; corrected FIPA ACL translation to emit the mapped
+  performative and added regression coverage. The affected regression reports
+  `131 passed in 48.43s`; changed-file Ruff, Black, isort, and mypy checks pass.
+  Broad `ruff check maple` decreased from `250` diagnostics to `171`
+  (`E402 140`, `F401 31`). Remaining legacy lint remains a release gate.
 - **Release preflight refresh**: the explicit Python 3.10-target mypy audit is
   clean across all 93 source files; the focused cross-surface regression is
   `269 passed, 1 skipped`, the full LLM suite is `36 passed`, and wheel/sdist,

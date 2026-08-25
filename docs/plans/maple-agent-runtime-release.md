@@ -75,6 +75,7 @@
 | 62 | NATS broker optional-transport type closure | Broker / Interop / QA | NATS broker, offline NATS regression, changelog, review/QA artifacts | Offline config/not-connected tests, explicit changed-file mypy with skipped imports, Black/isort/Ruff/compile, aggregate audit | done: commit `5f57e50`; typed optional NATS SDK/error aliases, nullable config defaults, stable message IDs/results, callback payloads, and sync event-loop wrapper; focused `1 passed, 1 skipped`; aggregate audit clean for all `93 source files` |
 | 63 | Mypy target/toolchain contract closure | Release / DevOps / QA | `pyproject.toml`, release plan, changelog, review/QA artifacts | Default mypy, cross-surface regression, Black/isort/Ruff/compile | done: commit `70d47a9`; retained Python `>=3.8` runtime support while moving the static-analysis target to Python 3.10, which is accepted by mypy 2.x; default audit clean across `93 source files`; cross-surface regression `616 passed, 1 skipped` |
 | 64 | Transport and serialization security boundary hardening | Security / Interop / Backend / QA | A2A adapter, MCP transport, serializer, security regressions, changelog, review/QA artifacts | Security regressions, cross-surface regression, isolated `pip check`, `pip-audit`, Bandit `-ll`, Black/isort/Ruff/mypy/compile | done: commit `d3e5358`; bounded A2A registry timeout, explicit MCP URL-boundary regression, restricted size-bounded pickle loading, and malicious-payload coverage; security regression `37 passed`; cross-surface `621 passed, 1 skipped`; isolated dependency audit clean; Bandit medium/high gate exit 0 |
+| 65 | Safe legacy lint and FIPA translation closure | Backend / QA / Release | MAPLE package initializers, ACP/FIPA adapters, queue, health monitor, cryptography, consistency, FIPA regression, changelog, review/QA artifacts | Affected regression, changed-file Ruff/Black/isort/mypy, broad Ruff inventory, diff check | done: commit `25001b0`; affected regression `131 passed in 48.43s`; changed files pass Ruff/Black/isort/mypy; broad `ruff check maple` reduced from `250` to `171` diagnostics (`E402 140`, `F401 31`) |
 
 ## Threat sketch
 
@@ -176,9 +177,9 @@ OpenAI-SDK slice 59's follow-up audit now reports `51 errors in 4 files`;
 LangGraph slice 60's follow-up audit now reports `42 errors in 3 files`;
 CrewAI slice 61's follow-up audit now reports `27 errors in 1 file`;
 NATS slice 62's follow-up audit reports `Success: no issues found in 93 source files`;
-installed mypy 2.3 rejects the configured Python 3.8 target, so the support
-matrix/toolchain decision remains open. Dependency-audit disposition and
-unavailable independent fresh-context verification remain open.
+ the package runtime remains `>=3.8` while the mypy 2.x static-analysis target
+ is now Python 3.10. Dependency-audit disposition and unavailable independent
+ fresh-context verification remain open.
 External publishing, cloud selection, and website changes remain explicitly out
 of scope until human approval.
 
@@ -210,3 +211,11 @@ vulnerabilities found`, and Bandit `-ll` exited 0 with zero medium/high
 findings. A full Bandit inventory contains 35 low-severity legacy findings
 (B101 x1, B105 x4, B110 x22, B112 x3, B311 x3, B403 x1, B405 x1); these are
 tracked non-blocking debt and were not introduced by this slice.
+
+2026-08-25 safe lint/FIPA closure: commit `25001b0` removes verified unused
+imports/locals, redundant formatting, and non-functional module-header lint
+debt across seven runtime files, and corrects FIPA translation to emit the
+mapped performative. The affected regression reports `131 passed in 48.43s`;
+changed-file Ruff, Black, isort, and mypy checks pass. Broad `ruff check maple`
+decreased from `250` diagnostics to `171` (`E402 140`, `F401 31`). Remaining
+legacy lint is still tracked as an open release gate.
