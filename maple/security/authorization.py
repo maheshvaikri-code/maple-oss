@@ -16,14 +16,11 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 # maple/security/authorization.py
 # Creator: Mahesh Vaikri
 
-"""
-Authorization Manager for MAPLE
-Provides role-based access control and permission management
-"""
+# Authorization Manager for MAPLE.
+# Provides role-based access control and permission management.
 
 import logging
 import threading
-import time
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, List, Optional, Set
@@ -120,7 +117,7 @@ class AuthorizationManager:
     - Audit logging
     """
 
-    def __init__(self, config=None):
+    def __init__(self, config: Any = None) -> None:
         """
         Initialize the authorization manager.
 
@@ -380,7 +377,7 @@ class AuthorizationManager:
                 }
             )
 
-    def authorize_message(self, message) -> Result[bool, Dict[str, Any]]:
+    def authorize_message(self, message: Any) -> Result[bool, Dict[str, Any]]:
         """
         Authorize a message for sending/receiving.
 
@@ -548,7 +545,7 @@ class AuthorizationManager:
     def get_statistics(self) -> Dict[str, Any]:
         """Get authorization statistics."""
         with self.stats_lock:
-            stats = self.authz_stats.copy()
+            stats: Dict[str, Any] = self.authz_stats.copy()
 
         with self.roles_lock:
             stats["total_roles"] = len(self.roles)
