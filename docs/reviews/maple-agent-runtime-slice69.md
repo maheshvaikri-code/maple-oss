@@ -2,6 +2,7 @@
 
 **Role:** Code Reviewer / Release
 **Date:** 2026-08-25
+**Code commit:** `0ea2179`
 
 ## Review scope
 

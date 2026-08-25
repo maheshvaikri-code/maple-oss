@@ -2,6 +2,7 @@
 
 **Role:** Release / QA
 **Date:** 2026-08-25
+**Code commit:** `0ea2179`
 **Scope:** Final repository-wide legacy import-boundary lint closure
 
 ## Evidence
