@@ -16,6 +16,12 @@
   no resource service is configured. The offline adapter regression passes 2
   tests, changed-file mypy/Ruff are clean, and the aggregate audit is now
   `51 errors` in 4 files.
+- **LangGraph recovery boundary**: implemented bounded retry,
+  resource-reallocation, and graceful-degradation decisions for the adapter's
+  existing error route, and made optional LangGraph/LangChain imports type-safe
+  across the unavailable-SDK fallback. The offline recovery regression passes
+  3 tests, changed-file checks are clean, and the aggregate audit is now
+  `42 errors` in 3 files.
 - **LLM provider SDK type boundaries**: clarified optional OpenAI and Anthropic
   client configuration, compatible request payload containers, and response
   parsing boundaries without changing provider behavior. The native provider

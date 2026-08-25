@@ -68,6 +68,8 @@
 
 | 59 | OpenAI SDK resource-function boundary | Interop / Resource / Security / QA | OpenAI SDK adapter, resource-function regression, changelog, review/QA artifacts | Offline adapter tests, explicit changed-file mypy with skipped imports, Black/isort/Ruff/compile, aggregate audit | done: commit `142e40e`; implemented injected ResourceManager allocation, fail-closed missing-service behavior, and input validation for the previously undefined function route; focused `2 passed`; aggregate reduced to `51 errors in 4 files` |
 
+| 60 | LangGraph recovery and optional-SDK boundary | Interop / Reliability / QA | LangGraph adapter, recovery regression, changelog, review/QA artifacts | Offline recovery tests, explicit changed-file mypy with skipped imports, Black/isort/Ruff/compile, aggregate audit | done: commit `6a5c376`; implemented bounded retry/resource-reallocation/degradation decisions and typed optional SDK fallback without changing graph construction semantics; focused `3 passed`; aggregate reduced to `42 errors in 3 files` |
+
 ## Threat sketch
 
 Assets touched: workflow state, tool arguments, model outputs, checkpoint
@@ -165,6 +167,7 @@ security-facade slice 56's follow-up audit now reports `95 errors in 8 files`;
 S2 slice 57's follow-up audit now reports `87 errors in 7 files`;
 LLM-provider slice 58's follow-up audit now reports `62 errors in 5 files`;
 OpenAI-SDK slice 59's follow-up audit now reports `51 errors in 4 files`;
+LangGraph slice 60's follow-up audit now reports `42 errors in 3 files`;
 installed mypy 2.3 rejects the configured Python 3.8 target, so the support
 matrix/toolchain decision remains open. Dependency-audit disposition and
 unavailable independent fresh-context verification remain open.
