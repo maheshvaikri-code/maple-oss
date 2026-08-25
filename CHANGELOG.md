@@ -10,6 +10,13 @@
 
 ### Additions
 
+- **Release preflight refresh**: the explicit Python 3.10-target mypy audit is
+  clean across all 93 source files; the focused cross-surface regression is
+  `269 passed, 1 skipped`, the full LLM suite is `36 passed`, and wheel/sdist,
+  Twine, formatter, enforced Ruff, compile, and network-free doctor gates pass.
+  Full repository regression, broad legacy `maple/` Ruff debt, toolchain
+  mismatch, dependency/security audit disposition, and fresh verification
+  remain release gates; no publication or website change was performed.
 - **OpenAI SDK resource-function boundary**: implemented the previously
   undefined `maple_resource_request` route with injected `ResourceManager`
   allocation, finite-positive input validation, and fail-closed behavior when

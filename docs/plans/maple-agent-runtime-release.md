@@ -179,3 +179,13 @@ matrix/toolchain decision remains open. Dependency-audit disposition and
 unavailable independent fresh-context verification remain open.
 External publishing, cloud selection, and website changes remain explicitly out
 of scope until human approval.
+
+2026-08-25 final preflight refresh: the explicit Python 3.10-target mypy audit
+is clean across all 93 source files; the focused cross-surface regression is
+`269 passed, 1 skipped in 51.72s`; the full LLM suite is `36 passed`; Black,
+isort, the enforced `tools`/`tests` Ruff gate, compile, wheel/sdist, Twine, and
+network-free doctor checks pass. Broad legacy `ruff check maple` remains open at
+264 existing diagnostics. Full repository regression, dependency-audit
+disposition, Bandit availability, the Python 3.8/mypy 2.3 toolchain decision,
+and independent fresh-context verification remain open. No publication or
+website change was performed.

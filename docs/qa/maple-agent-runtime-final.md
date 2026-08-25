@@ -31,6 +31,25 @@
 | Independent review | OPEN | Fresh verifier sessions are unavailable in this tool context. |
 | External publish / website | NOT RUN | Explicitly outside current authorization and scope. |
 
+## 2026-08-25 revalidation
+
+- Focused release regression: `269 passed, 1 skipped in 51.72s` across 270
+  communication, agent, error, state, autonomy, discovery, adapter, LLM, and
+  broker tests. The skipped case requires the unavailable `nats-py` package.
+- Full LLM suite: `36 passed in 0.24s`.
+- Explicit Python 3.10-target mypy audit: `Success: no issues found in 93
+  source files`; the configured Python 3.8 target remains incompatible with
+  installed mypy 2.3 and needs a release-manager toolchain decision.
+- Repository Black/isort, `ruff check tools tests`, and compile checks pass;
+  changed-surface Ruff checks pass. A broad legacy `ruff check maple` remains
+  open at 264 existing diagnostics and was not weakened or hidden.
+- Current package preflight: wheel/sdist built successfully, both Twine checks
+  passed, and the network-free doctor returned all checks true with
+  `ready: true`, `network: false`, version `1.1.3`.
+- Full repository regression, dependency-audit disposition, Bandit availability,
+  and independent fresh-context verification remain open. No publication or
+  website change was performed.
+
 ## Security conclusions
 
 - No new dependency, credential, cloud call, website mutation, or publication

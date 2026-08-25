@@ -110,8 +110,22 @@ Doctor:
    and legacy-test lint debt. New implementation files are checked separately
    and pass; broad cleanup remains out of scope for this capability program.
 4. AGENTS.md requires G4/G5 verifiers as fresh sessions, but this tool context
-   has no separate fresh-agent session facility. No independent-verifier claim
-   is made.
+    has no separate fresh-agent session facility. No independent-verifier claim
+    is made.
+
+## 2026-08-25 revalidation
+
+- The focused cross-surface gate completed with `269 passed, 1 skipped in
+  51.72s`; the full LLM suite completed with `36 passed in 0.24s`.
+- The explicit Python 3.10-target mypy audit is now clean across all 93 source
+  files. The configured Python 3.8 versus installed mypy 2.3 mismatch remains
+  an explicit toolchain decision, not a suppressed diagnostic.
+- Black/isort, the enforced `tools`/`tests` Ruff gate, compile, wheel/sdist,
+  Twine, and network-free doctor gates pass. The doctor reports all checks true,
+  `ready: true`, `network: false`, version `1.1.3`.
+- Broad legacy `ruff check maple` still reports 264 pre-existing diagnostics;
+  changed implementation surfaces remain clean and no broad cleanup was
+  claimed.
 
 ## Verdict
 
