@@ -10,6 +10,12 @@
 
 ### Additions
 
+- **Residual module-header lint closure**: converted secondary module headers
+  across autonomy, broker, LLM, monitoring, security, and state package
+  surfaces to comments. The affected suite reports `635 passed, 1 skipped`;
+  changed-file quality/type checks pass. Broad `ruff check maple` decreased
+  from `58` diagnostics to `19` (`E402 19`, `F401 0`). The exact-current full
+  repository suite remains an open release gate.
 - **Verified unused-import closure**: removed imports proven unused by Ruff
   across 13 runtime files, preserved the S2 optional SDK compatibility probe
   with a narrow line-level exception, and closed two secondary module headers.
