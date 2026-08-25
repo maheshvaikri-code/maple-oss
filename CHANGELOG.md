@@ -14,6 +14,9 @@
   across the tracked test surface without weakening import-smoke coverage;
   `python -m ruff check tools tests` now passes, with a 621-test changed
   surface regression and the focused MAPLE gate still green.
+- **Legacy test warning closure**: basic-functionality checks now fail closed
+  under pytest while preserving their standalone runner, and S2 cache tests
+  use `asyncio.run` instead of deprecated event-loop lookup.
 - **CI/release preflight**: GitHub Actions now enforces isolated dependency
   consistency, compilation, the network-free doctor, changed-runtime Flake8,
   focused regressions, and built-wheel verification before package release.
