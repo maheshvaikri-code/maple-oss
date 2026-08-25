@@ -10,6 +10,11 @@
 
 ### Additions
 
+- **Typed model outputs**: added additive Pydantic-style `output_model` support
+  to `AutonomousConfig`. MAPLE now advertises the model JSON Schema, parses
+  bounded JSON, returns a validated model instance, supports Pydantic v1/v2
+  method names, and fails closed on invalid model output. The autonomy suite
+  reports `210 passed in 3.37s`; no new dependency was added.
 - **Repository-wide Ruff closure**: cleaned the final legacy import-boundary
   findings in the Doctrine adapter and security authentication/separation
   modules with narrow E402 handling and preserved optional JWT behavior. The

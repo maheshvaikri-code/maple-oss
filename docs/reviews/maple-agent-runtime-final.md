@@ -155,10 +155,14 @@ Doctor:
   The affected regression reports `107 passed in 4.02s`; Ruff, Black, isort,
   mypy, and compile checks pass. Broad `ruff check maple` reports zero
   findings.
+- Slice 70 adds the typed model output boundary. `AutonomousConfig.output_model`
+  advertises the model schema and returns a validated Pydantic-style instance;
+  invalid output fails closed. Focused coverage reports `28 passed in 0.35s`,
+  and the full autonomy surface reports `210 passed in 3.37s`.
 
 ## Verdict
 
-**Feature review:** PASS for the eighteen implemented capability slices.
+**Feature review:** PASS for the nineteen implemented capability slices.
 **Publish readiness:** NOT YET APPROVED. A release manager should close the
 open full-suite and fresh-verifier gates before publishing. The remaining
 Bandit findings are documented low-severity legacy debt; external publication

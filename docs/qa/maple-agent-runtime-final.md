@@ -112,6 +112,18 @@
   state-plane run has not emitted a final summary. No publication or website
   change was performed.
 
+## Slice 70 revalidation
+
+- Typed-output contract and agent coverage reports `28 passed in 0.35s`.
+- The full autonomy surface reports `210 passed in 3.37s`.
+- The new `output_model` boundary advertises model JSON Schema, returns a
+  validated Pydantic-style instance, and fails closed on invalid output.
+- Mypy reports no issues in 93 source files; repository MAPLE Ruff, tools/tests
+  Ruff, Black, isort, compile, and network-free doctor gates pass.
+- Exact-current wheel and sdist artifacts built successfully; Twine marked both
+  artifacts `PASSED`.
+- No new dependency, publication, or website change was performed.
+
 ## Security conclusions
 
 - No new dependency, credential, cloud call, website mutation, or publication

@@ -80,6 +80,7 @@
 | 67 | Verified unused-import and optional-probe closure | Backend / QA / Release | adapters, agent/config, broker, communication, discovery, error, resources, security, task management, changelog, review/QA artifacts | Affected regression, S2/resource/link revalidation, changed-file Ruff/Black/isort/mypy/compile, broad Ruff inventory, diff check | done: commit `6ebac24`; affected suite `777 passed, 1 skipped`; current S2/resource/link revalidation `130 passed`; changed files pass all quality/type checks; broad `ruff check maple` reduced from `95` to `58` diagnostics (`E402 58`) with zero F401 findings |
 | 68 | Residual legacy module-header closure | Backend / QA / Release | autonomy, broker, LLM, monitoring, security, state package headers, changelog, review/QA artifacts | Affected regression, changed-file Ruff/Black/isort/mypy/compile, broad Ruff inventory, diff check | done: commit `11d0b27`; affected suite `635 passed, 1 skipped in 16.90s`; changed files pass all quality/type checks; broad `ruff check maple` reduced from `58` to `19` diagnostics (`E402 19`) |
 | 69 | Repository-wide legacy import-boundary closure | Backend / QA / Release | Doctrine adapter and security authentication/separation imports, changelog, review/QA artifacts | Affected regression, repository Ruff, changed-file Black/isort/mypy/compile, diff check | done: code commit `0ea2179`; affected suite `107 passed in 4.02s`; Ruff reports zero findings; changed files pass Black/isort/mypy/compile; optional JWT behavior remains covered |
+| 70 | Typed model output boundary | Backend / QA / Release | autonomy contracts, AutonomousConfig, public exports, contract/agent tests, changelog, review/QA artifacts | Focused contract/agent regression, full autonomy regression, Ruff, Black/isort, mypy, compile, package, doctor, diff check | done: code commit `bf2ca4a`; full autonomy regression `210 passed in 3.37s`; typed-output focused regression included in `28 passed in 0.35s`; wheel/sdist and Twine checks pass; all static/readiness gates pass |
 
 ## Threat sketch
 
@@ -257,3 +258,10 @@ closed in the Doctrine adapter and security authentication/separation import
 boundaries. The affected regression reports `107 passed in 4.02s`; Ruff,
 Black, isort, mypy, and compile checks pass. Broad `ruff check maple` now
 reports zero findings. The exact-current full repository suite remains open.
+
+2026-08-25 typed model output boundary: adds `AutonomousConfig.output_model`,
+`structured_model_schema`, and `parse_typed_output`. Pydantic-style models are
+validated at the structured-output boundary and returned as typed instances;
+invalid model output fails closed without exposing validation payloads. The
+full autonomy regression reports `210 passed in 3.37s`; focused contract/agent
+coverage reports `28 passed in 0.35s`.
