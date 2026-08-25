@@ -32,7 +32,7 @@ class A2AAdapter:
     Provides superior resource management and error handling over native A2A.
     """
 
-    def __init__(self, maple_agent, a2a_config: Dict[str, Any]):
+    def __init__(self, maple_agent: Any, a2a_config: Dict[str, Any]) -> None:
         self.maple_agent = maple_agent
         self.a2a_config = a2a_config
         self.agent_card = self._create_enhanced_agent_card()

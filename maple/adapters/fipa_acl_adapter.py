@@ -18,7 +18,7 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 import time
 import xml.etree.ElementTree as ET
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 from maple.core.types import Priority
 
@@ -44,7 +44,7 @@ class FIPAACLAdapter:
     Modernizes FIPA ACL with MAPLE's advanced capabilities.
     """
 
-    def __init__(self, maple_agent):
+    def __init__(self, maple_agent: Any) -> None:
         self.maple_agent = maple_agent
         self.ontology_mappings = self._create_maple_ontology()
 
@@ -171,7 +171,7 @@ class FIPAACLAdapter:
         import json
 
         if content.startswith("MAPLE-ENHANCED:"):
-            return json.loads(content[15:])  # Remove MAPLE prefix
+            return cast(Dict[str, Any], json.loads(content[15:]))  # Remove MAPLE prefix
         else:
             # Legacy FIPA content
             return {

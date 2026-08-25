@@ -31,7 +31,7 @@ class ACPAdapter:
     Enhances ACP with advanced resource management and type safety.
     """
 
-    def __init__(self, maple_agent, acp_config: Dict[str, Any]):
+    def __init__(self, maple_agent: Any, acp_config: Dict[str, Any]) -> None:
         self.maple_agent = maple_agent
         self.acp_config = acp_config
         self.acp_server_url = acp_config.get("server_url")
