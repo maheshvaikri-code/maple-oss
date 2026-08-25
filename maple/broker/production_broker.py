@@ -16,13 +16,11 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 # maple/broker/production_broker.py
 # Creator: Mahesh Vaikri
 
-"""
-Production Broker Manager for MAPLE
-Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
-"""
+# Production Broker Manager for MAPLE.
+# Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri).
 
 from enum import Enum
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict
 
 from ..core.result import Result
 

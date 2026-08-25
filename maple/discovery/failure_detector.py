@@ -20,12 +20,12 @@ import threading
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Set, cast
+from typing import Any, Callable, Dict, List, Optional, cast
 
 from ..core.result import Result
 from ..error.circuit_breaker import CircuitBreaker, CircuitState
 from .health_monitor import HealthMonitor, HealthStatus
-from .registry import AgentInfo, AgentRegistry
+from .registry import AgentRegistry
 
 
 class FailureType(Enum):

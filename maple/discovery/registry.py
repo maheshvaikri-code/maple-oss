@@ -22,7 +22,6 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Set
 
 from ..core.result import Result
-from ..core.types import Priority
 
 
 @dataclass

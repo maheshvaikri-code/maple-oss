@@ -16,35 +16,17 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 # maple/adapters/s2_adapter.py
 # Creator: Mahesh Vaikri
 
-"""
-S2.dev Integration Adapter for MAPLE
-
-Bridges MAPLE's agent communication with S2's durable streaming platform
-(https://s2.dev). S2 provides unlimited, durable, real-time streams that
-are ideal for multi-agent message transport and persistent state storage.
-
-Usage:
-    pip install streamstore
-
-    from maple.adapters.s2_adapter import S2Broker, S2StateBackend
-
-    # As a message broker
-    broker = S2Broker(access_token="your_s2_token", basin_name="maple-agents")
-    await broker.connect()
-    await broker.send("agent_a", "agent_b", message)
-
-    # As a state backend
-    state = S2StateBackend(access_token="your_s2_token", basin_name="maple-state")
-    await state.connect()
-    await state.set("key", {"value": 42})
-"""
+# S2.dev Integration Adapter for MAPLE.
+# Bridges MAPLE's agent communication with S2's durable streaming platform
+# (https://s2.dev) for message transport and persistent state storage.
+# Install the optional dependency with `pip install streamstore`.
 
 import asyncio
 import json
 import logging
 import time
 from dataclasses import dataclass
-from typing import Any, AsyncIterator, Callable, Dict, List, Optional, cast
+from typing import Any, Callable, Dict, List, Optional, cast
 
 from ..core.message import Message
 from ..core.result import Result
@@ -57,8 +39,8 @@ try:
         ReadLimit,
         Record,
         SeqNum,
-        StreamConfig,
     )
+    from streamstore import StreamConfig as _StreamConfig  # noqa: F401
 
     S2_AVAILABLE = True
 except ImportError:

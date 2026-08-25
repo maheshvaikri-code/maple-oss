@@ -20,7 +20,7 @@ import logging
 import threading
 import time
 from enum import Enum
-from typing import Any, Callable, Dict, Generic, Optional, TypeVar, cast
+from typing import Callable, Generic, TypeVar, cast
 
 from ..core.result import Result
 

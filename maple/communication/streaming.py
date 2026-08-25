@@ -18,10 +18,9 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 
 import logging
 import queue
-import threading
 import time
 import uuid
-from typing import Any, Callable, Dict, List, Optional, cast
+from typing import Any, Dict, List, Optional, cast
 
 from ..core.message import Message
 from ..core.result import Result

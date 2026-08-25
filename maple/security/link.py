@@ -20,7 +20,6 @@ import time
 import uuid
 from typing import Any, Dict, Optional
 
-from ..core.message import Message
 from ..core.result import Result
 
 try:

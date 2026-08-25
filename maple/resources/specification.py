@@ -16,12 +16,8 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 # mapl/resources/specification.py
 # Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
 
-import json
-import re
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Union
-
-from ..core.types import Duration, Size
+from typing import Any, Dict, Optional
 
 
 @dataclass

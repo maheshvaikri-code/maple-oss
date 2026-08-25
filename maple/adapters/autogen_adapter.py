@@ -26,7 +26,6 @@ except ImportError:
     autogen = None
     AUTOGEN_AVAILABLE = False
 from ..core.message import Message
-from ..core.result import Result
 
 
 class AutoGenAdapter:
