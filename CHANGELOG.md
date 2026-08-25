@@ -148,6 +148,11 @@
   contracts, without changing fallback behavior. The security-init regression
   passes 30 tests, the changed-file mypy check is clean, and the aggregate audit
   is now `95 errors` in 8 files.
+- **S2 stream adapter typing**: clarified stream helper/read-session contracts
+  and narrowed optional basin/stream SDK boundaries without changing dependency
+  fallback behavior. The mocked S2 adapter suite passes 16 tests, the
+  changed-file mypy check is clean, and the aggregate audit is now
+  `87 errors` in 7 files.
 - **Repository formatter gate closure**: normalized the tracked `maple/`
   source tree with the configured Black and isort profiles. Both checks are
   now idempotent, the focused runtime gate remains `240 passed`, and a fresh
