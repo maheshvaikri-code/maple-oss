@@ -10,6 +10,12 @@
 
 ### Additions
 
+- **Repository-wide Ruff closure**: cleaned the final legacy import-boundary
+  findings in the Doctrine adapter and security authentication/separation
+  modules with narrow E402 handling and preserved optional JWT behavior. The
+  affected regression reports `107 passed in 4.02s`; Ruff, Black, isort, mypy,
+  and compile checks pass, and broad `ruff check maple` reports zero findings.
+  The exact-current full repository suite remains an open release gate.
 - **Residual module-header lint closure**: converted secondary module headers
   across autonomy, broker, LLM, monitoring, security, and state package
   surfaces to comments. The affected suite reports `635 passed, 1 skipped`;

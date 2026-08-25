@@ -27,7 +27,7 @@
 | Local readiness | PASS | `maple doctor --json` returned all six checks true and `network:false`. |
 | Full repository regression | OPEN | Latest bounded run: `1049 passed, 8 warnings in 839.17s` before interruption in remaining Doctrine gold cases; no assertion failure. Fresh temp-repo Git profiling shows roughly 5–15s per command, with slowest gold cases at 166.96s, 159.74s, 115.61s, and 56.04s. |
 | Dependency consistency | PASS | Isolated MAPLE environment is consistent; shared-interpreter conflicts are unrelated and non-authoritative. |
-| Repository-wide lint | OPEN | Slices 65–68 reduced broad `ruff check maple` from 250 to 19 diagnostics; all remaining findings are E402 legacy header/import debt. |
+| Repository-wide lint | PASS | Slice 69 closes the remaining E402 import-boundary debt; broad `ruff check maple` reports zero findings. |
 | Independent review | OPEN | Fresh verifier sessions are unavailable in this tool context. |
 | External publish / website | NOT RUN | Explicitly outside current authorization and scope. |
 
@@ -99,6 +99,16 @@
   reached `95%` with no failure output before bounded interruption; it emitted
   no final summary and does not prove the exact current commit. No publication
   or website change was performed.
+
+## Slice 69 revalidation
+
+- The Doctrine adapter and security authentication/separation regression set
+  reports `107 passed in 4.02s`.
+- Broad `ruff check maple` reports zero findings.
+- Changed-file Black, isort, mypy, and compile checks pass.
+- The exact-current full repository suite remains open because the bounded
+  state-plane run has not emitted a final summary. No publication or website
+  change was performed.
 
 ## Security conclusions
 

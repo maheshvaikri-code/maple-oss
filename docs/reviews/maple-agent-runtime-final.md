@@ -150,6 +150,11 @@ Doctor:
 - The full repository attempt on the preceding commit collected `1270` items,
   reached `95%`, and was bounded/interrupted in Doctrine state tests without a
   pytest summary. Exact-current full-suite evidence remains open.
+- Slice 69 closes the remaining 19 repository-wide E402 findings in the
+  Doctrine adapter and security authentication/separation import boundaries.
+  The affected regression reports `107 passed in 4.02s`; Ruff, Black, isort,
+  mypy, and compile checks pass. Broad `ruff check maple` reports zero
+  findings.
 
 ## Verdict
 

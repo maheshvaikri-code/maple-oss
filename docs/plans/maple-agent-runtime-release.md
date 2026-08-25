@@ -79,6 +79,7 @@
 | 66 | Legacy header/import lint closure | Backend / QA / Release | autonomy package initializer, state store/synchronization, broker routing, communication pubsub/request-response, security audit, changelog, review/QA artifacts | Affected regression, changed-file Ruff/Black/isort/mypy/compile, broad Ruff inventory, diff check | done: commit `c42cf58`; affected regression `628 passed, 1 skipped in 16.35s`; changed files pass quality/type checks; broad `ruff check maple` reduced from `171` to `95` diagnostics (`E402 69`, `F401 26`) |
 | 67 | Verified unused-import and optional-probe closure | Backend / QA / Release | adapters, agent/config, broker, communication, discovery, error, resources, security, task management, changelog, review/QA artifacts | Affected regression, S2/resource/link revalidation, changed-file Ruff/Black/isort/mypy/compile, broad Ruff inventory, diff check | done: commit `6ebac24`; affected suite `777 passed, 1 skipped`; current S2/resource/link revalidation `130 passed`; changed files pass all quality/type checks; broad `ruff check maple` reduced from `95` to `58` diagnostics (`E402 58`) with zero F401 findings |
 | 68 | Residual legacy module-header closure | Backend / QA / Release | autonomy, broker, LLM, monitoring, security, state package headers, changelog, review/QA artifacts | Affected regression, changed-file Ruff/Black/isort/mypy/compile, broad Ruff inventory, diff check | done: commit `11d0b27`; affected suite `635 passed, 1 skipped in 16.90s`; changed files pass all quality/type checks; broad `ruff check maple` reduced from `58` to `19` diagnostics (`E402 19`) |
+| 69 | Repository-wide legacy import-boundary closure | Backend / QA / Release | Doctrine adapter and security authentication/separation imports, changelog, review/QA artifacts | Affected regression, repository Ruff, changed-file Black/isort/mypy/compile, diff check | done: code commit pending; affected suite `107 passed in 4.02s`; Ruff reports zero findings; changed files pass Black/isort/mypy/compile; optional JWT behavior remains covered |
 
 ## Threat sketch
 
@@ -250,3 +251,9 @@ to `19` (`E402 19`).
 output before the bounded session was manually interrupted; pytest emitted no
 final summary. Because slice 68 followed that attempt, the exact-current full
 suite gate remains open.
+
+2026-08-25 repository-wide Ruff closure: the final 19 E402 findings were
+closed in the Doctrine adapter and security authentication/separation import
+boundaries. The affected regression reports `107 passed in 4.02s`; Ruff,
+Black, isort, mypy, and compile checks pass. Broad `ruff check maple` now
+reports zero findings. The exact-current full repository suite remains open.
