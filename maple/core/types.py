@@ -50,7 +50,7 @@ class AgentID:
     def __init__(self, agent_id: str) -> None:
         if not self.validate(agent_id):
             raise ValueError(f"Invalid agent ID: {agent_id}")
-        self.id = agent_id
+        self.id: str = agent_id
 
     @staticmethod
     def validate(agent_id: str) -> bool:
@@ -83,7 +83,7 @@ class MessageID:
 
     def __init__(self, message_id: Optional[str] = None) -> None:
         if message_id is None:
-            self.id = str(uuid.uuid4())
+            self.id: str = str(uuid.uuid4())
         else:
             if not self.validate(message_id):
                 raise ValueError(f"Invalid message ID: {message_id}")

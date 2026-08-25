@@ -187,7 +187,7 @@ class AgentOrchestrator:
                         "status": goal_obj.status,
                     }
                 )
-            return result
+            return Result.err(result.unwrap_err())
 
         sub_goals = decompose_result.unwrap()
 

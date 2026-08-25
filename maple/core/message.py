@@ -221,14 +221,14 @@ class Message:
         """Builder pattern for creating messages."""
 
         def __init__(self) -> None:
-            self._message_id = None
-            self._timestamp = None
-            self._sender = None
-            self._receiver = None
+            self._message_id: Optional[str] = None
+            self._timestamp: Optional[datetime] = None
+            self._sender: Optional[str] = None
+            self._receiver: Optional[str] = None
             self._priority = Priority.MEDIUM
-            self._message_type = None
-            self._payload = {}
-            self._metadata = {}
+            self._message_type: Optional[str] = None
+            self._payload: Dict[str, Any] = {}
+            self._metadata: Dict[str, Any] = {}
 
         def message_id(self, message_id: str) -> "Message.Builder":
             self._message_id = message_id

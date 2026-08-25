@@ -19,7 +19,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 from ..core.result import Result
 from ..state.store import StateStore, StorageBackend
@@ -46,7 +46,7 @@ class WorkingMemory:
     Has a max token budget and evicts oldest entries when full.
     """
 
-    def __init__(self, max_tokens: int = 8000):
+    def __init__(self, max_tokens: int = 8000) -> None:
         self.max_tokens = max_tokens
         self.entries: List[MemoryEntry] = []
         self._current_tokens = 0
@@ -94,7 +94,7 @@ class EpisodicMemory:
     Uses StateStore for persistence.
     """
 
-    def __init__(self, store: StateStore):
+    def __init__(self, store: StateStore) -> None:
         self.store = store
         self._prefix = "episodic:"
 
@@ -104,11 +104,12 @@ class EpisodicMemory:
         """Record an episode (action + outcome) for a task."""
         key = f"{self._prefix}{task_id}"
         existing = self.store.get(key)
-        episodes = existing.unwrap() if existing.is_ok() and existing.unwrap() else []
+        episodes_value = existing.unwrap() if existing.is_ok() else None
+        episodes = cast(List[Dict[str, Any]], episodes_value) if episodes_value else []
         episodes.append({**event, "timestamp": time.time()})
         return self.store.set(key, episodes).map(lambda _: None)
 
-    def recall(self, task_id: str) -> Result[List[Dict], Dict[str, Any]]:
+    def recall(self, task_id: str) -> Result[List[Dict[str, Any]], Dict[str, Any]]:
         """Recall all episodes for a task."""
         key = f"{self._prefix}{task_id}"
         result = self.store.get(key)
@@ -116,17 +117,20 @@ class EpisodicMemory:
             return Result.ok(result.unwrap() or [])
         return Result.ok([])
 
-    def search(self, query: str, limit: int = 10) -> Result[List[Dict], Dict[str, Any]]:
+    def search(
+        self, query: str, limit: int = 10
+    ) -> Result[List[Dict[str, Any]], Dict[str, Any]]:
         """Search episodic memory by keyword."""
         keys_result = self.store.list_keys(prefix=self._prefix)
         if keys_result.is_err():
             return Result.ok([])
 
-        matches = []
+        matches: List[Dict[str, Any]] = []
         for key in keys_result.unwrap():
             episodes = self.store.get(key)
-            if episodes.is_ok() and episodes.unwrap():
-                for ep in episodes.unwrap():
+            episodes_value = episodes.unwrap() if episodes.is_ok() else None
+            if episodes_value:
+                for ep in cast(List[Dict[str, Any]], episodes_value):
                     if query.lower() in str(ep).lower():
                         matches.append(ep)
                         if len(matches) >= limit:
@@ -173,13 +177,15 @@ class MemoryManager:
         backend: StorageBackend = StorageBackend.MEMORY,
         working_memory_tokens: int = 8000,
         config: Optional[Dict[str, Any]] = None,
-    ):
+    ) -> None:
         self.store = StateStore(backend=backend, config=config)
         self.working = WorkingMemory(max_tokens=working_memory_tokens)
         self.episodic = EpisodicMemory(self.store)
         self.semantic = SemanticMemory(self.store)
 
-    def summarize_and_archive(self, llm_provider=None) -> Result[str, Dict]:
+    def summarize_and_archive(
+        self, llm_provider: Optional[Any] = None
+    ) -> Result[str, Dict[str, Any]]:
         """
         Summarize working memory and store in episodic memory.
         Requires an LLM provider for summarization.
@@ -208,9 +214,9 @@ class MemoryManager:
 
         result = llm_provider.complete(messages)
         if result.is_err():
-            return result
+            return Result.err(result.unwrap_err())
 
-        summary = result.unwrap().content
+        summary = result.unwrap().content or ""
         self.episodic.record(
             "memory_summary", {"summary": summary, "entries_count": len(context)}
         )

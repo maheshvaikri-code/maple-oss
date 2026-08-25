@@ -15,12 +15,15 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 
 from ..core.result import Result
 from ..llm.types import ToolDefinition
 from .contracts import Guardrail, run_guardrails, validate_json_schema
 from .execution import ExecutionExecutor
+
+if TYPE_CHECKING:
+    from .agent import AutonomousAgent
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +51,7 @@ class Tool:
             parameters=self.parameters,
         )
 
-    def execute(self, **kwargs) -> Result[Any, Dict[str, Any]]:
+    def execute(self, **kwargs: Any) -> Result[Any, Dict[str, Any]]:
         """Execute this tool with the given arguments."""
         input_validation = validate_json_schema(kwargs, self.parameters)
         if input_validation.is_err():
@@ -112,7 +115,7 @@ class Tool:
 class ToolRegistry:
     """Registry for discovering and executing tools."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._tools: Dict[str, Tool] = {}
 
     def register(self, tool: Tool) -> Result[None, Dict[str, Any]]:
@@ -151,12 +154,12 @@ class ToolRegistry:
         """Execute a tool by name."""
         tool_result = self.get(name)
         if tool_result.is_err():
-            return tool_result
+            return Result.err(tool_result.unwrap_err())
         tool = tool_result.unwrap()
         return tool.execute(**arguments)
 
 
-def create_builtin_tools(agent) -> List[Tool]:
+def create_builtin_tools(agent: "AutonomousAgent") -> List[Tool]:
     """Create built-in tools that use existing MAPLE infrastructure."""
     from ..core.message import Message
 
@@ -164,7 +167,7 @@ def create_builtin_tools(agent) -> List[Tool]:
 
     def send_message_handler(
         receiver: str, message_type: str, payload: Optional[dict] = None
-    ) -> Result:
+    ) -> Result[Any, Dict[str, Any]]:
         msg = Message(
             message_type=message_type, receiver=receiver, payload=payload or {}
         )
@@ -188,7 +191,9 @@ def create_builtin_tools(agent) -> List[Tool]:
         )
     )
 
-    def query_agents_handler(capability: Optional[str] = None) -> Result:
+    def query_agents_handler(
+        capability: Optional[str] = None,
+    ) -> Result[Any, Dict[str, Any]]:
         if agent.registry:
             if capability:
                 agents = agent.registry.find_agents_by_capability(capability)
@@ -234,7 +239,7 @@ def create_builtin_tools(agent) -> List[Tool]:
         )
     )
 
-    def read_state_handler(key: str) -> Result:
+    def read_state_handler(key: str) -> Result[Any, Dict[str, Any]]:
         try:
             from ..state.store import StateStore, StorageBackend
 
@@ -259,7 +264,7 @@ def create_builtin_tools(agent) -> List[Tool]:
         )
     )
 
-    def write_state_handler(key: str, value: Any) -> Result:
+    def write_state_handler(key: str, value: Any) -> Result[Any, Dict[str, Any]]:
         try:
             from ..state.store import StateStore, StorageBackend
 
