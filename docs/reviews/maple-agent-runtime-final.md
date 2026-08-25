@@ -125,6 +125,10 @@ Doctor:
   173.01s`; the repository-wide command collected 1262 items and entered the
   slow Doctrine gold phase without assertion output before its bounded session
   ended without a pytest summary.
+- Slice 64 security revalidation completed with `37 passed`; isolated
+  `pip check` and `pip-audit` are clean, and Bandit `-ll` exits 0 with zero
+  medium/high findings. The full Bandit inventory has 35 low-severity legacy
+  findings, which remain tracked as non-blocking debt.
 - Black/isort, the enforced `tools`/`tests` Ruff gate, compile, wheel/sdist,
   Twine, and network-free doctor gates pass. The doctor reports all checks true,
   `ready: true`, `network: false`, version `1.1.3`.
@@ -136,6 +140,6 @@ Doctor:
 
 **Feature review:** PASS for the eighteen implemented capability slices.
 **Publish readiness:** NOT YET APPROVED. A release manager should close the
-open full-suite, dependency/audit, repository lint, and fresh-verifier gates
-before publishing. External publication remains awaiting explicit human
-approval.
+open full-suite, low-severity legacy lint/security debt, repository lint, and
+fresh-verifier gates before publishing. External publication remains awaiting
+explicit human approval.

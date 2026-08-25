@@ -74,6 +74,7 @@
 
 | 62 | NATS broker optional-transport type closure | Broker / Interop / QA | NATS broker, offline NATS regression, changelog, review/QA artifacts | Offline config/not-connected tests, explicit changed-file mypy with skipped imports, Black/isort/Ruff/compile, aggregate audit | done: commit `5f57e50`; typed optional NATS SDK/error aliases, nullable config defaults, stable message IDs/results, callback payloads, and sync event-loop wrapper; focused `1 passed, 1 skipped`; aggregate audit clean for all `93 source files` |
 | 63 | Mypy target/toolchain contract closure | Release / DevOps / QA | `pyproject.toml`, release plan, changelog, review/QA artifacts | Default mypy, cross-surface regression, Black/isort/Ruff/compile | done: commit `70d47a9`; retained Python `>=3.8` runtime support while moving the static-analysis target to Python 3.10, which is accepted by mypy 2.x; default audit clean across `93 source files`; cross-surface regression `616 passed, 1 skipped` |
+| 64 | Transport and serialization security boundary hardening | Security / Interop / Backend / QA | A2A adapter, MCP transport, serializer, security regressions, changelog, review/QA artifacts | Security regressions, cross-surface regression, isolated `pip check`, `pip-audit`, Bandit `-ll`, Black/isort/Ruff/mypy/compile | done: commit `d3e5358`; bounded A2A registry timeout, explicit MCP URL-boundary regression, restricted size-bounded pickle loading, and malicious-payload coverage; security regression `37 passed`; cross-surface `621 passed, 1 skipped`; isolated dependency audit clean; Bandit medium/high gate exit 0 |
 
 ## Threat sketch
 
@@ -198,3 +199,14 @@ issues found in 93 source files`; the broader cross-surface regression reports
 `616 passed, 1 skipped in 173.01s`. Full repository completion, repository-wide
 legacy Ruff debt, dependency/security disposition, and fresh verification remain
 open.
+
+2026-08-25 security boundary closure: commit `d3e5358` adds the bounded A2A
+registry timeout, explicit MCP URL rejection coverage, and a size-bounded
+restricted pickle unpickler that rejects callable/module globals. The security
+regression is `37 passed in 0.82s`; the cross-surface regression is `621 passed,
+1 skipped in 170.54s`. In an isolated `.[dev,security]` environment, `pip check`
+reported `No broken requirements found`, `pip-audit` reported `No known
+vulnerabilities found`, and Bandit `-ll` exited 0 with zero medium/high
+findings. A full Bandit inventory contains 35 low-severity legacy findings
+(B101 x1, B105 x4, B110 x22, B112 x3, B311 x3, B403 x1, B405 x1); these are
+tracked non-blocking debt and were not introduced by this slice.

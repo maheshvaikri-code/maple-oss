@@ -40,6 +40,10 @@
   93 source files`; the cross-surface regression reports `616 passed, 1
   skipped in 173.01s`. The package still declares Python `>=3.8`; only the
   mypy static-analysis target is 3.10.
+- Slice 64 security revalidation: the security regression reports `37 passed in
+  0.82s`; the cross-surface regression reports `621 passed, 1 skipped in
+  170.54s`. Isolated `pip check` is clean, `pip-audit` reports no known
+  vulnerabilities, and Bandit `-ll` exits 0 with no medium/high findings.
 - Full LLM suite: `36 passed in 0.24s`.
 - Repository Black/isort, `ruff check tools tests`, and compile checks pass;
   changed-surface Ruff checks pass. A broad legacy `ruff check maple` remains
@@ -50,7 +54,7 @@
 - Current package preflight: wheel/sdist built successfully, both Twine checks
   passed, and the network-free doctor returned all checks true with
   `ready: true`, `network: false`, version `1.1.3`.
-- Full repository completion, dependency-audit disposition, Bandit availability,
+- Full repository completion, the 35 low-severity legacy Bandit findings,
   broad legacy lint, and independent fresh-context verification remain open. No
   publication or website change was performed.
 

@@ -21,6 +21,13 @@
   support while setting the static-analysis target to Python 3.10, the minimum
   accepted by mypy 2.x. Default mypy now reports no issues across 93 source
   files, and the wider cross-surface regression is `616 passed, 1 skipped`.
+- **Security boundary hardening**: added a bounded A2A registry timeout,
+  explicit MCP URL-boundary regressions, and a size-bounded restricted pickle
+  unpickler that rejects callable/module globals. The security regression is
+  `37 passed`; isolated `pip check` and `pip-audit` are clean, and Bandit
+  `-ll` reports zero medium/high findings. Thirty-five low-severity legacy
+  findings remain explicitly tracked; no publication or website change was
+  performed.
 - **OpenAI SDK resource-function boundary**: implemented the previously
   undefined `maple_resource_request` route with injected `ResourceManager`
   allocation, finite-positive input validation, and fail-closed behavior when
