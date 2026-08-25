@@ -820,6 +820,34 @@ should be protected with host filesystem access controls. The store does not
 persist the full ReAct conversation, and failed tool execution requires a new
 approval request.
 
+### Bounded conversation sessions
+
+`SessionMessage` and `SessionSnapshot` provide a JSON-safe turn-history
+boundary. `InMemorySessionStore` is useful for tests and short-lived hosts;
+`FileSessionStore` uses atomic JSON replacement for local process-restart
+recovery.
+
+```python
+from maple import FileSessionStore, SessionMessage
+
+store = FileSessionStore("./.maple-sessions", max_messages=100)
+created = store.create("chat-1", metadata={"tenant": "demo"})
+stored = store.append(
+    "chat-1",
+    SessionMessage(role="user", content="Summarize this document."),
+    expected_version=created.unwrap().version,
+)
+snapshot = stored.unwrap()
+```
+
+Session IDs, roles, metadata, message count, message bytes, and serialized
+session bytes are bounded before mutation. Appends and clears accept an
+optional expected version and return `SESSION_CONFLICT` on a stale version.
+Returned snapshots are fresh JSON-safe copies. File persistence is
+thread-safe within one process; encryption, cross-process leases, automatic
+agent binding, summarization, and executable conversation replay remain
+separate host/runtime decisions.
+
 ## Usage Example
 
 ```python

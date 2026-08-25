@@ -122,6 +122,18 @@ from .autonomy.approval import (
     FileApprovalStore,
     InMemoryApprovalStore,
 )
+from .autonomy.sessions import (
+    DEFAULT_MAX_MESSAGES,
+    DEFAULT_MAX_MESSAGE_BYTES,
+    DEFAULT_MAX_METADATA_BYTES,
+    DEFAULT_MAX_SESSION_BYTES,
+    DEFAULT_MAX_SESSIONS,
+    FileSessionStore,
+    InMemorySessionStore,
+    SessionMessage,
+    SessionSnapshot,
+    SessionStore,
+)
 from .llm.types import LLMConfig, ChatMessage, ChatRole
 from .llm.registry import LLMProviderRegistry
 from .llm.capabilities import (
@@ -250,6 +262,16 @@ __all__ = [
     "ApprovalStore",
     "FileApprovalStore",
     "InMemoryApprovalStore",
+    "DEFAULT_MAX_MESSAGES",
+    "DEFAULT_MAX_MESSAGE_BYTES",
+    "DEFAULT_MAX_METADATA_BYTES",
+    "DEFAULT_MAX_SESSION_BYTES",
+    "DEFAULT_MAX_SESSIONS",
+    "FileSessionStore",
+    "InMemorySessionStore",
+    "SessionMessage",
+    "SessionSnapshot",
+    "SessionStore",
     "LLMConfig",
     "ChatMessage",
     "ChatRole",

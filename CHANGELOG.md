@@ -60,6 +60,11 @@
   in-process `HistoryCheckpointStore` decorator that retains immutable,
   version-ordered checkpoint snapshots for inspection without claiming
   executable replay or cross-process durability.
+- **Bounded conversation sessions** (`maple.autonomy.sessions`): added
+  JSON-safe `SessionMessage`/`SessionSnapshot` values plus thread-safe
+  in-memory and atomic file-backed stores with quotas, optimistic append/clear
+  conflicts, and typed LLM tool-call conversion. Agent binding and replay stay
+  explicit follow-on capabilities.
 - **Release metadata hardening**: `pyproject.toml` is now the single source
   for package metadata, the legacy `setup.py` delegates to it, and the source
   manifest includes only files present in the repository. Wheel/sdist builds

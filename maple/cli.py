@@ -29,6 +29,7 @@ def doctor_report():
         EvalCase,
         EventStream,
         InMemoryLexicalRetriever,
+        InMemorySessionStore,
         InteropEnvelope,
         TrustedLocalExecutor,
         __version__,
@@ -38,6 +39,7 @@ def doctor_report():
         "core": True,
         "execution": isinstance(TrustedLocalExecutor(), TrustedLocalExecutor),
         "retrieval": isinstance(InMemoryLexicalRetriever(), InMemoryLexicalRetriever),
+        "sessions": isinstance(InMemorySessionStore(), InMemorySessionStore),
         "events": isinstance(EventStream(), EventStream),
         "evaluation": isinstance(
             EvalCase("doctor", True, expected_output=True), EvalCase
