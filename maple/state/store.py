@@ -31,7 +31,7 @@ import threading
 import time
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, cast
 
 from ..core.result import Result
 
@@ -326,7 +326,7 @@ class StateStore:
         elif self.backend == StorageBackend.DATABASE:
             with self._db_lock:
                 try:
-                    conn = sqlite3.connect(self._db_path)
+                    conn = sqlite3.connect(cast(str, self._db_path))
                     cursor = conn.execute("SELECT COUNT(*) FROM state_entries")
                     stats["keys_count"] = cursor.fetchone()[0]
                     conn.close()
@@ -406,7 +406,7 @@ class StateStore:
         return re.sub(r"[^a-zA-Z0-9_\-]", "_", key) + ".json"
 
     def _file_path_for(self, key: str) -> str:
-        return os.path.join(self._file_dir, self._sanitize_filename(key))
+        return os.path.join(cast(str, self._file_dir), self._sanitize_filename(key))
 
     def _file_get(self, key: str) -> Result[Optional[Any], Dict[str, Any]]:
         path = self._file_path_for(key)
@@ -522,7 +522,9 @@ class StateStore:
                 continue
             try:
                 with open(
-                    os.path.join(self._file_dir, filename), "r", encoding="utf-8"
+                    os.path.join(cast(str, self._file_dir), filename),
+                    "r",
+                    encoding="utf-8",
                 ) as f:
                     data = json.load(f)
                 keys.append(data["key"])
@@ -572,7 +574,7 @@ class StateStore:
     def _init_database(self) -> None:
         """Create the state_entries table if it doesn't exist."""
         with self._db_lock:
-            conn = sqlite3.connect(self._db_path)
+            conn = sqlite3.connect(cast(str, self._db_path))
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS state_entries (
@@ -590,7 +592,7 @@ class StateStore:
     def _database_get(self, key: str) -> Result[Optional[Any], Dict[str, Any]]:
         with self._db_lock:
             try:
-                conn = sqlite3.connect(self._db_path)
+                conn = sqlite3.connect(cast(str, self._db_path))
                 cursor = conn.execute(
                     "SELECT value, version, metadata, updated_at FROM state_entries WHERE key = ?",
                     (key,),
@@ -614,7 +616,7 @@ class StateStore:
     ) -> Result[StateEntry, Dict[str, Any]]:
         with self._db_lock:
             try:
-                conn = sqlite3.connect(self._db_path)
+                conn = sqlite3.connect(cast(str, self._db_path))
 
                 if expected_version is not None:
                     cursor = conn.execute(
@@ -665,7 +667,7 @@ class StateStore:
     ) -> Result[bool, Dict[str, Any]]:
         with self._db_lock:
             try:
-                conn = sqlite3.connect(self._db_path)
+                conn = sqlite3.connect(cast(str, self._db_path))
 
                 if expected_version is not None:
                     cursor = conn.execute(
@@ -707,7 +709,7 @@ class StateStore:
     ) -> Result[List[str], Dict[str, Any]]:
         with self._db_lock:
             try:
-                conn = sqlite3.connect(self._db_path)
+                conn = sqlite3.connect(cast(str, self._db_path))
                 if prefix:
                     cursor = conn.execute(
                         "SELECT key FROM state_entries WHERE key LIKE ?",
