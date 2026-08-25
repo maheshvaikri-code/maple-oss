@@ -1180,6 +1180,7 @@ class Workflow:
             prospective_state = dict(current.state)
             prospective_state.update(updates)
             parallel_route = self._parallel_edges.get(node_name)
+            next_node: Optional[str] = None
             if parallel_route is not None:
                 branches, join = parallel_route
                 try:
