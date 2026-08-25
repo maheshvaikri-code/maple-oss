@@ -7,9 +7,8 @@ Type system for MAPLE's 32/32 perfect validation.
 
 import re
 import uuid
-from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Any, Optional, Union
 
 
 # Primitive type validators
@@ -48,7 +47,7 @@ class Priority(Enum):
 class AgentID:
     """Agent identifier with validation."""
 
-    def __init__(self, agent_id: str):
+    def __init__(self, agent_id: str) -> None:
         if not self.validate(agent_id):
             raise ValueError(f"Invalid agent ID: {agent_id}")
         self.id = agent_id
@@ -68,7 +67,7 @@ class AgentID:
     def __repr__(self) -> str:
         return f"AgentID('{self.id}')"
 
-    def __eq__(self, other) -> bool:
+    def __eq__(self, other: object) -> bool:
         if isinstance(other, AgentID):
             return self.id == other.id
         if isinstance(other, str):
@@ -82,7 +81,7 @@ class AgentID:
 class MessageID:
     """Message identifier using UUID v4."""
 
-    def __init__(self, message_id: Optional[str] = None):
+    def __init__(self, message_id: Optional[str] = None) -> None:
         if message_id is None:
             self.id = str(uuid.uuid4())
         else:
@@ -105,7 +104,7 @@ class MessageID:
     def __repr__(self) -> str:
         return f"MessageID('{self.id}')"
 
-    def __eq__(self, other) -> bool:
+    def __eq__(self, other: object) -> bool:
         if isinstance(other, MessageID):
             return self.id == other.id
         if isinstance(other, str):
@@ -120,7 +119,7 @@ class Duration:
     """Duration parser and validator."""
 
     @staticmethod
-    def parse(duration_str: str) -> float:
+    def parse(duration_str: Union[str, int, float]) -> float:
         """Parse a duration string like '30s' into seconds."""
         units = {"ms": 0.001, "s": 1, "m": 60, "h": 3600, "d": 86400}
 

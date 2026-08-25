@@ -6,7 +6,6 @@ Core message handling for MAPLE's perfect communication protocol.
 """
 
 import json
-import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Union
 
@@ -29,7 +28,7 @@ class Message:
         message_id: Optional[Union[str, MessageID]] = None,
         sender: Optional[Union[str, AgentID]] = None,
         timestamp: Optional[datetime] = None,
-    ):
+    ) -> None:
         # Validate and set message ID
         if message_id is None:
             self.message_id = MessageID()
@@ -221,7 +220,7 @@ class Message:
     class Builder:
         """Builder pattern for creating messages."""
 
-        def __init__(self):
+        def __init__(self) -> None:
             self._message_id = None
             self._timestamp = None
             self._sender = None
@@ -287,7 +286,7 @@ class Message:
         """Create a message builder."""
         return cls.Builder()
 
-    def __eq__(self, other) -> bool:
+    def __eq__(self, other: object) -> bool:
         if not isinstance(other, Message):
             return False
         return (
