@@ -20,7 +20,7 @@ import logging
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from ..agent.agent import Agent
 from ..agent.config import Config
@@ -37,6 +37,7 @@ from ..llm.types import (
 )
 from .memory import MemoryManager
 from .approval import ApprovalRequest, ApprovalStore
+from .sessions import SessionMessage, SessionSnapshot, SessionStore
 from .tools import Tool, ToolRegistry, create_builtin_tools
 from .contracts import Guardrail, parse_structured_output, run_guardrails
 
@@ -65,6 +66,17 @@ class Goal:
     sub_goals: List["Goal"] = field(default_factory=list)
     result: Optional[Any] = None
     reasoning_trace: List[ReasoningStep] = field(default_factory=list)
+    session_id: Optional[str] = None
+    session_error: Optional[Dict[str, Any]] = None
+
+
+@dataclass(frozen=True)
+class _SessionTurn:
+    """The versioned session state used by one agent turn."""
+
+    session_id: str
+    version: int
+    messages: Tuple[SessionMessage, ...]
 
 
 @dataclass
@@ -128,6 +140,7 @@ class AutonomousAgent(Agent):
         self._approval_callback: Optional[Callable[[str, Dict], bool]] = None
         self._approval_store: Optional[ApprovalStore] = None
         self._approval_namespace = uuid.uuid4().hex
+        self._session_store: Optional[SessionStore] = None
 
         # Active goals
         self._active_goals: Dict[str, Goal] = {}
@@ -142,6 +155,19 @@ class AutonomousAgent(Agent):
     def set_approval_callback(self, callback: Callable[[str, Dict], bool]) -> None:
         """Set callback for human-in-the-loop approval."""
         self._approval_callback = callback
+
+    def set_session_store(self, store: Optional[SessionStore]) -> None:
+        """Set the opt-in store used for session-aware agent turns."""
+        if store is not None:
+            required_methods = ("create", "load", "append", "clear")
+            if any(
+                not callable(getattr(store, name, None))
+                for name in required_methods
+            ):
+                raise TypeError(
+                    "session store must implement create, load, append, and clear"
+                )
+        self._session_store = store
 
     def set_approval_store(self, store: Optional[ApprovalStore]) -> None:
         """Set a durable store used when approval callbacks are unavailable."""
@@ -231,7 +257,178 @@ class AutonomousAgent(Agent):
             skip_approval=True,
         )
 
-    def pursue_goal(self, description: str) -> Result[Goal, Dict[str, Any]]:
+    @staticmethod
+    def _session_store_failure(
+        operation: str, exception: Exception
+    ) -> Result[Any, Dict[str, Any]]:
+        return Result.err(
+            {
+                "errorType": "SESSION_STORE_ERROR",
+                "message": "Session store operation failed.",
+                "details": {
+                    "operation": operation,
+                    "exception": type(exception).__name__,
+                },
+            }
+        )
+
+    def _prepare_session_turn(
+        self, description: str, session_id: Optional[str]
+    ) -> Result[Optional[_SessionTurn], Dict[str, Any]]:
+        try:
+            return self._prepare_session_turn_unchecked(description, session_id)
+        except Exception as exc:
+            return self._session_store_failure("prepare", exc)
+
+    def _prepare_session_turn_unchecked(
+        self, description: str, session_id: Optional[str]
+    ) -> Result[Optional[_SessionTurn], Dict[str, Any]]:
+        """Create/load a session and CAS-append the current user turn."""
+        if session_id is None:
+            return Result.ok(None)
+        if self._session_store is None:
+            return Result.err(
+                {
+                    "errorType": "SESSION_STORE_UNAVAILABLE",
+                    "message": (
+                        "A session store is required when session_id is provided."
+                    ),
+                }
+            )
+
+        loaded = self._session_store.load(session_id)
+        if loaded.is_err():
+            return Result.err(loaded.unwrap_err())
+        snapshot = loaded.unwrap()
+        if snapshot is None:
+            created = self._session_store.create(session_id)
+            if created.is_err():
+                if created.unwrap_err().get("errorType") != "SESSION_EXISTS":
+                    return Result.err(created.unwrap_err())
+                loaded = self._session_store.load(session_id)
+                if loaded.is_err():
+                    return Result.err(loaded.unwrap_err())
+                snapshot = loaded.unwrap()
+            else:
+                snapshot = created.unwrap()
+        if not isinstance(snapshot, SessionSnapshot):
+            return Result.err(
+                {
+                    "errorType": "SESSION_STORE_INVALID",
+                    "message": "Session store returned an invalid snapshot.",
+                }
+            )
+
+        appended = self._session_store.append(
+            session_id,
+            SessionMessage(role=ChatRole.USER.value, content=description),
+            expected_version=snapshot.version,
+        )
+        if appended.is_err():
+            return Result.err(appended.unwrap_err())
+        updated = appended.unwrap()
+        if not isinstance(updated, SessionSnapshot):
+            return Result.err(
+                {
+                    "errorType": "SESSION_STORE_INVALID",
+                    "message": "Session store returned an invalid appended snapshot.",
+                }
+            )
+        return Result.ok(
+            _SessionTurn(
+                session_id=updated.session_id,
+                version=updated.version,
+                messages=tuple(updated.messages),
+            )
+        )
+
+    @staticmethod
+    def _serialize_session_result(value: Any) -> Result[str, Dict[str, Any]]:
+        """Encode a goal result as bounded-store-compatible text."""
+        if isinstance(value, str):
+            return Result.ok(value)
+        try:
+            return Result.ok(
+                json.dumps(
+                    value,
+                    ensure_ascii=False,
+                    allow_nan=False,
+                    separators=(",", ":"),
+                )
+            )
+        except (TypeError, ValueError, OverflowError):
+            return Result.err(
+                {
+                    "errorType": "SESSION_RESULT_INVALID",
+                    "message": (
+                        "The goal result could not be serialized for the session."
+                    ),
+                }
+            )
+
+    def _record_session_turn(
+        self, session_turn: Optional[_SessionTurn], goal: Goal
+    ) -> Result[None, Dict[str, Any]]:
+        """Append one assistant result after execution, using the prior version."""
+        try:
+            return self._record_session_turn_unchecked(session_turn, goal)
+        except Exception as exc:
+            return self._session_store_failure("record", exc)
+
+    def _record_session_turn_unchecked(
+        self, session_turn: Optional[_SessionTurn], goal: Goal
+    ) -> Result[None, Dict[str, Any]]:
+        if session_turn is None:
+            return Result.ok(None)
+        if self._session_store is None:
+            return Result.err(
+                {
+                    "errorType": "SESSION_STORE_UNAVAILABLE",
+                    "message": "The configured session store is no longer available.",
+                }
+            )
+        serialized = self._serialize_session_result(goal.result)
+        if serialized.is_err():
+            return Result.err(serialized.unwrap_err())
+        appended = self._session_store.append(
+            session_turn.session_id,
+            SessionMessage(
+                role=ChatRole.ASSISTANT.value,
+                content=serialized.unwrap(),
+                metadata={"goal_id": goal.goal_id, "status": goal.status},
+            ),
+            expected_version=session_turn.version,
+        )
+        if appended.is_err():
+            return Result.err(appended.unwrap_err())
+        if not isinstance(appended.unwrap(), SessionSnapshot):
+            return Result.err(
+                {
+                    "errorType": "SESSION_STORE_INVALID",
+                    "message": "Session store returned an invalid result snapshot.",
+                }
+            )
+        return Result.ok(None)
+
+    async def _prepare_session_turn_async(
+        self, description: str, session_id: Optional[str]
+    ) -> Result[Optional[_SessionTurn], Dict[str, Any]]:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            None, self._prepare_session_turn, description, session_id
+        )
+
+    async def _record_session_turn_async(
+        self, session_turn: Optional[_SessionTurn], goal: Goal
+    ) -> Result[None, Dict[str, Any]]:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            None, self._record_session_turn, session_turn, goal
+        )
+
+    def pursue_goal(
+        self, description: str, *, session_id: Optional[str] = None
+    ) -> Result[Goal, Dict[str, Any]]:
         """
         Main entry point: pursue a high-level goal using the ReAct loop.
         """
@@ -242,21 +439,34 @@ class AutonomousAgent(Agent):
         )
         if input_guardrails.is_err():
             return Result.err(input_guardrails.unwrap_err())
+        session_result = self._prepare_session_turn(description, session_id)
+        if session_result.is_err():
+            return Result.err(session_result.unwrap_err())
+        session_turn = session_result.unwrap()
         goal = Goal(
             goal_id=str(uuid.uuid4()),
             description=description,
             status="in_progress",
+            session_id=session_id,
         )
         self._active_goals[goal.goal_id] = goal
 
         try:
-            result = self._react_loop(goal)
+            result = self._react_loop(
+                goal,
+                session_messages=(
+                    session_turn.messages if session_turn is not None else None
+                ),
+            )
             if result.is_ok():
                 goal.status = "completed"
                 goal.result = result.unwrap()
             else:
                 goal.status = "failed"
                 goal.result = result.unwrap_err()
+            session_record = self._record_session_turn(session_turn, goal)
+            if session_record.is_err():
+                goal.session_error = session_record.unwrap_err()
             return Result.ok(goal)
         except Exception as e:
             goal.status = "failed"
@@ -269,7 +479,12 @@ class AutonomousAgent(Agent):
                 }
             )
 
-    def _react_loop(self, goal: Goal) -> Result[Any, Dict[str, Any]]:
+    def _react_loop(
+        self,
+        goal: Goal,
+        *,
+        session_messages: Optional[Sequence[SessionMessage]] = None,
+    ) -> Result[Any, Dict[str, Any]]:
         """
         ReAct (Reasoning + Acting) loop.
 
@@ -277,7 +492,7 @@ class AutonomousAgent(Agent):
         2. ACT: Execute tool calls or send messages
         3. REFLECT: Assess progress, update memory, decide if done
         """
-        messages = self._build_initial_context(goal)
+        messages = self._build_initial_context(goal, session_messages=session_messages)
 
         for step_num in range(self.autonomy_config.max_reasoning_steps):
             start_time = time.time()
@@ -516,7 +731,12 @@ class AutonomousAgent(Agent):
             is_error=True,
         )
 
-    def _build_initial_context(self, goal: Goal) -> List[ChatMessage]:
+    def _build_initial_context(
+        self,
+        goal: Goal,
+        *,
+        session_messages: Optional[Sequence[SessionMessage]] = None,
+    ) -> List[ChatMessage]:
         """Build the initial message context for the ReAct loop."""
         system_prompt = (
             self.autonomy_config.system_prompt or self._default_system_prompt()
@@ -539,12 +759,22 @@ class AutonomousAgent(Agent):
                 )
             )
 
-        messages.append(
-            ChatMessage(
-                role=ChatRole.USER,
-                content=goal.description,
+        if session_messages is None:
+            messages.append(
+                ChatMessage(
+                    role=ChatRole.USER,
+                    content=goal.description,
+                )
             )
-        )
+        else:
+            # Stored system/tool messages are data only and are never replayed
+            # into a new prompt. The current user turn was already appended by
+            # _prepare_session_turn with a compare-and-swap version check.
+            messages.extend(
+                message.to_chat_message()
+                for message in session_messages
+                if message.role in {ChatRole.USER.value, ChatRole.ASSISTANT.value}
+            )
 
         return messages
 
@@ -680,7 +910,7 @@ Instructions:
     # --- Async support ---
 
     async def pursue_goal_async(
-        self, description: str
+        self, description: str, *, session_id: Optional[str] = None
     ) -> Result["Goal", Dict[str, Any]]:
         """Async entry point: pursue a high-level goal using the async ReAct loop."""
         input_guardrails = run_guardrails(
@@ -690,21 +920,36 @@ Instructions:
         )
         if input_guardrails.is_err():
             return Result.err(input_guardrails.unwrap_err())
+        session_result = await self._prepare_session_turn_async(description, session_id)
+        if session_result.is_err():
+            return Result.err(session_result.unwrap_err())
+        session_turn = session_result.unwrap()
         goal = Goal(
             goal_id=str(uuid.uuid4()),
             description=description,
             status="in_progress",
+            session_id=session_id,
         )
         self._active_goals[goal.goal_id] = goal
 
         try:
-            result = await self._react_loop_async(goal)
+            result = await self._react_loop_async(
+                goal,
+                session_messages=(
+                    session_turn.messages if session_turn is not None else None
+                ),
+            )
             if result.is_ok():
                 goal.status = "completed"
                 goal.result = result.unwrap()
             else:
                 goal.status = "failed"
                 goal.result = result.unwrap_err()
+            session_record = await self._record_session_turn_async(
+                session_turn, goal
+            )
+            if session_record.is_err():
+                goal.session_error = session_record.unwrap_err()
             return Result.ok(goal)
         except Exception as e:
             goal.status = "failed"
@@ -717,9 +962,14 @@ Instructions:
                 }
             )
 
-    async def _react_loop_async(self, goal: Goal) -> Result[Any, Dict[str, Any]]:
+    async def _react_loop_async(
+        self,
+        goal: Goal,
+        *,
+        session_messages: Optional[Sequence[SessionMessage]] = None,
+    ) -> Result[Any, Dict[str, Any]]:
         """Async ReAct loop — enables parallel tool execution and async LLM calls."""
-        messages = self._build_initial_context(goal)
+        messages = self._build_initial_context(goal, session_messages=session_messages)
 
         for step_num in range(self.autonomy_config.max_reasoning_steps):
             start_time = time.time()

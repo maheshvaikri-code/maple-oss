@@ -844,9 +844,27 @@ Session IDs, roles, metadata, message count, message bytes, and serialized
 session bytes are bounded before mutation. Appends and clears accept an
 optional expected version and return `SESSION_CONFLICT` on a stale version.
 Returned snapshots are fresh JSON-safe copies. File persistence is
-thread-safe within one process; encryption, cross-process leases, automatic
-agent binding, summarization, and executable conversation replay remain
-separate host/runtime decisions.
+thread-safe within one process; encryption, cross-process leases, and
+summarization remain separate host/runtime decisions.
+
+`AutonomousAgent` can bind these sessions explicitly for multi-turn context:
+
+```python
+from maple import InMemorySessionStore
+
+agent.set_session_store(InMemorySessionStore())
+goal = agent.pursue_goal("Summarize this document.", session_id="chat-1")
+```
+
+The current user turn is appended with an optimistic version check before the
+LLM runs. Only stored `user` and `assistant` messages are replayed; stored
+`system` and `tool` messages remain data and are not promoted into the prompt.
+The same contract is available through `pursue_goal_async`. If execution
+finishes but the assistant result cannot be persisted, the returned `Goal`
+remains available and exposes the typed failure in `goal.session_error`.
+Without `session_id`, existing agent behavior is unchanged. Full ReAct trace
+replay, tool-result replay, compaction, authentication, and cross-process
+turn leases remain separate capabilities.
 
 ### Loopback workflow run server
 
