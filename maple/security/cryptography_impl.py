@@ -97,7 +97,7 @@ class KeyPair:
         if not CRYPTO_AVAILABLE:
             return "CRYPTO_NOT_AVAILABLE"
 
-        encryption = serialization.NoEncryption()
+        encryption: Any = serialization.NoEncryption()
         if password:
             encryption = serialization.BestAvailableEncryption(password)
 
@@ -148,14 +148,14 @@ class CryptographyManager:
         try:
             if key_type.startswith("RSA"):
                 key_size = int(key_type[3:])  # Extract size from "RSA4096"
-                private_key = rsa.generate_private_key(
+                private_key: Any = rsa.generate_private_key(
                     public_exponent=65537, key_size=key_size
                 )
-                public_key = private_key.public_key()
+                public_key: Any = private_key.public_key()
 
             elif key_type.startswith("ECDSA"):
                 if "P256" in key_type:
-                    curve = ec.SECP256R1()
+                    curve: Any = ec.SECP256R1()
                 elif "P384" in key_type:
                     curve = ec.SECP384R1()
                 else:

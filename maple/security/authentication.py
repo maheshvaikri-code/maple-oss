@@ -22,10 +22,12 @@ Provides enterprise-grade authentication with multiple methods
 """
 
 import time
+from typing import Any, Dict, List, Optional, Union
 
 try:
-    import jwt
+    import jwt as jwt_module
 
+    jwt: Any = jwt_module
     JWT_AVAILABLE = True
 except ImportError:
     jwt = None
@@ -35,7 +37,6 @@ import hashlib
 import logging
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, List, Optional, Union
 
 from ..core.result import Result
 from .cryptography_impl import CRYPTO_AVAILABLE, CryptographyManager

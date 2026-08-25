@@ -177,7 +177,7 @@ class Agent:
             message.sender = self.agent_id
 
         if require_routable and hasattr(self.broker, "is_routable"):
-            if not self.broker.is_routable(message.receiver):
+            if not self.broker.is_routable(cast(str, message.receiver)):
                 self.messages_failed += 1
                 error = {
                     "errorType": "UNROUTABLE",
