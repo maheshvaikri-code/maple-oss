@@ -53,7 +53,7 @@ Most agent frameworks give you either **infrastructure** (messaging, security, f
 - **Multi-Agent Orchestration** — Form teams by capability, execute via supervisor delegation or consensus voting.
 - **MCP Tool Discovery** — Discover live `tools/list` descriptors over bounded Streamable HTTP and use approved external tools as native MAPLE tools; the legacy URL-only helper remains offline for compatibility.
 - **Observability** — Full decision traces, agent snapshots, token usage tracking.
-- **Workflow Runtime (preview)** — Define validated workflows with stable run IDs, JSON-safe node-boundary checkpoints, interruption, conditional routing, and local file-backed resume.
+- **Workflow Runtime (preview)** — Define validated workflows with stable run IDs, JSON-safe node-boundary checkpoints, bounded fan-out/fan-in, interruption, conditional routing, local file-backed resume, and bounded in-process history inspection.
 
 ### Production Infrastructure
 

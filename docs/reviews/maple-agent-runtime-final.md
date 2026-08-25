@@ -36,6 +36,8 @@ The feature program now includes:
 - dependency-free vector retrieval over caller-supplied embeddings with
   bounded validation, deterministic cosine ranking, quotas, and source
   citations (ADR-015).
+- bounded in-process workflow checkpoint history for immutable state-transition
+  inspection without replaying node side effects (ADR-016).
 
 Slice-level review artifacts are filed in `docs/reviews/` and corresponding QA
 artifacts in `docs/qa/`. No website, cloud, external publication, license, or
@@ -45,7 +47,7 @@ new dependency change was made.
 
 ```text
 Focused LLM/autonomy/CLI regression:
-196 passed, 1 warning in 0.88s
+199 passed, 1 warning in 0.86s
 
 Focused provider-stream regression:
 5 passed, 1 warning in 0.03s
@@ -113,7 +115,7 @@ Doctor:
 
 ## Verdict
 
-**Feature review:** PASS for the seventeen implemented capability slices.
+**Feature review:** PASS for the eighteen implemented capability slices.
 **Publish readiness:** NOT YET APPROVED. A release manager should close the
 open full-suite, isolated-environment dependency/audit, repository lint, and
 fresh-verifier gates before publishing. External publication remains awaiting

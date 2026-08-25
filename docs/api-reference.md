@@ -766,8 +766,27 @@ restored as data rather than executable objects. The current file store is
 atomic and thread-safe within one process. Fan-out uses bounded trusted
 in-process threads; it is not a hard sandbox, and a pause before the group
 checkpoint may repeat branch side effects when resumed. Cross-process
-coordination, per-branch retry, replay, and state history remain planned
-follow-on capabilities.
+coordination, per-branch retry, replay, and durable history remain planned
+follow-on capabilities. The history decorator below provides only bounded
+current-process inspection.
+
+Wrap any checkpoint store with `HistoryCheckpointStore` to retain bounded
+immutable snapshots for current-process inspection:
+
+```python
+from maple import HistoryCheckpointStore, InMemoryCheckpointStore
+
+history_store = HistoryCheckpointStore(
+    InMemoryCheckpointStore(), max_history=100
+)
+workflow = Workflow("inspectable", checkpoint_store=history_store)
+# ... define and run the workflow ...
+snapshots = history_store.history(run_id, limit=20)
+```
+
+History is ordered by checkpoint version and returns JSON-safe copies. It is an
+inspection surface, not executable replay: node handlers are never re-run, and
+the history decorator does not claim cross-process or restart persistence.
 
 ### Durable tool approvals
 

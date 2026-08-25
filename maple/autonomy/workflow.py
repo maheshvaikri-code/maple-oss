@@ -496,6 +496,78 @@ class FileCheckpointStore:
             )
 
 
+class HistoryCheckpointStore:
+    """Bounded in-process checkpoint history decorator.
+
+    The wrapped store remains the source of truth for recovery. History is an
+    immutable inspection log for the current process and does not replay node
+    handlers or claim cross-process durability.
+    """
+
+    def __init__(
+        self, store: CheckpointStore, *, max_history: int = 100
+    ) -> None:
+        if not 0 < max_history <= 10_000:
+            raise ValueError("max_history must be between 1 and 10000")
+        self.store = store
+        self.max_history = max_history
+        self._history: Dict[str, List[WorkflowCheckpoint]] = {}
+        self._lock = threading.RLock()
+
+    def load(self, run_id: str) -> Result[Optional[WorkflowCheckpoint], Error]:
+        return self.store.load(run_id)
+
+    def save(
+        self,
+        checkpoint: WorkflowCheckpoint,
+        expected_version: Optional[int] = None,
+    ) -> Result[WorkflowCheckpoint, Error]:
+        saved_result = self.store.save(checkpoint, expected_version=expected_version)
+        if saved_result.is_err():
+            return Result.err(saved_result.unwrap_err())
+        saved = saved_result.unwrap()
+        with self._lock:
+            snapshots = self._history.setdefault(saved.run_id, [])
+            snapshots.append(WorkflowCheckpoint.from_dict(saved.to_dict()))
+            if len(snapshots) > self.max_history:
+                del snapshots[: len(snapshots) - self.max_history]
+        return Result.ok(saved)
+
+    def history(
+        self, run_id: str, *, limit: Optional[int] = None
+    ) -> Result[List[WorkflowCheckpoint], Error]:
+        identifier_error = _valid_identifier(run_id, "run_id")
+        if identifier_error:
+            return Result.err(identifier_error)
+        effective_limit = self.max_history if limit is None else limit
+        if (
+            not isinstance(effective_limit, int)
+            or isinstance(effective_limit, bool)
+            or not 0 < effective_limit <= self.max_history
+        ):
+            return Result.err(
+                _error(
+                    "HISTORY_LIMIT_INVALID",
+                    "History limit is outside the configured range.",
+                    max_history=self.max_history,
+                )
+            )
+        with self._lock:
+            snapshots = self._history.get(run_id, [])
+            if snapshots:
+                selected = snapshots[-effective_limit:]
+                return Result.ok(
+                    [WorkflowCheckpoint.from_dict(item.to_dict()) for item in selected]
+                )
+        loaded_result = self.store.load(run_id)
+        if loaded_result.is_err():
+            return Result.err(loaded_result.unwrap_err())
+        current = loaded_result.unwrap()
+        if current is None:
+            return Result.ok([])
+        return Result.ok([WorkflowCheckpoint.from_dict(current.to_dict())])
+
+
 class Workflow:
     """Validated workflow with durable node-boundary checkpoints.
 

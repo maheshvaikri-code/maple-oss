@@ -56,6 +56,10 @@
   bounded in-memory cosine index over caller-supplied finite embeddings, with
   one-vector-per-chunk validation, deterministic ties, source citations, and
   no embedding-model or vector-database dependency.
+- **Bounded workflow history** (`maple.autonomy.workflow`): added an
+  in-process `HistoryCheckpointStore` decorator that retains immutable,
+  version-ordered checkpoint snapshots for inspection without claiming
+  executable replay or cross-process durability.
 - **Release metadata hardening**: `pyproject.toml` is now the single source
   for package metadata, the legacy `setup.py` delegates to it, and the source
   manifest includes only files present in the repository. Wheel/sdist builds

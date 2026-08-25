@@ -5,6 +5,7 @@ import threading
 
 from maple.autonomy import (
     FileCheckpointStore,
+    HistoryCheckpointStore,
     InMemoryCheckpointStore,
     Workflow,
     WorkflowPause,
@@ -190,6 +191,51 @@ def test_non_json_node_error_is_replaced_with_persistable_failure():
     assert result.is_ok()
     assert result.unwrap().status == "failed"
     assert result.unwrap().error["errorType"] == "WORKFLOW_FAILURE_NOT_SERIALIZABLE"
+
+
+def test_history_store_retains_immutable_checkpoint_snapshots():
+    history_store = HistoryCheckpointStore(InMemoryCheckpointStore(), max_history=10)
+    workflow = Workflow("history", checkpoint_store=history_store)
+    workflow.add_node("first", lambda context: {"first": True})
+    workflow.add_node("second", lambda context: {"second": True})
+    workflow.set_entry_point("first")
+    workflow.add_edge("first", "second")
+    workflow.add_edge("second")
+
+    result = workflow.run({}, run_id="history-run")
+    snapshots = history_store.history("history-run")
+
+    assert result.is_ok()
+    assert snapshots.is_ok()
+    assert [item.version for item in snapshots.unwrap()] == [1, 2, 3]
+    assert [item.next_node for item in snapshots.unwrap()] == ["first", "second", None]
+    assert snapshots.unwrap()[1].state == {"first": True}
+    assert snapshots.unwrap()[0].state == {}
+
+
+def test_history_store_trims_old_snapshots_and_validates_limit():
+    history_store = HistoryCheckpointStore(InMemoryCheckpointStore(), max_history=2)
+    workflow = Workflow("trimmed_history", checkpoint_store=history_store)
+    workflow.add_node("only", lambda context: {"ok": True})
+    workflow.set_entry_point("only")
+    workflow.run({}, run_id="trimmed-run")
+
+    trimmed = history_store.history("trimmed-run", limit=2)
+    invalid = history_store.history("trimmed-run", limit=3)
+
+    assert trimmed.is_ok()
+    assert [item.version for item in trimmed.unwrap()] == [1, 2]
+    assert invalid.is_err()
+    assert invalid.unwrap_err()["errorType"] == "HISTORY_LIMIT_INVALID"
+
+
+def test_history_store_does_not_claim_history_for_missing_runs():
+    history_store = HistoryCheckpointStore(InMemoryCheckpointStore())
+
+    result = history_store.history("missing-run")
+
+    assert result.is_ok()
+    assert result.unwrap() == []
 
 
 def test_fan_out_runs_branches_concurrently_and_commits_ordered_merge():
