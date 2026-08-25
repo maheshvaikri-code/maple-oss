@@ -1,7 +1,7 @@
 """Tests for maple.task_management.scheduler - TaskScheduler."""
 
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 from maple.task_management.task_queue import TaskQueue, TaskPriority
 from maple.task_management.scheduler import TaskScheduler, SchedulingPolicy
 

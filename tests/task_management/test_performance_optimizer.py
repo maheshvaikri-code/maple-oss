@@ -2,10 +2,10 @@
 
 import time
 import pytest
-from unittest.mock import MagicMock, PropertyMock
+from unittest.mock import MagicMock
 from dataclasses import dataclass, field
 from maple.task_management.task_queue import TaskQueue, TaskPriority, TaskStatus
-from maple.task_management.scheduler import TaskScheduler, SchedulingPolicy
+from maple.task_management.scheduler import TaskScheduler
 from maple.task_management.monitor import TaskMonitor
 from maple.task_management.performance_optimizer import (
     PerformanceOptimizer,

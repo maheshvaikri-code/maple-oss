@@ -4,7 +4,7 @@ import pytest
 from maple.llm.provider import LLMProvider
 from maple.llm.registry import LLMProviderRegistry
 from maple.llm.types import (
-    ChatMessage, ChatRole, LLMConfig, LLMResponse, TokenUsage, ToolDefinition,
+    ChatMessage, ChatRole, LLMConfig, LLMResponse, TokenUsage,
 )
 from maple.core.result import Result
 

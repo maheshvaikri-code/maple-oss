@@ -3,14 +3,9 @@
 
 """Tests for S2.dev adapter integration."""
 
-import json
-import time
 import unittest
-from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
-from dataclasses import dataclass
+from unittest.mock import MagicMock, patch
 
-from maple.core.message import Message
-from maple.core.result import Result
 from maple.broker.production_broker import BrokerType, ProductionBrokerManager
 
 

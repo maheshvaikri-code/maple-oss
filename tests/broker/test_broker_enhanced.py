@@ -1,7 +1,6 @@
 """Tests for enhanced broker features (MessageQueue, MessageRouter, Authorization wiring)."""
 
 import pytest
-import threading
 import time
 from maple.agent.config import Config, SecurityConfig
 from maple.broker.broker import MessageBroker

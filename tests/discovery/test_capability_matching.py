@@ -2,8 +2,8 @@
 # MAPLE - Multi Agent Protocol Language Engine
 
 import unittest
-from maple.discovery.capability_matcher import CapabilityMatcher, CapabilityRequirement, CapabilityMatch
-from maple.discovery.registry import AgentRegistry, AgentInfo
+from maple.discovery.capability_matcher import CapabilityMatcher, CapabilityRequirement
+from maple.discovery.registry import AgentRegistry
 
 
 class TestCapabilityMatchingValidation(unittest.TestCase):

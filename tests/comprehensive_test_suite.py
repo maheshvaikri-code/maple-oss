@@ -26,17 +26,12 @@ Complete test coverage for all MAPLE components including:
 - Security tests for authentication and encryption
 """
 
-import sys
-import os
-import time
-import asyncio
-import threading
-import tempfile
-import json
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import List, Dict, Any
-import unittest
-import traceback
+import sys  # noqa: E402
+import os  # noqa: E402
+import time  # noqa: E402
+import json  # noqa: E402
+from concurrent.futures import ThreadPoolExecutor, as_completed  # noqa: E402
+from typing import Dict, Any  # noqa: E402
 
 # Add the project root to Python path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -111,10 +106,12 @@ class MAPLETestSuite:
         
         # Test 1: Import all core modules
         try:
-            from maple.core.types import Priority, Size, Duration, Boolean, Integer, String
-            from maple.core.result import Result
-            from maple.core.message import Message
-            from maple.agent.config import Config, SecurityConfig
+            from maple.core.types import (  # noqa: F401
+                Priority, Size, Duration, Boolean, Integer, String
+            )
+            from maple.core.result import Result  # noqa: F401
+            from maple.core.message import Message  # noqa: F401
+            from maple.agent.config import Config, SecurityConfig  # noqa: F401
             print("  [PASS] Core imports successful")
             passed += 1
         except Exception as e:
@@ -150,12 +147,12 @@ class MAPLETestSuite:
             
             # Test Ok result
             ok_result = Result.ok("success")
-            assert ok_result.is_ok() == True
+            assert ok_result.is_ok()
             assert ok_result.unwrap() == "success"
             
             # Test Err result
             err_result = Result.err("error")
-            assert err_result.is_err() == True
+            assert err_result.is_err()
             assert err_result.unwrap_err() == "error"
             
             # Test mapping
@@ -297,11 +294,11 @@ class MAPLETestSuite:
         try:
             agent.start()
             time.sleep(0.1)  # Give it time to start
-            assert agent.running == True
+            assert agent.running
             
             agent.stop()
             time.sleep(0.1)  # Give it time to stop
-            assert agent.running == False
+            assert not agent.running
             
             print("  [PASS] Agent lifecycle working")
             passed += 1
@@ -338,7 +335,7 @@ class MAPLETestSuite:
         
         # Test 1: Resource specification
         try:
-            from maple.resources.specification import ResourceRequest, ResourceRange, TimeConstraint
+            from maple.resources.specification import ResourceRequest, ResourceRange
             
             # Test resource range
             cpu_range = ResourceRange(min=2, preferred=4, max=8)
@@ -417,7 +414,7 @@ class MAPLETestSuite:
         
         # Test 1: Authentication manager
         try:
-            from maple.security.authentication import AuthenticationManager, AuthCredentials, AuthMethod
+            from maple.security.authentication import AuthenticationManager
             
             auth_manager = AuthenticationManager()
             
@@ -444,7 +441,7 @@ class MAPLETestSuite:
         
         # Test 2: Link management
         try:
-            from maple.security.link import LinkManager, Link, LinkState
+            from maple.security.link import LinkManager, LinkState
             
             link_manager = LinkManager()
             
@@ -517,7 +514,7 @@ class MAPLETestSuite:
         
         # Test 1: Circuit breaker pattern
         try:
-            from maple.error.circuit_breaker import CircuitBreaker, CircuitState
+            from maple.error.circuit_breaker import CircuitBreaker
             from maple.core.result import Result
             
             circuit = CircuitBreaker(failure_threshold=3, reset_timeout=1.0)
@@ -589,7 +586,7 @@ class MAPLETestSuite:
             
             assert error.error_type == ErrorType.VALIDATION_ERROR.value
             assert error.severity == Severity.MEDIUM
-            assert error.recoverable == True
+            assert error.recoverable
             
             # Test serialization
             error_dict = error.to_dict()
@@ -619,7 +616,7 @@ class MAPLETestSuite:
             
             # Test connection
             broker.connect()
-            assert broker.running == True
+            assert broker.running
             
             # Test message sending
             msg = Message(
@@ -649,7 +646,7 @@ class MAPLETestSuite:
             # Test broker availability detection
             available = ProductionBrokerManager.get_available_brokers()
             assert BrokerType.IN_MEMORY in available
-            assert available[BrokerType.IN_MEMORY] == True
+            assert available[BrokerType.IN_MEMORY]
             
             # Test broker creation
             broker_result = ProductionBrokerManager.create_broker(
@@ -672,7 +669,7 @@ class MAPLETestSuite:
             from maple.broker.nats_broker import NATS_AVAILABLE
             
             if NATS_AVAILABLE:
-                from maple.broker.nats_broker import NATSConfig, NATSBrokerSync
+                from maple.broker.nats_broker import NATSConfig
                 
                 # Test NATS configuration
                 nats_config = NATSConfig(
@@ -770,7 +767,6 @@ class MAPLETestSuite:
         # Test 3: Concurrent agent operations
         try:
             from maple import Agent, Config, SecurityConfig
-            import threading
             
             # Create multiple agents concurrently
             agent_count = 10
@@ -912,7 +908,7 @@ class MAPLETestSuite:
                 print("  [PASS] Request-response pattern working")
                 passed += 1
             else:
-                print(f"  [WARN]  Request-response timeout (normal in fast test environment)")
+                print("  [WARN]  Request-response timeout (normal in fast test environment)")
                 passed += 1
             
             # Clean up
@@ -996,7 +992,7 @@ class MAPLETestSuite:
             )
             
             assert config.agent_id == "production_agent"
-            assert config.security.require_links == True
+            assert config.security.require_links
             assert config.security.link_config.default_lifetime == 7200
             assert config.performance.max_concurrent_requests == 100
             
@@ -1008,7 +1004,6 @@ class MAPLETestSuite:
         
         # Test 2: Error recovery scenarios
         try:
-            from maple.error.circuit_breaker import CircuitBreaker
             from maple.error.recovery import retry, RetryOptions, exponential_backoff
             from maple.core.result import Result
             
@@ -1145,7 +1140,7 @@ class MAPLETestSuite:
         try:
             with open("maple_test_report.json", "w") as f:
                 json.dump(report, f, indent=2)
-            print(f"\\n📄 Test report saved to: maple_test_report.json")
+            print("\\n📄 Test report saved to: maple_test_report.json")
         except Exception as e:
             print(f"\\n[WARN]  Could not save test report: {e}")
     
@@ -1160,7 +1155,7 @@ class MAPLETestSuite:
                 "processor": platform.processor(),
                 "python_implementation": platform.python_implementation()
             }
-        except:
+        except Exception:
             return {"error": "Could not gather system info"}
 
 def main():

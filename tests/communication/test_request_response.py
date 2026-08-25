@@ -8,7 +8,6 @@ from maple.communication.request_response import (
 )
 from maple.core.message import Message
 from maple.core.result import Result
-from maple.core.types import Priority
 
 
 @pytest.fixture

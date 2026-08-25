@@ -2,7 +2,6 @@
 
 import json
 import time
-import pytest
 from maple.autonomy.observability import DecisionTrace, DecisionLogger, AgentSnapshot
 
 

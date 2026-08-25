@@ -1,6 +1,5 @@
 """Tests for maple.error.recovery - retry and backoff functions."""
 
-import pytest
 from maple.error.recovery import retry, RetryOptions, exponential_backoff
 from maple.core.result import Result
 

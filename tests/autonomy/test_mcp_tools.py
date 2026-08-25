@@ -1,6 +1,5 @@
 """Tests for MCP tool discovery and integration."""
 
-import pytest
 from maple.autonomy.mcp_tools import discover_mcp_tools, register_mcp_tools
 from maple.autonomy.tools import Tool, ToolRegistry
 from maple.core.result import Result

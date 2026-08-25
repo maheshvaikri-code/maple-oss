@@ -1,7 +1,5 @@
 """Tests for the multi-agent orchestrator."""
 
-import pytest
-from unittest.mock import MagicMock
 from maple.autonomy.orchestrator import AgentOrchestrator, TeamMember
 from maple.autonomy.agent import Goal
 from maple.core.result import Result

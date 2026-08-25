@@ -29,7 +29,9 @@ class TestSubscriptionConfig:
     """Test SubscriptionConfig dataclass."""
 
     def test_defaults(self):
-        handler = lambda msg: None
+        def handler(msg):
+            pass
+
         sc = SubscriptionConfig(topic="test", handler=handler)
         assert sc.topic == "test"
         assert sc.subscription_type == SubscriptionType.EXACT
@@ -51,21 +53,29 @@ class TestSubscribe:
     """Test subscribing to topics."""
 
     def test_subscribe(self, pubsub):
-        handler = lambda msg: None
+        def handler(msg):
+            pass
+
         result = pubsub.subscribe("alerts", handler)
         assert result.is_ok()
         assert "alerts" in pubsub.get_topics()
 
     def test_subscribe_returns_id(self, pubsub):
-        handler = lambda msg: None
+        def handler(msg):
+            pass
+
         result = pubsub.subscribe("alerts", handler)
         sub_id = result.unwrap()
         assert isinstance(sub_id, str)
         assert "pub_test_agent" in sub_id
 
     def test_subscribe_with_filter(self, pubsub):
-        handler = lambda msg: None
-        filter_fn = lambda msg: msg.priority == Priority.HIGH
+        def handler(msg):
+            pass
+
+        def filter_fn(msg):
+            return msg.priority == Priority.HIGH
+
         result = pubsub.subscribe("alerts", handler, filter_func=filter_fn)
         assert result.is_ok()
 

@@ -1,6 +1,5 @@
 """Tests for the autonomy tool framework."""
 
-import pytest
 from maple.autonomy.tools import Tool, ToolRegistry, create_builtin_tools
 from maple.core.result import Result
 

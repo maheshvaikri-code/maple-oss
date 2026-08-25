@@ -4,7 +4,7 @@
 import unittest
 import time
 import threading
-from maple.task_management.task_queue import TaskQueue, Task, TaskStatus, TaskPriority
+from maple.task_management.task_queue import TaskQueue, TaskStatus, TaskPriority
 
 
 class TestTaskSubmissionQueuing(unittest.TestCase):
@@ -213,7 +213,7 @@ class TestTaskSubmissionQueuing(unittest.TestCase):
         task_id = result.unwrap()
         
         # Get task and mark as failed
-        task = self.task_queue.get_next_task().unwrap()
+        self.task_queue.get_next_task().unwrap()
         self.task_queue.update_task_status(task_id, TaskStatus.FAILED, error="Temporary failure")
         
         # Requeue task

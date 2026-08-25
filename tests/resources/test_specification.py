@@ -1,6 +1,5 @@
 """Tests for maple.resources.specification - ResourceRange, TimeConstraint, ResourceRequest."""
 
-import pytest
 from maple.resources.specification import ResourceRange, TimeConstraint, ResourceRequest
 
 

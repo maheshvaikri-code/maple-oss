@@ -101,7 +101,9 @@ class TestCallbacks:
     """Test health metric callbacks."""
 
     def test_add_callback(self, monitor):
-        cb = lambda m: None
+        def cb(metrics):
+            pass
+
         monitor.add_callback(cb)
         assert len(monitor.callbacks) == 1
 

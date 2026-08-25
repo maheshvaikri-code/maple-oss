@@ -1,7 +1,6 @@
 """Tests for maple/security/__init__.py — fallback classes and exports."""
 
 import time
-import pytest
 from maple.security import (
     AuthenticationManager,
     AuthMethod,

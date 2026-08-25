@@ -1,7 +1,6 @@
 """Tests for maple.core.serialization - Serializer."""
 
 import pytest
-import json
 from maple.core.serialization import Serializer, SerializationFormat
 from maple.core.message import Message
 from maple.core.types import Priority

@@ -6,8 +6,6 @@ from maple.task_management.task_queue import TaskQueue, TaskPriority
 from maple.task_management.result_collector import (
     ResultCollector,
     AggregationType,
-    TaskResult,
-    AggregationGroup,
 )
 
 
@@ -192,8 +190,8 @@ class TestWeightedAverageAggregation:
         collector.collect_task_result(ids[0], "w0", 10.0)
         collector.collect_task_result(ids[1], "w1", 20.0)
 
-        group = collector.get_aggregation_group("g1").unwrap()
         # Expect error because no weights, but group may not complete
+        collector.get_aggregation_group("g1").unwrap()
 
 
 # ---------------------------------------------------------------------------
@@ -237,7 +235,6 @@ class TestCustomAggregation:
         collector.collect_task_result(ids[1], "w1", 2)
 
         # Should not crash, group may be marked as failed
-        group = collector.get_aggregation_group("g1").unwrap()
 
 
 # ---------------------------------------------------------------------------

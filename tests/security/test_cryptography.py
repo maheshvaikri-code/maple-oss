@@ -2,7 +2,7 @@
 
 import pytest
 from maple.security.cryptography_impl import (
-    CryptographyManager, CryptoSuite, KeyPair, CRYPTO_AVAILABLE
+    CryptographyManager, CRYPTO_AVAILABLE
 )
 
 

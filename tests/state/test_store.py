@@ -1,8 +1,5 @@
 """Tests for maple.state.store - StateStore with all backends."""
 
-import os
-import shutil
-import tempfile
 import pytest
 from maple.state.store import StateStore, StorageBackend, ConsistencyLevel, StateEntry
 
@@ -98,14 +95,21 @@ class TestMemoryBackend:
 
     def test_listeners(self, store):
         changes = []
-        store.add_listener(lambda k, e: changes.append((k, e.value)))
+
+        def listener(key, event):
+            changes.append((key, event.value))
+
+        store.add_listener(listener)
         store.set("key", "value")
         assert len(changes) == 1
         assert changes[0] == ("key", "value")
 
     def test_remove_listener(self, store):
         changes = []
-        listener = lambda k, e: changes.append(k)
+
+        def listener(key, event):
+            changes.append(key)
+
         store.add_listener(listener)
         store.set("a", 1)
         store.remove_listener(listener)

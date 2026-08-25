@@ -1,6 +1,5 @@
 """Tests for LLM types."""
 
-import pytest
 from maple.llm.types import (
     ChatRole, ChatMessage, ToolDefinition, ToolCall, ToolResult,
     TokenUsage, LLMResponse, LLMChunk, LLMConfig,

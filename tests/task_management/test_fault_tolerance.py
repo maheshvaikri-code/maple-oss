@@ -4,7 +4,7 @@ import pytest
 from unittest.mock import MagicMock
 from maple.task_management.task_queue import TaskQueue, TaskPriority
 from maple.task_management.fault_tolerance import (
-    FaultTolerantExecutor, FaultTolerancePolicy, FailureType, RetryStrategy
+    FaultTolerantExecutor, FaultTolerancePolicy, FailureType
 )
 
 

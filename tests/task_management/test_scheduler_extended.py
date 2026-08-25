@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import MagicMock
 from dataclasses import dataclass, field
-from maple.task_management.task_queue import TaskQueue, TaskPriority, TaskStatus
+from maple.task_management.task_queue import TaskQueue, TaskPriority
 from maple.task_management.scheduler import TaskScheduler, SchedulingPolicy, SchedulingMetrics
 from maple.core.result import Result
 

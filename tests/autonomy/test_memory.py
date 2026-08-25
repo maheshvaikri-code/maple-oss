@@ -1,11 +1,9 @@
 """Tests for the autonomy memory system."""
 
-import pytest
 from maple.autonomy.memory import (
     WorkingMemory, EpisodicMemory, SemanticMemory, MemoryManager, MemoryEntry,
 )
 from maple.state.store import StateStore, StorageBackend
-from maple.core.result import Result
 
 
 class TestWorkingMemory:
