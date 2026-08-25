@@ -54,6 +54,11 @@
   half-open circuit transition to use a writable validated state boundary;
   fault-tolerance tests pass 10, and the aggregate audit is now `221 errors`
   in 36 files.
+- **Result-collector type boundary**: completed collector lifecycle, metadata,
+  timeout, callback, filtering, cleanup, and background-loop contracts. Custom
+  aggregation now fails with structured data when its callable is absent; the
+  result-collector suite passes 33 tests, and the aggregate audit is now
+  `205 errors` in 35 files.
 - **Repository formatter gate closure**: normalized the tracked `maple/`
   source tree with the configured Black and isort profiles. Both checks are
   now idempotent, the focused runtime gate remains `240 passed`, and a fresh

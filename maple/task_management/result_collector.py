@@ -20,10 +20,10 @@ import threading
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional
 
 from ..core.result import Result
-from .task_queue import Task, TaskQueue, TaskStatus
+from .task_queue import TaskQueue
 
 
 class AggregationType(Enum):
@@ -78,7 +78,7 @@ class AggregationGroup:
 class ResultCollector:
     """Advanced result collection and aggregation system."""
 
-    def __init__(self, task_queue: TaskQueue):
+    def __init__(self, task_queue: TaskQueue) -> None:
         self.task_queue = task_queue
 
         # Result storage
@@ -106,7 +106,7 @@ class ResultCollector:
         }
         self._collection_times: List[float] = []
 
-    def start_collector(self):
+    def start_collector(self) -> None:
         """Start the result collector."""
         with self._lock:
             if self._running:
@@ -118,7 +118,7 @@ class ResultCollector:
             )
             self._collector_thread.start()
 
-    def stop_collector(self):
+    def stop_collector(self) -> None:
         """Stop the result collector."""
         with self._lock:
             self._running = False
@@ -131,8 +131,8 @@ class ResultCollector:
         task_id: str,
         agent_id: str,
         result_data: Any,
-        metadata: Dict[str, Any] = None,
-        confidence_score: float = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        confidence_score: Optional[float] = None,
     ) -> Result[TaskResult, str]:
         """Collect result from a completed task."""
 
@@ -196,8 +196,8 @@ class ResultCollector:
         group_id: str,
         task_ids: List[str],
         aggregation_type: AggregationType,
-        timeout_seconds: float = None,
-        **kwargs,
+        timeout_seconds: Optional[float] = None,
+        **kwargs: Any,
     ) -> Result[AggregationGroup, str]:
         """Create a group for aggregating results from multiple tasks."""
 
@@ -237,7 +237,7 @@ class ResultCollector:
 
         return Result.ok(group)
 
-    def _process_result_for_groups(self, result: TaskResult):
+    def _process_result_for_groups(self, result: TaskResult) -> None:
         """Process a result against all aggregation groups."""
 
         with self._lock:
@@ -245,7 +245,7 @@ class ResultCollector:
                 if result.task_id in group.task_ids and not group.is_complete:
                     self._add_result_to_group(group, result)
 
-    def _add_result_to_group(self, group: AggregationGroup, result: TaskResult):
+    def _add_result_to_group(self, group: AggregationGroup, result: TaskResult) -> None:
         """Add a result to an aggregation group and check for completion."""
 
         # Add result if not already present
@@ -266,7 +266,7 @@ class ResultCollector:
         if should_complete and not group.is_complete:
             self._complete_aggregation_group(group)
 
-    def _complete_aggregation_group(self, group: AggregationGroup):
+    def _complete_aggregation_group(self, group: AggregationGroup) -> None:
         """Complete aggregation for a group."""
 
         try:
@@ -296,7 +296,7 @@ class ResultCollector:
             else:
                 self.stats["failed_aggregations"] += 1
 
-        except Exception as e:
+        except Exception:
             self.stats["failed_aggregations"] += 1
 
     def _aggregate_results(self, group: AggregationGroup) -> Result[Any, str]:
@@ -439,6 +439,8 @@ class ResultCollector:
         """Apply custom aggregation function."""
 
         try:
+            if group.custom_aggregator is None:
+                return Result.err("Custom aggregator function is required")
             result = group.custom_aggregator(group.collected_results)
             return Result.ok(result)
         except Exception as e:
@@ -475,7 +477,10 @@ class ResultCollector:
             return Result.ok(None)
 
     def list_results(
-        self, agent_id: str = None, since_timestamp: float = None, limit: int = 100
+        self,
+        agent_id: Optional[str] = None,
+        since_timestamp: Optional[float] = None,
+        limit: int = 100,
     ) -> List[TaskResult]:
         """List collected results with optional filtering."""
 
@@ -519,15 +524,15 @@ class ResultCollector:
                 ),
             }
 
-    def add_collection_callback(self, callback: Callable[[TaskResult], None]):
+    def add_collection_callback(self, callback: Callable[[TaskResult], None]) -> None:
         """Add callback for when results are collected."""
         self.collection_callbacks.append(callback)
 
-    def add_aggregation_callback(self, callback: Callable[[str, Any], None]):
+    def add_aggregation_callback(self, callback: Callable[[str, Any], None]) -> None:
         """Add callback for when aggregations complete."""
         self.aggregation_callbacks.append(callback)
 
-    def cleanup_old_results(self, max_age_hours: int = 24):
+    def cleanup_old_results(self, max_age_hours: int = 24) -> None:
         """Clean up old results and completed groups."""
 
         cutoff_time = time.time() - (max_age_hours * 3600)
@@ -555,7 +560,7 @@ class ResultCollector:
             for group_id in old_group_ids:
                 del self.aggregation_groups[group_id]
 
-    def _collector_loop(self):
+    def _collector_loop(self) -> None:
         """Main collector loop for background processing."""
 
         while self._running:
