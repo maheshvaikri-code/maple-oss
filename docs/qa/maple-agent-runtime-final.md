@@ -24,10 +24,11 @@
 | Package artifacts | PASS | Metadata-clean wheel and sdist built; Twine checks passed. |
 | Installed artifact smoke | PASS | Clean venv installed the wheel with `--no-deps`; `maple doctor --json` returned `ready:true`, `network:false`. |
 | Isolated dependency audit | PASS | Fresh `.[dev,security]` environment: `pip check` returned `No broken requirements found.` |
-| Local readiness | PASS | `maple doctor --json` returned all six checks true and `network:false`. |
-| Full repository regression | OPEN | Latest bounded run collected `1270` items and reached `95%` in Doctrine state tests with no failure output before interruption; pytest emitted no final summary. |
+| Local readiness | PASS | `maple --json doctor` returned all eight checks true and `network:false`. |
+| Full repository regression | OPEN | Exact-current bounded run on `ded4477` collected `1276` items, reached `90%`, entered the Doctrine gold tests, and was interrupted without failure output or a pytest summary. |
 | Dependency consistency | PASS | Isolated MAPLE environment is consistent; shared-interpreter conflicts are unrelated and non-authoritative. |
 | Repository-wide lint | PASS | Slice 69 closes the remaining E402 import-boundary debt; broad `ruff check maple` reports zero findings. |
+| Typed tool input/output boundary | PASS | 43 focused contract/tool/agent tests and 212 full-autonomy tests cover model-derived schemas, pre-handler input rejection, normalized handler arguments, validated outputs, and invalid-result failure. |
 | Independent review | OPEN | Fresh verifier sessions are unavailable in this tool context. |
 | External publish / website | NOT RUN | Explicitly outside current authorization and scope. |
 
@@ -124,6 +125,26 @@
   artifacts `PASSED`.
 - No new dependency, publication, or website change was performed.
 
+## Slice 71 revalidation
+
+- Typed tool contract coverage reports `43 passed in 0.37s`; the full autonomy
+  surface reports `212 passed in 3.26s`.
+- `Tool.input_model` publishes a model-derived JSON Schema, validates and
+  normalizes arguments before invoking the handler, and prevents handler calls
+  on invalid input. `Tool.output_model` validates handler results and returns
+  a typed model instance; invalid results fail closed.
+- Mypy reports no issues in 93 source files; MAPLE Ruff, tools/tests Ruff,
+  Black, isort, compile, and network-free doctor gates pass. Doctor returned
+  all eight checks true with `ready: true`, `network: false`, version `1.1.3`.
+- Exact-current wheel and sdist artifacts built successfully; Twine marked
+  both artifacts `PASSED`.
+- No new dependency, publication, or website change was performed. The exact
+  repository-wide suite and fresh independent verification remain open.
+- Exact-current repository run on `ded4477` collected `1276` items and reached
+  the Doctrine gold phase after the application suites passed. The bounded
+  session was interrupted after sparse gold-test progress without a pytest
+  summary; this is not a full-suite pass.
+
 ## Security conclusions
 
 - No new dependency, credential, cloud call, website mutation, or publication
@@ -139,7 +160,7 @@
 ## Release decision
 
 **QA status: CONDITIONAL / NOT PUBLISH-READY.** The implementation is
-feature-complete for the eighteen implemented capability slices, the built wheel
+feature-complete for the twenty implemented capability slices, the built wheel
 passes a clean-venv doctor smoke test, and the isolated dependency audit is
-clean. The release gate must remain open for the full-suite, repository-wide
-lint, and fresh-verifier checks. No external release action was taken.
+clean. The release gate must remain open for the exact full-suite and
+fresh-verifier checks. No external release action was taken.

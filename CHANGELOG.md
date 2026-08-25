@@ -10,6 +10,12 @@
 
 ### Additions
 
+- **Typed tool contracts**: added optional Pydantic-style `Tool.input_model`
+  and `Tool.output_model` boundaries. MAPLE now publishes model-derived tool
+  schemas, validates inputs before handler execution, normalizes validated
+  fields for handlers, and returns validated output model instances. Focused
+  contract/tool/agent coverage reports `43 passed in 0.37s`; the full autonomy
+  surface reports `212 passed in 3.26s`; no new dependency was added.
 - **Typed model outputs**: added additive Pydantic-style `output_model` support
   to `AutonomousConfig`. MAPLE now advertises the model JSON Schema, parses
   bounded JSON, returns a validated model instance, supports Pydantic v1/v2

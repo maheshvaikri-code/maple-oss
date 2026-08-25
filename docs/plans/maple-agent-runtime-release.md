@@ -14,7 +14,7 @@
 | 5 | Workflow/model/tool event streaming and observability | Backend Engineer / Observability | events, traces, correlation IDs, redaction, tests, docs | Event ordering, bounded buffers, cancellation, redaction, failure telemetry | done: commit `5be8115`; focused `11 passed`; autonomy `125 passed` |
 | 6 | Agent evaluation harness and model/provider capabilities | ML Engineer / Interop Engineer | eval fixtures, provider contracts, tests, docs | Golden set, schema/trajectory checks, provider fallback, pinned model metadata | done: commits `4ead28d` + `3a91c6d`; focused `7 passed`; LLM/autonomy `160 passed` |
 | 7 | Interoperability and developer experience | Interop / DevOps / Tech Writer | adapters, examples, CLI/task runner, API docs | Round-trip payloads, unknown fields, quickstart, one-command checks | done: commit `bf1614b`; focused `5 passed`; combined LLM/autonomy/CLI `165 passed` |
-| 8 | Release hardening | Security / QA / Release Manager | CI, changelog, release artifacts, package metadata | Full test/lint/type/audit/build matrix and clean-tree checklist | in progress: metadata-clean build, isolated dependency gate, wheel smoke, CI preflight, and focused gates pass; full-suite, repository lint, and independent-review gates remain open |
+| 8 | Release hardening | Security / QA / Release Manager | CI, changelog, release artifacts, package metadata | Full test/lint/type/audit/build matrix and clean-tree checklist | in progress: metadata-clean build, isolated dependency gate, wheel smoke, CI preflight, and focused gates pass; full-suite and independent-review gates remain open |
 | 9 | Live MCP tool discovery and bounded JSON-RPC transport | Chief Architect / Interop / Backend / Security | `docs/adr/007-*`, MCP adapter/autonomy modules, MCP tests, README, changelog | Live descriptor conversion, pagination, malformed/duplicate rejection, RPC errors, initialization/session headers, focused lint | done: focused MCP suite `22 passed`; changed-surface Ruff/Flake8 and compile pass |
 | 10 | Bounded artifact store and code-block extraction | Chief Architect / Security / Backend | `docs/adr/008-*`, autonomy artifact module, artifact tests, README, changelog | Fence parsing, malformed/oversized input, content-addressed identity, file persistence, hash corruption, quota failures, no execution | done: artifact suite `5 passed`; new module Ruff/Flake8 and compile pass |
 | 11 | Provider-agnostic LLM stream contract | Chief Architect / ML Engineer / Backend | `docs/adr/009-*`, LLM provider base, stream tests, README, changelog | Text chunk bounds, tool-call deltas, finish event, completion error propagation, async iterator contract | done: stream suite `2 passed`; changed provider Ruff/Flake8 and compile pass |
@@ -81,6 +81,7 @@
 | 68 | Residual legacy module-header closure | Backend / QA / Release | autonomy, broker, LLM, monitoring, security, state package headers, changelog, review/QA artifacts | Affected regression, changed-file Ruff/Black/isort/mypy/compile, broad Ruff inventory, diff check | done: commit `11d0b27`; affected suite `635 passed, 1 skipped in 16.90s`; changed files pass all quality/type checks; broad `ruff check maple` reduced from `58` to `19` diagnostics (`E402 19`) |
 | 69 | Repository-wide legacy import-boundary closure | Backend / QA / Release | Doctrine adapter and security authentication/separation imports, changelog, review/QA artifacts | Affected regression, repository Ruff, changed-file Black/isort/mypy/compile, diff check | done: code commit `0ea2179`; affected suite `107 passed in 4.02s`; Ruff reports zero findings; changed files pass Black/isort/mypy/compile; optional JWT behavior remains covered |
 | 70 | Typed model output boundary | Backend / QA / Release | autonomy contracts, AutonomousConfig, public exports, contract/agent tests, changelog, review/QA artifacts | Focused contract/agent regression, full autonomy regression, Ruff, Black/isort, mypy, compile, package, doctor, diff check | done: code commit `bf2ca4a`; full autonomy regression `210 passed in 3.37s`; typed-output focused regression included in `28 passed in 0.35s`; wheel/sdist and Twine checks pass; all static/readiness gates pass |
+| 71 | Typed tool input/output contracts | Backend / QA / Release | autonomy contracts/tools, public exports, contract/tool/agent tests, changelog, review/QA artifacts | Typed schema publication, input/output validation, handler side-effect protection, focused/full autonomy regression, static/package/doctor gates | done: code commit `ded4477`; focused contract/tool/agent regression `43 passed in 0.37s`; full autonomy regression `212 passed in 3.26s`; mypy/Ruff/Black/isort/compile, wheel/sdist, Twine, and doctor gates pass |
 
 ## Threat sketch
 
@@ -265,3 +266,18 @@ validated at the structured-output boundary and returned as typed instances;
 invalid model output fails closed without exposing validation payloads. The
 full autonomy regression reports `210 passed in 3.37s`; focused contract/agent
 coverage reports `28 passed in 0.35s`.
+
+2026-08-25 typed tool contract closure: commit `ded4477` adds optional
+Pydantic-style `Tool.input_model` and `Tool.output_model` boundaries. Tool
+schemas are advertised to the model, invalid inputs fail before handler
+execution, valid inputs are passed as normalized model fields, and outputs are
+returned as validated model instances. Focused contract/tool/agent coverage
+reports `43 passed in 0.37s`; the full autonomy surface reports `212 passed in
+3.26s`. Exact static checks, compile, wheel/sdist, Twine, and network-free
+doctor gates pass; no new dependency was added. The exact repository-wide
+suite and fresh independent verification remain open.
+
+2026-08-25 exact-current full-suite attempt: commit `ded4477` collected `1276`
+tests and reached `90%` before entering the slow Doctrine gold phase. The
+bounded session was interrupted after sparse gold-test progress without a
+failure traceback or pytest summary, so the full-suite gate remains open.

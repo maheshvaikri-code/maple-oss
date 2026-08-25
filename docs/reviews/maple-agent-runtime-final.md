@@ -38,6 +38,9 @@ The feature program now includes:
   citations (ADR-015).
 - bounded in-process workflow checkpoint history for immutable state-transition
   inspection without replaying node side effects (ADR-016).
+- typed model output and optional typed tool input/output boundaries with
+  model-derived schemas, pre-handler validation, normalized handler arguments,
+  and validated model instances at the tool boundary.
 
 Slice-level review artifacts are filed in `docs/reviews/` and corresponding QA
 artifacts in `docs/qa/`. No website, cloud, external publication, license, or
@@ -96,8 +99,9 @@ Doctor:
 ## Open release findings
 
 1. The full `tests` run remains unfinished evidence, not a full-suite pass.
-   The latest bounded attempt reported `1049 passed, 8 warnings in 839.17s`
-   before interruption in the remaining Doctrine gold cases. The suspected S2
+   The exact-current bounded attempt on `ded4477` collected `1276` items and
+   reached `90%` before entering the Doctrine gold cases. The bounded session
+   was interrupted without a pytest summary. The suspected S2
    adapter was cleared in isolation (16 passed in 0.06s). Fresh-repository
    profiling shows individual Git commands taking roughly 5–15 seconds, with
    the slowest gold cases at 166.96s, 159.74s, 115.61s, and 56.04s. No
@@ -106,10 +110,8 @@ Doctor:
    conflicts (including `chromadb`, `fsspec`, `pydantic`, `openai`, and
    `langchain-core`), but a fresh environment installed `.[dev,security]` and
    returned `No broken requirements found.` The isolated dependency gate passes.
-3. Repository-wide Ruff is not clean because of remaining package-initializer
-   and legacy lint debt. Slice 65 reduced the inventory from 250 to 171
-   diagnostics (`E402 140`, `F401 31`); changed implementation files and the
-   new FIPA regression are clean.
+3. The full Bandit inventory retains 35 low-severity legacy findings; the
+   medium/high gate is clean and the findings are tracked as non-blocking debt.
 4. AGENTS.md requires G4/G5 verifiers as fresh sessions, but this tool context
     has no separate fresh-agent session facility. No independent-verifier claim
     is made.
@@ -159,10 +161,17 @@ Doctor:
   advertises the model schema and returns a validated Pydantic-style instance;
   invalid output fails closed. Focused coverage reports `28 passed in 0.35s`,
   and the full autonomy surface reports `210 passed in 3.37s`.
+- Slice 71 adds optional typed tool input/output boundaries. Focused
+  contract/tool/agent coverage reports `43 passed in 0.37s`, and the full
+  autonomy surface reports `212 passed in 3.26s`. Exact static, package, and
+  doctor gates pass; exact full-repository completion remains open.
+- The exact-current repository run on `ded4477` collected `1276` items and
+  reached the Doctrine gold phase without failure output, but was bounded and
+  interrupted before pytest emitted a final summary.
 
 ## Verdict
 
-**Feature review:** PASS for the nineteen implemented capability slices.
+**Feature review:** PASS for the twenty implemented capability slices.
 **Publish readiness:** NOT YET APPROVED. A release manager should close the
 open full-suite and fresh-verifier gates before publishing. The remaining
 Bandit findings are documented low-severity legacy debt; external publication
