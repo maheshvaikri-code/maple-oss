@@ -66,6 +66,8 @@
 | 57 | S2 stream adapter type boundary cleanup | Interop / State / QA | S2 broker/state backend, mocked S2 regression, changelog, review/QA artifacts | S2 adapter suite, explicit changed-file mypy with skipped imports, Black/isort/compile, aggregate audit | done: commit `821cc4d`; typed stream helpers/readers and narrowed optional basin/stream SDK boundaries without changing dependency fallback behavior; focused `16 passed`; aggregate reduced to `87 errors in 7 files` |
 | 58 | LLM provider SDK type boundary cleanup | ML Engineer / Backend / QA | OpenAI/Anthropic providers, LLM streaming regression, changelog, review/QA artifacts | Native provider stream suite, explicit changed-file mypy with skipped imports, Black/isort/compile, aggregate audit | done: commit `36521f2`; typed optional SDK configuration, compatible payload containers, and response boundaries without changing provider behavior; focused native stream `3 passed`; aggregate reduced to `62 errors in 5 files` |
 
+| 59 | OpenAI SDK resource-function boundary | Interop / Resource / Security / QA | OpenAI SDK adapter, resource-function regression, changelog, review/QA artifacts | Offline adapter tests, explicit changed-file mypy with skipped imports, Black/isort/Ruff/compile, aggregate audit | done: commit `142e40e`; implemented injected ResourceManager allocation, fail-closed missing-service behavior, and input validation for the previously undefined function route; focused `2 passed`; aggregate reduced to `51 errors in 4 files` |
+
 ## Threat sketch
 
 Assets touched: workflow state, tool arguments, model outputs, checkpoint
@@ -162,6 +164,7 @@ doctrine-adapter slice 55's follow-up audit now reports `119 errors in 9 files`;
 security-facade slice 56's follow-up audit now reports `95 errors in 8 files`;
 S2 slice 57's follow-up audit now reports `87 errors in 7 files`;
 LLM-provider slice 58's follow-up audit now reports `62 errors in 5 files`;
+OpenAI-SDK slice 59's follow-up audit now reports `51 errors in 4 files`;
 installed mypy 2.3 rejects the configured Python 3.8 target, so the support
 matrix/toolchain decision remains open. Dependency-audit disposition and
 unavailable independent fresh-context verification remain open.

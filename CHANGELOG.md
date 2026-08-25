@@ -10,6 +10,12 @@
 
 ### Additions
 
+- **OpenAI SDK resource-function boundary**: implemented the previously
+  undefined `maple_resource_request` route with injected `ResourceManager`
+  allocation, finite-positive input validation, and fail-closed behavior when
+  no resource service is configured. The offline adapter regression passes 2
+  tests, changed-file mypy/Ruff are clean, and the aggregate audit is now
+  `51 errors` in 4 files.
 - **LLM provider SDK type boundaries**: clarified optional OpenAI and Anthropic
   client configuration, compatible request payload containers, and response
   parsing boundaries without changing provider behavior. The native provider
