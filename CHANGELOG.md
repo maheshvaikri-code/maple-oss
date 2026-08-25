@@ -47,6 +47,11 @@
   collision-free merging, and a checkpointed join boundary. The trusted
   in-process implementation remains bounded and does not claim sandboxing,
   per-branch retry, or cross-process coordination.
+- **Durable tool approvals** (`maple.autonomy.approval`): added bounded
+  in-memory and atomic JSON-file approval stores with pending, approved,
+  denied, and one-time consumed states. Autonomous agents can persist a
+  pending required-tool action, accept a host decision, and claim it before
+  execution; full ReAct conversation replay remains separate.
 - **Release metadata hardening**: `pyproject.toml` is now the single source
   for package metadata, the legacy `setup.py` delegates to it, and the source
   manifest includes only files present in the repository. Wheel/sdist builds

@@ -55,6 +55,13 @@ from .artifacts import (
     InMemoryArtifactStore,
     extract_code_blocks,
 )
+from .approval import (
+    ApprovalDecision,
+    ApprovalRequest,
+    ApprovalStore,
+    FileApprovalStore,
+    InMemoryApprovalStore,
+)
 from .workflow import (
     END,
     CheckpointStore,
@@ -118,6 +125,11 @@ __all__ = [
     "FileArtifactStore",
     "InMemoryArtifactStore",
     "extract_code_blocks",
+    "ApprovalDecision",
+    "ApprovalRequest",
+    "ApprovalStore",
+    "FileApprovalStore",
+    "InMemoryApprovalStore",
     "END",
     "CheckpointStore",
     "FileCheckpointStore",

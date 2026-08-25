@@ -8,13 +8,14 @@
 
 | Gate | Result | Evidence / limitation |
 |---|---|---|
-| New feature regressions | PASS | 187 LLM/autonomy/CLI tests passed; one existing pytest config warning. |
+| New feature regressions | PASS | 192 LLM/autonomy/CLI tests passed; one existing pytest config warning. |
 | Live MCP interoperability | PASS | 22 focused tests cover live descriptors, pagination, malformed/unsupported schemas, RPC errors, approval defaults, and real localhost HTTP initialization/session headers. |
 | Artifact/code-block boundary | PASS | 5 focused tests cover bounded fence parsing, unclosed/oversized rejection, content-addressed deduplication, file persistence, quota, path validation, and tamper detection; no execution path exists. |
 | Provider stream contract | PASS | 5 focused tests cover completion fallback, native OpenAI/Anthropic text and tool-call deltas, 256-character bounds, finish events, async iteration, and typed request errors. |
 | Async tool fan-out | PASS | 1 regression test proves independent handlers overlap while results remain in original tool-call order. |
 | Autonomous approval boundary | PASS | 1 regression test proves a required tool with no callback returns `APPROVAL_REQUIRED` without invoking its handler. |
 | Workflow fan-out/fan-in boundary | PASS | 13 workflow tests cover concurrent branch overlap, bounded branch count, deterministic merge, collision rejection, file-backed pause/resume, and group checkpoint behavior. |
+| Durable approval boundary | PASS | 21 approval/agent tests cover bounded records, file restart persistence, CAS decisions, pending side-effect protection, denial, and single-use consumption. |
 | Compile/import | PASS | `python -m compileall -q maple`; top-level public import and doctor smoke test pass. |
 | Changed-file Ruff | PASS | New/behavior-touched implementation checks pass. |
 | Changed-file Flake8 | PASS | Exact CI-style command returned `0` for the changed runtime surface. |
@@ -43,7 +44,7 @@
 ## Release decision
 
 **QA status: CONDITIONAL / NOT PUBLISH-READY.** The implementation is
-feature-complete for the fifteen implemented capability slices, the built wheel
+feature-complete for the sixteen implemented capability slices, the built wheel
 passes a clean-venv doctor smoke test, and the isolated dependency audit is
 clean. The release gate must remain open for the full-suite, repository-wide
 lint, and fresh-verifier checks. No external release action was taken.

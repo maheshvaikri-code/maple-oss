@@ -45,7 +45,7 @@ Most agent frameworks give you either **infrastructure** (messaging, security, f
 - **Capability-Aware Provider Fallback (preview)** — Select providers by declared tool/streaming/structured-output/context capabilities with deterministic initialization fallback.
 - **Provider-Agnostic LLM Streaming (preview)** — Consume bounded text, tool-call, and finish chunks through one async contract; OpenAI-compatible and Anthropic providers use native async streams when available, with a completion-backed fallback.
 - **Bounded Async Tool Fan-Out (preview)** — Execute independent tool calls concurrently within the per-step cap while preserving deterministic tool-message order and isolating worker failures.
-- **Fail-Closed Tool Approval (preview)** — Approval-required tools never execute without an explicit callback approval; missing callbacks, callback failures, and denials become typed tool results.
+- **Fail-Closed Tool Approval (preview)** — Approval-required tools never execute without an explicit callback or durable store decision; missing callbacks, callback failures, pending requests, and denials become typed tool results, with one-time durable consumption available to hosts.
 - **Bounded Workflow Fan-Out/Fan-In (preview)** — Run independent workflow branches concurrently with isolated state snapshots, deterministic collision-free merging, and a checkpointed join boundary.
 - **Interop Envelope + Doctor CLI (preview)** — Strict adapter round-trip envelopes and a network-free `maple doctor --json` readiness report for the runtime surfaces.
 - **Artifacts and Code Blocks (preview)** — Store immutable SHA-256-addressed files with bounded in-memory or file-backed stores, and extract Markdown code blocks as data without executing them.

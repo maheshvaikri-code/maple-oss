@@ -11,6 +11,7 @@ from maple.autonomy.agent import (
     Goal,
     ReasoningStep,
 )
+from maple.autonomy.approval import InMemoryApprovalStore
 from maple.agent.config import Config
 from maple.llm.types import LLMConfig, LLMResponse, TokenUsage, ToolCall
 from maple.llm.provider import LLMProvider
@@ -418,6 +419,41 @@ class TestAutonomousAgent:
         assert tool_result.is_error is True
         assert json.loads(tool_result.content)["errorType"] == "APPROVAL_REQUIRED"
         assert calls == []
+
+    def test_durable_approval_requires_decision_and_is_single_use(self):
+        config = make_config()
+        auto_config = make_auto_config()
+        agent = AutonomousAgent(config, auto_config)
+        store = InMemoryApprovalStore()
+        agent.set_approval_store(store)
+        calls = []
+
+        from maple.autonomy.tools import Tool
+
+        agent.register_tool(Tool(
+            name="dangerous",
+            description="A tool that needs approval",
+            parameters={"type": "object"},
+            handler=lambda: calls.append("executed") or Result.ok({"ok": True}),
+            requires_approval=True,
+        ))
+
+        pending = agent._execute_tool_call(ToolCall("call-durable", "dangerous", {}))
+        pending_payload = json.loads(pending.content)
+        approval_id = pending_payload["details"]["approval_id"]
+
+        assert pending.is_error is True
+        assert pending_payload["errorType"] == "APPROVAL_PENDING"
+        assert calls == []
+        assert agent.decide_approval(approval_id, approved=True).is_ok()
+
+        executed = agent.execute_approved_tool(approval_id)
+        replay = agent.execute_approved_tool(approval_id)
+
+        assert executed.is_error is False
+        assert json.loads(executed.content) == {"ok": True}
+        assert json.loads(replay.content)["errorType"] == "APPROVAL_CONSUMED"
+        assert calls == ["executed"]
 
     def test_get_active_goals(self):
         config = make_config()

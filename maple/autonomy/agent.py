@@ -14,6 +14,7 @@
 # Language Engine. If not, see <https://www.gnu.org/licenses/>.
 
 import asyncio
+import hashlib
 import json
 import logging
 import time
@@ -35,6 +36,7 @@ from ..llm.types import (
     ToolResult,
 )
 from .memory import MemoryManager
+from .approval import ApprovalRequest, ApprovalStore
 from .tools import Tool, ToolRegistry, create_builtin_tools
 from .contracts import Guardrail, parse_structured_output, run_guardrails
 
@@ -124,6 +126,8 @@ class AutonomousAgent(Agent):
 
         # Approval callback for human-in-the-loop
         self._approval_callback: Optional[Callable[[str, Dict], bool]] = None
+        self._approval_store: Optional[ApprovalStore] = None
+        self._approval_namespace = uuid.uuid4().hex
 
         # Active goals
         self._active_goals: Dict[str, Goal] = {}
@@ -138,6 +142,94 @@ class AutonomousAgent(Agent):
     def set_approval_callback(self, callback: Callable[[str, Dict], bool]) -> None:
         """Set callback for human-in-the-loop approval."""
         self._approval_callback = callback
+
+    def set_approval_store(self, store: Optional[ApprovalStore]) -> None:
+        """Set a durable store used when approval callbacks are unavailable."""
+        if store is not None:
+            required_methods = (
+                "get",
+                "create",
+                "decide",
+                "consume",
+                "list_pending",
+            )
+            if any(
+                not callable(getattr(store, name, None))
+                for name in required_methods
+            ):
+                raise TypeError(
+                    "approval store must implement get, create, decide, and consume"
+                )
+        self._approval_store = store
+
+    def decide_approval(
+        self, approval_id: str, approved: bool
+    ) -> Result[ApprovalRequest, Dict[str, Any]]:
+        """Record an operator decision for a pending tool action."""
+        if self._approval_store is None:
+            return Result.err(
+                {
+                    "errorType": "APPROVAL_STORE_UNAVAILABLE",
+                    "message": "No durable approval store is configured.",
+                }
+            )
+        return self._approval_store.decide(approval_id, approved)
+
+    def execute_approved_tool(self, approval_id: str) -> ToolResult:
+        """Consume and execute one approved durable tool request.
+
+        Consuming happens before the handler runs, so a request cannot be
+        replayed accidentally. A handler failure is returned as a tool error;
+        callers must create a new approval request before retrying the action.
+        """
+        if self._approval_store is None:
+            return self._approval_error(
+                approval_id,
+                "APPROVAL_STORE_UNAVAILABLE",
+                "No durable approval store is configured.",
+            )
+        request_result = self._approval_store.get(approval_id)
+        if request_result.is_err():
+            return self._approval_error(
+                approval_id,
+                "APPROVAL_ERROR",
+                "Approval request could not be loaded.",
+            )
+        request = request_result.unwrap()
+        if request is None:
+            return self._approval_error(
+                approval_id,
+                "APPROVAL_NOT_FOUND",
+                "Approval request was not found.",
+            )
+        if request.status != "approved":
+            error_type = (
+                "APPROVAL_PENDING"
+                if request.status == "pending"
+                else "APPROVAL_DENIED"
+                if request.status == "denied"
+                else "APPROVAL_CONSUMED"
+            )
+            return self._approval_error(
+                request.tool_call_id,
+                error_type,
+                "Approval request is not executable.",
+            )
+        consumed_result = self._approval_store.consume(approval_id)
+        if consumed_result.is_err():
+            return self._approval_error(
+                request.tool_call_id,
+                "APPROVAL_ERROR",
+                "Approval request could not be claimed.",
+            )
+        return self._execute_tool_call(
+            ToolCall(
+                id=request.tool_call_id,
+                name=request.tool_name,
+                arguments=request.arguments,
+            ),
+            skip_approval=True,
+        )
 
     def pursue_goal(self, description: str) -> Result[Goal, Dict[str, Any]]:
         """
@@ -274,7 +366,9 @@ class AutonomousAgent(Agent):
             }
         )
 
-    def _execute_tool_call(self, tool_call: ToolCall) -> ToolResult:
+    def _execute_tool_call(
+        self, tool_call: ToolCall, *, skip_approval: bool = False
+    ) -> ToolResult:
         """Execute a single tool call with approval check."""
         tool_result = self.tool_registry.get(tool_call.name)
         if tool_result.is_err():
@@ -287,11 +381,62 @@ class AutonomousAgent(Agent):
         tool = tool_result.unwrap()
 
         # Human-in-the-loop check
-        if (
+        if not skip_approval and (
             tool.requires_approval
             or tool_call.name in self.autonomy_config.require_approval_for
         ):
-            if self._approval_callback is None:
+            if self._approval_callback is None and self._approval_store is not None:
+                approval_id = self._approval_id_for_tool_call(tool_call)
+                try:
+                    request = ApprovalRequest(
+                        approval_id=approval_id,
+                        tool_call_id=tool_call.id,
+                        tool_name=tool_call.name,
+                        arguments=dict(tool_call.arguments),
+                    )
+                    request_result = self._approval_store.create(request)
+                except (TypeError, ValueError):
+                    return self._approval_error(
+                        tool_call.id,
+                        "APPROVAL_ERROR",
+                        "Approval request arguments are invalid.",
+                    )
+                if request_result.is_err():
+                    return self._approval_error(
+                        tool_call.id,
+                        "APPROVAL_ERROR",
+                        "Approval request could not be persisted.",
+                    )
+                request = request_result.unwrap()
+                if request.status == "pending":
+                    return self._approval_error(
+                        tool_call.id,
+                        "APPROVAL_PENDING",
+                        "Tool execution is waiting for operator approval.",
+                        approval_id=request.approval_id,
+                    )
+                if request.status == "denied":
+                    return self._approval_error(
+                        tool_call.id,
+                        "APPROVAL_DENIED",
+                        "Action was not approved by the operator.",
+                        approval_id=request.approval_id,
+                    )
+                if request.status == "consumed":
+                    return self._approval_error(
+                        tool_call.id,
+                        "APPROVAL_CONSUMED",
+                        "Approval request was already consumed.",
+                        approval_id=request.approval_id,
+                    )
+                consumed_result = self._approval_store.consume(request.approval_id)
+                if consumed_result.is_err():
+                    return self._approval_error(
+                        tool_call.id,
+                        "APPROVAL_ERROR",
+                        "Approval request could not be claimed.",
+                    )
+            elif self._approval_callback is None:
                 return ToolResult(
                     tool_call_id=tool_call.id,
                     content=json.dumps({
@@ -339,6 +484,37 @@ class AutonomousAgent(Agent):
                 content=json.dumps(exec_result.unwrap_err()),
                 is_error=True,
             )
+
+    def _approval_id_for_tool_call(self, tool_call: ToolCall) -> str:
+        payload = json.dumps(
+            {
+                "namespace": self._approval_namespace,
+                "tool_call_id": tool_call.id,
+                "tool": tool_call.name,
+                "arguments": tool_call.arguments,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        )
+        return f"approval-{hashlib.sha256(payload.encode('utf-8')).hexdigest()}"
+
+    @staticmethod
+    def _approval_error(
+        tool_call_id: str,
+        error_type: str,
+        message: str,
+        **details: Any,
+    ) -> ToolResult:
+        payload: Dict[str, Any] = {"errorType": error_type, "message": message}
+        if details:
+            payload["details"] = details
+        return ToolResult(
+            tool_call_id=tool_call_id,
+            content=json.dumps(payload),
+            is_error=True,
+        )
 
     def _build_initial_context(self, goal: Goal) -> List[ChatMessage]:
         """Build the initial message context for the ReAct loop."""

@@ -751,6 +751,38 @@ checkpoint may repeat branch side effects when resumed. Cross-process
 coordination, per-branch retry, replay, and state history remain planned
 follow-on capabilities.
 
+### Durable tool approvals
+
+Approval-required autonomous tools can use a local durable approval store when
+the host cannot provide a synchronous callback. The agent creates a bounded
+pending request and never invokes the handler until the host records a decision
+and consumes the approval.
+
+```python
+import json
+
+from maple import FileApprovalStore
+
+store = FileApprovalStore("./.maple-approvals")
+agent.set_approval_store(store)
+
+goal = agent.pursue_goal("perform the approval-gated action")
+pending = goal.unwrap().reasoning_trace[-1].tool_results[-1]
+approval_id = json.loads(pending.content)["details"]["approval_id"]
+decision = agent.decide_approval(approval_id, approved=True)
+if decision.is_ok():
+    result = agent.execute_approved_tool(approval_id)
+```
+
+`decide_approval` is a pending-to-approved/denied compare-and-set operation;
+`execute_approved_tool` claims the request before executing it and a second
+attempt in the same process returns `APPROVAL_CONSUMED`. File persistence is
+atomic and thread-safe within one process; cross-process leases remain a host
+responsibility. Approval arguments may contain application-sensitive data and
+should be protected with host filesystem access controls. The store does not
+persist the full ReAct conversation, and failed tool execution requires a new
+approval request.
+
 ## Usage Example
 
 ```python
