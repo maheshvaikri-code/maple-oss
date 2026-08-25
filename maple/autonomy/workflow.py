@@ -889,8 +889,9 @@ class Workflow:
                     )
                 parallel_branches[branch] = source
 
-        ordinary_targets = set(self._direct_edges.values())
-        ordinary_targets.discard(None)
+        ordinary_targets: set[str] = {
+            target for target in self._direct_edges.values() if target is not None
+        }
         for routes in self._conditional_edges.values():
             ordinary_targets.update(target for target in routes.values() if target)
         ambiguous_branches = sorted(ordinary_targets.intersection(parallel_branches))
@@ -904,14 +905,16 @@ class Workflow:
             )
 
         reachable = set()
-        pending = [self._entry_point]
+        pending: List[Optional[str]] = [self._entry_point]
         while pending:
             node = pending.pop()
             if node is None or node in reachable:
                 continue
             reachable.add(node)
-            if node in self._direct_edges and self._direct_edges[node] is not None:
-                pending.append(self._direct_edges[node])
+            if node in self._direct_edges:
+                target = self._direct_edges[node]
+                if target is not None:
+                    pending.append(target)
             for target in self._conditional_edges.get(node, {}).values():
                 if target is not None:
                     pending.append(target)

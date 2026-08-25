@@ -109,7 +109,7 @@ class AgentSnapshot:
     """Captures a point-in-time snapshot of an autonomous agent's state."""
 
     @staticmethod
-    def capture(agent) -> Dict[str, Any]:
+    def capture(agent: Any) -> Dict[str, Any]:
         """Capture a snapshot of an autonomous agent."""
         snapshot = {
             "agent_id": agent.agent_id,

@@ -165,7 +165,7 @@ class _MAPLEHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
 
-    def __init__(self, address, handler, application):
+    def __init__(self, address: Any, handler: Any, application: Any) -> None:
         self.application = application
         super().__init__(address, handler)
 
@@ -450,7 +450,7 @@ class RunServer:
         self.start()
         return self
 
-    def __exit__(self, exc_type, exc_value, traceback) -> None:
+    def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> None:
         self.close()
 
 
