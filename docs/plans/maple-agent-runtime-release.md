@@ -30,7 +30,7 @@
 | 21 | Session-aware agent turns | Chief Architect / Backend / Security / ML Engineer | `docs/adr/019-*`, autonomous agent/session tests, API docs, README, changelog | Opt-in sync/async session binding, CAS user turn, user/assistant-only replay, surfaced post-execution persistence errors, no trace/tool replay | done: commit `0b794ba`; focused `7 passed`; combined feature gate `219 passed` |
 | 22 | Deterministic retrieval/citation evaluation | ML Engineer / Backend / QA | `docs/adr/020-*`, evaluation module/tests, API docs, README, changelog | Bounded golden queries, lexical/vector hit support, source URI precision/recall/F1, malformed runner isolation, no faithfulness claim | done: commit `a682656`; focused `10 passed`; combined feature gate `225 passed` |
 | 23 | Bounded workflow execution journal | Chief Architect / Backend / Security | `docs/adr/021-*`, replay journal/workflow runtime/tests, API docs, README, changelog | Opt-in normalized-output replay, deterministic execution keys/input digests, memory/file bounds, conflict/malformed failure paths, no exactly-once claim | done: commit `1af7f3a`; focused `10 passed`; combined gate `235 passed`; review/QA filed |
-| 24 | Deterministic grounded-answer evaluation | ML Engineer / Backend / QA | `docs/adr/022-*`, evaluation module/tests, API docs, README, changelog | Bounded source text, deterministic claim segmentation/token overlap, threshold errors, malformed runner isolation, explicit no semantic-faithfulness claim | done: implementation complete; focused `5 passed`; combined gate `240 passed`; final evidence pending |
+| 24 | Deterministic grounded-answer evaluation | ML Engineer / Backend / QA | `docs/adr/022-*`, evaluation module/tests, API docs, README, changelog | Bounded source text, deterministic claim segmentation/token overlap, threshold errors, malformed runner isolation, explicit no semantic-faithfulness claim | done: commit `90203f8`; focused `5 passed`; combined gate `240 passed`; review/QA/build evidence filed |
 
 ## Threat sketch
 
@@ -65,7 +65,7 @@ privileged action without approval.
 
 ## Status snapshot
 
-Done (with evidence): G0 brief, G1 ADR, G2 plan, and twenty-three committed G3
+Done (with evidence): G0 brief, G1 ADR, G2 plan, and twenty-four committed G3
 feature slices through bounded workflow execution recovery, including MCP
 interoperability, bounded artifacts, native LLM streaming, deterministic async
 tool result ordering, durable approval, workflow fan-out/fan-in, checkpoint
@@ -76,8 +76,8 @@ Release hardening remains in progress. Slices 19, 20, and 21 are committed and
 verified. Slice 22 is committed and verified with deterministic
 retrieval/source coverage evaluation. Slice 23 is implemented and
 review/QA/build evidence is filed; generation faithfulness remains a separate
-follow-on capability. Slice 24 adds a deterministic lexical groundedness proxy
-and is awaiting review/QA/build evidence.
+follow-on capability. Slice 24 adds a deterministic lexical groundedness proxy;
+review/QA/build evidence is filed.
 Focused feature gates (240 LLM/autonomy/CLI tests, including 22 MCP, 5
 artifact, 5 stream, async tool fan-out, durable approval, workflow fan-out,
 vector retrieval, checkpoint history, session-aware agent, retrieval evaluation,
