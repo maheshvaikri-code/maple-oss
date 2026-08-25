@@ -100,6 +100,11 @@
   changing dispatch behavior. The agent regression surface passes 33 tests,
   the changed-file mypy check is clean, and the aggregate audit is now
   `150 errors` in 21 files.
+- **Error recovery result boundary**: narrowed retry fallback and circuit-breaker
+  error values to their generic `Result` contracts using static-only casts;
+  runtime error payloads and failure transitions are unchanged. The error suite
+  passes 42 tests, both changed-file mypy checks are clean, and the aggregate
+  audit is now `147 errors` in 19 files.
 - **Repository formatter gate closure**: normalized the tracked `maple/`
   source tree with the configured Black and isort profiles. Both checks are
   now idempotent, the focused runtime gate remains `240 passed`, and a fresh
