@@ -43,19 +43,19 @@ class CapabilityRequirement:
     capability: str
     required: bool = True  # True for required, False for optional
     weight: float = 1.0  # Weight for scoring
-    parameters: Dict = None  # Additional parameters for matching
+    parameters: Optional[Dict] = None  # Additional parameters for matching
 
 
 class CapabilityMatcher:
     """Advanced capability matching and validation system."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._capability_patterns: Dict[str, str] = {}  # capability -> regex pattern
         self._capability_weights: Dict[str, float] = {}  # capability -> default weight
 
     def register_capability_pattern(
         self, capability: str, pattern: str, weight: float = 1.0
-    ):
+    ) -> None:
         """Register a regex pattern for capability matching."""
         self._capability_patterns[capability] = pattern
         self._capability_weights[capability] = weight
@@ -235,7 +235,7 @@ class CapabilityMatcher:
         for agent in agents:
             all_capabilities.update(agent.capabilities)
 
-        matrix = {}
+        matrix: Dict[str, Dict[str, bool]] = {}
         for capability in sorted(all_capabilities):
             matrix[capability] = {}
             for agent in agents:

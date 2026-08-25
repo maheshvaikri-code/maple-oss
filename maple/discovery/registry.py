@@ -43,7 +43,7 @@ class AgentInfo:
 class AgentRegistry:
     """Registry for managing agent registration and discovery."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.agents: Dict[str, AgentInfo] = {}
         self._lock = threading.RLock()
         self._capability_index: Dict[str, Set[str]] = (
@@ -54,8 +54,8 @@ class AgentRegistry:
         self,
         agent_id: str,
         name: str,
-        capabilities: List[str] = None,
-        metadata: Dict = None,
+        capabilities: Optional[List[str]] = None,
+        metadata: Optional[Dict] = None,
         max_concurrent_tasks: int = 10,
     ) -> Result[AgentInfo, str]:
         """Register a new agent in the system."""
@@ -109,7 +109,7 @@ class AgentRegistry:
                 return Result.err(f"Agent {agent_id} not found")
             return Result.ok(self.agents[agent_id])
 
-    def list_agents(self, status: str = None) -> List[AgentInfo]:
+    def list_agents(self, status: Optional[str] = None) -> List[AgentInfo]:
         """List all agents, optionally filtered by status."""
         with self._lock:
             if status:
@@ -132,7 +132,7 @@ class AgentRegistry:
             ]
 
     def update_agent_status(
-        self, agent_id: str, status: str, load: float = None
+        self, agent_id: str, status: str, load: Optional[float] = None
     ) -> Result[None, str]:
         """Update an agent's status and load."""
         with self._lock:

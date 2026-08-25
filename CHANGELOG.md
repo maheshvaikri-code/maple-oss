@@ -78,6 +78,12 @@
   preserving failure detection behavior. The dedicated discovery regression
   passes 14 tests, the explicit changed-file mypy check is clean, and the
   aggregate audit is now `181 errors` in 29 files.
+- **Discovery registry/capability boundary**: clarified optional registry
+  filters and registration inputs, capability requirement parameters, matcher
+  lifecycle, and compatibility-matrix construction without changing discovery
+  behavior. The combined registry/capability/health regression passes 43 tests,
+  the explicit changed-file mypy checks are clean, and the aggregate audit is
+  now `172 errors` in 27 files.
 - **Repository formatter gate closure**: normalized the tracked `maple/`
   source tree with the configured Black and isort profiles. Both checks are
   now idempotent, the focused runtime gate remains `240 passed`, and a fresh
