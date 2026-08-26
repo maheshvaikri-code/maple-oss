@@ -400,9 +400,10 @@ verification remain open.
 - Focused approval/run/agent regression reports `44 passed in 0.46s`; the
   exact tracked application manifest reports `1197 passed, 1 skipped in
   204.41s`. Ruff, Black, mypy, compile, and network-free doctor checks pass.
-- Package and clean-current-commit artifact evidence is pending the release
-  documentation commit; no publication, website, cloud, or registry action
-  was taken.
+- A clean current-commit archive built wheel/sdist `1.1.3`; both Twine checks
+  passed, the sdist contains 470 entries including ADR-034, and the
+  workspace-only audit found zero preserved Doctrine files. No publication,
+  website, cloud, or registry action was taken.
 
 ## Verdict
 

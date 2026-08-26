@@ -98,7 +98,7 @@
 | 85 | Unified bounded agent-run lifecycle event stream | Chief Architect / Backend / Observability / QA | `docs/adr/032-*`, EventStream attachment, sync/async agent lifecycle events, event/run tests, API/README/parity docs, changelog, QA/review evidence | Shared started/resumed/model/tool/paused/completed/failed vocabulary, usage trailers, metadata-only payloads, bounded ring/backpressure visibility, subscriber isolation, no telemetry-induced run failure | done: focused lifecycle slice `10 passed in 0.27s`; tracked suite after response hardening `1195 passed, 1 skipped in 222.53s`; static/doctor/package/Twine gates pass; cancellation/exporter/durable cursors remain follow-on |
 | 86 | Deterministic loopback HTTP response closure | Backend / QA / Release | `docs/adr/033-*`, `maple/autonomy/server.py`, server tests, QA/review evidence | Flush bounded JSON responses, explicit connection closure, preserve routes/status/payloads, full tracked regression | done: server suite `4 passed in 2.34s`; exact tracked suite `1195 passed, 1 skipped in 222.53s`; no dependency or protocol surface change |
 | 87 | Final current-commit release artifact revalidation | Release / DevOps / QA | clean `git archive HEAD`, wheel/sdist, Twine output, doctor output, release plan, QA/review evidence | Current tracked snapshot only, package metadata, sdist workspace boundary, ADR/module presence, network-free doctor | done: clean `1.1.3` wheel/sdist; Twine passed; 469 sdist entries; ADR-031/032/033 and durable/event modules present; workspace-only audit zero; doctor `ready: true`; no publication performed |
-| 88 | Bounded editable durable tool approvals | Chief Architect / Backend / Security / QA / Release | `docs/adr/034-*`, approval stores/agent boundary, sync/async run regressions, API/parity/README docs, changelog, QA/review evidence | Approved-only bounded JSON replacement, in-memory/file persistence, invalid-edit no-mutation, denied-edit rejection, one-time consume, sync/async resume, static/package/doctor gates; arbitrary multi-turn HITL remains explicit follow-on | in progress: focused implementation slice passes; full tracked/static/package evidence pending |
+| 88 | Bounded editable durable tool approvals | Chief Architect / Backend / Security / QA / Release | `docs/adr/034-*`, approval stores/agent boundary, sync/async run regressions, API/parity/README docs, changelog, QA/review evidence | Approved-only bounded JSON replacement, in-memory/file persistence, invalid-edit no-mutation, denied-edit rejection, one-time consume, sync/async resume, static/package/doctor gates; arbitrary multi-turn HITL remains explicit follow-on | done: focused approval/run/agent `44 passed in 0.46s`; tracked manifest `1197 passed, 1 skipped in 204.41s`; Ruff/Black/mypy/compile/diff/doctor pass; clean `1.1.3` wheel/sdist, Twine passed, 470 sdist entries, ADR-034 present, workspace-only audit zero; no publication |
 
 ## Threat sketch
 
@@ -463,3 +463,15 @@ built wheel/sdist `1.1.3`; both Twine checks passed, the sdist contained 469
 entries including ADR-031, ADR-032, ADR-033, and the durable/event modules, and
 the workspace-only audit found zero preserved Doctrine files. The network-free
 doctor returned `ready: true`, all eight checks true, and `network: false`.
+
+2026-08-26 bounded editable durable approval closure: ADR-034 adds an
+approved-only, keyword-only `edited_arguments` replacement to the durable
+approval decision. Existing JSON/depth/item/byte quotas validate edits before
+mutation; in-memory and file stores persist them, and sync/async resume executes
+the replacement after one-time claim. The focused approval/run/agent slice
+reports `44 passed in 0.46s`; the tracked manifest reports `1197 passed, 1
+skipped in 204.41s`; Ruff, Black, mypy, compile, diff, and doctor pass. A clean
+current archive rebuilt wheel/sdist `1.1.3`, both Twine checks passed, the sdist
+contained 470 entries including ADR-034, and the workspace-only audit found
+zero preserved Doctrine files. Arbitrary multi-turn HITL, cross-process leases,
+and publication remain outside this slice.

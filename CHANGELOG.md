@@ -16,6 +16,11 @@
   one-time claim; invalid or denied-with-edit decisions fail closed without
   mutating the pending request. Arbitrary multi-turn request/response HITL and
   cross-process leases remain separate follow-on boundaries.
+- **Editable-approval validation**: the focused approval/run/agent slice reports
+  `44 passed in 0.46s`; the exact tracked application manifest reports `1197
+  passed, 1 skipped in 204.41s`; Ruff, Black, mypy, compile, diff, and doctor
+  pass. A clean current archive rebuilt `1.1.3`; Twine passed, the sdist has
+  470 entries including ADR-034, and the workspace-only audit is empty.
 - **Agent-framework parity ledger**: added a source-backed functionality and
   runtime matrix for LangGraph, CrewAI, Microsoft Agent Framework, LlamaIndex,
   and OpenAI Agents SDK. It separates MAPLE's native infrastructure strengths

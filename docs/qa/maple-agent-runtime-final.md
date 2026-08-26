@@ -422,9 +422,10 @@ slow Doctrine gold phase before interruption without a pytest summary.
   compile and `git diff --check` pass.
 - Network-free doctor returns `ready: true`, `status: SUCCESS`, version
   `1.1.3`, all eight checks true, and `network: false`.
-- Clean wheel/sdist and Twine evidence for the final documentation commit is
-  still pending. No publication, website, cloud, registry, or user-owned
-  untracked-file change was made.
+- A clean current-commit archive built wheel/sdist `1.1.3`; both Twine checks
+  passed, the sdist contains 470 entries including ADR-034, and the
+  workspace-only audit found zero preserved Doctrine files. No publication,
+  website, cloud, registry, or user-owned untracked-file change was made.
 
 ## Security conclusions
 
