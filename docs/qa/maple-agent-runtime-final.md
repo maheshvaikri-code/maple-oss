@@ -266,6 +266,16 @@ slow Doctrine gold phase before interruption without a pytest summary.
   performed. The exact full-suite and fresh independent-verifier gates remain
   open.
 
+## Doctrine gold gate boundary
+
+- An isolated run of `tests/test_doctrine_gold.py` collected 21 tests and
+  completed `3 passed in 521.65s (0:08:41)` before bounded interruption.
+- Pytest reported no assertion failure. The slowest completed calls were
+  `test_chain_fork_detected` at `189.32s`, `test_artifact_tamper_fails_check`
+  at `118.43s`, and `test_bad_tag_rejected_before_git_or_paths` at `61.33s`.
+- This is diagnostic evidence, not a full-suite pass; the gold and exact
+  repository gates remain open pending a practical, complete run.
+
 ## Security conclusions
 
 - No new dependency, credential, cloud call, website mutation, or publication

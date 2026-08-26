@@ -362,3 +362,9 @@ website change was made.
 `tests/test_doctrine_gold.py`. After sparse gold-phase progress, the bounded
 session was interrupted without failure output or a pytest summary. This is not
 a full-suite pass; the exact gate remains open.
+
+2026-08-25 isolated Doctrine gold diagnostic on `b67830c`: pytest collected 21
+tests and completed `3 passed in 521.65s (0:08:41)` before bounded interruption.
+No assertion failure was reported. The slowest completed calls were 189.32s,
+118.43s, and 61.33s; this is diagnostic evidence only and does not close the
+exact repository gate.
