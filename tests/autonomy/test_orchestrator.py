@@ -1,7 +1,12 @@
 """Tests for the multi-agent orchestrator."""
 
-from maple.autonomy.orchestrator import AgentOrchestrator, TeamMember
+import asyncio
+import threading
+
+import pytest
+
 from maple.autonomy.agent import Goal
+from maple.autonomy.orchestrator import AgentOrchestrator, TeamMember
 from maple.core.result import Result
 
 
@@ -34,10 +39,43 @@ class FakeAgentWithMemory(FakeAgent):
     def __init__(self, agent_id="agent-1", capabilities=None):
         super().__init__(agent_id, capabilities)
         from maple.autonomy.memory import MemoryManager
+
         self.memory = MemoryManager()
 
 
+class BarrierAgent(FakeAgent):
+    """Fake worker that proves sibling goals overlap."""
+
+    def __init__(self, agent_id, barrier):
+        super().__init__(agent_id)
+        self.barrier = barrier
+
+    def pursue_goal(self, description):
+        self.barrier.wait(timeout=2)
+        return super().pursue_goal(description)
+
+
+class AsyncGateAgent(FakeAgent):
+    """Fake worker for the async orchestration path."""
+
+    def __init__(self, agent_id, gate, ready):
+        super().__init__(agent_id)
+        self.gate = gate
+        self.ready = ready
+
+    async def pursue_goal_async(self, description):
+        self.ready.append(self.agent_id)
+        if len(self.ready) == 2:
+            self.gate.set()
+        await self.gate.wait()
+        return super().pursue_goal(description)
+
+
 class TestTeamFormation:
+    def test_parallel_limit_is_bounded(self):
+        with pytest.raises(ValueError, match="max_parallel_agents"):
+            AgentOrchestrator(max_parallel_agents=0)
+
     def test_form_team(self):
         orch = AgentOrchestrator()
         members = [
@@ -131,6 +169,39 @@ class TestSupervisedExecution:
         result = orch.execute_supervised("nonexistent", "Goal")
         assert result.is_err()
 
+    def test_execute_supervised_runs_workers_concurrently(self):
+        barrier = threading.Barrier(2)
+        orch = AgentOrchestrator(max_parallel_agents=2)
+        members = [
+            TeamMember(agent=FakeAgent("supervisor"), role="supervisor"),
+            TeamMember(agent=BarrierAgent("worker-1", barrier), role="worker"),
+            TeamMember(agent=BarrierAgent("worker-2", barrier), role="worker"),
+        ]
+        team_id = orch.form_team("parallel-team", members).unwrap()
+
+        result = orch.execute_supervised(team_id, "Build a feature")
+
+        assert result.is_ok()
+        assert result.unwrap()["completed"] == 2
+        assert not barrier.broken
+
+    def test_execute_supervised_async_runs_workers_concurrently(self):
+        gate = asyncio.Event()
+        ready = []
+        orch = AgentOrchestrator(max_parallel_agents=2)
+        members = [
+            TeamMember(agent=FakeAgent("supervisor"), role="supervisor"),
+            TeamMember(agent=AsyncGateAgent("worker-1", gate, ready), role="worker"),
+            TeamMember(agent=AsyncGateAgent("worker-2", gate, ready), role="worker"),
+        ]
+        team_id = orch.form_team("async-team", members).unwrap()
+
+        result = asyncio.run(orch.execute_supervised_async(team_id, "Build a feature"))
+
+        assert result.is_ok()
+        assert result.unwrap()["completed"] == 2
+        assert ready == ["worker-1", "worker-2"]
+
 
 class TestConsensusExecution:
     def test_execute_consensus(self):
@@ -155,6 +226,21 @@ class TestConsensusExecution:
         result = orch.execute_consensus(team_id, "Question?")
         assert result.is_err()
         assert result.unwrap_err()["errorType"] == "INSUFFICIENT_MEMBERS"
+
+    def test_execute_consensus_async(self):
+        orch = AgentOrchestrator(max_parallel_agents=2)
+        members = [
+            TeamMember(agent=FakeAgent("a1"), role="supervisor"),
+            TeamMember(agent=FakeAgent("a2"), role="worker"),
+        ]
+        team_id = orch.form_team("async-consensus-team", members).unwrap()
+
+        result = asyncio.run(
+            orch.execute_consensus_async(team_id, "What is the best approach?")
+        )
+
+        assert result.is_ok()
+        assert result.unwrap()["responding_agents"] == 2
 
 
 class TestSharedMemory:

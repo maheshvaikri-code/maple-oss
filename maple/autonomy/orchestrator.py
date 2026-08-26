@@ -15,10 +15,12 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 
 # Multi-agent orchestration for MAPLE autonomous agents.
 
+import asyncio
 import logging
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from ..core.result import Result
 from ..discovery.registry import AgentRegistry
@@ -44,9 +46,94 @@ class AgentOrchestrator:
     - Consensus: All agents independently solve, supervisor synthesizes
     """
 
-    def __init__(self, registry: Optional[AgentRegistry] = None):
+    def __init__(
+        self,
+        registry: Optional[AgentRegistry] = None,
+        max_parallel_agents: int = 8,
+    ):
+        if (
+            isinstance(max_parallel_agents, bool)
+            or not isinstance(max_parallel_agents, int)
+            or not 1 <= max_parallel_agents <= 64
+        ):
+            raise ValueError("max_parallel_agents must be an integer from 1 to 64")
         self.registry = registry or AgentRegistry()
+        self.max_parallel_agents = max_parallel_agents
         self._teams: Dict[str, Dict[str, Any]] = {}
+
+    @staticmethod
+    def _agent_error(
+        agent: TeamMember, error: Exception
+    ) -> Result[Any, Dict[str, Any]]:
+        """Normalize worker exceptions without aborting sibling agents."""
+        return Result.err(
+            {
+                "errorType": "AGENT_EXECUTION_ERROR",
+                "message": "Team member execution failed.",
+                "details": {
+                    "agent_id": getattr(agent.agent, "agent_id", "unknown"),
+                    "exception": type(error).__name__,
+                },
+            }
+        )
+
+    def _pursue_agents(
+        self, assignments: List[Tuple[str, TeamMember, str]]
+    ) -> Dict[str, Result[Any, Dict[str, Any]]]:
+        """Run independent agent goals with a bounded pool and stable ordering."""
+        if not assignments:
+            return {}
+
+        results: Dict[str, Result[Any, Dict[str, Any]]] = {}
+        with ThreadPoolExecutor(
+            max_workers=min(self.max_parallel_agents, len(assignments)),
+            thread_name_prefix="maple-agent",
+        ) as executor:
+            futures = [
+                (
+                    key,
+                    member,
+                    executor.submit(member.agent.pursue_goal, description),
+                )
+                for key, member, description in assignments
+            ]
+            for key, member, future in futures:
+                try:
+                    results[key] = future.result()
+                except Exception as error:
+                    results[key] = self._agent_error(member, error)
+        return results
+
+    async def _pursue_agents_async(
+        self, assignments: List[Tuple[str, TeamMember, str]]
+    ) -> Dict[str, Result[Any, Dict[str, Any]]]:
+        """Run independent agent goals asynchronously with a concurrency cap."""
+        semaphore = asyncio.Semaphore(self.max_parallel_agents)
+        loop = asyncio.get_running_loop()
+
+        async def run_one(
+            key: str, member: TeamMember, description: str
+        ) -> Tuple[str, Result[Any, Dict[str, Any]]]:
+            async with semaphore:
+                try:
+                    pursue_async = getattr(member.agent, "pursue_goal_async", None)
+                    if pursue_async is not None:
+                        result = await pursue_async(description)
+                    else:
+                        result = await loop.run_in_executor(
+                            None, member.agent.pursue_goal, description
+                        )
+                    return key, result
+                except Exception as error:
+                    return key, self._agent_error(member, error)
+
+        pairs = await asyncio.gather(
+            *[
+                run_one(key, member, description)
+                for key, member, description in assignments
+            ]
+        )
+        return dict(pairs)
 
     def form_team(
         self,
@@ -200,12 +287,18 @@ class AgentOrchestrator:
                 "worker": worker,
             }
 
-        # Step 3: Workers pursue sub-goals
+        # Step 3: Workers pursue sub-goals concurrently, with stable collection order.
+        worker_results = self._pursue_agents(
+            [
+                (sg_id, assignment["worker"], assignment["sub_goal"].description)
+                for sg_id, assignment in assignments.items()
+            ]
+        )
         results = {}
         for sg_id, assignment in assignments.items():
             worker_agent = assignment["worker"].agent
             sub_goal = assignment["sub_goal"]
-            worker_result = worker_agent.pursue_goal(sub_goal.description)
+            worker_result = worker_results[sg_id]
             if worker_result.is_ok():
                 goal_obj = worker_result.unwrap()
                 results[sg_id] = {
@@ -264,10 +357,15 @@ class AgentOrchestrator:
                 }
             )
 
-        # Step 1: All agents independently pursue the question
+        # Step 1: All agents independently pursue the question concurrently.
+        member_assignments = [
+            (f"member-{index}", member, question)
+            for index, member in enumerate(all_members)
+        ]
+        member_results = self._pursue_agents(member_assignments)
         responses = {}
-        for member in all_members:
-            result = member.agent.pursue_goal(question)
+        for index, member in enumerate(all_members):
+            result = member_results[f"member-{index}"]
             if result.is_ok():
                 goal_obj = result.unwrap()
                 responses[member.agent.agent_id] = {
@@ -299,6 +397,185 @@ class AgentOrchestrator:
         synthesis = None
         if synthesis_result.is_ok():
             synthesis = synthesis_result.unwrap().result
+
+        return Result.ok(
+            {
+                "strategy": "consensus",
+                "question": question,
+                "individual_responses": responses,
+                "synthesis": synthesis,
+                "responding_agents": len(responses),
+            }
+        )
+
+    async def execute_supervised_async(
+        self,
+        team_id: str,
+        goal_description: str,
+    ) -> Result[Dict[str, Any], Dict[str, Any]]:
+        """Async supervised execution with bounded concurrent worker goals."""
+        team = self._teams.get(team_id)
+        if not team:
+            return Result.err(
+                {
+                    "errorType": "TEAM_NOT_FOUND",
+                    "message": f"Team {team_id} not found",
+                }
+            )
+
+        supervisor = team["supervisor"]
+        workers = team["workers"]
+        if not supervisor:
+            return Result.err(
+                {
+                    "errorType": "NO_SUPERVISOR",
+                    "message": "Supervised execution requires a supervisor agent",
+                }
+            )
+        if not workers:
+            return Result.err(
+                {
+                    "errorType": "NO_WORKERS",
+                    "message": "Supervised execution requires at least one worker",
+                }
+            )
+
+        from .agent import Goal
+
+        goal = Goal(goal_id=str(uuid.uuid4()), description=goal_description)
+        loop = asyncio.get_running_loop()
+        decompose_result = await loop.run_in_executor(
+            None, supervisor.agent.decompose_goal, goal
+        )
+        if decompose_result.is_err():
+            fallback = await self._pursue_agents_async(
+                [("fallback", supervisor, goal_description)]
+            )
+            result = fallback["fallback"]
+            if result.is_ok():
+                goal_obj = result.unwrap()
+                return Result.ok(
+                    {
+                        "strategy": "supervisor_solo",
+                        "result": goal_obj.result,
+                        "status": goal_obj.status,
+                    }
+                )
+            return Result.err(result.unwrap_err())
+
+        sub_goals = decompose_result.unwrap()
+        assignments = {
+            sub_goal.goal_id: {
+                "sub_goal": sub_goal,
+                "worker": workers[index % len(workers)],
+            }
+            for index, sub_goal in enumerate(sub_goals)
+        }
+        worker_results = await self._pursue_agents_async(
+            [
+                (sg_id, assignment["worker"], assignment["sub_goal"].description)
+                for sg_id, assignment in assignments.items()
+            ]
+        )
+        results = {}
+        for sg_id, assignment in assignments.items():
+            worker_agent = assignment["worker"].agent
+            sub_goal = assignment["sub_goal"]
+            worker_result = worker_results[sg_id]
+            if worker_result.is_ok():
+                goal_obj = worker_result.unwrap()
+                results[sg_id] = {
+                    "description": sub_goal.description,
+                    "status": goal_obj.status,
+                    "result": goal_obj.result,
+                    "worker": worker_agent.agent_id,
+                }
+            else:
+                results[sg_id] = {
+                    "description": sub_goal.description,
+                    "status": "failed",
+                    "error": worker_result.unwrap_err(),
+                    "worker": worker_agent.agent_id,
+                }
+
+        return Result.ok(
+            {
+                "strategy": "supervised",
+                "goal": goal_description,
+                "sub_results": results,
+                "completed": sum(
+                    1 for result in results.values() if result["status"] == "completed"
+                ),
+                "failed": sum(
+                    1 for result in results.values() if result["status"] == "failed"
+                ),
+                "total": len(results),
+            }
+        )
+
+    async def execute_consensus_async(
+        self,
+        team_id: str,
+        question: str,
+    ) -> Result[Dict[str, Any], Dict[str, Any]]:
+        """Async consensus execution with bounded concurrent member goals."""
+        team = self._teams.get(team_id)
+        if not team:
+            return Result.err(
+                {
+                    "errorType": "TEAM_NOT_FOUND",
+                    "message": f"Team {team_id} not found",
+                }
+            )
+
+        all_members = team["members"]
+        if len(all_members) < 2:
+            return Result.err(
+                {
+                    "errorType": "INSUFFICIENT_MEMBERS",
+                    "message": "Consensus requires at least 2 members",
+                }
+            )
+
+        member_assignments = [
+            (f"member-{index}", member, question)
+            for index, member in enumerate(all_members)
+        ]
+        member_results = await self._pursue_agents_async(member_assignments)
+        responses = {}
+        for index, member in enumerate(all_members):
+            result = member_results[f"member-{index}"]
+            if result.is_ok():
+                goal_obj = result.unwrap()
+                responses[member.agent.agent_id] = {
+                    "role": member.role,
+                    "result": goal_obj.result,
+                    "status": goal_obj.status,
+                }
+            else:
+                responses[member.agent.agent_id] = {
+                    "role": member.role,
+                    "error": result.unwrap_err(),
+                    "status": "failed",
+                }
+
+        synthesizer = team["supervisor"] or all_members[0]
+        response_summary = "\n".join(
+            f"Agent {agent_id} ({response['role']}): "
+            f"{response.get('result', response.get('error', 'no response'))}"
+            for agent_id, response in responses.items()
+        )
+        synthesis_goal = (
+            f'Multiple agents were asked: "{question}"\n'
+            f"Their responses:\n{response_summary}\n\n"
+            "Synthesize these into a single best answer."
+        )
+        synthesis_result = await self._pursue_agents_async(
+            [("synthesis", synthesizer, synthesis_goal)]
+        )
+        synthesis = None
+        if synthesis_result["synthesis"].is_ok():
+            synthesis = synthesis_result["synthesis"].unwrap().result
 
         return Result.ok(
             {
