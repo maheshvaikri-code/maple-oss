@@ -306,6 +306,9 @@ verification remain open.
   than native feature parity.
 - The README now links to the ledger and narrows its summary comparison to
   evidence-backed MAPLE boundaries.
+- The exact current clean archive rebuilt wheel/sdist `1.1.3`; both Twine
+  checks passed, and the 463-entry sdist audit found no preserved workspace-only
+  files.
 - No code, dependency, user-owned untracked file, external service, website,
   or publication target was changed.
 

@@ -316,6 +316,9 @@ slow Doctrine gold phase before interruption without a pytest summary.
   composable workflows with retry policy; unified streaming/trace export;
   deeper trajectory/judge evaluation; and separately reviewed sandbox,
   browser, hosting, managed data, and language surfaces.
+- The exact current `git archive HEAD` snapshot also rebuilt wheel/sdist
+  `1.1.3`; Twine passed both artifacts, and the 463-entry sdist included the
+  parity ledger while excluding all preserved workspace-only Doctrine files.
 - Documentation-only change; no runtime behavior or dependency changed.
 
 ## Security conclusions

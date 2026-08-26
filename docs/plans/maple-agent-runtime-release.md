@@ -390,3 +390,7 @@ deferred/unsupported surfaces, treats code-block extraction as non-executing
 artifact data, and orders the next gaps around durable agent runs, HITL,
 context-aware handoffs, unified streaming/observability, deeper evaluations,
 and separately reviewed execution integrations.
+
+The exact current clean archive at the parity-ledger commit rebuilt wheel/sdist
+`1.1.3`; both Twine checks passed, the sdist contained 463 entries including
+the ledger, and the preserved workspace-only Doctrine files were absent.
