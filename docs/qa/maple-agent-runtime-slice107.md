@@ -12,7 +12,7 @@
 | 3 | Keep metrics metadata-only, bounded, and dependency-free | Source review, focused tests, and dependency audit | Metrics contain only integer counts; no new dependency or payload/export path was added | Yes |
 | 4 | Preserve existing event/span behavior and failure posture | Exact tracked regression manifest | `1263 passed, 1 skipped in 248.55s` across 108 tracked test files | Yes |
 | 5 | Keep public documentation and API boundaries truthful | ADR/API/README/parity/changelog review | ADR-053 and `metrics()` API documentation state local-only scope; sampling and remote aggregation remain deferred | Yes |
-| 6 | Produce a clean publishable package candidate | Clean committed-HEAD archive build and audit | Package audit is pending the final evidence commit | Pending |
+| 6 | Produce a clean publishable package candidate | Clean committed-HEAD archive build and audit | Package candidate `beba0f2`: build_exit=0, twine_exit=0, sdist_entries=507, required public files `5/5`, workspace-only audit `0` | Yes |
 
 ## Adversarial & edge matrix
 
@@ -74,5 +74,18 @@ integer snapshots and do not alter retention or error behavior.
 the dependency-audit findings are dispositioned; no new Slice 107 security
 defect found. Human override: n/a.  
 **QA verdict:** pass for Slice 107 behavior and local metrics boundaries;
-package evidence remains to be attached after the final documentation commit.
-No publication was performed.
+committed package evidence is attached below. No publication was performed.
+
+**Package audit evidence:**
+
+```text
+head=beba0f2
+build_exit=0
+twine_exit=0
+artifact_count=2
+sdist_entries=507
+required_hits=5/5
+workspace_only_hits=0
+maple_oss-1.1.3-py3-none-any.whl: PASSED
+maple_oss-1.1.3.tar.gz: PASSED
+```

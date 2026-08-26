@@ -17,7 +17,10 @@
   deferred. Focused validation reports `30 passed in 0.25s`; the exact tracked
   manifest reports `1263 passed, 1 skipped in 248.55s` across 108 tracked test
   files. Black, Ruff, changed-boundary mypy, compile, diff, and network-free
-  doctor pass. Package evidence is pending; no publication was performed.
+  doctor pass. A clean committed-candidate package audit rebuilt wheel/sdist
+  `1.1.3` with build and Twine exit 0; the sdist contains `507` entries, all 5
+  required public-file checks pass, and the workspace-only audit is empty. No
+  publication was performed.
 - **Bounded local tool spans**: normal sync and async ReAct tool executions
   now record optional `agent.tool` child spans under their open model-step
   span. Only bounded tool identity, step, error status, and result length are
