@@ -10,6 +10,18 @@
 
 ### Additions
 
+- **Provider correlation in agent observability**: bounded provider request IDs
+  now flow from `LLMResponse` into sync/async `model.response` lifecycle events
+  and `DecisionTrace` JSON export, with malformed IDs omitted. No raw provider
+  objects are copied. Focused correlation coverage reports `73 passed in
+  1.45s`; the exact tracked manifest reports `1237 passed, 1 skipped in
+  249.77s` across 107 tracked test files. Black, Ruff, changed-boundary mypy,
+  compile, diff, and network-free doctor pass. A clean committed-HEAD archive
+  rebuilt wheel/sdist `1.1.3`; build and Twine exited 0, the sdist contains 491
+  entries with ADR-047 and the Slice 101 files, and the workspace-only audit is
+  empty. Incremental chunk aggregation, a full trace/span graph, durable/remote
+  exporters, and hard cancellation remain separate boundaries. No publication
+  was performed.
 - **Bounded stream usage and exporter seams**: native OpenAI-compatible and
   Anthropic streams now expose bounded final `TokenUsage` trailers and provider
   request IDs when available; OpenAI usage requests are opt-in and Anthropic

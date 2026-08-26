@@ -648,6 +648,25 @@ remain explicit follow-on work.
   files. Automatic provider-to-agent trace linkage, durable/remote exporters,
   hard cancellation, and exactly-once external effects remain unclaimed.
 
+## Slice 101 implementation review
+
+- `AutonomousAgent` copies a bounded provider request ID into both sync and
+  async `model.response` metadata and `DecisionTrace` records. IDs exceeding
+  256 characters or containing control characters are omitted, and no raw SDK
+  response is copied.
+- `DecisionLogger.export_json()` preserves the correlation field without
+  changing existing trace aggregation or summary behavior. Existing event
+  redaction and bounded payload policies remain authoritative.
+- Focused correlation coverage reports `73 passed in 1.45s`; Black, Ruff,
+  changed-boundary mypy, compile, and diff checks pass. The exact tracked
+  manifest reports `1237 passed, 1 skipped in 249.77s` across 107 tracked test
+  files. A clean committed-HEAD archive rebuilt wheel/sdist `1.1.3`; build and
+  Twine exited 0, the sdist contains 491 entries including ADR-047 and the
+  Slice 101 files, and the workspace-only audit found zero preserved Doctrine
+  files. Incremental stream aggregation, a full trace/span graph, durable or
+  remote exporters, hard cancellation, and exactly-once telemetry remain
+  unclaimed.
+
 ## Verdict
 
 **Feature review:** PASS for the twenty-eight implemented capability slices.

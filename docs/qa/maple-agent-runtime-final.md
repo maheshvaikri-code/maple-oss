@@ -658,6 +658,29 @@ slow Doctrine gold phase before interruption without a pytest summary.
   effects remain outside this local contract. No publication, website, cloud,
   registry, or user-owned untracked file change was made.
 
+## Slice 101 QA — bounded provider correlation in agent events and traces
+
+- `tests/autonomy/test_agent.py`, `tests/autonomy/test_runs.py`,
+  `tests/autonomy/test_observability.py`, and the provider stream regressions
+  report `73 passed in 1.45s`.
+- Sync and async `AutonomousAgent` model responses copy only bounded provider
+  request IDs into metadata-only `model.response` events and `DecisionTrace`
+  JSON export. IDs over 256 characters or containing control characters are
+  omitted; raw provider responses and SDK objects are not emitted.
+- The exact tracked manifest contains 107 tracked Python test files and reports
+  `1237 passed, 1 skipped in 249.77s` with no warning output. Black, Ruff,
+  changed-boundary mypy, compile, and diff checks pass. Network-free doctor
+  returns `ready: true`, `status: SUCCESS`, version `1.1.3`, all eight checks
+  true, and `network: false`.
+- A clean committed-HEAD archive rebuilt wheel/sdist `1.1.3`; build and Twine
+  both exited 0, the sdist contains 491 entries including ADR-047, the agent
+  and observability modules, and their regressions, and the workspace-only
+  audit found zero preserved Doctrine files.
+- Incremental provider-chunk aggregation, a full trace/span graph, durable or
+  remote exporters, hard cancellation, and exactly-once telemetry remain
+  outside this local contract. No publication, website, cloud, registry, or
+  user-owned untracked file change was made.
+
 ## Security conclusions
 
 - No new dependency, credential, cloud call, website mutation, or publication
