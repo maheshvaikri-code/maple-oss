@@ -16,6 +16,10 @@ workers and consensus members while preserving deterministic result joins.
   tests/autonomy/test_orchestrator.py`: all checks passed.
 - Black, isort, and `python -m mypy maple/autonomy/orchestrator.py
   --ignore-missing-imports`: passed.
+- Exact-current wheel and sdist built as `maple_oss-1.1.3`; Twine reports
+  `PASSED` for both artifacts.
+- Network-free doctor reports all eight checks true with `ready: true`,
+  `network: false`, version `1.1.3`.
 
 ## Boundary review
 
