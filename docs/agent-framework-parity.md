@@ -34,12 +34,12 @@ with that capability, nor that an adapter makes MAPLE equivalent to it.
 | Workflow graph, branching, and parallelism | **Preview** — typed nodes, conditional routing, bounded fan-out/fan-in, deterministic joins, and persisted per-node retry/backoff for ordinary node handlers | LangGraph, Microsoft Agent Framework, and LlamaIndex document graph/event workflow composition; CrewAI documents event-driven flows and branching/loops | Add composable sub-workflows and durable retry state for parallel branches |
 | Durable checkpoints and recovery | **Partial** — JSON-safe memory/file checkpoints, bounded history, normalized-output journal, local run server, sync/async ReAct run resume, per-run file-backed fencing, and approval/input record ownership | LangGraph persistence/time-travel, Microsoft checkpoints/resume, LlamaIndex durable workflows, and CrewAI persisted flows establish a larger durability surface | P0: restore broader pending requests and document side-effect policy; add hosted/distributed coordination only with an explicit contract |
 | Conversation sessions and memory | **Partial** — bounded memory/file session stores plus working, episodic, and semantic memory | CrewAI, Microsoft Agent Framework, LlamaIndex, and OpenAI Agents SDK document session or memory primitives; richer managed context and compaction are common follow-ons | Add trace/tool-result replay and bounded compaction; keep encryption/leases host-owned until specified |
-| Streaming | **Preview** — provider-native OpenAI/Anthropic streams plus bounded sync/async agent lifecycle events with opt-in metadata-only `model.chunk` events, response reconstruction, usage trailers, request correlation IDs, serializable cursors, explicit retention-gap errors, and cooperative waiter cancellation | LangGraph, CrewAI, Microsoft Agent Framework, LlamaIndex, and OpenAI Agents SDK expose run/event streaming | P1: add a trace/span model, backpressure metrics, and remote transport; local chunk aggregation remains deliberately bounded |
+| Streaming | **Preview** — provider-native OpenAI/Anthropic streams plus bounded sync/async agent lifecycle events with opt-in metadata-only `model.chunk` events, response reconstruction, usage trailers, request correlation IDs, serializable cursors, explicit retention-gap errors, cooperative waiter cancellation, and local publish-latency/failure metrics | LangGraph, CrewAI, Microsoft Agent Framework, LlamaIndex, and OpenAI Agents SDK expose run/event streaming | P1: add remote transport and percentile latency/backpressure views; local chunk aggregation remains deliberately bounded |
 | Retrieval, RAG, and citations | **Preview** — deterministic chunking, local lexical/vector retrieval, source references, retrieval/groundedness evaluation | LlamaIndex is the strongest reference surface for data connectors, RAG workflows, structured output, and citations; other frameworks expose retrieval integrations | P1: connector/reranker seams and managed-store adapters; do not call lexical overlap semantic faithfulness |
 | MCP and external tool ecosystem | **Native + Adapter** — live MCP discovery/call and protocol adapters | MCP is documented across the comparison set as an integration boundary rather than a complete agent runtime | Keep transport bounded; add auth/tenant policy only with a scoped contract |
 | Code blocks and artifacts | **Native data surface** — bounded Markdown code-block extraction and content-addressed artifact stores | Frameworks commonly expose code-generation or code-agent examples; that does not imply safe execution | Keep extraction non-executing; document artifact lifecycle and provenance |
 | Code interpreter, browser, computer use, and sandboxing | **Unsupported** — `TrustedLocalExecutor` runs explicitly trusted local handlers only; no in-process sandbox or hosted interpreter is claimed | OpenAI Agents SDK documents sandbox agents; LlamaIndex documents CodeAct examples; the Microsoft/CrewAI/LangGraph ecosystems provide execution integrations | P2: separate security brief for isolation, browser controls, approvals, and cleanup; never enable by documentation alone |
-| Tracing and observability | **Preview** — bounded `EventStream`, redaction policy, host-owned exporter seam, decision traces/logger with provider correlation, optional thread-safe local `TraceSpan`/`SpanRecorder` model-step linkage, snapshots | OpenAI Agents SDK tracing and LlamaIndex/CrewAI observability surfaces are broader, especially for exporters and hosted inspection | P1: add tool spans, sampling/backpressure metrics, and remote/exporter delivery; local model spans remain bounded |
+| Tracing and observability | **Preview** — bounded `EventStream`, redaction policy, host-owned exporter seam, decision traces/logger with provider correlation, optional thread-safe local `TraceSpan`/`SpanRecorder` model-step linkage, stable span sampling, local latency/status/failure metrics, snapshots | OpenAI Agents SDK tracing and LlamaIndex/CrewAI observability surfaces are broader, especially for exporters and hosted inspection | P1: add remote/exporter delivery, percentile latency views, and approval-replay correlation; local model spans remain bounded |
 | Evaluations | **Preview** — versioned deterministic output/schema/trajectory cases plus retrieval and grounded-answer harnesses with redacted reports; optional host-supplied bounded judge result is provider-neutral | OpenAI testing utilities and framework-specific eval/observability integrations support broader trajectory, model-judge, or trace evaluation | P1: async/provider-owned judge orchestration, calibration, and trace scoring; preserve deterministic baseline |
 | Retry, cancellation, and resilience | **Native infrastructure / Partial agent runtime** — retry/circuit-breaker primitives, bounded async fan-out, deadlines, cooperative cancellation, and persisted bounded per-node workflow retry/backoff | LangGraph fault-tolerance/retry, LlamaIndex retry policies, and workflow runtimes make step retry more central | Add durable retry state for parallel branches and agent-model/provider retry classification; retain cooperative cancellation truthfulness |
 | Provider breadth and portable model contracts | **Native abstraction / Partial adapters** — OpenAI, Anthropic, and compatible provider contracts with capability routing | The comparison set has wider provider/integration catalogs and often provider-specific middleware | Expand only behind capability tests; no provider count claims without live contract evidence |
@@ -53,9 +53,9 @@ export, sampling/backpressure metrics, approval-replay correlation, and remote
 trace search remain separate boundaries.
 
 Local `EventStream.metrics()` and `SpanRecorder.metrics()` now expose bounded
-retention/eviction pressure, subscriber count, and open-span count without a
-metrics backend. Sampling controls, latency histograms, and remote aggregation
-remain deferred.
+retention/eviction pressure, subscriber count, open-span count, stable span
+sampling, coarse latency, and subscriber/exporter failures without a metrics
+backend. Percentile histograms and remote aggregation remain deferred.
 
 ## Highest-value gaps before a publish claim
 
@@ -73,9 +73,9 @@ the number of framework checkmarks:
 3. **Unified streaming and observability:** local provider chunk aggregation
    and metadata-only `model.chunk` lifecycle events now link bounded usage and
    provider correlation into agent runs, and optional local model spans link
-   chunks, responses, decisions, and normal tool executions. Add sampling
-   controls, latency/backpressure metrics, and remote transport while retaining cancellation and the
-   host-owned exporter seam.
+   chunks, responses, decisions, and normal tool executions. Add percentile
+   latency views and remote transport while retaining local sampling,
+   cancellation, and the host-owned exporter seam.
 4. **Evaluation depth:** retain deterministic retrieval/grounding metrics and
    add versioned trajectory fixtures plus an optional model-judge contract.
 5. **Execution integrations:** treat sandbox/browser/computer use, managed

@@ -17,6 +17,7 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import threading
@@ -40,6 +41,7 @@ _MAX_SPAN_ATTRIBUTES = 32
 _MAX_ATTRIBUTE_KEY_LENGTH = 128
 _MAX_ATTRIBUTE_STRING_LENGTH = 1_024
 _MAX_ATTRIBUTE_BYTES = 16_384
+_MAX_SAMPLE_RATE = 1.0
 
 
 @dataclass
@@ -188,6 +190,7 @@ class SpanRecorder:
         *,
         max_spans: int = 1_000,
         redaction: Optional[RedactionPolicy] = None,
+        sample_rate: float = 1.0,
     ) -> None:
         if (
             not isinstance(max_spans, int)
@@ -196,7 +199,16 @@ class SpanRecorder:
             or max_spans > _MAX_SPANS
         ):
             raise ValueError(f"max_spans must be an integer from 1 to {_MAX_SPANS}")
+        if (
+            not isinstance(sample_rate, (int, float))
+            or isinstance(sample_rate, bool)
+            or not math.isfinite(float(sample_rate))
+            or sample_rate < 0
+            or sample_rate > _MAX_SAMPLE_RATE
+        ):
+            raise ValueError("sample_rate must be a finite number from 0.0 to 1.0")
         self.max_spans = max_spans
+        self.sample_rate = float(sample_rate)
         self.redaction = redaction or RedactionPolicy(
             max_depth=2,
             max_items=_MAX_SPAN_ATTRIBUTES,
@@ -208,7 +220,24 @@ class SpanRecorder:
         self._spans: Deque[TraceSpan] = deque(maxlen=max_spans)
         self._by_id: Dict[str, TraceSpan] = {}
         self._dropped = 0
+        self._sampled_out = 0
+        self._completed = 0
+        self._latency_total_ms = 0
+        self._latency_max_ms = 0
+        self._error_spans = 0
+        self._cancelled_spans = 0
+        self._sample_index = 0
         self._lock = threading.RLock()
+
+    def _should_sample(self, trace_id: str, name: str, index: int) -> bool:
+        """Return a stable sampling decision without using global RNG state."""
+        if self.sample_rate <= 0:
+            return False
+        if self.sample_rate >= _MAX_SAMPLE_RATE:
+            return True
+        digest = hashlib.sha256(f"{trace_id}:{name}:{index}".encode("utf-8")).digest()
+        bucket = int.from_bytes(digest[:8], byteorder="big") / float(1 << 64)
+        return bucket < self.sample_rate
 
     def _prepare_attributes(
         self, attributes: Optional[Mapping[str, Any]]
@@ -360,6 +389,16 @@ class SpanRecorder:
                 effective_trace_id = parent.trace_id
             else:
                 effective_trace_id = trace_id or uuid.uuid4().hex
+            sample_index = self._sample_index
+            self._sample_index += 1
+            if not self._should_sample(effective_trace_id, name, sample_index):
+                self._sampled_out += 1
+                return Result.err(
+                    _span_error(
+                        "SPAN_SAMPLED_OUT",
+                        "span was excluded by the configured sample rate.",
+                    )
+                )
             span = TraceSpan(
                 trace_id=effective_trace_id,
                 span_id=uuid.uuid4().hex,
@@ -447,6 +486,16 @@ class SpanRecorder:
                     _span_error("SPAN_NOT_FOUND", "span is not retained.")
                 )
             self._by_id[span_id] = finished
+            duration_ms = max(
+                0, int(round((float(effective_end) - span.start_time) * 1000))
+            )
+            self._completed += 1
+            self._latency_total_ms += duration_ms
+            self._latency_max_ms = max(self._latency_max_ms, duration_ms)
+            if status == "error":
+                self._error_spans += 1
+            elif status == "cancelled":
+                self._cancelled_spans += 1
             return Result.ok(finished)
 
     def get_span(self, span_id: str) -> Result[TraceSpan, Error]:
@@ -506,6 +555,16 @@ class SpanRecorder:
                 "max_spans": self.max_spans,
                 "dropped_spans": self._dropped,
                 "open_spans": sum(span.status == "running" for span in self._spans),
+                "sample_rate_basis_points": int(round(self.sample_rate * 10_000)),
+                "sampled_out_spans": self._sampled_out,
+                "completed_spans": self._completed,
+                "latency_total_ms": self._latency_total_ms,
+                "latency_max_ms": self._latency_max_ms,
+                "latency_avg_ms": (
+                    self._latency_total_ms // self._completed if self._completed else 0
+                ),
+                "error_spans": self._error_spans,
+                "cancelled_spans": self._cancelled_spans,
             }
 
 

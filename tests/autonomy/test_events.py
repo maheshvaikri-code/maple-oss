@@ -40,12 +40,16 @@ def test_ring_buffer_tracks_evictions_and_snapshot_order():
     assert snapshot.is_ok()
     assert [event.sequence for event in snapshot.unwrap()] == [2, 3]
     assert stream.dropped_count == 1
-    assert stream.metrics() == {
-        "retained_events": 2,
-        "max_events": 2,
-        "dropped_events": 1,
-        "subscriber_count": 1,
-    }
+    metrics = stream.metrics()
+    assert metrics["retained_events"] == 2
+    assert metrics["max_events"] == 2
+    assert metrics["dropped_events"] == 1
+    assert metrics["subscriber_count"] == 1
+    assert metrics["published_events"] == 3
+    assert metrics["subscriber_failures"] == 0
+    assert metrics["exporter_failures"] == 0
+    assert metrics["publish_latency_total_ms"] >= 0
+    assert metrics["publish_latency_max_ms"] >= metrics["publish_latency_avg_ms"]
 
 
 def test_payload_bounds_and_malformed_values_fail_closed():
@@ -186,9 +190,24 @@ def test_exporter_failure_is_isolated_and_invalid_exporter_fails_closed():
         def export(self, event):
             raise RuntimeError("sink unavailable")
 
-    published = EventStream(exporter=BrokenExporter()).publish("safe", {})
+    published_metrics = EventStream(exporter=BrokenExporter())
+    published = published_metrics.publish("safe", {})
     invalid = EventStream(exporter=object()).publish("safe", {})
 
     assert published.is_ok()
+    assert published_metrics.metrics()["exporter_failures"] == 1
     assert invalid.is_err()
     assert invalid.unwrap_err()["errorType"] == "EVENT_CONFIG_INVALID"
+
+
+def test_subscriber_failure_is_isolated_and_counted():
+    def broken_subscriber(event):
+        raise RuntimeError("subscriber unavailable")
+
+    stream = EventStream()
+    assert stream.subscribe(broken_subscriber).is_ok()
+
+    published = stream.publish("safe", {})
+
+    assert published.is_ok()
+    assert stream.metrics()["subscriber_failures"] == 1

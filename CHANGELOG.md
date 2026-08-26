@@ -10,6 +10,14 @@
 
 ### Additions
 
+- **Local observability sampling and latency/backpressure metrics**: configure
+  stable bounded span sampling with `SpanRecorder(sample_rate=...)`; local
+  metrics now include completed span latency/status counters plus accepted event
+  publishes, subscriber/exporter failures, and coarse publish latency. The
+  contract remains integer-only, dependency-free, and non-failing; percentile
+  histograms, durable/remote export, and hosted trace search remain deferred.
+  Focused validation reports `32 passed in 0.29s`; full regression and package
+  evidence remain pending. No publication was performed.
 - **Bounded local observability retention metrics**: `EventStream.metrics()`
   and `SpanRecorder.metrics()` now expose retained capacity, eviction counts,
   subscriber count, and open-span count as thread-safe integer snapshots.

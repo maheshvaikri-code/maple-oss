@@ -206,7 +206,48 @@ class TestTraceSpan:
             "max_spans": 2,
             "dropped_spans": 1,
             "open_spans": 2,
+            "sample_rate_basis_points": 10000,
+            "sampled_out_spans": 0,
+            "completed_spans": 0,
+            "latency_total_ms": 0,
+            "latency_max_ms": 0,
+            "latency_avg_ms": 0,
+            "error_spans": 0,
+            "cancelled_spans": 0,
         }
+
+    def test_recorder_sampling_and_latency_metrics(self):
+        with pytest.raises(ValueError, match="sample_rate"):
+            SpanRecorder(sample_rate=-0.1)
+        with pytest.raises(ValueError, match="sample_rate"):
+            SpanRecorder(sample_rate=1.1)
+
+        sampled = SpanRecorder(sample_rate=0.0)
+        excluded = sampled.start_span("sampled", trace_id="trace-1")
+        assert excluded.is_err()
+        assert excluded.unwrap_err()["errorType"] == "SPAN_SAMPLED_OUT"
+        assert sampled.metrics()["sampled_out_spans"] == 1
+        assert sampled.metrics()["sample_rate_basis_points"] == 0
+
+        recorder = SpanRecorder()
+        success = recorder.start_span("success", start_time=1.0).unwrap()
+        failure = recorder.start_span("failure", start_time=2.0).unwrap()
+        cancelled = recorder.start_span("cancelled", start_time=3.0).unwrap()
+        assert recorder.finish_span(success.span_id, end_time=1.125).is_ok()
+        assert recorder.finish_span(
+            failure.span_id, status="error", end_time=2.5
+        ).is_ok()
+        assert recorder.finish_span(
+            cancelled.span_id, status="cancelled", end_time=3.25
+        ).is_ok()
+
+        metrics = recorder.metrics()
+        assert metrics["completed_spans"] == 3
+        assert metrics["latency_total_ms"] == 875
+        assert metrics["latency_max_ms"] == 500
+        assert metrics["latency_avg_ms"] == 291
+        assert metrics["error_spans"] == 1
+        assert metrics["cancelled_spans"] == 1
 
     def test_recorder_rejects_nested_attributes_and_exports_json(self):
         recorder = SpanRecorder()

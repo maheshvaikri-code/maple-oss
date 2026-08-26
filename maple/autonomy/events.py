@@ -271,6 +271,11 @@ class EventStream:
         self._next_sequence = 1
         self._next_subscription = 1
         self._dropped = 0
+        self._published = 0
+        self._subscriber_failures = 0
+        self._exporter_failures = 0
+        self._publish_latency_total_ms = 0
+        self._publish_latency_max_ms = 0
         self._condition = threading.Condition(threading.RLock())
 
     def _validate_config(self) -> Optional[Error]:
@@ -306,6 +311,7 @@ class EventStream:
         run_id: Optional[str] = None,
     ) -> Result[AgentEvent, Error]:
         """Redact, bound, retain, and deliver one event."""
+        publish_started = time.perf_counter()
         config_error = self._validate_config()
         if config_error is not None:
             return Result.err(config_error)
@@ -361,18 +367,30 @@ class EventStream:
             self._next_sequence += 1
             self._events.append(event)
             callbacks = list(self._callbacks.values())
+            self._published += 1
             self._condition.notify_all()
         for callback in callbacks:
             try:
                 callback(event)
             except Exception:
+                with self._condition:
+                    self._subscriber_failures += 1
                 continue
         if self.exporter is not None:
             try:
                 self.exporter.export(event)
             except Exception:
                 # Export is an observability side effect and must not fail a run.
-                pass
+                with self._condition:
+                    self._exporter_failures += 1
+        publish_latency_ms = max(
+            0, int(round((time.perf_counter() - publish_started) * 1000))
+        )
+        with self._condition:
+            self._publish_latency_total_ms += publish_latency_ms
+            self._publish_latency_max_ms = max(
+                self._publish_latency_max_ms, publish_latency_ms
+            )
         return Result.ok(event)
 
     def snapshot(
@@ -575,4 +593,14 @@ class EventStream:
                 "max_events": self._events.maxlen or 0,
                 "dropped_events": self._dropped,
                 "subscriber_count": len(self._callbacks),
+                "published_events": self._published,
+                "subscriber_failures": self._subscriber_failures,
+                "exporter_failures": self._exporter_failures,
+                "publish_latency_total_ms": self._publish_latency_total_ms,
+                "publish_latency_max_ms": self._publish_latency_max_ms,
+                "publish_latency_avg_ms": (
+                    self._publish_latency_total_ms // self._published
+                    if self._published
+                    else 0
+                ),
             }

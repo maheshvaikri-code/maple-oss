@@ -917,9 +917,12 @@ Bounded provider request IDs are copied into `model.response` events and
 eviction, while cursor reads make that gap explicit.
 
 `EventStream.metrics()` returns a thread-safe snapshot of retained events,
-configured capacity, evictions, and subscriber count. `SpanRecorder.metrics()`
-returns the equivalent span capacity/eviction counts plus open-span count.
-These are local integer snapshots; they do not export or persist telemetry.
+configured capacity, evictions, subscriber count, accepted publishes,
+subscriber/exporter failures, and coarse integer-millisecond publish latency.
+`SpanRecorder.metrics()` returns span capacity/eviction/open-span counts,
+sampled-out spans, completed spans, terminal status counts, and coarse integer
+millisecond latency totals/maxima/averages. These are local integer snapshots;
+they do not export or persist telemetry.
 
 ```python
 from maple import AutonomousAgent, AutonomousConfig, Config, EventStream, LLMConfig
@@ -946,16 +949,19 @@ change the run result.
 ```python
 from maple import SpanRecorder
 
-spans = SpanRecorder(max_spans=1_000)
+spans = SpanRecorder(max_spans=1_000, sample_rate=0.25)
 agent.set_span_recorder(spans)
 completed = agent.pursue_goal("Summarize this document.")
 for span in spans.snapshot().unwrap():
     print(span.name, span.status, span.trace_id, span.span_id)
+print(spans.metrics()["sampled_out_spans"])
 ```
 
-This is an in-process inspection contract. Sampling controls, latency
-histograms, durable/remote exporters, approval-replay correlation, and hosted
-trace search remain host-owned or deferred.
+Sampling uses a stable local hash bucket and returns a typed
+`SPAN_SAMPLED_OUT` result for spans not retained; the agent treats that
+observability result as non-fatal. This is an in-process inspection contract.
+Percentile latency histograms, durable/remote exporters, approval-replay
+correlation, and hosted trace search remain host-owned or deferred.
 
 ## Evaluation and Provider Capabilities (preview)
 
