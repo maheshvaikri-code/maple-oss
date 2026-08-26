@@ -780,7 +780,9 @@ reference for citation.
 and tool lifecycle events. It assigns monotonic sequence numbers, retains a
 bounded ring, supports snapshots/waiters and synchronous subscribers, and
 redacts credential-like keys before retention or delivery. Payload shape,
-string, item, depth, and byte limits fail closed with structured errors.
+string, item, depth, and byte limits fail closed with structured errors. The
+autonomous agent can publish a shared sync/async run lifecycle through
+`set_event_stream()`.
 
 ```python
 from maple import EventStream
@@ -797,7 +799,11 @@ for event in events.snapshot().unwrap():
 
 This is a local event contract, not a durable broker or hosted telemetry
 service. Subscribers are synchronous and should hand off to a host-owned queue
-when callback work may block.
+when callback work may block. The agent lifecycle uses metadata-only events and
+usage trailers; prompts, tool arguments, tool output, and final result data are
+not emitted. `dropped_count` exposes bounded-ring eviction. Cancellation,
+provider-native token streams, and durable event cursors remain separate
+capabilities.
 
 ## Evaluation and Provider Capabilities (preview)
 

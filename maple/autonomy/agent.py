@@ -46,6 +46,7 @@ from .contracts import (
     run_guardrails,
     structured_model_schema,
 )
+from .events import EventStream
 from .memory import MemoryManager
 from .runs import AgentRunCheckpoint, AgentRunStore
 from .sessions import SessionMessage, SessionSnapshot, SessionStore
@@ -200,6 +201,7 @@ class AutonomousAgent(Agent):
         self._approval_namespace = uuid.uuid4().hex
         self._session_store: Optional[SessionStore] = None
         self._run_store: Optional[AgentRunStore] = None
+        self._event_stream: Optional[EventStream] = None
 
         # Active goals
         self._active_goals: Dict[str, Goal] = {}
@@ -236,6 +238,12 @@ class AutonomousAgent(Agent):
             ):
                 raise TypeError("run store must implement load and save")
         self._run_store = store
+
+    def set_event_stream(self, stream: Optional[EventStream]) -> None:
+        """Set the optional bounded stream for agent lifecycle events."""
+        if stream is not None and not callable(getattr(stream, "publish", None)):
+            raise TypeError("event stream must implement publish")
+        self._event_stream = stream
 
     def set_approval_store(self, store: Optional[ApprovalStore]) -> None:
         """Set a durable store used when approval callbacks are unavailable."""
@@ -1089,6 +1097,11 @@ class AutonomousAgent(Agent):
         )
         if initial_checkpoint.is_err():
             return Result.err(initial_checkpoint.unwrap_err())
+        self._publish_run_event(
+            goal,
+            "run.resumed" if starting_step else "run.started",
+            {"status": "running", "step_count": starting_step},
+        )
 
         for step_num in range(starting_step, self.autonomy_config.max_reasoning_steps):
             start_time = time.time()
@@ -1107,6 +1120,17 @@ class AutonomousAgent(Agent):
             if usage_result.is_err():
                 return Result.err(usage_result.unwrap_err())
             duration_ms = (time.time() - start_time) * 1000
+            self._publish_run_event(
+                goal,
+                "model.response",
+                {
+                    "step": step_num,
+                    "tool_call_count": len(response.tool_calls),
+                    "finish_reason": response.finish_reason,
+                    "duration_ms": int(duration_ms),
+                    "usage": self._run_event_usage(goal),
+                },
+            )
 
             # Record reasoning step
             step = ReasoningStep(
@@ -1141,6 +1165,7 @@ class AutonomousAgent(Agent):
                     )
                     if completed_checkpoint.is_err():
                         return Result.err(completed_checkpoint.unwrap_err())
+                    self._publish_run_completed(goal, step_num + 1)
                     return final_result
                 if self._queue_output_retry(
                     messages,
@@ -1197,6 +1222,17 @@ class AutonomousAgent(Agent):
                             name=tool_call.name,
                         )
                     )
+                    self._publish_run_event(
+                        goal,
+                        "tool.completed",
+                        {
+                            "step": step_num,
+                            "tool": tool_call.name,
+                            "tool_call_id": tool_call.id,
+                            "is_error": tool_result.is_error,
+                            "content_length": len(tool_result.content),
+                        },
+                    )
 
                     pending_approval_id = self._approval_id_from_tool_result(
                         tool_result
@@ -1222,6 +1258,15 @@ class AutonomousAgent(Agent):
                         )
                         if paused_checkpoint.is_err():
                             return Result.err(paused_checkpoint.unwrap_err())
+                        self._publish_run_event(
+                            goal,
+                            "run.paused",
+                            {
+                                "status": "paused",
+                                "step_count": step_num + 1,
+                                "approval_id": pending_approval_id,
+                            },
+                        )
                         return Result.err(paused_error)
 
                     # Update working memory
@@ -1263,6 +1308,7 @@ class AutonomousAgent(Agent):
                         )
                         if completed_checkpoint.is_err():
                             return Result.err(completed_checkpoint.unwrap_err())
+                        self._publish_run_completed(goal, step_num + 1)
                         return final_result
                     if self._queue_output_retry(
                         messages,
@@ -1306,6 +1352,16 @@ class AutonomousAgent(Agent):
             if running_checkpoint.is_err():
                 return Result.err(running_checkpoint.unwrap_err())
 
+        self._publish_run_event(
+            goal,
+            "run.failed",
+            {
+                "status": "failed",
+                "error_type": "MAX_STEPS_REACHED",
+                "step_count": self.autonomy_config.max_reasoning_steps,
+                "usage": self._run_event_usage(goal),
+            },
+        )
         return Result.err(
             {
                 "errorType": "MAX_STEPS_REACHED",
@@ -1743,6 +1799,46 @@ Instructions:
             )
             self._decision_logger.log_decision(trace)
 
+    def _publish_run_event(
+        self, goal: Goal, event_type: str, payload: Dict[str, Any]
+    ) -> None:
+        """Publish bounded lifecycle metadata without changing run outcome."""
+        if self._event_stream is None:
+            return
+        event_payload = dict(payload)
+        event_payload.setdefault("agent_id", self.agent_id)
+        result = self._event_stream.publish(
+            event_type,
+            event_payload,
+            run_id=goal.run_id or goal.goal_id,
+        )
+        if result.is_err():
+            logger.debug(
+                "agent event dropped: %s",
+                result.unwrap_err().get("errorType", "EVENT_ERROR"),
+            )
+
+    @staticmethod
+    def _run_event_usage(goal: Goal) -> Dict[str, int]:
+        """Return the bounded usage trailer attached to lifecycle events."""
+        return {
+            "prompt_tokens": goal.token_usage.prompt_tokens,
+            "completion_tokens": goal.token_usage.completion_tokens,
+            "total_tokens": goal.token_usage.total_tokens,
+        }
+
+    def _publish_run_completed(self, goal: Goal, step_count: int) -> None:
+        """Publish the terminal usage trailer for a successful run."""
+        self._publish_run_event(
+            goal,
+            "run.completed",
+            {
+                "status": "completed",
+                "step_count": step_count,
+                "usage": self._run_event_usage(goal),
+            },
+        )
+
     def get_active_goals(self) -> Dict[str, Goal]:
         """Get all active goals."""
         return dict(self._active_goals)
@@ -2022,6 +2118,11 @@ Instructions:
             return Result.err(initial_checkpoint.unwrap_err())
 
         loop = asyncio.get_running_loop()
+        self._publish_run_event(
+            goal,
+            "run.resumed" if starting_step else "run.started",
+            {"status": "running", "step_count": starting_step},
+        )
         for step_num in range(starting_step, self.autonomy_config.max_reasoning_steps):
             start_time = time.time()
 
@@ -2037,6 +2138,17 @@ Instructions:
             if usage_result.is_err():
                 return Result.err(usage_result.unwrap_err())
             duration_ms = (time.time() - start_time) * 1000
+            self._publish_run_event(
+                goal,
+                "model.response",
+                {
+                    "step": step_num,
+                    "tool_call_count": len(response.tool_calls),
+                    "finish_reason": response.finish_reason,
+                    "duration_ms": int(duration_ms),
+                    "usage": self._run_event_usage(goal),
+                },
+            )
             step = ReasoningStep(
                 step_number=step_num,
                 phase="think",
@@ -2066,6 +2178,7 @@ Instructions:
                     )
                     if completed_checkpoint.is_err():
                         return Result.err(completed_checkpoint.unwrap_err())
+                    self._publish_run_completed(goal, step_num + 1)
                     return final_result
                 if self._queue_output_retry(
                     messages,
@@ -2122,6 +2235,17 @@ Instructions:
                             name=tool_call.name,
                         )
                     )
+                    self._publish_run_event(
+                        goal,
+                        "tool.completed",
+                        {
+                            "step": step_num,
+                            "tool": tool_call.name,
+                            "tool_call_id": tool_call.id,
+                            "is_error": tool_result.is_error,
+                            "content_length": len(tool_result.content),
+                        },
+                    )
                     self.memory.working.add(
                         key=f"tool:{tool_call.name}:{step_num}",
                         content=tool_result.content[:500],
@@ -2176,6 +2300,15 @@ Instructions:
                             )
                             if paused_checkpoint.is_err():
                                 return Result.err(paused_checkpoint.unwrap_err())
+                            self._publish_run_event(
+                                goal,
+                                "run.paused",
+                                {
+                                    "status": "paused",
+                                    "step_count": step_num + 1,
+                                    "approval_id": pending_approval_id,
+                                },
+                            )
                             return Result.err(paused_error)
                 else:
                     tool_results = list(
@@ -2221,6 +2354,7 @@ Instructions:
                         )
                         if completed_checkpoint.is_err():
                             return Result.err(completed_checkpoint.unwrap_err())
+                        self._publish_run_completed(goal, step_num + 1)
                         return final_result
                     if self._queue_output_retry(
                         messages,
@@ -2282,4 +2416,14 @@ Instructions:
         )
         if failed_checkpoint.is_err():
             return Result.err(failed_checkpoint.unwrap_err())
+        self._publish_run_event(
+            goal,
+            "run.failed",
+            {
+                "status": "failed",
+                "error_type": max_steps_error["errorType"],
+                "step_count": self.autonomy_config.max_reasoning_steps,
+                "usage": self._run_event_usage(goal),
+            },
+        )
         return Result.err(max_steps_error)

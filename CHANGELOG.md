@@ -29,6 +29,11 @@
   `1,194 passed, 1 skipped in 205.06s`; the focused async/store slice reports
   `9 passed in 0.30s`; and a clean archive rebuilt the `1.1.3` wheel/sdist with
   both Twine checks passing and zero preserved workspace-only files.
+- **Unified agent-run lifecycle events**: `AutonomousAgent.set_event_stream()`
+  now exposes shared sync/async started, resumed, model, tool, pause, complete,
+  and bounded failure metadata with usage trailers. Prompts, tool arguments,
+  outputs, and final results are not emitted; ring eviction remains visible via
+  `EventStream.dropped_count`.
 - **Post-slice release revalidation**: the 101 tracked Python test files now
   report `1,191 passed, 1 skipped in 217.81s` with no warning output. A clean
   archive rebuilt wheel/sdist `1.1.3`; both Twine checks passed, the 466-entry

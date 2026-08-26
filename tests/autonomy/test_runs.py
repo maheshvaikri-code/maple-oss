@@ -8,6 +8,7 @@ import pytest
 from maple.agent.config import Config
 from maple.autonomy.agent import AutonomousAgent, AutonomousConfig
 from maple.autonomy.approval import InMemoryApprovalStore
+from maple.autonomy.events import EventStream
 from maple.autonomy.runs import (
     AgentRunCheckpoint,
     FileAgentRunStore,
@@ -245,9 +246,52 @@ def test_sync_resume_does_not_repeat_completed_tool_after_model_interruption():
     assert calls == ["called"]
 
 
+def test_agent_publishes_bounded_lifecycle_events_with_usage_trailer():
+    events = EventStream(max_events=20)
+    run_store = InMemoryAgentRunStore()
+    agent = make_agent(
+        [
+            LLMResponse(
+                content="call tool",
+                tool_calls=[
+                    ToolCall(id="event-call", name="write_value", arguments={})
+                ],
+                finish_reason="tool_calls",
+            ),
+            LLMResponse(content="complete", finish_reason="stop"),
+        ]
+    )
+    agent.set_run_store(run_store)
+    agent.set_event_stream(events)
+    assert agent.register_tool(
+        Tool(
+            name="write_value",
+            description="Write one value",
+            parameters={"type": "object"},
+            handler=lambda **kwargs: Result.ok({"ok": True}),
+        )
+    ).is_ok()
+
+    result = agent.pursue_goal("Emit lifecycle events", run_id="event-run")
+
+    assert result.is_ok()
+    assert result.unwrap().status == "completed"
+    retained = events.snapshot().unwrap()
+    assert [event.event_type for event in retained] == [
+        "run.started",
+        "model.response",
+        "tool.completed",
+        "model.response",
+        "run.completed",
+    ]
+    assert all(event.run_id == "event-run" for event in retained)
+    assert retained[-1].payload["usage"]["total_tokens"] == 0
+
+
 def test_async_run_pauses_for_approval_and_resumes_after_restart():
     run_store = InMemoryAgentRunStore()
     approval_store = InMemoryApprovalStore()
+    events = EventStream(max_events=20)
     calls = []
     first = make_agent(
         [
@@ -266,6 +310,7 @@ def test_async_run_pauses_for_approval_and_resumes_after_restart():
     )
     first.set_run_store(run_store)
     first.set_approval_store(approval_store)
+    first.set_event_stream(events)
     assert first.register_tool(approval_tool(calls)).is_ok()
 
     started = asyncio.run(
@@ -280,6 +325,12 @@ def test_async_run_pauses_for_approval_and_resumes_after_restart():
     assert checkpoint.status == "paused"
     assert checkpoint.pending_approval_id == approval_id
     assert calls == []
+    assert [event.event_type for event in events.snapshot().unwrap()] == [
+        "run.started",
+        "model.response",
+        "tool.completed",
+        "run.paused",
+    ]
     waiting = asyncio.run(first.resume_run_async("async-run-approval"))
     assert waiting.is_err()
     assert waiting.unwrap_err()["errorType"] == "RUN_WAITING_APPROVAL"
@@ -290,6 +341,7 @@ def test_async_run_pauses_for_approval_and_resumes_after_restart():
     )
     restarted.set_run_store(run_store)
     restarted.set_approval_store(approval_store)
+    restarted.set_event_stream(events)
     assert restarted.register_tool(approval_tool(calls)).is_ok()
 
     resumed = asyncio.run(restarted.resume_run_async("async-run-approval"))
@@ -301,6 +353,11 @@ def test_async_run_pauses_for_approval_and_resumes_after_restart():
     assert final_checkpoint is not None
     assert final_checkpoint.status == "completed"
     assert final_checkpoint.pending_approval_id is None
+    assert [event.event_type for event in events.snapshot().unwrap()][-3:] == [
+        "run.resumed",
+        "model.response",
+        "run.completed",
+    ]
 
 
 def test_async_durable_approval_pauses_before_later_tool_side_effects():
