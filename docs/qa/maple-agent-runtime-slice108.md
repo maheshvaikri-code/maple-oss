@@ -12,7 +12,7 @@
 | 3 | Expose event publish/backpressure metrics | `tests/autonomy/test_events.py` | Accepted publishes, subscriber failures, exporter failures, and non-negative publish latency are reported | Yes |
 | 4 | Preserve existing behavior and failure isolation | Exact tracked regression manifest | `1265 passed, 1 skipped in 203.80s` across the tracked application tests | Yes |
 | 5 | Keep public documentation and API boundaries truthful | ADR/API/README/parity/changelog review | ADR-054 documents stable local sampling, coarse latency, and explicit remote/percentile deferrals | Yes |
-| 6 | Produce a clean publishable package candidate | Clean committed-HEAD archive build and audit | Package evidence is pending the final evidence commit | Pending |
+| 6 | Produce a clean publishable package candidate | Clean committed-HEAD archive build and audit | Package candidate `6e90150`: clean archive build_exit=0, twine_exit=0, sdist_entries=510, required public files `5/5`, workspace-only audit `0` | Yes |
 
 ## Adversarial & edge matrix
 
@@ -74,5 +74,20 @@ subscriber/exporter exceptions do not alter agent outcomes.
 dependency findings are dispositioned; no new Slice 108 security defect found.
 Human override: n/a.  
 **QA verdict:** pass for Slice 108 behavior and local observability boundaries;
-package evidence remains to be attached after the final documentation commit.
-No publication was performed.
+clean committed-HEAD package evidence is attached below. No publication was
+performed.
+
+**Package audit evidence:**
+
+```text
+source=git archive HEAD
+head=6e90150
+build_exit=0
+twine_exit=0
+artifact_count=2
+sdist_entries=510
+required_hits=5/5
+workspace_only_hits=0
+maple_oss-1.1.3-py3-none-any.whl: PASSED
+maple_oss-1.1.3.tar.gz: PASSED
+```
