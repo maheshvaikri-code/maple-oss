@@ -39,6 +39,11 @@
   exact tracked run remains conditional after one existing Windows loopback
   oversized-body `ConnectionAbortedError` (`1194 passed, 1 failed, 1 skipped`);
   the isolated test passes and no retry-until-lucky result is claimed.
+- **Loopback response hardening**: bounded JSON responses now explicitly flush
+  and close their HTTP connection, eliminating the Windows oversized-body
+  response race without changing routes or payloads. The server suite reports
+  `4 passed in 2.34s`, and the exact tracked suite reports `1,195 passed, 1
+  skipped in 222.53s` with no warning output.
 - **Post-slice release revalidation**: the 101 tracked Python test files now
   report `1,191 passed, 1 skipped in 217.81s` with no warning output. A clean
   archive rebuilt wheel/sdist `1.1.3`; both Twine checks passed, the 466-entry

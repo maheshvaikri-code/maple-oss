@@ -494,16 +494,13 @@ python -m pytest tests/security/ -v       # Security tests
 python -m pytest tests/broker/ -v         # Broker tests
 ```
 
-Current status: the latest exact tracked run after the lifecycle-event slice
-reported **1,194 passed, 1 failed, 1 skipped in 218.95s**. The failure is the
-existing Windows loopback-server oversized-body test receiving
-`ConnectionAbortedError`; the same test passes in isolation, so this remains an
-open flaky-suite gate. The focused lifecycle slice reports `10 passed in
-0.27s`; Ruff, Black, mypy, compile, doctor, and clean wheel/sdist/Twine gates
-pass. The current clean archive includes the sync/async durable-run and agent
-event implementations. The workspace Doctrine gold verifier and fresh review
-also remain open; coverage is not treated as a release gate until the exact
-release matrix is clean.
+Current status: the 101 tracked Python test files report **1,195 passed, 1
+skipped in 222.53s**, with no warning output. The focused lifecycle slice
+reports `10 passed in 0.27s`, the loopback server suite reports `4 passed in
+2.34s`, and Ruff, Black, mypy, compile, doctor, and clean wheel/sdist/Twine
+gates pass. The workspace Doctrine gold verifier and fresh review remain open;
+coverage is not treated as a release gate until the complete release matrix is
+clean.
 
 ---
 

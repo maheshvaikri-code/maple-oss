@@ -383,10 +383,19 @@ slow Doctrine gold phase before interruption without a pytest summary.
 - A clean `git archive HEAD` snapshot rebuilt wheel and sdist `1.1.3`; both
   Twine checks passed. The sdist contained 468 entries, included ADR-032, and
   contained zero preserved workspace-only Doctrine files.
-- The latest exact tracked run reported `1194 passed, 1 failed, 1 skipped in
-  218.95s`; the failure is the existing oversized-body loopback test receiving
-  Windows `ConnectionAbortedError`. Its isolated reproduction passed. This
-  intermittent suite gate remains open and is not being masked by retries.
+- The latest exact tracked run before the loopback response hardening reported
+  `1194 passed, 1 failed, 1 skipped in 218.95s`; ADR-033 then addressed the
+  response flush/close race without changing the server contract.
+
+## Slice 86 revalidation — loopback response closure
+
+- `tests/autonomy/test_server.py` reports `4 passed in 2.34s`, covering health,
+  run, resume, malformed JSON, unknown workflow, and oversized-body responses.
+- The exact tracked application suite now reports `1195 passed, 1 skipped in
+  222.53s` with no warning output.
+- The response path explicitly flushes bounded JSON and marks the connection
+  closed after sending the existing status/payload contract. No dependency,
+  route, protocol, or external-hosting behavior changed.
 
 ## Security conclusions
 
@@ -402,8 +411,7 @@ slow Doctrine gold phase before interruption without a pytest summary.
 
 ## Release decision
 
-**QA status: CONDITIONAL / NOT PUBLISH-READY.** Focused runtime checks, static
-checks, current clean archive, Twine, and network-free doctor gates pass. The
-latest exact tracked suite has one intermittent Windows loopback-server failure,
-and the workspace-only Doctrine gold verifier and fresh independent review also
-remain open. No external release action was taken.
+**QA status: CONDITIONAL / NOT PUBLISH-READY.** The exact tracked suite,
+focused runtime checks, static checks, current clean archive, Twine, and
+network-free doctor gates pass. The workspace-only Doctrine gold verifier and
+fresh independent review remain open. No external release action was taken.

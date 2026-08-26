@@ -363,7 +363,9 @@ class _RequestHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(encoded)))
         self.send_header("Connection", "close")
         self.end_headers()
+        self.close_connection = True
         self.wfile.write(encoded)
+        self.wfile.flush()
 
 
 class _ResponseWritten(Exception):

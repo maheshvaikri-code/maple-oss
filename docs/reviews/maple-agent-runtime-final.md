@@ -363,16 +363,22 @@ verification remain open.
 - Ruff, Black, mypy, compile, doctor, clean archive, and Twine checks pass. The
   clean sdist contains 468 entries, includes ADR-032, and contains zero
   preserved workspace-only Doctrine files.
-- The latest exact tracked run has one existing Windows loopback-server
-  oversized-body `ConnectionAbortedError` (`1194 passed, 1 failed, 1 skipped`);
-  the isolated test passes. The event slice remains conditionally reviewed and
-  the full tracked gate remains open.
+- The latest exact run had an existing Windows loopback-server
+  oversized-body `ConnectionAbortedError`; ADR-033 hardens response flushing
+  and closure without changing the server contract.
+
+## Slice 86 revalidation
+
+- The server suite reports `4 passed in 2.34s` after the response flush/close
+  hardening.
+- The exact tracked application suite reports `1195 passed, 1 skipped in
+  222.53s` with no warning output. This closes the current tracked-suite gate.
+- No dependency, route, status, payload, external-hosting, publication, or
+  website action was introduced.
 
 ## Verdict
 
-**Feature review:** CONDITIONAL for the twenty-five implemented capability
-slices. Focused event/runtime checks pass, but the current exact tracked gate
-has one intermittent Windows loopback-server failure.
+**Feature review:** PASS for the twenty-six implemented capability slices.
 **Publish readiness:** NOT YET APPROVED. A release manager should close the
 workspace-only Doctrine gold and fresh-verifier gates before publishing. The
 remaining Bandit findings are documented low-severity legacy debt; external
