@@ -332,6 +332,12 @@ or website change was made.
 Doctrine gold phase before bounded interruption. No failure output or pytest
 summary was produced, so the exact full-suite gate remains open.
 
+2026-08-25 exact-current full-suite attempt on `bd1b179`: pytest collected
+`1295` items, passed the application suites through `90%`, and entered
+`tests/test_doctrine_gold.py`. After sparse gold-phase progress, the bounded
+session was interrupted without failure output or a pytest summary. This is not
+a full-suite pass; the exact gate remains open.
+
 2026-08-25 async orchestration lifecycle closure: commit `7630839` adds
 request-wide `timeout_seconds` and cooperative `CancellationToken` handling to
 async supervised and consensus execution. Native async children are canceled

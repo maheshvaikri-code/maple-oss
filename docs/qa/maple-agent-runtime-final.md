@@ -25,7 +25,7 @@
 | Installed artifact smoke | PASS | Clean venv installed the wheel with `--no-deps`; `maple doctor --json` returned `ready:true`, `network:false`. |
 | Isolated dependency audit | PASS | Fresh `.[dev,security]` environment: `pip check` returned `No broken requirements found.` |
 | Local readiness | PASS | `maple --json doctor` returned all eight checks true and `network:false`. |
-| Full repository regression | OPEN | Exact-current bounded run on `1211701` collected `1291` items, reached `90%`, entered the slow Doctrine gold phase, and was interrupted without failure output or a pytest summary. |
+| Full repository regression | OPEN | Exact-current bounded run on `bd1b179` collected `1295` items, passed the application suites through `90%`, entered the slow Doctrine gold phase, and was interrupted without failure output or a pytest summary. |
 | Dependency consistency | PASS | Isolated MAPLE environment is consistent; shared-interpreter conflicts are unrelated and non-authoritative. |
 | Repository-wide lint | PASS | Slice 69 closes the remaining E402 import-boundary debt; broad `ruff check maple` reports zero findings. |
 | Typed tool input/output boundary | PASS | 43 focused contract/tool/agent tests and 212 full-autonomy tests cover model-derived schemas, pre-handler input rejection, normalized handler arguments, validated outputs, and invalid-result failure. |
@@ -229,6 +229,11 @@ slow Doctrine gold phase before interruption without a pytest summary.
   changelog, QA, and review evidence are filed; no dependency was added.
 - Exact-current full-suite and fresh independent-verifier gates remain open;
   no publication or website change was performed.
+
+- Exact-current run on `bd1b179`: pytest collected `1295` items, passed the
+  application suites through `90%`, entered `tests/test_doctrine_gold.py`, and
+  was bounded/interrupted after sparse gold-phase progress. No failure output or
+  pytest summary was produced; this is not a full-suite pass.
 
 ## Security conclusions
 

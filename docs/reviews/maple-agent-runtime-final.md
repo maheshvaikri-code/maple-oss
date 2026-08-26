@@ -243,6 +243,10 @@ verification remain open.
 - Ruff, Black, mypy, and compile checks pass; ADR-028, public docs, changelog,
   QA, and release-plan evidence are filed. No dependency or external action was
   introduced.
+- The exact-current repository attempt on `bd1b179` collected `1295` items and
+  passed the application suites through `90%` before entering the slow Doctrine
+  gold phase. It was interrupted without failure output or a pytest summary;
+  this remains an open release gate.
 
 ## Verdict
 
