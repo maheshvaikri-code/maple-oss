@@ -1,7 +1,7 @@
 # ADR-035: Add a bounded durable human-input request/response boundary
 
-**Date:** 2026-08-26  
-**Status:** accepted  
+**Date:** 2026-08-26
+**Status:** accepted
 **Deciders:** Chief Architect, Backend, Security, QA
 
 ## Context

@@ -418,9 +418,11 @@ verification remain open.
   the exact tracked application manifest reports `1202 passed, 1 skipped in
   211.16s`. Ruff, Black, mypy, compile, diff, and network-free doctor checks
   pass.
-- Clean package evidence for the final documentation commit is pending. The
-  feature remains one-shot; cross-process leases, notifications, and
-  multi-round conversations are explicit follow-on gaps.
+- A clean current archive rebuilt wheel/sdist `1.1.3`; Twine passed for both,
+  the sdist contains 473 entries including ADR-035, and the workspace-only
+  audit found zero preserved Doctrine files. The feature remains one-shot;
+  cross-process leases, notifications, and multi-round conversations are
+  explicit follow-on gaps.
 
 ## Verdict
 

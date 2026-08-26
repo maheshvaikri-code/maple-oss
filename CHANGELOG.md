@@ -29,7 +29,9 @@
 - **Durable human-input validation**: the focused interaction/run/tool/agent
   slice reports `61 passed in 0.51s`; the exact tracked application manifest
   reports `1202 passed, 1 skipped in 211.16s`; Ruff, Black, mypy, compile, diff,
-  and doctor pass. Clean package evidence remains a final artifact gate.
+  and doctor pass. A clean current archive rebuilt wheel/sdist `1.1.3`; Twine
+  passed for both; the sdist contains 473 entries, includes ADR-035, and the
+  workspace-only audit found zero preserved Doctrine files.
 - **Agent-framework parity ledger**: added a source-backed functionality and
   runtime matrix for LangGraph, CrewAI, Microsoft Agent Framework, LlamaIndex,
   and OpenAI Agents SDK. It separates MAPLE's native infrastructure strengths
