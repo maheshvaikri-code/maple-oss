@@ -1,11 +1,20 @@
 """Tests for the autonomy tool framework."""
 
-from maple.autonomy.tools import Tool, ToolRegistry, create_builtin_tools
+import pytest
+
+from maple.autonomy.agent import Goal
+from maple.autonomy.tools import (
+    Tool,
+    ToolRegistry,
+    create_builtin_tools,
+    create_handoff_tool,
+)
 from maple.core.result import Result
 
 
 def make_tool(name="test_tool", requires_approval=False, tags=None):
     """Helper to create a simple test tool."""
+
     def handler(x: int = 0) -> Result:
         return Result.ok({"doubled": x * 2})
 
@@ -112,6 +121,91 @@ class TestToolRegistry:
         reg = ToolRegistry()
         result = reg.execute("missing", {})
         assert result.is_err()
+
+
+class HandoffAgent:
+    """Minimal synchronous target for handoff-tool tests."""
+
+    def __init__(self, agent_id="specialist"):
+        self.agent_id = agent_id
+        self.tasks = []
+
+    def pursue_goal(self, description):
+        self.tasks.append(description)
+        return Result.ok(
+            Goal(
+                goal_id="goal-specialist",
+                description=description,
+                status="completed",
+                result={"answer": description.upper()},
+            )
+        )
+
+
+class TestHandoffTool:
+    def test_handoff_success_is_structured_and_approval_required(self):
+        target = HandoffAgent()
+        tool = create_handoff_tool(target)
+
+        result = tool.execute(task="Research the release notes")
+
+        assert result.is_ok()
+        assert result.unwrap() == {
+            "agent_id": "specialist",
+            "goal_id": "goal-specialist",
+            "status": "completed",
+            "result": {"answer": "RESEARCH THE RELEASE NOTES"},
+        }
+        assert target.tasks == ["Research the release notes"]
+        assert tool.requires_approval is True
+        assert tool.to_llm_definition().parameters["required"] == ["task"]
+
+    def test_handoff_target_failure_does_not_expose_raw_error(self):
+        class FailingAgent(HandoffAgent):
+            def pursue_goal(self, description):
+                return Result.err(
+                    {
+                        "errorType": "TARGET_FAILURE",
+                        "message": "secret provider response",
+                    }
+                )
+
+        result = create_handoff_tool(FailingAgent()).execute(task="Try this")
+
+        assert result.is_err()
+        error = result.unwrap_err()
+        assert error["errorType"] == "HANDOFF_TARGET_FAILED"
+        assert error["details"]["target_error_type"] == "TARGET_FAILURE"
+        assert "secret" not in str(error)
+
+    def test_handoff_target_exception_is_normalized(self):
+        class RaisingAgent(HandoffAgent):
+            def pursue_goal(self, description):
+                raise RuntimeError("private failure")
+
+        result = create_handoff_tool(RaisingAgent()).execute(task="Try this")
+
+        assert result.is_err()
+        assert result.unwrap_err()["errorType"] == "HANDOFF_TARGET_ERROR"
+        assert result.unwrap_err()["details"]["exception"] == "RuntimeError"
+        assert "private failure" not in str(result.unwrap_err())
+
+    def test_handoff_rejects_empty_and_oversized_tasks_before_target(self):
+        target = HandoffAgent()
+        tool = create_handoff_tool(target, requires_approval=False)
+
+        empty = tool.execute(task="")
+        oversized = tool.execute(task="x" * 8193)
+
+        assert empty.is_err()
+        assert oversized.is_err()
+        assert empty.unwrap_err()["errorType"] == "TOOL_INPUT_INVALID"
+        assert oversized.unwrap_err()["errorType"] == "TOOL_INPUT_INVALID"
+        assert target.tasks == []
+
+    def test_handoff_rejects_invalid_target(self):
+        with pytest.raises(ValueError, match="target_agent"):
+            create_handoff_tool(object())
 
 
 class TestBuiltinTools:

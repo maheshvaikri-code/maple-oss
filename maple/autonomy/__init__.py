@@ -99,7 +99,7 @@ from .sessions import (
     SessionSnapshot,
     SessionStore,
 )
-from .tools import Tool, ToolRegistry
+from .tools import Tool, ToolRegistry, create_handoff_tool
 from .workflow import (
     END,
     CheckpointStore,
@@ -116,6 +116,7 @@ from .workflow import (
 __all__ = [
     "Tool",
     "ToolRegistry",
+    "create_handoff_tool",
     "WorkingMemory",
     "EpisodicMemory",
     "SemanticMemory",

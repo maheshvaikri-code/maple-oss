@@ -234,6 +234,116 @@ class ToolRegistry:
         return tool.execute(**arguments)
 
 
+def create_handoff_tool(
+    target_agent: "AutonomousAgent",
+    *,
+    name: Optional[str] = None,
+    description: Optional[str] = None,
+    requires_approval: bool = True,
+) -> Tool:
+    """Create a bounded tool that delegates one task to another agent.
+
+    The target is invoked through its synchronous ``pursue_goal`` method. An
+    async MAPLE turn already executes synchronous tool calls in an executor,
+    so this helper remains compatible with both agent loop variants without
+    introducing a nested event-loop policy.
+    """
+    target_id = getattr(target_agent, "agent_id", None)
+    pursue_goal = getattr(target_agent, "pursue_goal", None)
+    if not isinstance(target_id, str) or not target_id or len(target_id) > 256:
+        raise ValueError("target_agent must expose a bounded non-empty agent_id")
+    if not callable(pursue_goal):
+        raise ValueError("target_agent must expose a callable pursue_goal method")
+    if not isinstance(requires_approval, bool):
+        raise ValueError("requires_approval must be boolean")
+
+    tool_name = name or f"handoff_to_{target_id}"
+    tool_description = description or (
+        f"Delegate one bounded task to agent {target_id} and receive its result"
+    )
+
+    def handoff_handler(task: str) -> Result[Dict[str, Any], Dict[str, Any]]:
+        try:
+            target_result = pursue_goal(task)
+        except Exception as exc:
+            return Result.err(
+                {
+                    "errorType": "HANDOFF_TARGET_ERROR",
+                    "message": "Delegated agent execution failed.",
+                    "details": {
+                        "agent_id": target_id,
+                        "exception": type(exc).__name__,
+                    },
+                }
+            )
+        if not isinstance(target_result, Result):
+            return Result.err(
+                {
+                    "errorType": "HANDOFF_TARGET_INVALID",
+                    "message": "Delegated agent returned an invalid result.",
+                    "details": {"agent_id": target_id},
+                }
+            )
+        if target_result.is_err():
+            target_error = target_result.unwrap_err()
+            error_type = (
+                target_error.get("errorType")
+                if isinstance(target_error, dict)
+                else None
+            )
+            return Result.err(
+                {
+                    "errorType": "HANDOFF_TARGET_FAILED",
+                    "message": "Delegated agent reported a failure.",
+                    "details": {
+                        "agent_id": target_id,
+                        "target_error_type": error_type or "UNKNOWN",
+                    },
+                }
+            )
+
+        goal = target_result.unwrap()
+        goal_id = getattr(goal, "goal_id", None)
+        status = getattr(goal, "status", None)
+        if not isinstance(goal_id, str) or not isinstance(status, str):
+            return Result.err(
+                {
+                    "errorType": "HANDOFF_TARGET_INVALID",
+                    "message": "Delegated agent returned an invalid goal.",
+                    "details": {"agent_id": target_id},
+                }
+            )
+        return Result.ok(
+            {
+                "agent_id": target_id,
+                "goal_id": goal_id,
+                "status": status,
+                "result": getattr(goal, "result", None),
+            }
+        )
+
+    return Tool(
+        name=tool_name,
+        description=tool_description,
+        parameters={
+            "type": "object",
+            "properties": {
+                "task": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 8192,
+                    "description": "The bounded task to delegate.",
+                }
+            },
+            "required": ["task"],
+            "additionalProperties": False,
+        },
+        handler=handoff_handler,
+        requires_approval=requires_approval,
+        tags=["delegation", "handoff"],
+    )
+
+
 def create_builtin_tools(agent: "AutonomousAgent") -> List[Tool]:
     """Create built-in tools that use existing MAPLE infrastructure."""
     from ..core.message import Message

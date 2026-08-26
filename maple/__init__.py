@@ -114,7 +114,7 @@ from .autonomy.sessions import (
     SessionSnapshot,
     SessionStore,
 )
-from .autonomy.tools import Tool, ToolRegistry
+from .autonomy.tools import Tool, ToolRegistry, create_handoff_tool
 from .autonomy.workflow import (
     END,
     CheckpointStore,
@@ -219,6 +219,7 @@ __all__ = [
     "Goal",
     "Tool",
     "ToolRegistry",
+    "create_handoff_tool",
     "MemoryManager",
     "AgentOrchestrator",
     "END",
