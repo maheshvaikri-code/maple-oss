@@ -27,10 +27,18 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 # someone else is detectably out of date (is_valid() -> False) and will not act on a
 # resource another agent now owns. This is the standard fencing-token pattern.
 
+import hashlib
+import json
+import math
+import os
+import tempfile
 import threading
 import time
+import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Callable, Dict, Optional
+from pathlib import Path
+from typing import BinaryIO, Callable, Dict, Iterator, Optional, Tuple, Union, cast
 
 from ..core.result import Result
 
@@ -189,3 +197,376 @@ class LeaseManager:
         """True iff `resource` currently has a live (non-expired) lease."""
         with self._lock:
             return self._active(resource, self._clock()) is not None
+
+
+_MAX_FILE_LEASE_NAME = 256
+_MAX_FILE_LEASE_TTL_SECONDS = 7 * 24 * 60 * 60
+
+
+def _file_lease_error(
+    error_type: str, message: str, details: Optional[Dict[str, object]] = None
+) -> Result:
+    payload: Dict[str, object] = {"errorType": error_type, "message": message}
+    if details is not None:
+        payload["details"] = details
+    return Result.err(payload)
+
+
+def _file_lease_storage_error(error_type: str, exc: BaseException) -> Result:
+    return _file_lease_error(
+        error_type,
+        "The durable lease store could not complete the operation.",
+        {"reason": type(exc).__name__},
+    )
+
+
+def _valid_file_lease_name(value: object) -> bool:
+    return isinstance(value, str) and bool(value) and len(value) <= _MAX_FILE_LEASE_NAME
+
+
+def _valid_file_lease_ttl(value: object) -> bool:
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(float(value))
+        and 0 < float(value) <= _MAX_FILE_LEASE_TTL_SECONDS
+    )
+
+
+class _InterProcessFileLock:
+    """Small cross-platform advisory lock used for file-backed lease state."""
+
+    def __init__(self, path: Path, timeout_seconds: float) -> None:
+        self._path = path
+        self._timeout_seconds = timeout_seconds
+        self._handle: Optional[BinaryIO] = None
+
+    def __enter__(self) -> "_InterProcessFileLock":
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        handle = self._path.open("a+b")
+        try:
+            handle.seek(0, os.SEEK_END)
+            if handle.tell() == 0:
+                handle.write(b"0")
+                handle.flush()
+                os.fsync(handle.fileno())
+            handle.seek(0)
+            deadline = time.monotonic() + self._timeout_seconds
+            if os.name == "nt":
+                import msvcrt
+
+                while True:
+                    try:
+                        msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                        break
+                    except OSError:
+                        if time.monotonic() >= deadline:
+                            raise TimeoutError("timed out acquiring file lease lock")
+                        handle.seek(0)
+                        time.sleep(0.01)
+            else:
+                import fcntl
+
+                while True:
+                    try:
+                        flock = getattr(fcntl, "flock")
+                        lock_ex = getattr(fcntl, "LOCK_EX")
+                        lock_nb = getattr(fcntl, "LOCK_NB")
+                        flock(handle.fileno(), lock_ex | lock_nb)
+                        break
+                    except OSError:
+                        if time.monotonic() >= deadline:
+                            raise TimeoutError("timed out acquiring file lease lock")
+                        time.sleep(0.01)
+            self._handle = handle
+            return self
+        except BaseException:
+            handle.close()
+            raise
+
+    def __exit__(self, exc_type: object, exc_value: object, traceback: object) -> None:
+        handle = self._handle
+        self._handle = None
+        if handle is None:
+            return
+        try:
+            handle.seek(0)
+            if os.name == "nt":
+                import msvcrt
+
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+
+                flock = getattr(fcntl, "flock")
+                lock_un = getattr(fcntl, "LOCK_UN")
+                flock(handle.fileno(), lock_un)
+        finally:
+            handle.close()
+
+
+class FileLeaseManager:
+    """Cross-process durable lease manager backed by atomic JSON files.
+
+    The in-memory :class:`LeaseManager` remains the zero-I/O option. This class uses an
+    advisory OS file lock to serialize read/modify/write operations across processes,
+    persists fencing counters so tokens never reset after restart, and fails closed on
+    corrupt or unavailable state. Lease expiry uses wall-clock time so persisted leases
+    have meaningful semantics after a process restart.
+    """
+
+    def __init__(
+        self,
+        root: Union[str, Path],
+        *,
+        lock_timeout_seconds: float = 5.0,
+        clock: Callable[[], float] = time.time,
+    ) -> None:
+        if not _valid_file_lease_ttl(lock_timeout_seconds):
+            raise ValueError("lock_timeout_seconds must be positive and bounded")
+        self._root = Path(root)
+        self._root.mkdir(parents=True, exist_ok=True)
+        self._lock_timeout_seconds = float(lock_timeout_seconds)
+        self._clock = clock
+        self._thread_lock = threading.RLock()
+
+    def _paths(self, resource: str) -> Tuple[Path, Path]:
+        digest = hashlib.sha256(resource.encode("utf-8")).hexdigest()
+        return self._root / (digest + ".json"), self._root / (digest + ".lock")
+
+    def _read_state(
+        self, path: Path, resource: str
+    ) -> Tuple[int, Optional[str], float]:
+        if not path.exists():
+            return 0, None, 0.0
+        try:
+            raw: object = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise ValueError("durable lease state is unreadable") from exc
+        if not isinstance(raw, dict):
+            raise ValueError("durable lease state must be an object")
+        state = cast(Dict[str, object], raw)
+        stored_resource = state.get("resource")
+        token = state.get("token")
+        holder = state.get("holder")
+        expires_at = state.get("expires_at")
+        if (
+            stored_resource != resource
+            or not isinstance(token, int)
+            or isinstance(token, bool)
+        ):
+            raise ValueError("durable lease state identity is invalid")
+        if token < 0 or not _valid_file_lease_name(holder) and holder is not None:
+            raise ValueError("durable lease state holder is invalid")
+        if not isinstance(expires_at, (int, float)) or isinstance(expires_at, bool):
+            raise ValueError("durable lease state expiry is invalid")
+        if not math.isfinite(float(expires_at)):
+            raise ValueError("durable lease state expiry is not finite")
+        if holder is not None and not isinstance(holder, str):
+            raise ValueError("durable lease state holder is invalid")
+        return token, cast(Optional[str], holder), float(expires_at)
+
+    def _write_state(
+        self,
+        path: Path,
+        resource: str,
+        token: int,
+        holder: Optional[str],
+        expires_at: float,
+    ) -> None:
+        temporary_path: Optional[Path] = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=str(self._root),
+                prefix=".maple-lease-",
+                suffix=".tmp-" + uuid.uuid4().hex,
+                delete=False,
+            ) as handle:
+                temporary_path = Path(handle.name)
+                json.dump(
+                    {
+                        "expires_at": expires_at,
+                        "holder": holder,
+                        "resource": resource,
+                        "token": token,
+                    },
+                    handle,
+                    separators=(",", ":"),
+                    sort_keys=True,
+                )
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(str(temporary_path), str(path))
+            temporary_path = None
+        finally:
+            if temporary_path is not None:
+                try:
+                    temporary_path.unlink()
+                except OSError:
+                    pass
+
+    @contextmanager
+    def _locked_resource(self, resource: str) -> Iterator[Tuple[Path, Path]]:
+        state_path, lock_path = self._paths(resource)
+        with _InterProcessFileLock(lock_path, self._lock_timeout_seconds):
+            yield state_path, lock_path
+
+    def acquire(self, resource: str, holder: str, ttl_seconds: float) -> Result:
+        """Acquire or same-holder renew a durable, fencing-token lease."""
+        if not _valid_file_lease_name(resource) or not _valid_file_lease_name(holder):
+            return _file_lease_error(
+                "INVALID_RESOURCE_OR_HOLDER",
+                "resource and holder must be non-empty bounded strings",
+            )
+        if not _valid_file_lease_ttl(ttl_seconds):
+            return _file_lease_error(
+                "INVALID_TTL",
+                "ttl_seconds must be positive and bounded",
+                {"max_ttl_seconds": _MAX_FILE_LEASE_TTL_SECONDS},
+            )
+        try:
+            with self._thread_lock:
+                with self._locked_resource(resource) as (state_path, _):
+                    token, current_holder, expires_at = self._read_state(
+                        state_path, resource
+                    )
+                    now = self._clock()
+                    active = current_holder is not None and now < expires_at
+                    if active and current_holder != holder:
+                        return _file_lease_error(
+                            "RESOURCE_HELD",
+                            f"Resource '{resource}' is held by '{current_holder}'",
+                            {
+                                "holder": current_holder,
+                                "expires_in": max(0.0, expires_at - now),
+                            },
+                        )
+                    next_token = token + 1
+                    lease = Lease(
+                        resource=resource,
+                        holder=holder,
+                        token=next_token,
+                        expires_at=now + float(ttl_seconds),
+                    )
+                    self._write_state(
+                        state_path,
+                        resource,
+                        lease.token,
+                        lease.holder,
+                        lease.expires_at,
+                    )
+                    return Result.ok(lease)
+        except TimeoutError as exc:
+            return _file_lease_storage_error("LEASE_LOCK_TIMEOUT", exc)
+        except (OSError, TypeError, ValueError) as exc:
+            return _file_lease_storage_error("LEASE_STORAGE_ERROR", exc)
+
+    def renew(self, lease: Lease, ttl_seconds: float) -> Result:
+        """Extend a live durable lease and issue a new fencing token."""
+        if not isinstance(lease, Lease) or not _valid_file_lease_name(lease.resource):
+            return _file_lease_error("INVALID_LEASE", "lease is invalid")
+        if not _valid_file_lease_ttl(ttl_seconds):
+            return _file_lease_error(
+                "INVALID_TTL",
+                "ttl_seconds must be positive and bounded",
+                {"max_ttl_seconds": _MAX_FILE_LEASE_TTL_SECONDS},
+            )
+        try:
+            with self._thread_lock:
+                with self._locked_resource(lease.resource) as (state_path, _):
+                    token, holder, expires_at = self._read_state(
+                        state_path, lease.resource
+                    )
+                    now = self._clock()
+                    if (
+                        holder != lease.holder
+                        or token != lease.token
+                        or now >= expires_at
+                    ):
+                        return _file_lease_error(
+                            "LEASE_LOST",
+                            f"Lease on '{lease.resource}' is no longer held",
+                            {"resource": lease.resource, "token": lease.token},
+                        )
+                    renewed = Lease(
+                        resource=lease.resource,
+                        holder=lease.holder,
+                        token=token + 1,
+                        expires_at=now + float(ttl_seconds),
+                    )
+                    self._write_state(
+                        state_path,
+                        renewed.resource,
+                        renewed.token,
+                        renewed.holder,
+                        renewed.expires_at,
+                    )
+                    return Result.ok(renewed)
+        except TimeoutError as exc:
+            return _file_lease_storage_error("LEASE_LOCK_TIMEOUT", exc)
+        except (OSError, TypeError, ValueError) as exc:
+            return _file_lease_storage_error("LEASE_STORAGE_ERROR", exc)
+
+    def release(self, lease: Lease) -> Result:
+        """Release only the exact current durable lease; stale holders are no-ops."""
+        if not isinstance(lease, Lease) or not _valid_file_lease_name(lease.resource):
+            return _file_lease_error("INVALID_LEASE", "lease is invalid")
+        try:
+            with self._thread_lock:
+                with self._locked_resource(lease.resource) as (state_path, _):
+                    token, holder, expires_at = self._read_state(
+                        state_path, lease.resource
+                    )
+                    now = self._clock()
+                    if (
+                        holder == lease.holder
+                        and token == lease.token
+                        and now < expires_at
+                    ):
+                        self._write_state(state_path, lease.resource, token, None, now)
+                        return Result.ok(True)
+                    return Result.ok(False)
+        except TimeoutError as exc:
+            return _file_lease_storage_error("LEASE_LOCK_TIMEOUT", exc)
+        except (OSError, TypeError, ValueError) as exc:
+            return _file_lease_storage_error("LEASE_STORAGE_ERROR", exc)
+
+    def is_valid(self, lease: Lease) -> bool:
+        """Return false on any invalid or unavailable state; stale tokens are fenced."""
+        if not isinstance(lease, Lease) or not _valid_file_lease_name(lease.resource):
+            return False
+        try:
+            with self._thread_lock:
+                with self._locked_resource(lease.resource) as (state_path, _):
+                    token, holder, expires_at = self._read_state(
+                        state_path, lease.resource
+                    )
+                    return (
+                        holder == lease.holder
+                        and token == lease.token
+                        and self._clock() < expires_at
+                    )
+        except (OSError, TypeError, TimeoutError, ValueError):
+            return False
+
+    def holder_of(self, resource: str) -> Optional[str]:
+        """Return the current holder, or None for free, expired, or unavailable state."""
+        if not _valid_file_lease_name(resource):
+            return None
+        try:
+            with self._thread_lock:
+                with self._locked_resource(resource) as (state_path, _):
+                    _, holder, expires_at = self._read_state(state_path, resource)
+                    return (
+                        holder
+                        if holder is not None and self._clock() < expires_at
+                        else None
+                    )
+        except (OSError, TypeError, TimeoutError, ValueError):
+            return None
+
+    def is_held(self, resource: str) -> bool:
+        """Return true only when a live durable lease is readable and present."""
+        return self.holder_of(resource) is not None

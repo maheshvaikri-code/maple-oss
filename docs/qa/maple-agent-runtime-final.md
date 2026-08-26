@@ -446,6 +446,18 @@ slow Doctrine gold phase before interruption without a pytest summary.
   audit found zero preserved Doctrine files. No publication, website, cloud,
   registry, or user-owned untracked file change was made.
 
+## Slice 90 QA — cross-process durable fencing leases
+
+- `tests/resources/test_resource_model.py` plus
+  `tests/resources/test_file_lease.py` report `41 passed in 3.64s`.
+- Coverage includes restart persistence, fencing-token monotonicity, stale
+  release rejection, expiry reacquisition, child-process state sharing,
+  corrupt-state fail-closed behavior, and bounded input rejection.
+- The changed lease boundary passes Ruff, Black, and mypy. Complete tracked
+  suite, clean package, and doctor evidence for this slice remain pending.
+- No publication, website, cloud, registry, or user-owned untracked file
+  change was made.
+
 ## Security conclusions
 
 - No new dependency, credential, cloud call, website mutation, or publication

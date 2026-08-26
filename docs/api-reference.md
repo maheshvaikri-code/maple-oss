@@ -547,6 +547,32 @@ result = executor.execute(
 )
 ```
 
+### Durable fencing leases
+
+`LeaseManager` is the in-memory option. `FileLeaseManager` persists ownership
+and fencing counters under a caller-owned directory and serializes each
+read/modify/write operation across local processes with an OS file lock.
+
+```python
+from maple.resources import FileLeaseManager
+
+leases = FileLeaseManager("./runtime/leases")
+acquired = leases.acquire("robot-arm", "worker-a", ttl_seconds=60)
+lease = acquired.unwrap()
+
+# The guarded resource must check the current fencing token immediately before
+# its side effect; a stale token cannot release a newer holder's lease.
+assert leases.is_valid(lease)
+leases.release(lease)
+```
+
+Resource and holder identifiers are bounded to 256 characters and TTLs are
+bounded to seven days. State is atomically replaced after flush and fsync.
+Mutating storage failures return typed `LEASE_STORAGE_ERROR` or
+`LEASE_LOCK_TIMEOUT` results; inspection failures return false/empty values.
+This primitive does not automatically own durable approval/input/run records,
+provide remote authentication, or promise exactly-once external effects.
+
 Pass the executor to `Tool(executor=...)` to apply the same boundary to a
 tool. Handlers that need cancellation should close over the token and check
 `token.is_cancelled()` or `token.wait()` while working.
@@ -1080,8 +1106,9 @@ empty object. Invalid edits or edits attached to a denial return
 `APPROVAL_DECISION_INVALID` without changing the pending record.
 `execute_approved_tool` claims the request before executing it and a second
 attempt in the same process returns `APPROVAL_CONSUMED`. File persistence is
-atomic and thread-safe within one process; cross-process leases remain a host
-responsibility. Approval arguments may contain application-sensitive data and
+atomic and thread-safe within one process; `FileLeaseManager` is available for
+host-owned cross-process fencing, but the approval store does not acquire a
+lease automatically. Approval arguments may contain application-sensitive data and
 should be protected with host filesystem access controls. The store does not
 persist the full ReAct conversation, does not implement arbitrary
 request/response HITL forms, and failed tool execution requires a new approval

@@ -15,7 +15,7 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 
 # maple/resources/__init__.py
 
-from .lease import Lease, LeaseManager
+from .lease import FileLeaseManager, Lease, LeaseManager
 from .manager import (
     DEFAULT_LIFECYCLES,
     ResourceAllocation,
@@ -36,4 +36,5 @@ __all__ = [
     "ResourceNegotiator",
     "Lease",
     "LeaseManager",
+    "FileLeaseManager",
 ]

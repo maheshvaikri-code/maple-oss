@@ -100,6 +100,7 @@
 | 87 | Final current-commit release artifact revalidation | Release / DevOps / QA | clean `git archive HEAD`, wheel/sdist, Twine output, doctor output, release plan, QA/review evidence | Current tracked snapshot only, package metadata, sdist workspace boundary, ADR/module presence, network-free doctor | done: clean `1.1.3` wheel/sdist; Twine passed; 469 sdist entries; ADR-031/032/033 and durable/event modules present; workspace-only audit zero; doctor `ready: true`; no publication performed |
 | 88 | Bounded editable durable tool approvals | Chief Architect / Backend / Security / QA / Release | `docs/adr/034-*`, approval stores/agent boundary, sync/async run regressions, API/parity/README docs, changelog, QA/review evidence | Approved-only bounded JSON replacement, in-memory/file persistence, invalid-edit no-mutation, denied-edit rejection, one-time consume, sync/async resume, static/package/doctor gates; arbitrary multi-turn HITL remains explicit follow-on | done: focused approval/run/agent `44 passed in 0.46s`; tracked manifest `1197 passed, 1 skipped in 204.41s`; Ruff/Black/mypy/compile/diff/doctor pass; clean `1.1.3` wheel/sdist, Twine passed, 470 sdist entries, ADR-034 present, workspace-only audit zero; no publication |
 | 89 | Bounded durable human-input request/response | Chief Architect / Backend / Security / QA / Release | `docs/adr/035-*`, `maple/autonomy/interactions.py`, durable run cursor/agent/tool, interaction/run/tool tests, API/README/parity docs, changelog, QA/review evidence | Bounded prompt/schema/response records, memory/file persistence, schema-validated response, explicit rejection, sync/async `request_human_input` pause/resume, consumed-decision crash recovery, static/package/doctor gates; leases/notifications/multi-round remain explicit follow-on | done: focused interaction/run/tool/agent `61 passed in 0.51s`; tracked manifest `1202 passed, 1 skipped in 211.16s`; Ruff/Black/mypy/compile/diff/doctor pass; clean archive wheel/sdist `1.1.3`, Twine passed, sdist `473` entries with ADR-035, workspace-only audit zero; no publication |
+| 90 | Cross-process durable fencing leases | Chief Architect / Backend / Security / QA / Release | `docs/adr/036-*`, `maple/resources/lease.py`, resource exports/tests, API/README/parity docs, changelog, QA/review evidence | Bounded file-backed lease state, OS-level inter-process lock, atomic replacement, persisted fencing counter, expiry, renew/release, typed fail-closed storage behavior; durable-store integration and remote authentication remain explicit follow-ons | done: focused resource model + file lease `41 passed in 3.64s`; Ruff/Black/mypy pass on changed boundary; package/doctor/complete tracked suite pending; no publication |
 
 ## Threat sketch
 
@@ -487,3 +488,12 @@ clean current archive rebuilt wheel/sdist `1.1.3`; Twine passed for both, the
 sdist contains 473 entries including ADR-035, and the workspace-only audit
 found zero preserved Doctrine files. Cross-process leases, notifications, and
 multi-round conversations remain explicit follow-on gaps.
+
+2026-08-26 cross-process durable fencing lease closure: ADR-036 adds
+`FileLeaseManager` beside the existing in-memory `LeaseManager`. Each bounded
+resource state uses an advisory OS lock, atomic JSON replacement, a persisted
+fencing counter, wall-clock expiry, and typed fail-closed storage behavior.
+The focused resource-model/file-lease slice reports `41 passed in 3.64s` and
+the changed boundary passes Ruff, Black, and mypy. Automatic ownership of
+approval/input/run stores, remote authentication, and exactly-once effects
+remain explicit follow-on boundaries.
