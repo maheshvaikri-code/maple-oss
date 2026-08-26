@@ -338,9 +338,23 @@ verification remain open.
   workspace-only Doctrine gold verifier and fresh-context independent review
   remain open. No external action was taken.
 
+## Slice 84 revalidation
+
+- ADR-031 records the async extension: executor-backed local checkpoint I/O,
+  async resume, and serial durable tool dispatch at the approval boundary.
+- The focused async/store slice reports `9 passed in 0.30s`; the exact tracked
+  application suite reports `1194 passed, 1 skipped in 205.06s` with no warning
+  output.
+- Current Ruff, Black, mypy, compile, doctor, clean archive, and Twine gates
+  pass. The clean sdist contains 467 entries, includes the async implementation
+  and ADR-031, and contains zero preserved workspace-only Doctrine files.
+- No distributed lease, exactly-once, sandbox, durable streaming, or hosted
+  runtime claim was added. No external service, publication, or website action
+  was taken.
+
 ## Verdict
 
-**Feature review:** PASS for the twenty-three implemented capability slices.
+**Feature review:** PASS for the twenty-four implemented capability slices.
 **Publish readiness:** NOT YET APPROVED. A release manager should close the
 workspace-only Doctrine gold and fresh-verifier gates before publishing. The
 remaining Bandit findings are documented low-severity legacy debt; external

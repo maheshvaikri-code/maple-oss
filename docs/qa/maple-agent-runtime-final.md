@@ -353,6 +353,25 @@ slow Doctrine gold phase before interruption without a pytest summary.
   The workspace-only Doctrine gold verifier and fresh independent review are
   still open; no publication or website action was taken.
 
+## Slice 84 revalidation — async durable agent runs
+
+- `tests/autonomy/test_runs.py` reports `9 passed in 0.30s`, covering async
+  checkpoint creation, approval pause/resume after restart, pause-before-later
+  side effects, and no duplicate completed tool call after model interruption.
+- The exact tracked application suite contains 101 Python test files and
+  reports `1194 passed, 1 skipped in 205.06s` with no warning output.
+- Ruff, Black, mypy, compile, and network-free doctor checks pass. Doctor
+  returned `ready: true`, `status: SUCCESS`, version `1.1.3`, all eight checks
+  true, and `network: false`.
+- A clean `git archive HEAD` snapshot rebuilt wheel and sdist `1.1.3`; both
+  Twine checks passed. The sdist contained 467 entries, included
+  `maple/autonomy/runs.py` and ADR-031, and contained zero preserved
+  workspace-only Doctrine files.
+- Async durable persistence uses executor-backed local stores and serializes
+  durable tool calls so approval pauses precede later side effects. Distributed
+  leases, exactly-once effects, sandboxing, and durable streaming remain out of
+  scope.
+
 ## Security conclusions
 
 - No new dependency, credential, cloud call, website mutation, or publication
@@ -362,8 +381,8 @@ slow Doctrine gold phase before interruption without a pytest summary.
 - Retrieval, event, evaluation, and interop payloads have explicit size/shape
   controls; event/evaluation outputs redact credential-like keys.
 - Security sign-off is limited to the changed feature boundaries. It is not a
-  substitute for the unfinished full-suite run or final independent verifier
-  pass.
+  substitute for the workspace-only Doctrine gold verifier or final
+  independent verifier pass.
 
 ## Release decision
 

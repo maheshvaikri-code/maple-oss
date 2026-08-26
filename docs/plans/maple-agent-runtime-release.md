@@ -94,7 +94,7 @@
 | 81 | Agent-framework parity ledger | Release / Chief Architect / QA | `docs/agent-framework-parity.md`, README, changelog, QA/review evidence | Source-backed five-framework matrix, explicit status vocabulary, code-block/sandbox boundary, prioritized gap list | done: functionality-only ledger filed; no adapter-as-parity claim; no runtime/dependency change |
 | 82 | Bounded durable synchronous agent-run checkpoints and approval resume | Chief Architect / Backend / Security / QA | `docs/adr/030-*`, `maple/autonomy/runs.py`, autonomy exports/agent, run tests, API docs, README, changelog, QA/review evidence | JSON-safe bounded snapshots, memory/file CAS, atomic restart recovery, per-step cursor, paused approval replacement, no duplicate completed tool call, synchronous resume, static/package/doctor gates | done: `45 passed in 0.36s` compatibility slice; autonomy suite `240 passed in 3.59s`; Ruff/Black/mypy/compile pass; async parity remains a follow-on slice |
 | 83 | Current tracked-suite and clean-artifact revalidation | QA / Release / DevOps | tracked test manifest, clean archive build, doctor output, README, changelog, QA/review evidence | Full tracked application suite, warning-free result, clean wheel/sdist, Twine, sdist boundary audit, network-free doctor | done: 101 tracked Python files; `1191 passed, 1 skipped in 217.81s`; clean `1.1.3` wheel/sdist; Twine passed; 466 sdist entries; doctor `ready: true`; workspace-only Doctrine and fresh-review gates remain open |
-| 84 | Async durable agent-run checkpoints and approval resume | Chief Architect / Backend / Security / QA | `docs/adr/031-*`, async agent loop, run tests, API/README/parity docs, changelog, QA/review evidence | Async `run_id`, executor-backed bounded persistence, async resume, approval pause before later tool side effects, no duplicate completed tool call, compatibility/static/package/doctor gates | in progress: focused async/store regression passes; full autonomy, tracked suite, clean artifact, and evidence update pending |
+| 84 | Async durable agent-run checkpoints and approval resume | Chief Architect / Backend / Security / QA | `docs/adr/031-*`, async agent loop, run tests, API/README/parity docs, changelog, QA/review evidence | Async `run_id`, executor-backed bounded persistence, async resume, approval pause before later tool side effects, no duplicate completed tool call, compatibility/static/package/doctor gates | done: `9 passed in 0.30s` async/store slice; tracked suite `1194 passed, 1 skipped in 205.06s`; Ruff/Black/mypy/compile/doctor pass; clean `1.1.3` wheel/sdist, Twine passed, 467 sdist entries; distributed leases/exactly-once/sandbox remain out of scope |
 
 ## Threat sketch
 
@@ -426,3 +426,12 @@ snapshot rebuilt wheel/sdist `1.1.3`; both Twine checks passed, the sdist
 contained 466 entries including `maple/autonomy/runs.py`, and the
 workspace-only audit found zero preserved Doctrine files. The network-free
 doctor returned `ready: true`, all eight checks true, and `network: false`.
+
+2026-08-26 async durable-run closure: ADR-031 extends the bounded run cursor
+to `pursue_goal_async` and `resume_run_async`. The focused async/store slice
+reports `9 passed in 0.30s`; the tracked application suite reports `1194
+passed, 1 skipped in 205.06s`. A clean archive rebuilt wheel/sdist `1.1.3`,
+both Twine checks passed, the sdist contained 467 entries including
+`maple/autonomy/runs.py` and ADR-031, and the workspace-only audit found zero
+preserved Doctrine files. Async durable tool calls are serialized only when
+durability is enabled so approval pauses precede later side effects.
