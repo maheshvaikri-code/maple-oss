@@ -14,7 +14,10 @@
   now record optional `agent.tool` child spans under their open model-step
   span. Only bounded tool identity, step, error status, and result length are
   retained; approval replay and hosted/remote export remain separate
-  boundaries. Focused validation is in progress; no publication was
+  boundaries. Focused validation reports `38 passed in 0.34s`; the exact
+  tracked manifest reports `1263 passed, 1 skipped in 263.89s` across 108
+  tracked test files. Black, Ruff, changed-boundary mypy, compile, diff, and
+  network-free doctor pass. Package evidence is pending; no publication was
   performed.
 - **Bounded local trace spans**: added thread-safe `TraceSpan` and
   `SpanRecorder` contracts with bounded retention, redacted flat attributes,
