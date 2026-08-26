@@ -34,6 +34,7 @@
 | Bounded multi-agent orchestration boundary | PASS | 43 agent/orchestrator tests cover sync/async fan-out, deterministic joins, sync-only fallback, bounded limits, and per-member exception isolation. |
 | Bounded structured-output repair boundary | PASS | 28 agent tests cover sync/async repair, default fail-fast, retry exhaustion, invalid retry limits, and token-budget consumption across retries. |
 | Async orchestration deadline/cancellation boundary | PASS | 24 orchestrator tests cover request-wide timeout, native async task cancellation and draining, cooperative `CancellationToken`, invalid timeout configuration, and consensus deadline behavior. |
+| Bounded agent handoff boundary | PASS | 18 tool tests and 234 autonomy tests cover structured target results, approval-by-default, bounded task input, raw-error redaction, target exceptions, invalid target results, and public import. |
 | Independent review | OPEN | Fresh verifier sessions are unavailable in this tool context. |
 | External publish / website | NOT RUN | Explicitly outside current authorization and scope. |
 
@@ -234,6 +235,19 @@ slow Doctrine gold phase before interruption without a pytest summary.
   application suites through `90%`, entered `tests/test_doctrine_gold.py`, and
   was bounded/interrupted after sparse gold-phase progress. No failure output or
   pytest summary was produced; this is not a full-suite pass.
+
+## Slice 77 revalidation
+
+- The tool regression reports `18 passed in 0.25s`; the autonomy regression
+  reports `234 passed in 3.49s`.
+- `create_handoff_tool` exposes one bounded synchronous `pursue_goal` target as
+  a normal approval-required-by-default tool. Invalid input is rejected before
+  target side effects; target failures, exceptions, and malformed returns are
+  normalized without forwarding raw error payloads.
+- Ruff, Black, mypy, compile, and public-import checks pass. ADR-029, public
+  docs, changelog, QA, and review evidence are filed; no dependency was added.
+- The exact-current full-suite and fresh independent-verifier gates remain open;
+  no publication or website change was performed.
 
 ## Security conclusions
 

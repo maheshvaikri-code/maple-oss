@@ -54,6 +54,8 @@ The feature program now includes:
 - async supervised/consensus request budgets and cooperative cancellation with
   native child-task draining, typed interruption errors, and an explicit
   sync-only executor limitation (ADR-028).
+- bounded approval-aware agent-as-tool handoffs with input limits, structured
+  target results, and redacted target failure errors (ADR-029).
 
 Slice-level review artifacts are filed in `docs/reviews/` and corresponding QA
 artifacts in `docs/qa/`. No website, cloud, external publication, license, or
@@ -247,6 +249,19 @@ verification remain open.
   passed the application suites through `90%` before entering the slow Doctrine
   gold phase. It was interrupted without failure output or a pytest summary;
   this remains an open release gate.
+
+## Slice 77 revalidation
+
+- The tool regression reports `18 passed in 0.25s`; the combined autonomy
+  regression reports `234 passed in 3.49s`.
+- `create_handoff_tool` reuses the existing Tool schema, approval, and
+  executor-backed async path. The required task string is capped at 8,192
+  characters, and invalid input fails before the target is called.
+- Target failures expose only stable handoff error types and target error type;
+  target exceptions and invalid return values fail closed.
+- Ruff, Black, mypy, compile, and public-import checks pass; ADR-029, public
+  docs, changelog, plan, and QA evidence are filed. No dependency or external
+  action was introduced.
 
 ## Verdict
 

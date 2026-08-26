@@ -614,6 +614,31 @@ typed_tool = Tool(
 typed = parse_typed_output('{"answer":"ready"}', LookupResult)
 ```
 
+### Bounded agent handoffs
+
+`create_handoff_tool` exposes one specialist agent as a normal MAPLE `Tool`.
+The model submits only a bounded `task` string; the result contains the target
+agent ID, goal ID, status, and result. Handoffs require approval by default
+because the target may call its own tools or create external side effects:
+
+```python
+from maple import create_handoff_tool
+
+handoff = create_handoff_tool(specialist)
+caller.register_tool(handoff)
+
+result = handoff.execute(task="Summarize the release risks")
+```
+
+The task is limited to 8,192 characters and rejects extra arguments. A target
+failure returns `HANDOFF_TARGET_FAILED`, a raised exception returns
+`HANDOFF_TARGET_ERROR`, and an invalid target result returns
+`HANDOFF_TARGET_INVALID`; raw target error payloads are not forwarded. Set
+`requires_approval=False` only for a trusted host-controlled handoff. Async
+agent turns use MAPLE's existing executor-backed synchronous tool path. This
+primitive is local and non-durable; it does not claim distributed routing,
+conversation transfer, or hard cancellation of the target.
+
 ### Per-goal token accounting and budgets
 
 `Goal.token_usage` aggregates provider-reported prompt, completion, and total

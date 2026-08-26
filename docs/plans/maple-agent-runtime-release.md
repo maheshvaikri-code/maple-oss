@@ -87,6 +87,7 @@
 | 74 | Bounded concurrent multi-agent orchestration | Backend / QA / Security / Release | orchestrator, sync/async orchestration regressions, ADR-026, README/API docs, changelog, review/QA artifacts | Bounded sync/async fan-out, deterministic joins, sync-only fallback, worker exception isolation, invalid limit, static/package/doctor gates | done: code commit `b2cccfb`; agent/orchestrator regression `43 passed in 0.33s`; changed-file Ruff/Black/isort/mypy pass; docs and release evidence filed; no dependency added |
 | 75 | Bounded structured-output repair retries | ML Engineer / Backend / QA / Security / Release | autonomy agent/config, repair regressions, ADR-027, README/API docs, changelog, review/QA artifacts | Sync/async correction, default fail-fast, retry exhaustion, invalid retry limit, token-budget consumption, static/package/doctor gates | done: code commit `e3becdf`; focused agent regression `28 passed in 0.33s`; changed-file Ruff/Black/isort/mypy pass; docs and release evidence filed; no dependency added |
 | 76 | Deadline and cooperative cancellation for async orchestration | Backend / QA / Security / Release | orchestrator, async orchestration regressions, ADR-028, README/API docs, changelog, review/QA artifacts | Request-wide timeout, native async task cancellation/drain, cancellation token, invalid timeout, consensus deadline, static/package/doctor gates | done: code commit `7630839`; orchestrator regression `24 passed in 0.43s`; core/autonomy regression `257 passed in 3.60s`; changed-file Ruff/Black/mypy pass; docs and release evidence filed; no dependency added |
+| 77 | Bounded agent-as-tool handoffs | Chief Architect / Backend / Security / QA / Release | autonomy tools/exports, handoff regressions, ADR-029, README/API docs, changelog, review/QA artifacts | Structured target result, approval default, bounded task input, raw-error redaction, target exception/invalid-result isolation, public import, static/package/doctor gates | done: code commit `62ebad8`; tool regression `18 passed in 0.25s`; autonomy regression `234 passed in 3.49s`; changed-file Ruff/Black/mypy/compile pass; no dependency added |
 
 ## Threat sketch
 
@@ -346,3 +347,11 @@ orchestrator regression reports `24 passed in 0.43s`, and core/autonomy reports
 `257 passed in 3.60s`. ADR-028, public docs, changelog, QA, and review evidence
 are filed. Sync-only executor cancellation remains explicitly cooperative; no
 dependency, publication, or website change was made.
+
+2026-08-25 bounded handoff closure: commit `62ebad8` adds
+`create_handoff_tool`, an approval-by-default model-tool boundary for one
+specialist's bounded synchronous `pursue_goal` call. Tool coverage reports
+`18 passed in 0.25s`; autonomy coverage reports `234 passed in 3.49s`. Target
+errors are normalized without raw payload forwarding; ADR-029, public docs,
+changelog, QA, and review evidence are filed. No dependency, publication, or
+website change was made.

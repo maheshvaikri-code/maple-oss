@@ -10,6 +10,11 @@
 
 ### Additions
 
+- **Bounded agent handoff tools**: `create_handoff_tool` exposes a specialist's
+  synchronous `pursue_goal` boundary as an approval-by-default model tool with
+  an 8,192-character task limit, structured goal results, and redacted target
+  failure errors. The local primitive does not claim durable or distributed
+  routing.
 - **Deadline-bounded async orchestration**: async supervised and consensus
   execution now accepts a total `timeout_seconds` budget and a cooperative
   `CancellationToken`. Native async child tasks are canceled and drained, while

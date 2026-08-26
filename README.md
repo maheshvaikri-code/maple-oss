@@ -37,6 +37,7 @@ Most agent frameworks give you either **infrastructure** (messaging, security, f
 - **ReAct Reasoning Loop** — Agents think, act, and reflect autonomously. Built-in backtracking when approaches fail.
 - **Pluggable LLM Providers** — OpenAI, Anthropic Claude, or any compatible API (vLLM, Ollama, Together AI).
 - **Tool Framework** — Register custom tools with JSON Schema parameters or optional Pydantic-style input/output models. Built-in tools cover inter-agent communication, state read/write, resource checks, and secure link establishment.
+- **Agent Handoff Tools (preview)** — Expose a specialist's bounded `pursue_goal` call as a normal model tool with approval-by-default, input bounds, structured target results, and fail-closed target errors; this is local delegation, not durable distributed routing.
 - **Bounded Serialization Formats** — JSON, restricted Pickle, optional MessagePack, and optional 1 MiB-bounded Protobuf envelopes for MAPLE JSON-compatible data; missing optional libraries fail explicitly.
 - **Typed Contracts and Guardrails (preview)** — Validate bounded JSON or typed model inputs and outputs, request structured model responses, and fail closed on rejected or unavailable guardrails.
 - **Bounded Structured-Output Repair (preview)** — Optionally give invalid typed/schema/guardrail output up to three correction attempts; retries remain inside reasoning and token budgets, with fail-fast behavior by default.
