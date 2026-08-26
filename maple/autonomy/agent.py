@@ -286,7 +286,11 @@ class AutonomousAgent(Agent):
         self._human_input_store = store
 
     def respond_human_input(
-        self, interaction_id: str, response: Any
+        self,
+        interaction_id: str,
+        response: Any,
+        *,
+        actor_id: Optional[str] = None,
     ) -> Result[HumanInputRequest, Dict[str, Any]]:
         """Record a schema-validated response for a pending input request."""
         if self._human_input_store is None:
@@ -296,12 +300,18 @@ class AutonomousAgent(Agent):
                     "message": "No durable human input store is configured.",
                 }
             )
-        return self._human_input_store.respond(interaction_id, response)
+        if actor_id is None:
+            return self._human_input_store.respond(interaction_id, response)
+        return self._human_input_store.respond(
+            interaction_id, response, actor_id=actor_id
+        )
 
     def reject_human_input(
         self,
         interaction_id: str,
         reason: str = "Operator rejected the request.",
+        *,
+        actor_id: Optional[str] = None,
     ) -> Result[HumanInputRequest, Dict[str, Any]]:
         """Reject a pending input request with a bounded host-visible reason."""
         if self._human_input_store is None:
@@ -311,7 +321,9 @@ class AutonomousAgent(Agent):
                     "message": "No durable human input store is configured.",
                 }
             )
-        return self._human_input_store.reject(interaction_id, reason)
+        if actor_id is None:
+            return self._human_input_store.reject(interaction_id, reason)
+        return self._human_input_store.reject(interaction_id, reason, actor_id=actor_id)
 
     def decide_approval(
         self,

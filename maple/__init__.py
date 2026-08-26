@@ -72,7 +72,10 @@ from .autonomy.evaluation import (
 from .autonomy.events import AgentEvent, EventStream, RedactionPolicy
 from .autonomy.interactions import (
     FileHumanInputStore,
+    HumanInputAuthorizer,
     HumanInputDecision,
+    HumanInputNotification,
+    HumanInputNotifier,
     HumanInputRequest,
     HumanInputStore,
     InMemoryHumanInputStore,
@@ -282,6 +285,9 @@ __all__ = [
     "EventStream",
     "RedactionPolicy",
     "HumanInputDecision",
+    "HumanInputNotification",
+    "HumanInputNotifier",
+    "HumanInputAuthorizer",
     "HumanInputRequest",
     "HumanInputStore",
     "FileHumanInputStore",

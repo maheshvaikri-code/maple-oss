@@ -296,6 +296,173 @@ class HumanInputRequest:
         )
 
 
+@dataclass(frozen=True)
+class HumanInputNotification:
+    """Bounded host notification for a human-input lifecycle transition."""
+
+    event_type: str
+    interaction_id: str
+    run_id: str
+    tool_call_id: str
+    prompt: str
+    input_schema: Dict[str, Any]
+    status: str
+    created_at: float
+    updated_at: float
+    actor_id: Optional[str] = None
+
+    @classmethod
+    def from_request(
+        cls,
+        request: HumanInputRequest,
+        event_type: str,
+        *,
+        actor_id: Optional[str] = None,
+    ) -> "HumanInputNotification":
+        schema = _copy_bounded_json(request.input_schema)
+        if schema.is_err() or not isinstance(schema.unwrap(), dict):
+            raise ValueError("human input notification schema is invalid")
+        return cls(
+            event_type=event_type,
+            interaction_id=request.interaction_id,
+            run_id=request.run_id,
+            tool_call_id=request.tool_call_id,
+            prompt=request.prompt,
+            input_schema=schema.unwrap(),
+            status=request.status,
+            created_at=request.created_at,
+            updated_at=request.updated_at,
+            actor_id=actor_id,
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "event_type": self.event_type,
+            "interaction_id": self.interaction_id,
+            "run_id": self.run_id,
+            "tool_call_id": self.tool_call_id,
+            "prompt": self.prompt,
+            "input_schema": _copy_bounded_json(self.input_schema).unwrap(),
+            "status": self.status,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+            "actor_id": self.actor_id,
+        }
+
+
+class HumanInputNotifier(Protocol):
+    """Host callback for bounded human-input lifecycle notifications."""
+
+    def notify(self, notification: HumanInputNotification) -> Result[None, Error]: ...
+
+
+class HumanInputAuthorizer(Protocol):
+    """Host callback for fail-closed human-input mutation authorization."""
+
+    def authorize(
+        self,
+        actor_id: str,
+        action: str,
+        request: HumanInputRequest,
+    ) -> Result[bool, Error]: ...
+
+
+def _authorize_host(
+    authorizer: Optional[HumanInputAuthorizer],
+    actor_id: Optional[str],
+    action: str,
+    request: HumanInputRequest,
+) -> Result[None, Error]:
+    if authorizer is None:
+        return Result.ok(None)
+    if actor_id is None:
+        return Result.err(
+            _error(
+                "HUMAN_INPUT_ACTOR_REQUIRED",
+                "An actor_id is required when human input authorization is configured.",
+            )
+        )
+    actor_error = _valid_identifier(actor_id, "actor_id")
+    if actor_error:
+        return Result.err(_error("HUMAN_INPUT_ACTOR_INVALID", actor_error["message"]))
+    try:
+        decision = authorizer.authorize(actor_id, action, _copy_request(request))
+    except Exception as exc:
+        return Result.err(
+            _error(
+                "HUMAN_INPUT_AUTHORIZATION_ERROR",
+                "Human input authorization failed closed.",
+                reason=str(exc)[:256],
+            )
+        )
+    if not isinstance(decision, Result):
+        return Result.err(
+            _error(
+                "HUMAN_INPUT_AUTHORIZATION_ERROR",
+                "Human input authorizer returned an invalid result.",
+            )
+        )
+    if decision.is_err():
+        return Result.err(
+            _error(
+                "HUMAN_INPUT_AUTHORIZATION_ERROR",
+                "Human input authorization failed closed.",
+                reason=(
+                    decision.unwrap_err().get("errorType", "unknown")
+                    if isinstance(decision.unwrap_err(), dict)
+                    else "unknown"
+                ),
+            )
+        )
+    if decision.unwrap() is not True:
+        return Result.err(
+            _error(
+                "HUMAN_INPUT_UNAUTHORIZED",
+                "Actor is not authorized for this human input action.",
+                action=action,
+            )
+        )
+    return Result.ok(None)
+
+
+def _notify_host(
+    notifier: Optional[HumanInputNotifier],
+    request: HumanInputRequest,
+    event_type: str,
+    *,
+    actor_id: Optional[str] = None,
+) -> Result[None, Error]:
+    if notifier is None:
+        return Result.ok(None)
+    try:
+        notification = HumanInputNotification.from_request(
+            request, event_type, actor_id=actor_id
+        )
+        delivered = notifier.notify(notification)
+    except Exception as exc:
+        return Result.err(
+            _error(
+                "HUMAN_INPUT_NOTIFICATION_ERROR",
+                "Human input notification failed after persistence.",
+                event_type=event_type,
+                reason=str(exc)[:256],
+            )
+        )
+    if not isinstance(delivered, Result) or delivered.is_err():
+        reason = "invalid_result"
+        if isinstance(delivered, Result) and isinstance(delivered.unwrap_err(), dict):
+            reason = str(delivered.unwrap_err().get("errorType", "unknown"))[:64]
+        return Result.err(
+            _error(
+                "HUMAN_INPUT_NOTIFICATION_ERROR",
+                "Human input notification failed after persistence.",
+                event_type=event_type,
+                reason=reason,
+            )
+        )
+    return Result.ok(None)
+
+
 class HumanInputStore(Protocol):
     """Persistence contract for bounded human request/response records."""
 
@@ -308,11 +475,15 @@ class HumanInputStore(Protocol):
     ) -> Result[HumanInputRequest, Error]: ...
 
     def respond(
-        self, interaction_id: str, response: Any
+        self, interaction_id: str, response: Any, *, actor_id: Optional[str] = None
     ) -> Result[HumanInputRequest, Error]: ...
 
     def reject(
-        self, interaction_id: str, reason: str = "Operator rejected the request."
+        self,
+        interaction_id: str,
+        reason: str = "Operator rejected the request.",
+        *,
+        actor_id: Optional[str] = None,
     ) -> Result[HumanInputRequest, Error]: ...
 
     def consume(self, interaction_id: str) -> Result[HumanInputRequest, Error]: ...
@@ -367,9 +538,22 @@ def _validate_limit(limit: int) -> Optional[Error]:
 class InMemoryHumanInputStore:
     """Thread-safe human-input store for local runs and tests."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        notifier: Optional[HumanInputNotifier] = None,
+        authorizer: Optional[HumanInputAuthorizer] = None,
+    ) -> None:
         self._requests: Dict[str, HumanInputRequest] = {}
         self._lock = threading.RLock()
+        self._notifier = notifier
+        self._authorizer = authorizer
+        if notifier is not None and not callable(getattr(notifier, "notify", None)):
+            raise TypeError("human input notifier must implement notify")
+        if authorizer is not None and not callable(
+            getattr(authorizer, "authorize", None)
+        ):
+            raise TypeError("human input authorizer must implement authorize")
 
     def get(self, interaction_id: str) -> Result[Optional[HumanInputRequest], Error]:
         identifier_error = _valid_identifier(interaction_id, "interaction_id")
@@ -414,22 +598,39 @@ class InMemoryHumanInputStore:
                     )
                 return Result.ok(_copy_request(existing))
             self._requests[candidate.interaction_id] = candidate
+            notified = _notify_host(self._notifier, candidate, "created")
+            if notified.is_err():
+                return Result.err(notified.unwrap_err())
             return Result.ok(_copy_request(candidate))
 
     def respond(
-        self, interaction_id: str, response: Any
+        self,
+        interaction_id: str,
+        response: Any,
+        *,
+        actor_id: Optional[str] = None,
     ) -> Result[HumanInputRequest, Error]:
-        return self._decide(interaction_id, accepted=True, response=response)
+        return self._decide(
+            interaction_id, accepted=True, response=response, actor_id=actor_id
+        )
 
     def reject(
-        self, interaction_id: str, reason: str = "Operator rejected the request."
+        self,
+        interaction_id: str,
+        reason: str = "Operator rejected the request.",
+        *,
+        actor_id: Optional[str] = None,
     ) -> Result[HumanInputRequest, Error]:
         if _valid_reason(reason):
             return Result.err(
                 _error("HUMAN_INPUT_REASON_INVALID", "Invalid rejection reason.")
             )
         return self._decide(
-            interaction_id, accepted=False, response=None, reason=reason
+            interaction_id,
+            accepted=False,
+            response=None,
+            reason=reason,
+            actor_id=actor_id,
         )
 
     def _decide(
@@ -439,6 +640,7 @@ class InMemoryHumanInputStore:
         accepted: bool,
         response: Any,
         reason: Optional[str] = None,
+        actor_id: Optional[str] = None,
     ) -> Result[HumanInputRequest, Error]:
         identifier_error = _valid_identifier(interaction_id, "interaction_id")
         if identifier_error:
@@ -459,6 +661,11 @@ class InMemoryHumanInputStore:
                         status=request.status,
                     )
                 )
+            authorized = _authorize_host(
+                self._authorizer, actor_id, "respond" if accepted else "reject", request
+            )
+            if authorized.is_err():
+                return Result.err(authorized.unwrap_err())
             if accepted:
                 response_result = _validate_response(request, response)
                 if response_result.is_err():
@@ -475,6 +682,14 @@ class InMemoryHumanInputStore:
                 decision=decision,
             )
             self._requests[interaction_id] = decided
+            notified = _notify_host(
+                self._notifier,
+                decided,
+                "responded" if accepted else "rejected",
+                actor_id=actor_id,
+            )
+            if notified.is_err():
+                return Result.err(notified.unwrap_err())
             return Result.ok(_copy_request(decided))
 
     def consume(self, interaction_id: str) -> Result[HumanInputRequest, Error]:
@@ -527,6 +742,8 @@ class FileHumanInputStore:
         *,
         lease_manager: Optional[FileLeaseManager] = None,
         lease_ttl_seconds: float = _HUMAN_INPUT_LEASE_TTL_SECONDS,
+        notifier: Optional[HumanInputNotifier] = None,
+        authorizer: Optional[HumanInputAuthorizer] = None,
     ) -> None:
         if (
             not isinstance(max_record_bytes, int)
@@ -538,6 +755,14 @@ class FileHumanInputStore:
         self.directory.mkdir(parents=True, exist_ok=True)
         self.max_record_bytes = max_record_bytes
         self._lock = threading.RLock()
+        self._notifier = notifier
+        self._authorizer = authorizer
+        if notifier is not None and not callable(getattr(notifier, "notify", None)):
+            raise TypeError("human input notifier must implement notify")
+        if authorizer is not None and not callable(
+            getattr(authorizer, "authorize", None)
+        ):
+            raise TypeError("human input authorizer must implement authorize")
         self._record_leases = DurableRecordLease(
             self.directory,
             namespace="human-input",
@@ -669,7 +894,11 @@ class FileHumanInputStore:
                             )
                         )
                     return Result.ok(_copy_request(existing))
-                return Result.ok(self._write_unlocked(candidate))
+                stored = self._write_unlocked(candidate)
+                notified = _notify_host(self._notifier, stored, "created")
+                if notified.is_err():
+                    return Result.err(notified.unwrap_err())
+                return Result.ok(stored)
         except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
             return Result.err(
                 _error(
@@ -680,19 +909,33 @@ class FileHumanInputStore:
             )
 
     def respond(
-        self, interaction_id: str, response: Any
+        self,
+        interaction_id: str,
+        response: Any,
+        *,
+        actor_id: Optional[str] = None,
     ) -> Result[HumanInputRequest, Error]:
-        return self._decide(interaction_id, accepted=True, response=response)
+        return self._decide(
+            interaction_id, accepted=True, response=response, actor_id=actor_id
+        )
 
     def reject(
-        self, interaction_id: str, reason: str = "Operator rejected the request."
+        self,
+        interaction_id: str,
+        reason: str = "Operator rejected the request.",
+        *,
+        actor_id: Optional[str] = None,
     ) -> Result[HumanInputRequest, Error]:
         if _valid_reason(reason):
             return Result.err(
                 _error("HUMAN_INPUT_REASON_INVALID", "Invalid rejection reason.")
             )
         return self._decide(
-            interaction_id, accepted=False, response=None, reason=reason
+            interaction_id,
+            accepted=False,
+            response=None,
+            reason=reason,
+            actor_id=actor_id,
         )
 
     def _decide(
@@ -702,6 +945,7 @@ class FileHumanInputStore:
         accepted: bool,
         response: Any,
         reason: Optional[str] = None,
+        actor_id: Optional[str] = None,
     ) -> Result[HumanInputRequest, Error]:
         return self._with_record_lease(
             interaction_id,
@@ -711,6 +955,7 @@ class FileHumanInputStore:
                 accepted=accepted,
                 response=response,
                 reason=reason,
+                actor_id=actor_id,
             ),
         )
 
@@ -721,6 +966,7 @@ class FileHumanInputStore:
         accepted: bool,
         response: Any,
         reason: Optional[str] = None,
+        actor_id: Optional[str] = None,
     ) -> Result[HumanInputRequest, Error]:
         try:
             with self._lock:
@@ -740,6 +986,14 @@ class FileHumanInputStore:
                             status=request.status,
                         )
                     )
+                authorized = _authorize_host(
+                    self._authorizer,
+                    actor_id,
+                    "respond" if accepted else "reject",
+                    request,
+                )
+                if authorized.is_err():
+                    return Result.err(authorized.unwrap_err())
                 if accepted:
                     response_result = _validate_response(request, response)
                     if response_result.is_err():
@@ -749,16 +1003,23 @@ class FileHumanInputStore:
                 decision = HumanInputDecision(
                     interaction_id, accepted, decided_at, response, reason
                 )
-                return Result.ok(
-                    self._write_unlocked(
-                        replace(
-                            request,
-                            status="responded" if accepted else "rejected",
-                            updated_at=decided_at,
-                            decision=decision,
-                        )
+                decided = self._write_unlocked(
+                    replace(
+                        request,
+                        status="responded" if accepted else "rejected",
+                        updated_at=decided_at,
+                        decision=decision,
                     )
                 )
+                notified = _notify_host(
+                    self._notifier,
+                    decided,
+                    "responded" if accepted else "rejected",
+                    actor_id=actor_id,
+                )
+                if notified.is_err():
+                    return Result.err(notified.unwrap_err())
+                return Result.ok(decided)
         except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
             return Result.err(
                 _error(
