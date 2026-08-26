@@ -13,8 +13,13 @@
 - **Bounded local latency percentiles**: `EventStream.metrics()` and
   `SpanRecorder.metrics()` now expose deterministic integer p50/p95/p99 views
   from bounded recent sample rings, while preserving existing totals, maxima,
-  averages, and failure counters. No metrics dependency or remote export was
-  added.
+  averages, and failure counters. Focused validation reports `51 passed in
+  0.41s`; the tracked application regression reports `1273 passed, 1 skipped
+  in 255.46s`. Clean package candidate `0ac263b` rebuilt wheel/sdist `1.1.3`,
+  both Twine checks passed, the sdist contains `519` entries, required files
+  are `6/6`, and workspace-only audit is `0`. Remote aggregation, dashboards,
+  exporter delivery, and dependency-governance disposition remain open. No
+  publication was performed.
 - **Bounded model/provider retries**: added opt-in `ModelRetryPolicy` support
   for sync and async autonomous model requests, with capped backoff, exact
   retryable error types, conservative OpenAI/Anthropic exception

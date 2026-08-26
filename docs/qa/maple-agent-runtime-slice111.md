@@ -41,8 +41,12 @@ tracked application coverage.
 
 ## Release disposition
 
-The bounded local observability behavior passes QA. Package build/Twine and
-workspace-only archive checks are recorded by the release closure after this
-artifact is committed. The dependency-governance gate remains open because
-the current shared interpreter reports `383 known vulnerabilities in 77
-packages`, and `gitleaks`/`bandit` are unavailable in the environment.
+The bounded local observability behavior passes QA. A clean archive built from
+committed candidate `0ac263b` produced wheel/sdist `1.1.3`; build exit was `0`,
+both Twine checks were `PASSED`, the sdist contains `519` entries, all six
+required public files are present, and the workspace-only audit found `0`
+entries. The required package files are `README.md`, `LICENSE`,
+`CHANGELOG.md`, ADR-057, this QA report, and the Slice 111 review report.
+The dependency-governance gate remains open because the current shared
+interpreter reports `383 known vulnerabilities in 77 packages`, and
+`gitleaks`/`bandit` are unavailable in the environment.
