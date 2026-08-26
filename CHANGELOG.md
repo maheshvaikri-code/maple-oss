@@ -16,8 +16,10 @@
   publishes, subscriber/exporter failures, and coarse publish latency. The
   contract remains integer-only, dependency-free, and non-failing; percentile
   histograms, durable/remote export, and hosted trace search remain deferred.
-  Focused validation reports `32 passed in 0.29s`; full regression and package
-  evidence remain pending. No publication was performed.
+  Focused validation reports `32 passed in 0.27s`; the tracked application
+  regression reports `1265 passed, 1 skipped in 203.80s`. Black, Ruff,
+  changed-boundary mypy, compile, doctor, and security review pass; package
+  evidence remains pending. No publication was performed.
 - **Bounded local observability retention metrics**: `EventStream.metrics()`
   and `SpanRecorder.metrics()` now expose retained capacity, eviction counts,
   subscriber count, and open-span count as thread-safe integer snapshots.
