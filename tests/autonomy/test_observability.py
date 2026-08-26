@@ -212,6 +212,10 @@ class TestTraceSpan:
             "latency_total_ms": 0,
             "latency_max_ms": 0,
             "latency_avg_ms": 0,
+            "latency_sample_count": 0,
+            "latency_p50_ms": 0,
+            "latency_p95_ms": 0,
+            "latency_p99_ms": 0,
             "error_spans": 0,
             "cancelled_spans": 0,
         }
@@ -246,6 +250,10 @@ class TestTraceSpan:
         assert metrics["latency_total_ms"] == 875
         assert metrics["latency_max_ms"] == 500
         assert metrics["latency_avg_ms"] == 291
+        assert metrics["latency_sample_count"] == 3
+        assert metrics["latency_p50_ms"] == 250
+        assert metrics["latency_p95_ms"] == 500
+        assert metrics["latency_p99_ms"] == 500
         assert metrics["error_spans"] == 1
         assert metrics["cancelled_spans"] == 1
 

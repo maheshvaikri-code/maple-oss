@@ -954,11 +954,14 @@ eviction, while cursor reads make that gap explicit.
 
 `EventStream.metrics()` returns a thread-safe snapshot of retained events,
 configured capacity, evictions, subscriber count, accepted publishes,
-subscriber/exporter failures, and coarse integer-millisecond publish latency.
-`SpanRecorder.metrics()` returns span capacity/eviction/open-span counts,
-sampled-out spans, completed spans, terminal status counts, and coarse integer
-millisecond latency totals/maxima/averages. These are local integer snapshots;
-they do not export or persist telemetry.
+subscriber/exporter failures, and integer-millisecond publish latency totals,
+maximum, average, p50, p95, and p99. `SpanRecorder.metrics()` returns span
+capacity/eviction/open-span counts, sampled-out spans, completed spans,
+terminal status counts, and the same integer latency views. Percentiles use a
+bounded ring of at most 4,096 recent samples (also limited by the configured
+event/span capacity); empty samples return zero. These are local snapshots;
+they do not export or persist telemetry and do not represent a fleet-wide
+distribution.
 
 ```python
 from maple import AutonomousAgent, AutonomousConfig, Config, EventStream, LLMConfig

@@ -42,6 +42,7 @@ _MAX_ATTRIBUTE_KEY_LENGTH = 128
 _MAX_ATTRIBUTE_STRING_LENGTH = 1_024
 _MAX_ATTRIBUTE_BYTES = 16_384
 _MAX_SAMPLE_RATE = 1.0
+_MAX_LATENCY_SAMPLES = 4_096
 
 
 @dataclass
@@ -87,6 +88,15 @@ def _valid_span_time(value: Any) -> bool:
         and not isinstance(value, bool)
         and math.isfinite(float(value))
     )
+
+
+def _percentile(values: List[int], percentile: int) -> int:
+    """Return a bounded nearest-rank percentile for integer samples."""
+    if not values:
+        return 0
+    ordered = sorted(values)
+    rank = (percentile * len(ordered) + 99) // 100
+    return ordered[min(len(ordered) - 1, max(0, rank - 1))]
 
 
 @dataclass(frozen=True)
@@ -224,6 +234,9 @@ class SpanRecorder:
         self._completed = 0
         self._latency_total_ms = 0
         self._latency_max_ms = 0
+        self._latency_samples: Deque[int] = deque(
+            maxlen=min(max_spans, _MAX_LATENCY_SAMPLES)
+        )
         self._error_spans = 0
         self._cancelled_spans = 0
         self._sample_index = 0
@@ -492,6 +505,7 @@ class SpanRecorder:
             self._completed += 1
             self._latency_total_ms += duration_ms
             self._latency_max_ms = max(self._latency_max_ms, duration_ms)
+            self._latency_samples.append(duration_ms)
             if status == "error":
                 self._error_spans += 1
             elif status == "cancelled":
@@ -563,6 +577,10 @@ class SpanRecorder:
                 "latency_avg_ms": (
                     self._latency_total_ms // self._completed if self._completed else 0
                 ),
+                "latency_sample_count": len(self._latency_samples),
+                "latency_p50_ms": _percentile(list(self._latency_samples), 50),
+                "latency_p95_ms": _percentile(list(self._latency_samples), 95),
+                "latency_p99_ms": _percentile(list(self._latency_samples), 99),
                 "error_spans": self._error_spans,
                 "cancelled_spans": self._cancelled_spans,
             }

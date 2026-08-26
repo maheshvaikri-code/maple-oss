@@ -10,6 +10,11 @@
 
 ### Additions
 
+- **Bounded local latency percentiles**: `EventStream.metrics()` and
+  `SpanRecorder.metrics()` now expose deterministic integer p50/p95/p99 views
+  from bounded recent sample rings, while preserving existing totals, maxima,
+  averages, and failure counters. No metrics dependency or remote export was
+  added.
 - **Bounded model/provider retries**: added opt-in `ModelRetryPolicy` support
   for sync and async autonomous model requests, with capped backoff, exact
   retryable error types, conservative OpenAI/Anthropic exception

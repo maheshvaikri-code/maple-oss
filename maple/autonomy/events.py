@@ -13,6 +13,16 @@ from ..core.result import Result
 
 Error = Dict[str, Any]
 EventCallback = Callable[["AgentEvent"], None]
+_MAX_LATENCY_SAMPLES = 4_096
+
+
+def _percentile(values: List[int], percentile: int) -> int:
+    """Return a bounded nearest-rank percentile for integer samples."""
+    if not values:
+        return 0
+    ordered = sorted(values)
+    rank = (percentile * len(ordered) + 99) // 100
+    return ordered[min(len(ordered) - 1, max(0, rank - 1))]
 
 
 class CancellationSignal(Protocol):
@@ -276,6 +286,9 @@ class EventStream:
         self._exporter_failures = 0
         self._publish_latency_total_ms = 0
         self._publish_latency_max_ms = 0
+        self._publish_latency_samples: Deque[int] = deque(
+            maxlen=min(event_capacity, _MAX_LATENCY_SAMPLES)
+        )
         self._condition = threading.Condition(threading.RLock())
 
     def _validate_config(self) -> Optional[Error]:
@@ -391,6 +404,7 @@ class EventStream:
             self._publish_latency_max_ms = max(
                 self._publish_latency_max_ms, publish_latency_ms
             )
+            self._publish_latency_samples.append(publish_latency_ms)
         return Result.ok(event)
 
     def snapshot(
@@ -602,5 +616,15 @@ class EventStream:
                     self._publish_latency_total_ms // self._published
                     if self._published
                     else 0
+                ),
+                "publish_latency_sample_count": len(self._publish_latency_samples),
+                "publish_latency_p50_ms": _percentile(
+                    list(self._publish_latency_samples), 50
+                ),
+                "publish_latency_p95_ms": _percentile(
+                    list(self._publish_latency_samples), 95
+                ),
+                "publish_latency_p99_ms": _percentile(
+                    list(self._publish_latency_samples), 99
                 ),
             }

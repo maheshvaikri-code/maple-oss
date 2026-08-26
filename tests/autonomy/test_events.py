@@ -50,6 +50,10 @@ def test_ring_buffer_tracks_evictions_and_snapshot_order():
     assert metrics["exporter_failures"] == 0
     assert metrics["publish_latency_total_ms"] >= 0
     assert metrics["publish_latency_max_ms"] >= metrics["publish_latency_avg_ms"]
+    assert metrics["publish_latency_sample_count"] == 2
+    assert 0 <= metrics["publish_latency_p50_ms"]
+    assert metrics["publish_latency_p95_ms"] >= metrics["publish_latency_p50_ms"]
+    assert metrics["publish_latency_p99_ms"] >= metrics["publish_latency_p95_ms"]
 
 
 def test_payload_bounds_and_malformed_values_fail_closed():
