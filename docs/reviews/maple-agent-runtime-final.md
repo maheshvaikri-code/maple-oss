@@ -543,6 +543,26 @@ remain explicit follow-on work.
   zero preserved Doctrine files. No remote authentication, transport,
   distributed ownership, or exactly-once side-effect claim is made.
 
+## Slice 96 implementation review
+
+- `RetryPolicy` validates a maximum of eight retries and a maximum delay of 60
+  seconds. Capped exponential delay is deterministic and no-policy workflows
+  retain the existing immediate-failure behavior.
+- Ordinary node exceptions and invalid node outputs persist
+  `NODE_RETRY_SCHEDULED` before retrying. `WorkflowCheckpoint` stores retry
+  counts and `retry_after`, `WorkflowContext` exposes the current count, and
+  recovery can honor an unexpired schedule. Exhaustion becomes the typed,
+  persisted `NODE_RETRY_EXHAUSTED` error without serializing raw exceptions.
+- Parallel fan-out branches remain explicitly outside this persisted policy;
+  their existing bounded trusted-local execution and side-effect caveat are
+  unchanged. Checkpointing does not claim exactly-once external effects.
+- Focused workflow/replay coverage reports `22 passed in 4.20s`; the exact
+  tracked manifest reports `1222 passed, 1 skipped in 222.42s`. Ruff, Black,
+  compile, diff, doctor, and changed-boundary mypy pass. A clean archive rebuilt
+  wheel/sdist `1.1.3`; Twine passed for both, the sdist contains 486 entries
+  including ADR-042 and the workflow regression, and the workspace-only audit
+  found zero preserved Doctrine files. No publication was performed.
+
 ## Verdict
 
 **Feature review:** PASS for the twenty-eight implemented capability slices.

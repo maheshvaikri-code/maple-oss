@@ -1014,6 +1014,37 @@ workflow.add_fan_out("start", ("web", "docs"), "join")
 workflow.add_edge("join")
 ```
 
+### Bounded per-node workflow retry
+
+Pass `RetryPolicy` values through `retry_policies=` or register one with
+`set_retry_policy(node_name, policy)`. `max_retries` is the number of retries
+after the initial attempt and is capped at eight; delays use capped exponential
+backoff with a maximum of 60 seconds. The current `retry_count` is available in
+`WorkflowContext`, and retry counts plus a scheduled `retry_after` timestamp are
+persisted in `WorkflowCheckpoint` so `recover()` can continue the same bounded
+policy after a process restart.
+
+```python
+from maple import RetryPolicy, Workflow
+
+workflow = Workflow(
+    "resilient_flow",
+    retry_policies={
+        "fetch": RetryPolicy(
+            max_retries=2,
+            base_delay_seconds=0.25,
+            max_delay_seconds=2.0,
+        )
+    },
+)
+workflow.add_node("fetch", lambda ctx: {"retry": ctx.retry_count})
+```
+
+When a node fails, MAPLE persists `NODE_RETRY_SCHEDULED` before retrying. When
+the policy is exhausted, the run fails with `NODE_RETRY_EXHAUSTED` and retains
+the retry count. Parallel fan-out branches remain outside this persisted
+per-node policy; external side effects still require idempotent handlers.
+
 Checkpoint data accepts JSON-compatible values only, is size-bounded, and is
 restored as data rather than executable objects. The current file store is
 atomic and thread-safe within one process. Fan-out uses bounded trusted

@@ -554,6 +554,24 @@ slow Doctrine gold phase before interruption without a pytest summary.
   change was made. Remote authentication/transport and exactly-once external
   effects remain outside the local contract.
 
+## Slice 96 QA — bounded per-node workflow retry and durable backoff state
+
+- `tests/autonomy/test_workflow.py` and
+  `tests/autonomy/test_workflow_replay.py` report `22 passed in 4.20s`.
+- Coverage proves bounded retry counts, retry context visibility, persisted
+  checkpoint metadata, capped policy validation, typed exhaustion, and
+  unchanged immediate-failure behavior when no policy is configured.
+- Ruff, Black, compile, diff, and changed-boundary mypy pass for the edited
+  workflow boundary. The exact tracked manifest reports
+  `1222 passed, 1 skipped in 222.42s`.
+- A clean current archive rebuilt wheel/sdist `1.1.3`; Twine passed for both,
+  the sdist contains 486 entries including ADR-042, the workflow module, and
+  the workflow regression, and the workspace-only audit found zero preserved
+  Doctrine files.
+- Parallel-branch retry, remote scheduling, and exactly-once external effects
+  remain explicit follow-on boundaries. No publication, website, cloud,
+  registry, or user-owned untracked file change was made.
+
 ## Security conclusions
 
 - No new dependency, credential, cloud call, website mutation, or publication

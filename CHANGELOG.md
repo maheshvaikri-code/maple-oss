@@ -103,6 +103,17 @@
   ADR-041, the interactions module, and the run regression, and the
   workspace-only audit found zero preserved Doctrine files. No publication was
   performed.
+- **Bounded per-node workflow retry**: added `RetryPolicy` with capped
+  exponential backoff, persisted retry counts/timestamps, retry context
+  metadata, and typed `NODE_RETRY_EXHAUSTED` failures for ordinary workflow
+  nodes. Existing workflows without a policy still fail immediately; parallel
+  branch retry remains a separate boundary. Focused workflow/replay coverage
+  reports `22 passed in 4.20s`; the exact tracked manifest reports `1222
+  passed, 1 skipped in 222.42s`; Ruff, Black, compile, diff, doctor, and
+  changed-boundary mypy pass. A clean archive rebuilt wheel/sdist `1.1.3`;
+  Twine passed for both, the sdist contains 486 entries including ADR-042, the
+  workflow module, and its regression, and the workspace-only audit found zero
+  preserved Doctrine files. No publication was performed.
 - **Agent-framework parity ledger**: added a source-backed functionality and
   runtime matrix for LangGraph, CrewAI, Microsoft Agent Framework, LlamaIndex,
   and OpenAI Agents SDK. It separates MAPLE's native infrastructure strengths
