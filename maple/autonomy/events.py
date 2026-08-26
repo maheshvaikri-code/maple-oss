@@ -22,6 +22,13 @@ class CancellationSignal(Protocol):
         """Return whether cancellation has been requested."""
 
 
+class EventExporter(Protocol):
+    """Host-owned sink for already-redacted agent events."""
+
+    def export(self, event: "AgentEvent") -> None:
+        """Receive one bounded event without changing the run outcome."""
+
+
 @dataclass(frozen=True)
 class EventCursor:
     """Serializable position used to consume a bounded event stream."""
@@ -245,11 +252,13 @@ class EventStream:
         max_payload_bytes: int = 1_048_576,
         max_subscribers: int = 1_000,
         redaction: Optional[RedactionPolicy] = None,
+        exporter: Optional[EventExporter] = None,
     ) -> None:
         self.max_events = max_events
         self.max_payload_bytes = max_payload_bytes
         self.max_subscribers = max_subscribers
         self.redaction = redaction or RedactionPolicy()
+        self.exporter = exporter
         event_capacity = (
             max_events
             if isinstance(max_events, int)
@@ -283,6 +292,10 @@ class EventStream:
             or self.max_subscribers <= 0
         ):
             return _error("EVENT_CONFIG_INVALID", "max_subscribers must be positive.")
+        if self.exporter is not None and not callable(
+            getattr(self.exporter, "export", None)
+        ):
+            return _error("EVENT_CONFIG_INVALID", "exporter must expose export(event).")
         return self.redaction.validate()
 
     def publish(
@@ -354,6 +367,12 @@ class EventStream:
                 callback(event)
             except Exception:
                 continue
+        if self.exporter is not None:
+            try:
+                self.exporter.export(event)
+            except Exception:
+                # Export is an observability side effect and must not fail a run.
+                pass
         return Result.ok(event)
 
     def snapshot(

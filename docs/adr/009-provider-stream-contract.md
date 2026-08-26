@@ -38,7 +38,8 @@ only when their provider supports the required streaming semantics.
   completion failures remain typed `Result` errors.
 - Negative / debt accepted: fallback latency is completion latency and usage
   is completion-level, not per-token. Native provider streams, cancellation,
-  backpressure, and usage trailers remain follow-up work.
+  and backpressure remain provider/host-owned follow-up boundaries; native
+  providers may expose a final usage trailer through `LLMChunk`.
 - Invalidation triggers: a caller requires first-token latency, token-level
   cancellation, provider-native usage events, or a capability router that
   cannot distinguish fallback streams from native streams.

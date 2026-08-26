@@ -825,7 +825,9 @@ reference for citation.
 `EventStream` provides an in-process observability contract for workflow, model,
 and tool lifecycle events. It assigns monotonic sequence numbers, retains a
 bounded ring, supports snapshots/waiters and synchronous subscribers, and
-redacts credential-like keys before retention or delivery. Payload shape,
+redacts credential-like keys before retention or delivery. A host-owned
+`EventExporter` may receive each already-redacted event; exporter exceptions
+are isolated from the run. Payload shape,
 string, item, depth, and byte limits fail closed with structured errors. The
 autonomous agent can publish a shared sync/async run lifecycle through
 `set_event_stream()`.
@@ -841,6 +843,19 @@ events.publish(
 )
 for event in events.snapshot().unwrap():
     print(event.sequence, event.event_type, event.payload)
+```
+
+An exporter is intentionally synchronous and local; hosts that need queues,
+durability, retries, or remote telemetry must own that boundary:
+
+```python
+from maple import EventExporter, EventStream
+
+class JsonExporter:
+    def export(self, event):
+        print(event.as_dict())
+
+events = EventStream(exporter=JsonExporter())
 ```
 
 For incremental consumers, persist an `EventCursor` and use bounded reads. A
@@ -861,8 +876,12 @@ next_batch = events.read(restored, limit=25)
 
 `EventStream.wait_for(..., cancellation=token)` accepts MAPLE's cooperative
 `CancellationToken` contract and returns `EVENT_CANCELLED` when signalled. This
-is a local event contract, not a durable broker, remote transport, provider
-token stream, or hosted telemetry service. Subscribers are synchronous and
+is a local event contract, not a durable broker, remote transport, or hosted
+telemetry service. Provider-native `LLMChunk` streams can expose a bounded
+final `TokenUsage` trailer and request correlation ID when the provider emits
+them; OpenAI-compatible providers opt into the usage request with
+`LLMConfig.extra["include_stream_usage"] = True`. Subscribers and exporters are
+synchronous and
 should hand off to a host-owned queue when callback work may block. The agent
 lifecycle uses metadata-only events and usage trailers; prompts, tool
 arguments, tool output, and final result data are not emitted. `dropped_count`

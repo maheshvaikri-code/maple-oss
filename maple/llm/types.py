@@ -86,6 +86,7 @@ class LLMResponse:
     model: str = ""
     finish_reason: str = ""
     raw_response: Optional[Any] = None
+    request_id: Optional[str] = None
 
 
 @dataclass
@@ -95,6 +96,8 @@ class LLMChunk:
     content: str = ""
     tool_call_delta: Optional[Dict[str, Any]] = None
     finish_reason: Optional[str] = None
+    usage: Optional[TokenUsage] = None
+    request_id: Optional[str] = None
 
 
 @dataclass

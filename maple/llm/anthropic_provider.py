@@ -230,10 +230,25 @@ class AnthropicProvider(LLMProvider):
 
         async def _chunks() -> AsyncIterator[LLMChunk]:
             finish_reason = None
+            request_id = None
+            usage = None
             try:
                 async for event in response_stream:
                     event_type = getattr(event, "type", "")
-                    if event_type == "content_block_start":
+                    request_id = (
+                        self._bounded_request_id(getattr(event, "id", None))
+                        or request_id
+                    )
+                    if event_type == "message_start":
+                        message = getattr(event, "message", None)
+                        request_id = (
+                            self._bounded_request_id(getattr(message, "id", None))
+                            or request_id
+                        )
+                        usage = self._merge_stream_usage(
+                            usage, getattr(message, "usage", None)
+                        )
+                    elif event_type == "content_block_start":
                         block = getattr(event, "content_block", None)
                         if getattr(block, "type", None) == "tool_use":
                             yield LLMChunk(
@@ -260,12 +275,24 @@ class AnthropicProvider(LLMProvider):
                             )
                     elif event_type == "message_delta":
                         delta = getattr(event, "delta", None)
+                        usage = self._merge_stream_usage(
+                            usage, getattr(event, "usage", None)
+                        )
+                        usage = self._merge_stream_usage(
+                            usage, getattr(delta, "usage", None)
+                        )
                         reason = getattr(delta, "stop_reason", None)
                         if reason:
                             finish_reason = self._normalize_finish_reason(reason)
             except Exception as e:
                 raise RuntimeError(f"Anthropic stream iteration failed: {e}") from e
-            yield LLMChunk(finish_reason=finish_reason)
+            if usage is not None:
+                self._track_usage(LLMResponse(usage=usage))
+            yield LLMChunk(
+                finish_reason=finish_reason,
+                usage=usage,
+                request_id=request_id,
+            )
 
         return Result.ok(_chunks())
 
@@ -309,6 +336,7 @@ class AnthropicProvider(LLMProvider):
             model=response.model,
             finish_reason=finish_reason,
             raw_response=response,
+            request_id=self._bounded_request_id(getattr(response, "id", None)),
         )
 
     @staticmethod

@@ -150,3 +150,38 @@ def test_subscriber_failures_do_not_break_publish_and_unsubscribe_works():
     assert published.is_ok()
     assert removed.unwrap() is True
     assert missing.unwrap() is False
+
+
+def test_exporter_receives_redacted_event_without_affecting_publish():
+    class Exporter:
+        def __init__(self):
+            self.events = []
+
+        def export(self, event):
+            self.events.append(event)
+
+    exporter = Exporter()
+    stream = EventStream(exporter=exporter)
+
+    published = stream.publish(
+        "model.completed",
+        {"status": "ok", "secret": "not-exported"},
+        run_id="run-export",
+    )
+
+    assert published.is_ok()
+    assert exporter.events == [published.unwrap()]
+    assert exporter.events[0].payload["secret"] == "[REDACTED]"
+
+
+def test_exporter_failure_is_isolated_and_invalid_exporter_fails_closed():
+    class BrokenExporter:
+        def export(self, event):
+            raise RuntimeError("sink unavailable")
+
+    published = EventStream(exporter=BrokenExporter()).publish("safe", {})
+    invalid = EventStream(exporter=object()).publish("safe", {})
+
+    assert published.is_ok()
+    assert invalid.is_err()
+    assert invalid.unwrap_err()["errorType"] == "EVENT_CONFIG_INVALID"

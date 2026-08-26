@@ -73,6 +73,7 @@ from .autonomy.events import (
     AgentEvent,
     EventBatch,
     EventCursor,
+    EventExporter,
     EventStream,
     RedactionPolicy,
 )
@@ -293,6 +294,7 @@ __all__ = [
     "AgentEvent",
     "EventBatch",
     "EventCursor",
+    "EventExporter",
     "EventStream",
     "RedactionPolicy",
     "HumanInputDecision",

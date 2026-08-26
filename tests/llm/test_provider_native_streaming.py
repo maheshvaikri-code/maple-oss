@@ -52,47 +52,71 @@ def _provider_without_constructor(provider_type, config):
 def test_openai_native_stream_maps_text_tool_and_finish_deltas():
     events = [
         SimpleNamespace(
-            choices=[SimpleNamespace(
-                delta=SimpleNamespace(content="h" * 513, tool_calls=None),
-                finish_reason=None,
-            )]
+            choices=[
+                SimpleNamespace(
+                    delta=SimpleNamespace(content="h" * 513, tool_calls=None),
+                    finish_reason=None,
+                )
+            ]
         ),
         SimpleNamespace(
-            choices=[SimpleNamespace(
-                delta=SimpleNamespace(
-                    content=None,
-                    tool_calls=[SimpleNamespace(
-                        id="call-1",
-                        function=SimpleNamespace(name="lookup", arguments='{"q"'),
-                    )],
-                ),
-                finish_reason=None,
-            )]
+            choices=[
+                SimpleNamespace(
+                    delta=SimpleNamespace(
+                        content=None,
+                        tool_calls=[
+                            SimpleNamespace(
+                                id="call-1",
+                                function=SimpleNamespace(
+                                    name="lookup", arguments='{"q"'
+                                ),
+                            )
+                        ],
+                    ),
+                    finish_reason=None,
+                )
+            ]
         ),
         SimpleNamespace(
-            choices=[SimpleNamespace(
-                delta=SimpleNamespace(content=" world", tool_calls=None),
-                finish_reason="tool_calls",
-            )]
+            choices=[
+                SimpleNamespace(
+                    delta=SimpleNamespace(content=" world", tool_calls=None),
+                    finish_reason="tool_calls",
+                )
+            ]
+        ),
+        SimpleNamespace(
+            id="chatcmpl-stream-1",
+            choices=[],
+            usage=SimpleNamespace(
+                prompt_tokens=12,
+                completion_tokens=7,
+                total_tokens=19,
+            ),
         ),
     ]
     client = OpenAICompletions(events)
     provider = _provider_without_constructor(
-        OpenAIProvider, LLMConfig(provider="openai", model="gpt-test")
+        OpenAIProvider,
+        LLMConfig(
+            provider="openai",
+            model="gpt-test",
+            extra={"include_stream_usage": True},
+        ),
     )
     provider.async_client = SimpleNamespace(chat=SimpleNamespace(completions=client))
 
-    result = asyncio.run(provider.stream(
-        [ChatMessage(role=ChatRole.USER, content="hi")],
-        tools=[ToolDefinition("lookup", "Find data", {"type": "object"})],
-    ))
+    result = asyncio.run(
+        provider.stream(
+            [ChatMessage(role=ChatRole.USER, content="hi")],
+            tools=[ToolDefinition("lookup", "Find data", {"type": "object"})],
+        )
+    )
 
     assert result.is_ok()
     chunks = asyncio.run(_collect(result.unwrap()))
     assert "".join(chunk.content for chunk in chunks) == "h" * 513 + " world"
-    assert [len(chunk.content) for chunk in chunks if chunk.content] == [
-        256, 256, 1, 6
-    ]
+    assert [len(chunk.content) for chunk in chunks if chunk.content] == [256, 256, 1, 6]
     tool_chunk = next(chunk for chunk in chunks if chunk.tool_call_delta)
     assert tool_chunk.tool_call_delta == {
         "id": "call-1",
@@ -100,17 +124,29 @@ def test_openai_native_stream_maps_text_tool_and_finish_deltas():
         "arguments": '{"q"',
     }
     assert chunks[-1].finish_reason == "tool_calls"
+    assert chunks[-1].usage.prompt_tokens == 12
+    assert chunks[-1].usage.completion_tokens == 7
+    assert chunks[-1].usage.total_tokens == 19
+    assert chunks[-1].request_id == "chatcmpl-stream-1"
+    assert provider.get_usage_stats()["total_prompt_tokens"] == 12
+    assert provider.get_usage_stats()["total_completion_tokens"] == 7
     assert client.kwargs["stream"] is True
+    assert client.kwargs["stream_options"] == {"include_usage": True}
     assert client.kwargs["tools"][0]["function"]["name"] == "lookup"
 
 
 def test_anthropic_native_stream_maps_text_tool_json_and_finish_deltas():
     events = [
         SimpleNamespace(
-            type="content_block_start",
-            content_block=SimpleNamespace(
-                type="tool_use", id="tool-1", name="lookup"
+            type="message_start",
+            message=SimpleNamespace(
+                id="msg-stream-1",
+                usage=SimpleNamespace(input_tokens=9),
             ),
+        ),
+        SimpleNamespace(
+            type="content_block_start",
+            content_block=SimpleNamespace(type="tool_use", id="tool-1", name="lookup"),
         ),
         SimpleNamespace(
             type="content_block_delta",
@@ -123,6 +159,7 @@ def test_anthropic_native_stream_maps_text_tool_json_and_finish_deltas():
         SimpleNamespace(
             type="message_delta",
             delta=SimpleNamespace(stop_reason="tool_use"),
+            usage=SimpleNamespace(output_tokens=6),
         ),
         SimpleNamespace(type="message_stop"),
     ]
@@ -132,9 +169,9 @@ def test_anthropic_native_stream_maps_text_tool_json_and_finish_deltas():
     )
     provider.async_client = SimpleNamespace(messages=client)
 
-    result = asyncio.run(provider.stream(
-        [ChatMessage(role=ChatRole.USER, content="hi")]
-    ))
+    result = asyncio.run(
+        provider.stream([ChatMessage(role=ChatRole.USER, content="hi")])
+    )
 
     assert result.is_ok()
     chunks = asyncio.run(_collect(result.unwrap()))
@@ -147,6 +184,12 @@ def test_anthropic_native_stream_maps_text_tool_json_and_finish_deltas():
     assert "".join(chunk.content for chunk in chunks) == "a" * 300
     assert chunks[3].tool_call_delta == {"arguments": '{"q"'}
     assert chunks[-1].finish_reason == "tool_calls"
+    assert chunks[-1].usage.prompt_tokens == 9
+    assert chunks[-1].usage.completion_tokens == 6
+    assert chunks[-1].usage.total_tokens == 15
+    assert chunks[-1].request_id == "msg-stream-1"
+    assert provider.get_usage_stats()["total_prompt_tokens"] == 9
+    assert provider.get_usage_stats()["total_completion_tokens"] == 6
     assert client.kwargs["stream"] is True
 
 

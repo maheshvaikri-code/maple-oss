@@ -16,10 +16,17 @@
 """Abstract LLM provider base class."""
 
 from abc import ABC, abstractmethod
-from typing import Any, AsyncIterator, Dict, Iterator, List, Optional
+from typing import Any, AsyncIterator, Dict, Iterator, List, Mapping, Optional, Tuple
 
 from ..core.result import Result
-from .types import ChatMessage, LLMChunk, LLMConfig, LLMResponse, ToolDefinition
+from .types import (
+    ChatMessage,
+    LLMChunk,
+    LLMConfig,
+    LLMResponse,
+    TokenUsage,
+    ToolDefinition,
+)
 
 
 class LLMProvider(ABC):
@@ -94,7 +101,11 @@ class LLMProvider(ABC):
                         "arguments": tool_call.arguments,
                     }
                 )
-            yield LLMChunk(finish_reason=response.finish_reason or None)
+            yield LLMChunk(
+                finish_reason=response.finish_reason or None,
+                usage=response.usage,
+                request_id=response.request_id,
+            )
 
         return Result.ok(_chunks())
 
@@ -107,6 +118,75 @@ class LLMProvider(ABC):
     def count_tokens(self, text: str) -> int:
         """Estimate token count (provider-specific override recommended)."""
         return len(text) // 4
+
+    @staticmethod
+    def _bounded_request_id(value: Any) -> Optional[str]:
+        """Accept only a small, non-sensitive provider correlation ID."""
+        if (
+            not isinstance(value, str)
+            or not value
+            or len(value) > 256
+            or any(ord(char) < 32 for char in value)
+        ):
+            return None
+        return value
+
+    @staticmethod
+    def _stream_usage_parts(
+        value: Any,
+    ) -> Optional[Tuple[Optional[int], Optional[int], Optional[int]]]:
+        """Read bounded usage fields from SDK objects or mapping fixtures."""
+        if value is None:
+            return None
+
+        def read(*names: str) -> Any:
+            if isinstance(value, Mapping):
+                for name in names:
+                    if name in value:
+                        return value[name]
+                return None
+            for name in names:
+                candidate = getattr(value, name, None)
+                if candidate is not None:
+                    return candidate
+            return None
+
+        prompt_tokens = read("prompt_tokens", "input_tokens")
+        completion_tokens = read("completion_tokens", "output_tokens")
+        total_tokens = read("total_tokens")
+        fields = (prompt_tokens, completion_tokens, total_tokens)
+        if all(field is None for field in fields):
+            return None
+        if any(
+            not isinstance(field, int) or isinstance(field, bool) or field < 0
+            for field in fields
+            if field is not None
+        ):
+            return None
+        return prompt_tokens, completion_tokens, total_tokens
+
+    @classmethod
+    def _merge_stream_usage(
+        cls, current: Optional[TokenUsage], value: Any
+    ) -> Optional[TokenUsage]:
+        """Merge partial provider usage events into one final trailer."""
+        parts = cls._stream_usage_parts(value)
+        if parts is None:
+            return current
+        prompt_tokens = current.prompt_tokens if current is not None else 0
+        completion_tokens = current.completion_tokens if current is not None else 0
+        if parts[0] is not None:
+            prompt_tokens = parts[0]
+        if parts[1] is not None:
+            completion_tokens = parts[1]
+        total_tokens = parts[2]
+        if total_tokens is None:
+            total_tokens = prompt_tokens + completion_tokens
+        return TokenUsage(
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+        )
 
     def get_usage_stats(self) -> Dict[str, Any]:
         """Get cumulative usage statistics."""

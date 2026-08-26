@@ -22,6 +22,11 @@ Anthropic providers:
 - Anthropic Messages API events map text deltas, tool-use starts, partial JSON
   input, and normalized stop reasons into the same contract.
 - Text deltas are split into the shared 256-character bound.
+- Provider-final usage is normalized into a bounded `TokenUsage` trailer on
+  `LLMChunk`, and provider request IDs are exposed when they are bounded and
+  present. OpenAI-compatible usage requests are opt-in through
+  `LLMConfig.extra["include_stream_usage"]`; Anthropic partial usage events
+  are merged before the final trailer.
 - Initial request failures return typed `Result.err` data; iteration failures
   raise a contextual runtime error because the request has already returned an
   async iterator.
@@ -55,7 +60,7 @@ Accepted limitations:
 
 - Runtime stream-iteration errors cannot be converted into a pre-iteration
   `Result.err` after chunks have already been delivered.
-- Usage accounting from provider-final stream events is not yet surfaced by
-  `LLMChunk`; that is a future contract extension.
+- Runtime stream usage is surfaced only when the provider emits usable usage
+  fields; malformed or absent trailers are omitted rather than invented.
 - Providers without async clients continue to use the completion-backed
   fallback and do not claim native latency.

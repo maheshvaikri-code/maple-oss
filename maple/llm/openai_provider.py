@@ -134,6 +134,8 @@ class OpenAIProvider(LLMProvider):
         if tools:
             kwargs["tools"] = [self._format_tool(t) for t in tools]
             kwargs["tool_choice"] = "auto"
+        if self.config.extra.get("include_stream_usage") is True:
+            kwargs["stream_options"] = {"include_usage": True}
 
         try:
             response_stream = await cast(
@@ -149,8 +151,17 @@ class OpenAIProvider(LLMProvider):
 
         async def _chunks() -> AsyncIterator[LLMChunk]:
             finish_reason = None
+            request_id = None
+            usage = None
             try:
                 async for chunk in response_stream:
+                    request_id = (
+                        self._bounded_request_id(getattr(chunk, "id", None))
+                        or request_id
+                    )
+                    usage = self._merge_stream_usage(
+                        usage, getattr(chunk, "usage", None)
+                    )
                     choices = getattr(chunk, "choices", None) or []
                     if not choices:
                         continue
@@ -174,7 +185,13 @@ class OpenAIProvider(LLMProvider):
                         finish_reason = reason
             except Exception as e:
                 raise RuntimeError(f"OpenAI stream iteration failed: {e}") from e
-            yield LLMChunk(finish_reason=finish_reason)
+            if usage is not None:
+                self._track_usage(LLMResponse(usage=usage))
+            yield LLMChunk(
+                finish_reason=finish_reason,
+                usage=usage,
+                request_id=request_id,
+            )
 
         return Result.ok(_chunks())
 
@@ -239,4 +256,5 @@ class OpenAIProvider(LLMProvider):
             model=response.model,
             finish_reason=choice.finish_reason,
             raw_response=response,
+            request_id=self._bounded_request_id(getattr(response, "id", None)),
         )
