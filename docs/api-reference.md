@@ -1087,6 +1087,41 @@ persist the full ReAct conversation, does not implement arbitrary
 request/response HITL forms, and failed tool execution requires a new approval
 request.
 
+### Durable human input
+
+Durable ReAct runs can expose the built-in `request_human_input` tool to ask
+the host a bounded question or form. The request is persisted with its prompt
+and JSON-Schema response contract; the agent pauses before any later tool
+calls.
+
+```python
+import json
+
+from maple import FileAgentRunStore, FileHumanInputStore
+
+run_store = FileAgentRunStore("./.maple-runs")
+input_store = FileHumanInputStore("./.maple-input")
+agent.set_run_store(run_store)
+agent.set_human_input_store(input_store)
+
+goal = agent.pursue_goal("Deploy after human confirmation", run_id="deploy-1")
+interaction_id = goal.unwrap().result["details"]["interaction_id"]
+request = input_store.get(interaction_id).unwrap()
+assert request is not None
+
+agent.respond_human_input(interaction_id, {"confirmed": True})
+resumed = agent.resume_run("deploy-1")
+```
+
+`respond_human_input` validates the response against the request's bounded
+schema and leaves a pending request unchanged on failure. Use
+`reject_human_input(interaction_id, reason)` to resume with a typed
+`HUMAN_INPUT_REJECTED` tool error. A request is one-shot: its consumed decision
+is retained for crash recovery, but a second response returns
+`HUMAN_INPUT_CONFLICT`. The built-in tool requires a durable `run_id`; it does
+not collect input in a non-durable run. Cross-process leases/notifications and
+multi-round conversations remain host or follow-on responsibilities.
+
 ### Bounded conversation sessions
 
 `SessionMessage` and `SessionSnapshot` provide a JSON-safe turn-history

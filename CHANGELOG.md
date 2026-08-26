@@ -21,6 +21,15 @@
   passed, 1 skipped in 204.41s`; Ruff, Black, mypy, compile, diff, and doctor
   pass. A clean current archive rebuilt `1.1.3`; Twine passed, the sdist has
   470 entries including ADR-034, and the workspace-only audit is empty.
+- **Durable human input**: added bounded in-memory/file request records and the
+  `request_human_input` tool. Durable sync/async ReAct runs persist a pending
+  input cursor, validate one host response against a JSON-Schema subset, or
+  resume with a typed rejection; cross-process leases, notifications, and
+  multi-round conversations remain explicit follow-on boundaries.
+- **Durable human-input validation**: the focused interaction/run/tool/agent
+  slice reports `61 passed in 0.51s`; the exact tracked application manifest
+  reports `1202 passed, 1 skipped in 211.16s`; Ruff, Black, mypy, compile, diff,
+  and doctor pass. Clean package evidence remains a final artifact gate.
 - **Agent-framework parity ledger**: added a source-backed functionality and
   runtime matrix for LangGraph, CrewAI, Microsoft Agent Framework, LlamaIndex,
   and OpenAI Agents SDK. It separates MAPLE's native infrastructure strengths

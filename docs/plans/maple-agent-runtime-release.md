@@ -99,6 +99,7 @@
 | 86 | Deterministic loopback HTTP response closure | Backend / QA / Release | `docs/adr/033-*`, `maple/autonomy/server.py`, server tests, QA/review evidence | Flush bounded JSON responses, explicit connection closure, preserve routes/status/payloads, full tracked regression | done: server suite `4 passed in 2.34s`; exact tracked suite `1195 passed, 1 skipped in 222.53s`; no dependency or protocol surface change |
 | 87 | Final current-commit release artifact revalidation | Release / DevOps / QA | clean `git archive HEAD`, wheel/sdist, Twine output, doctor output, release plan, QA/review evidence | Current tracked snapshot only, package metadata, sdist workspace boundary, ADR/module presence, network-free doctor | done: clean `1.1.3` wheel/sdist; Twine passed; 469 sdist entries; ADR-031/032/033 and durable/event modules present; workspace-only audit zero; doctor `ready: true`; no publication performed |
 | 88 | Bounded editable durable tool approvals | Chief Architect / Backend / Security / QA / Release | `docs/adr/034-*`, approval stores/agent boundary, sync/async run regressions, API/parity/README docs, changelog, QA/review evidence | Approved-only bounded JSON replacement, in-memory/file persistence, invalid-edit no-mutation, denied-edit rejection, one-time consume, sync/async resume, static/package/doctor gates; arbitrary multi-turn HITL remains explicit follow-on | done: focused approval/run/agent `44 passed in 0.46s`; tracked manifest `1197 passed, 1 skipped in 204.41s`; Ruff/Black/mypy/compile/diff/doctor pass; clean `1.1.3` wheel/sdist, Twine passed, 470 sdist entries, ADR-034 present, workspace-only audit zero; no publication |
+| 89 | Bounded durable human-input request/response | Chief Architect / Backend / Security / QA / Release | `docs/adr/035-*`, `maple/autonomy/interactions.py`, durable run cursor/agent/tool, interaction/run/tool tests, API/README/parity docs, changelog, QA/review evidence | Bounded prompt/schema/response records, memory/file persistence, schema-validated response, explicit rejection, sync/async `request_human_input` pause/resume, consumed-decision crash recovery, static/package/doctor gates; leases/notifications/multi-round remain explicit follow-on | done: focused interaction/run/tool/agent `61 passed in 0.51s`; tracked manifest `1202 passed, 1 skipped in 211.16s`; Ruff/Black/mypy/compile/diff/doctor pass; clean package evidence pending; no publication |
 
 ## Threat sketch
 
@@ -475,3 +476,13 @@ current archive rebuilt wheel/sdist `1.1.3`, both Twine checks passed, the sdist
 contained 470 entries including ADR-034, and the workspace-only audit found
 zero preserved Doctrine files. Arbitrary multi-turn HITL, cross-process leases,
 and publication remain outside this slice.
+
+2026-08-26 bounded durable human-input closure: ADR-035 adds a reserved
+`request_human_input` tool, bounded in-memory/file request records, schema-
+validated responses, explicit rejection, and a persisted `pending_input_id`
+for sync/async durable ReAct resume. The focused interaction/run/tool/agent
+slice reports `61 passed in 0.51s`; the tracked manifest reports `1202 passed,
+1 skipped in 211.16s`; Ruff, Black, mypy, compile, diff, and doctor pass.
+Clean package evidence is pending the final documentation commit. Cross-process
+leases, notifications, and multi-round conversations remain explicit follow-on
+gaps.

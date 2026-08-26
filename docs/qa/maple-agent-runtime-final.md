@@ -427,6 +427,24 @@ slow Doctrine gold phase before interruption without a pytest summary.
   workspace-only audit found zero preserved Doctrine files. No publication,
   website, cloud, registry, or user-owned untracked-file change was made.
 
+## Slice 89 QA — bounded durable human input
+
+- `tests/autonomy/test_interactions.py`, `tests/autonomy/test_runs.py`,
+  `tests/autonomy/test_tools.py`, and `tests/autonomy/test_agent.py` report
+  `61 passed in 0.51s`.
+- The exact tracked application manifest contains 86 tracked test files and
+  reports `1202 passed, 1 skipped in 211.16s`. Coverage includes memory/file
+  persistence, schema-invalid response no-mutation, explicit rejection,
+  sync/async pause-resume, and consumed-rejection recovery.
+- Ruff reports `All checks passed!`; Black reports `95 files would be left
+  unchanged`; mypy reports `Success: no issues found in 95 source files`;
+  compile and `git diff --check` pass.
+- Network-free doctor returns `ready: true`, `status: SUCCESS`, version
+  `1.1.3`, all eight checks true, and `network: false`.
+- Clean wheel/sdist and Twine evidence for the final documentation commit is
+  pending. No publication, website, cloud, registry, or user-owned untracked
+  file change was made.
+
 ## Security conclusions
 
 - No new dependency, credential, cloud call, website mutation, or publication

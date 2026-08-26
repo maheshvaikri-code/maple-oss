@@ -405,9 +405,26 @@ verification remain open.
   workspace-only audit found zero preserved Doctrine files. No publication,
   website, cloud, or registry action was taken.
 
+## Slice 89 implementation review
+
+- Added bounded `HumanInputRequest`/`HumanInputDecision` records with in-memory
+  and atomic file stores. Responses are JSON-safe and validated against the
+  bounded JSON-Schema subset; rejection is explicit and typed.
+- The reserved `request_human_input` tool is available only inside a durable
+  run, persists `pending_input_id`, pauses before later tool calls, and resumes
+  in sync and async paths after a response or rejection. Consumed decisions
+  remain reconstructable after a crash between consume and checkpoint save.
+- Focused interaction/run/tool/agent coverage reports `61 passed in 0.51s`;
+  the exact tracked application manifest reports `1202 passed, 1 skipped in
+  211.16s`. Ruff, Black, mypy, compile, diff, and network-free doctor checks
+  pass.
+- Clean package evidence for the final documentation commit is pending. The
+  feature remains one-shot; cross-process leases, notifications, and
+  multi-round conversations are explicit follow-on gaps.
+
 ## Verdict
 
-**Feature review:** PASS for the twenty-seven implemented capability slices.
+**Feature review:** PASS for the twenty-eight implemented capability slices.
 **Publish readiness:** NOT YET APPROVED. A release manager should close the
 workspace-only Doctrine gold and fresh-verifier gates before publishing. The
 remaining Bandit findings are documented low-severity legacy debt; external
