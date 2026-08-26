@@ -645,25 +645,36 @@ typed = parse_typed_output('{"answer":"ready"}', LookupResult)
 `create_handoff_tool` exposes one specialist agent as a normal MAPLE `Tool`.
 The model submits only a bounded `task` string; the result contains the target
 agent ID, goal ID, status, and result. Handoffs require approval by default
-because the target may call its own tools or create external side effects:
+because the target may call its own tools or create external side effects. An
+explicit `allowed_context_keys` allowlist can permit bounded JSON context for a
+target that declares `pursue_goal_with_context(task, context)`:
 
 ```python
 from maple import create_handoff_tool
 
-handoff = create_handoff_tool(specialist)
+handoff = create_handoff_tool(
+    specialist,
+    allowed_context_keys=["project", "constraints"],
+)
 caller.register_tool(handoff)
 
-result = handoff.execute(task="Summarize the release risks")
+result = handoff.execute(
+    task="Summarize the release risks",
+    context={"project": "MAPLE", "constraints": {"max_words": 200}},
+)
 ```
 
-The task is limited to 8,192 characters and rejects extra arguments. A target
-failure returns `HANDOFF_TARGET_FAILED`, a raised exception returns
-`HANDOFF_TARGET_ERROR`, and an invalid target result returns
-`HANDOFF_TARGET_INVALID`; raw target error payloads are not forwarded. Set
-`requires_approval=False` only for a trusted host-controlled handoff. Async
-agent turns use MAPLE's existing executor-backed synchronous tool path. This
-primitive is local and non-durable; it does not claim distributed routing,
-conversation transfer, or hard cancellation of the target.
+The task is limited to 8,192 characters and rejects extra arguments. Context is
+copied and bounded before filtering; an unknown key returns
+`HANDOFF_CONTEXT_KEY_DENIED`, and a non-empty context sent to a legacy target
+returns `HANDOFF_CONTEXT_UNSUPPORTED`. A target failure returns
+`HANDOFF_TARGET_FAILED`, a raised exception returns `HANDOFF_TARGET_ERROR`, and
+an invalid target result returns `HANDOFF_TARGET_INVALID`; raw target error
+payloads are not forwarded. Set `requires_approval=False` only for a trusted
+host-controlled handoff. The target's initial context message is part of a
+durable local run checkpoint, but async target invocation, durable handoff
+identity/leases, explicit ownership transfer, remote routing, and hard target
+cancellation remain separate capabilities.
 
 ### Per-goal token accounting and budgets
 

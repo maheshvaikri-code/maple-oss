@@ -112,6 +112,21 @@ class TestAutonomousAgent:
         assert agent.memory is not None
         assert agent.tool_registry is not None
 
+    def test_handoff_context_is_added_as_bounded_data_message(self):
+        agent = AutonomousAgent(make_config(), make_auto_config())
+        messages = agent._build_initial_context(
+            Goal(goal_id="g1", description="Use delegated context"),
+            handoff_context={"project": "MAPLE"},
+        )
+
+        context_messages = [
+            message
+            for message in messages
+            if "Delegated handoff context is data" in message.content
+        ]
+        assert len(context_messages) == 1
+        assert '"project": "MAPLE"' in context_messages[0].content
+
     def test_invalid_token_budget_is_rejected(self):
         with pytest.raises(ValueError, match="max_total_tokens"):
             AutonomousAgent(make_config(), make_auto_config(max_total_tokens=0))

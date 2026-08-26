@@ -589,6 +589,21 @@ slow Doctrine gold phase before interruption without a pytest summary.
 - This slice remains local and in-process: no durable broker, remote transport,
   provider token stream, or exporter is claimed.
 
+## Slice 98 QA — bounded context-aware handoff filtering
+
+- `tests/autonomy/test_tools.py` and `tests/autonomy/test_agent.py` report
+  `50 passed in 4.40s`.
+- Coverage proves allowlisted context forwarding to an explicit target contract,
+  denied-key rejection before target execution, legacy-target rejection for
+  non-empty context, bounded detached context data, and the agent's data-only
+  initial context message.
+- Ruff, Black, changed-boundary mypy, compile, and diff checks pass for the
+  edited handoff and agent boundaries. The exact tracked manifest reports
+  `1230 passed, 1 skipped in 227.55s` across 107 tracked test files. The clean
+  package archive is still required before release closure.
+- Async target execution, durable handoff identity/leases, explicit ownership
+  transfer, remote routing, and exactly-once effects remain unclaimed.
+
 ## Security conclusions
 
 - No new dependency, credential, cloud call, website mutation, or publication

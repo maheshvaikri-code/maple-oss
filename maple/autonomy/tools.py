@@ -13,9 +13,21 @@ received a copy of the GNU Affero General Public License along with MAPLE - Mult
 Language Engine. If not, see <https://www.gnu.org/licenses/>.
 """
 
+import json
 import logging
+import math
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Type
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Dict,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Type,
+)
 
 from ..core.result import Result
 from ..llm.types import ToolDefinition
@@ -32,6 +44,128 @@ if TYPE_CHECKING:
     from .agent import AutonomousAgent
 
 logger = logging.getLogger(__name__)
+
+MAX_HANDOFF_CONTEXT_KEYS = 32
+MAX_HANDOFF_CONTEXT_ITEMS = 128
+MAX_HANDOFF_CONTEXT_DEPTH = 8
+MAX_HANDOFF_CONTEXT_STRING_LENGTH = 8_192
+MAX_HANDOFF_CONTEXT_BYTES = 32_768
+
+
+def _handoff_context_error(message: str, **details: Any) -> Dict[str, Any]:
+    error: Dict[str, Any] = {
+        "errorType": "HANDOFF_CONTEXT_INVALID",
+        "message": message,
+    }
+    if details:
+        error["details"] = details
+    return error
+
+
+def _copy_handoff_value(
+    value: Any, *, path: str, depth: int
+) -> Result[Any, Dict[str, Any]]:
+    if depth > MAX_HANDOFF_CONTEXT_DEPTH:
+        return Result.err(
+            _handoff_context_error("Handoff context is too deeply nested.", path=path)
+        )
+    if value is None or isinstance(value, (bool, int, str)):
+        if isinstance(value, str) and len(value) > MAX_HANDOFF_CONTEXT_STRING_LENGTH:
+            return Result.err(
+                _handoff_context_error(
+                    "Handoff context string exceeds the limit.", path=path
+                )
+            )
+        return Result.ok(value)
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            return Result.err(
+                _handoff_context_error(
+                    "Handoff context numbers must be finite.", path=path
+                )
+            )
+        return Result.ok(value)
+    if isinstance(value, Mapping):
+        if len(value) > MAX_HANDOFF_CONTEXT_ITEMS:
+            return Result.err(
+                _handoff_context_error(
+                    "Handoff context object exceeds the item limit.", path=path
+                )
+            )
+        copied: Dict[str, Any] = {}
+        for key, item in value.items():
+            if not isinstance(key, str) or not key or len(key) > 128:
+                return Result.err(
+                    _handoff_context_error(
+                        "Handoff context keys must be bounded strings.", path=path
+                    )
+                )
+            item_result = _copy_handoff_value(
+                item, path=f"{path}.{key}", depth=depth + 1
+            )
+            if item_result.is_err():
+                return Result.err(item_result.unwrap_err())
+            copied[key] = item_result.unwrap()
+        return Result.ok(copied)
+    if isinstance(value, (list, tuple)):
+        if len(value) > MAX_HANDOFF_CONTEXT_ITEMS:
+            return Result.err(
+                _handoff_context_error(
+                    "Handoff context array exceeds the item limit.", path=path
+                )
+            )
+        copied_list: List[Any] = []
+        for index, item in enumerate(value):
+            item_result = _copy_handoff_value(
+                item, path=f"{path}[{index}]", depth=depth + 1
+            )
+            if item_result.is_err():
+                return Result.err(item_result.unwrap_err())
+            copied_list.append(item_result.unwrap())
+        return Result.ok(copied_list)
+    return Result.err(
+        _handoff_context_error(
+            "Handoff context must contain only JSON-compatible values.",
+            path=path,
+        )
+    )
+
+
+def _normalize_handoff_context(
+    context: Optional[Mapping[str, Any]],
+) -> Result[Dict[str, Any], Dict[str, Any]]:
+    """Copy and bound context before it crosses an agent ownership boundary."""
+    if context is None:
+        return Result.ok({})
+    if not isinstance(context, Mapping):
+        return Result.err(_handoff_context_error("Handoff context must be an object."))
+    if len(context) > MAX_HANDOFF_CONTEXT_KEYS:
+        return Result.err(
+            _handoff_context_error(
+                "Handoff context exceeds the key limit.",
+                max_keys=MAX_HANDOFF_CONTEXT_KEYS,
+            )
+        )
+    copied = _copy_handoff_value(context, path="$", depth=0)
+    if copied.is_err():
+        return Result.err(copied.unwrap_err())
+    normalized = copied.unwrap()
+    if not isinstance(normalized, dict):
+        return Result.err(_handoff_context_error("Handoff context must be an object."))
+    try:
+        encoded = json.dumps(normalized, ensure_ascii=False, allow_nan=False)
+    except (TypeError, ValueError, OverflowError):
+        return Result.err(
+            _handoff_context_error("Handoff context must be JSON serializable.")
+        )
+    if len(encoded.encode("utf-8")) > MAX_HANDOFF_CONTEXT_BYTES:
+        return Result.err(
+            _handoff_context_error(
+                "Handoff context exceeds the byte limit.",
+                max_bytes=MAX_HANDOFF_CONTEXT_BYTES,
+            )
+        )
+    return Result.ok(normalized)
 
 
 @dataclass
@@ -240,13 +374,15 @@ def create_handoff_tool(
     name: Optional[str] = None,
     description: Optional[str] = None,
     requires_approval: bool = True,
+    allowed_context_keys: Optional[Sequence[str]] = None,
 ) -> Tool:
     """Create a bounded tool that delegates one task to another agent.
 
     The target is invoked through its synchronous ``pursue_goal`` method. An
-    async MAPLE turn already executes synchronous tool calls in an executor,
-    so this helper remains compatible with both agent loop variants without
-    introducing a nested event-loop policy.
+    optional context object is copied, bounded, and filtered by an explicit
+    ``allowed_context_keys`` list. Non-empty context requires the target to
+    expose ``pursue_goal_with_context``; legacy targets remain compatible when
+    no context is supplied.
     """
     target_id = getattr(target_agent, "agent_id", None)
     pursue_goal = getattr(target_agent, "pursue_goal", None)
@@ -256,15 +392,65 @@ def create_handoff_tool(
         raise ValueError("target_agent must expose a callable pursue_goal method")
     if not isinstance(requires_approval, bool):
         raise ValueError("requires_approval must be boolean")
+    if allowed_context_keys is None:
+        allowed_keys: frozenset[str] = frozenset()
+    else:
+        if isinstance(allowed_context_keys, (str, bytes)):
+            raise ValueError("allowed_context_keys must be a sequence of strings")
+        try:
+            raw_allowed_keys = tuple(allowed_context_keys)
+        except TypeError as exc:
+            raise ValueError(
+                "allowed_context_keys must be a sequence of strings"
+            ) from exc
+        if len(raw_allowed_keys) > MAX_HANDOFF_CONTEXT_KEYS:
+            raise ValueError(
+                f"allowed_context_keys cannot exceed {MAX_HANDOFF_CONTEXT_KEYS} keys"
+            )
+        if any(
+            not isinstance(key, str) or not key or len(key) > 128
+            for key in raw_allowed_keys
+        ):
+            raise ValueError("allowed_context_keys must contain bounded strings")
+        if len(set(raw_allowed_keys)) != len(raw_allowed_keys):
+            raise ValueError("allowed_context_keys must not contain duplicates")
+        allowed_keys = frozenset(raw_allowed_keys)
 
     tool_name = name or f"handoff_to_{target_id}"
     tool_description = description or (
         f"Delegate one bounded task to agent {target_id} and receive its result"
     )
 
-    def handoff_handler(task: str) -> Result[Dict[str, Any], Dict[str, Any]]:
+    def handoff_handler(
+        task: str, context: Optional[Dict[str, Any]] = None
+    ) -> Result[Dict[str, Any], Dict[str, Any]]:
+        context_result = _normalize_handoff_context(context)
+        if context_result.is_err():
+            return Result.err(context_result.unwrap_err())
+        handoff_context = context_result.unwrap()
+        denied_keys = sorted(set(handoff_context).difference(allowed_keys))
+        if denied_keys:
+            return Result.err(
+                {
+                    "errorType": "HANDOFF_CONTEXT_KEY_DENIED",
+                    "message": "Handoff context contains a key outside the allowlist.",
+                    "details": {"keys": denied_keys},
+                }
+            )
+        pursue_with_context = getattr(target_agent, "pursue_goal_with_context", None)
         try:
-            target_result = pursue_goal(task)
+            if handoff_context:
+                if not callable(pursue_with_context):
+                    return Result.err(
+                        {
+                            "errorType": "HANDOFF_CONTEXT_UNSUPPORTED",
+                            "message": "Target agent does not declare context-aware handoff.",
+                            "details": {"agent_id": target_id},
+                        }
+                    )
+                target_result = pursue_with_context(task, handoff_context)
+            else:
+                target_result = pursue_goal(task)
         except Exception as exc:
             return Result.err(
                 {
@@ -333,7 +519,15 @@ def create_handoff_tool(
                     "minLength": 1,
                     "maxLength": 8192,
                     "description": "The bounded task to delegate.",
-                }
+                },
+                "context": {
+                    "type": "object",
+                    "maxProperties": MAX_HANDOFF_CONTEXT_KEYS,
+                    "description": (
+                        "Optional bounded context. Only allowlisted keys cross "
+                        "to a context-aware target."
+                    ),
+                },
             },
             "required": ["task"],
             "additionalProperties": False,

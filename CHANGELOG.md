@@ -126,6 +126,15 @@
   Twine exited 0, the sdist contains 487 entries including all three slice
   files, and the workspace-only audit found zero preserved Doctrine files. No
   publication was performed.
+- **Bounded context-aware handoffs**: added an explicit `allowed_context_keys`
+  allowlist, recursive JSON bounds and copy-on-boundary behavior, typed denied
+  key/unsupported-target failures, and `AutonomousAgent` context-aware goal
+  entry points whose initial context is retained in local run checkpoints.
+  Legacy no-context handoffs remain compatible; async target execution, durable
+  handoff identity, ownership transfer, and remote routing remain separate.
+  Focused handoff/agent coverage reports `50 passed in 4.40s`; the exact tracked
+  manifest reports `1230 passed, 1 skipped in 227.55s`; Ruff, Black, compile,
+  diff, doctor, and changed-boundary mypy pass. No publication was performed.
 - **Agent-framework parity ledger**: added a source-backed functionality and
   runtime matrix for LangGraph, CrewAI, Microsoft Agent Framework, LlamaIndex,
   and OpenAI Agents SDK. It separates MAPLE's native infrastructure strengths

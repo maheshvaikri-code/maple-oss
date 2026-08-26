@@ -142,6 +142,18 @@ class HandoffAgent:
         )
 
 
+class ContextHandoffAgent(HandoffAgent):
+    """Target that explicitly accepts filtered handoff context."""
+
+    def __init__(self, agent_id="specialist"):
+        super().__init__(agent_id=agent_id)
+        self.contexts = []
+
+    def pursue_goal_with_context(self, description, context):
+        self.contexts.append(context)
+        return self.pursue_goal(description)
+
+
 class TestHandoffTool:
     def test_handoff_success_is_structured_and_approval_required(self):
         target = HandoffAgent()
@@ -206,6 +218,41 @@ class TestHandoffTool:
     def test_handoff_rejects_invalid_target(self):
         with pytest.raises(ValueError, match="target_agent"):
             create_handoff_tool(object())
+
+    def test_handoff_filters_context_and_requires_explicit_target_support(self):
+        target = ContextHandoffAgent()
+        tool = create_handoff_tool(target, allowed_context_keys=["project"])
+
+        result = tool.execute(
+            task="Use the release notes",
+            context={"project": {"name": "MAPLE"}},
+        )
+
+        assert result.is_ok()
+        assert target.contexts == [{"project": {"name": "MAPLE"}}]
+        assert tool.to_llm_definition().parameters["required"] == ["task"]
+
+    def test_handoff_rejects_context_keys_outside_allowlist_before_target(self):
+        target = ContextHandoffAgent()
+        tool = create_handoff_tool(target, allowed_context_keys=["project"])
+
+        result = tool.execute(task="Use the release notes", context={"secret": "x"})
+
+        assert result.is_err()
+        assert result.unwrap_err()["errorType"] == "HANDOFF_CONTEXT_KEY_DENIED"
+        assert target.tasks == []
+
+    def test_handoff_rejects_context_for_legacy_target(self):
+        target = HandoffAgent()
+        tool = create_handoff_tool(target, allowed_context_keys=["project"])
+
+        result = tool.execute(
+            task="Use the release notes", context={"project": "MAPLE"}
+        )
+
+        assert result.is_err()
+        assert result.unwrap_err()["errorType"] == "HANDOFF_CONTEXT_UNSUPPORTED"
+        assert target.tasks == []
 
 
 class TestBuiltinTools:
