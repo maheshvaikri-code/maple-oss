@@ -681,6 +681,32 @@ slow Doctrine gold phase before interruption without a pytest summary.
   outside this local contract. No publication, website, cloud, registry, or
   user-owned untracked file change was made.
 
+## Slice 102 QA — versioned evaluation fixtures and optional judge contract
+
+- `tests/autonomy/test_evaluation.py` reports `20 passed in 0.24s`, covering
+  fixture version propagation, trajectory quotas, redacted/bounded judge
+  observations, judge pass/fail scoring, typed judge errors, and malformed or
+  unbounded boundaries.
+- `EvalCase.fixture_version` is bounded to versions 1 through 32 and is
+  surfaced in each `EvalResult` and JSON report entry. Expected and observed
+  tool trajectories are bounded to 256 control-free names. `EvalJudgeResult`
+  requires a finite 0-to-1 score, an explicit boolean decision, and bounded
+  rationale text; judge failures are isolated per case.
+- The exact tracked manifest contains 107 tracked Python test files and reports
+  `1242 passed, 1 skipped in 242.17s` with no warning output. Black, Ruff,
+  changed-boundary mypy, compile, and diff checks pass. Network-free doctor
+  returns `ready: true`, `status: SUCCESS`, version `1.1.3`, all eight checks
+  true, and `network: false`.
+- A clean committed-HEAD archive rebuilt wheel/sdist `1.1.3`; build and Twine
+  both exited 0, the sdist contains 492 entries including ADR-048, the
+  evaluation module, public exports, and regressions, and the workspace-only
+  audit found zero preserved Doctrine files.
+- MAPLE does not select or invoke a judge provider, retry or calibrate judge
+  scores, run generated code, or claim semantic faithfulness. Async/provider
+  orchestration and hosted evaluation remain separate contracts. No
+  publication, website, cloud, registry, or user-owned untracked file change
+  was made.
+
 ## Security conclusions
 
 - No new dependency, credential, cloud call, website mutation, or publication

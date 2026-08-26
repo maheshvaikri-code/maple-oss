@@ -16,7 +16,13 @@
   bounded score/decision/rationale results, redacted observations, and typed
   fail-closed errors. Deterministic evaluation remains the baseline; provider
   orchestration, calibration, async judges, and semantic-faithfulness claims
-  remain outside this contract. No publication was performed.
+  remain outside this contract. Focused evaluation coverage reports `20 passed
+  in 0.24s`; the exact tracked manifest reports `1242 passed, 1 skipped in
+  242.17s` across 107 tracked test files. Black, Ruff, changed-boundary mypy,
+  compile, diff, and network-free doctor pass. A clean committed-HEAD archive
+  rebuilt wheel/sdist `1.1.3`; build and Twine exited 0, the sdist contains 492
+  entries including ADR-048, and the workspace-only audit is empty. No
+  publication was performed.
 - **Provider correlation in agent observability**: bounded provider request IDs
   now flow from `LLMResponse` into sync/async `model.response` lifecycle events
   and `DecisionTrace` JSON export, with malformed IDs omitted. No raw provider
