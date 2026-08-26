@@ -188,6 +188,9 @@ Doctor:
 - The exact-current run on `a51e043` collected `1282` items, reached `90%`, and
   entered the slow Doctrine gold phase before bounded interruption. No failure
   output or pytest summary was produced.
+- The exact-current run on `1211701` collected `1291` items, reached `90%`, and
+  entered the slow Doctrine gold phase before bounded interruption. No failure
+  output or pytest summary was produced.
 
 ## Slice 73 revalidation
 

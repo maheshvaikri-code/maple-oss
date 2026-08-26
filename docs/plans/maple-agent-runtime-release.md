@@ -325,3 +325,8 @@ passed in 0.33s`; no new dependency, publication, or website change was made.
 exhaustion, default fail-fast, and token-budget interaction are covered by the
 focused agent regression (`28 passed in 0.33s`); no new dependency, publication,
 or website change was made.
+
+2026-08-25 exact-current full-suite attempt on `1211701`: pytest collected
+`1291` items, passed the application suites through `90%`, and entered the slow
+Doctrine gold phase before bounded interruption. No failure output or pytest
+summary was produced, so the exact full-suite gate remains open.
