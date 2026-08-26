@@ -47,6 +47,8 @@ The feature program now includes:
 - opt-in per-goal token accounting and hard budgets across synchronous and
   asynchronous ReAct reasoning/reflection, with fail-closed provider usage
   validation before tool side effects (ADR-025).
+- bounded synchronous/asynchronous fan-out for supervised and consensus teams,
+  deterministic joins, and per-member worker error isolation (ADR-026).
 
 Slice-level review artifacts are filed in `docs/reviews/` and corresponding QA
 artifacts in `docs/qa/`. No website, cloud, external publication, license, or
@@ -197,6 +199,16 @@ Doctor:
   execution; sync and async regressions prove handler side effects are absent.
 - Changed-file Ruff, Black, isort, and mypy checks pass. No dependency or
   external integration was introduced. Exact full-suite and fresh-context
+verification remain open.
+
+## Slice 74 revalidation
+
+- The agent/orchestrator regression reports `43 passed in 0.33s`.
+- Sync and async supervised/consensus execution now fans out independent
+  member goals within `max_parallel_agents`, preserves assignment order, and
+  isolates worker exceptions as structured errors.
+- Changed-file Ruff, Black, isort, and mypy checks pass. No external
+  integration or dependency was introduced; exact full-suite and fresh-context
   verification remain open.
 
 ## Verdict

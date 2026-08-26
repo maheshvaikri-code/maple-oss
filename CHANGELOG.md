@@ -10,6 +10,10 @@
 
 ### Additions
 
+- **Bounded multi-agent orchestration**: supervisor and consensus execution now
+  fan out independent goals with a configurable `max_parallel_agents` limit,
+  deterministic result ordering, sync/async entry points, and normalized worker
+  exceptions. No distributed scheduler or new dependency is claimed.
 - **Per-goal token accounting and hard budgets**: autonomous goals now expose
   aggregate provider token usage through `Goal.token_usage`, with optional
   `AutonomousConfig.max_total_tokens` enforcement across sync/async reasoning

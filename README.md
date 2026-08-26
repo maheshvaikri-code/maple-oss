@@ -56,7 +56,7 @@ Most agent frameworks give you either **infrastructure** (messaging, security, f
 - **Interop Envelope + Doctor CLI (preview)** — Strict adapter round-trip envelopes and a network-free `maple doctor --json` readiness report for the runtime surfaces.
 - **Artifacts and Code Blocks (preview)** — Store immutable SHA-256-addressed files with bounded in-memory or file-backed stores, and extract Markdown code blocks as data without executing them.
 - **Three-Tier Memory** — Working memory (context window), episodic memory (task history), semantic memory (learned facts). LLM-assisted summarization when context fills up.
-- **Multi-Agent Orchestration** — Form teams by capability, execute via supervisor delegation or consensus voting.
+- **Multi-Agent Orchestration** — Form teams by capability, execute via bounded parallel supervisor delegation or consensus voting with deterministic joins.
 - **MCP Tool Discovery** — Discover live `tools/list` descriptors over bounded Streamable HTTP and use approved external tools as native MAPLE tools; the legacy URL-only helper remains offline for compatibility.
 - **Observability** — Full decision traces, agent snapshots, and per-goal token usage tracking with optional hard budgets.
 - **Workflow Runtime (preview)** — Define validated workflows with stable run IDs, JSON-safe node-boundary checkpoints, bounded fan-out/fan-in, interruption, conditional routing, local file-backed resume, bounded in-process history inspection, and opt-in crash-window output recovery.

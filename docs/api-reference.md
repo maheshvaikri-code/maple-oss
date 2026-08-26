@@ -638,6 +638,35 @@ returns `TOKEN_BUDGET_EXCEEDED` before the response's tools execute. With the
 default `None`, existing provider behavior is unchanged. Standalone
 `decompose_goal` calls are outside this per-goal ReAct budget.
 
+### Bounded multi-agent orchestration
+
+`AgentOrchestrator` fans out independent supervised workers and consensus
+members with a bounded in-process concurrency limit. Results are joined in
+assignment order even when agents finish out of order. The asynchronous methods
+prefer native `pursue_goal_async` implementations and use an executor for
+sync-only agents:
+
+```python
+from maple import AgentOrchestrator, TeamMember
+
+orchestrator = AgentOrchestrator(max_parallel_agents=4)
+team_id = orchestrator.form_team(
+    "research",
+    [
+        TeamMember(agent=supervisor, role="supervisor"),
+        TeamMember(agent=researcher_a, role="worker"),
+        TeamMember(agent=researcher_b, role="worker"),
+    ],
+).unwrap()
+
+result = await orchestrator.execute_supervised_async(team_id, "Compare sources")
+```
+
+The limit is validated from 1 through 64. A member exception becomes an
+`AGENT_EXECUTION_ERROR` entry for that member while sibling work continues.
+This is bounded local concurrency, not a distributed scheduler or untrusted
+execution sandbox.
+
 ## Retrieval and Source References (preview)
 
 The retrieval contract keeps document identity, source citations, chunk offsets,

@@ -31,6 +31,7 @@
 | Typed tool input/output boundary | PASS | 43 focused contract/tool/agent tests and 212 full-autonomy tests cover model-derived schemas, pre-handler input rejection, normalized handler arguments, validated outputs, and invalid-result failure. |
 | Optional Protobuf serialization boundary | PASS | 28 core serialization tests cover round-trip special values, malformed envelopes, inbound/outbound 1 MiB limits, and unavailable-dependency failure; core/autonomy regression reports 240 passed. |
 | Per-goal token accounting/budget boundary | PASS | 30 focused agent/session tests cover sync/async aggregation, reflection accounting, invalid/missing usage, positive-budget validation, and budget-overrun side-effect protection. |
+| Bounded multi-agent orchestration boundary | PASS | 43 agent/orchestrator tests cover sync/async fan-out, deterministic joins, sync-only fallback, bounded limits, and per-member exception isolation. |
 | Independent review | OPEN | Fresh verifier sessions are unavailable in this tool context. |
 | External publish / website | NOT RUN | Explicitly outside current authorization and scope. |
 
@@ -181,7 +182,19 @@ produced; this is not a full-suite pass.
 - Exact-current run on `a51e043` collected `1282` items, reached `90%`, and
   entered the slow Doctrine gold phase before bounded interruption. No failure
   output or pytest summary was produced; this is not a full-suite pass. Full
-  suite and fresh independent-verifier gates remain open.
+suite and fresh independent-verifier gates remain open.
+
+## Slice 74 revalidation
+
+- Agent/orchestrator regression reports `43 passed in 0.33s`.
+- Sync supervised and consensus execution now uses bounded worker fan-out;
+  async methods use native async member calls or an executor fallback. Result
+  joins remain deterministic and worker exceptions are isolated per member.
+- Changed-file Ruff, Black, isort, and mypy checks pass. No new dependency was
+  added; ADR-026, public docs, changelog, QA, and review evidence are filed.
+- The exact-current repository run on `a51e043` remains the latest bounded
+  full-suite attempt; it collected `1282` items, reached `90%`, and entered the
+  slow Doctrine gold phase before interruption without a pytest summary.
 
 ## Security conclusions
 

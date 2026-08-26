@@ -84,6 +84,7 @@
 | 71 | Typed tool input/output contracts | Backend / QA / Release | autonomy contracts/tools, public exports, README/API docs, contract/tool/agent tests, changelog, review/QA artifacts | Typed schema publication, input/output validation, handler side-effect protection, focused/full autonomy regression, static/package/doctor gates | done: code commit `ded4477`; public docs commit `9236bc4`; focused contract/tool/agent regression `43 passed in 0.37s`; full autonomy regression `212 passed in 3.26s`; mypy/Ruff/Black/isort/compile, wheel/sdist, Twine, and doctor gates pass |
 | 72 | Optional bounded Protobuf serialization | Backend / Interop / QA / Release | core serializer, serialization tests, ADR-024, README/API docs, changelog, review/QA artifacts | Protobuf round trip, malformed/oversized input, oversized output, unavailable dependency, core/autonomy regression, static/package/doctor gates | done: code commit `2b8bb57`; core/autonomy regression `240 passed in 3.37s`; Protobuf tests `28 passed in 0.28s`; mypy/Ruff/Black/isort/compile, wheel/sdist, Twine, and doctor gates pass; no dependency added |
 | 73 | Bounded per-goal token accounting and hard budget | Backend / QA / Security / Release | autonomy agent, token-budget regressions, ADR-025, README/API docs, changelog, review/QA artifacts | Sync/async usage aggregation, reflection accounting, invalid/missing usage, budget-overrun side-effect protection, static/package/doctor gates | done: code commit `2328b92`; focused agent/session regression `30 passed in 0.31s`; changed-file Ruff/Black/isort/mypy pass; docs and release evidence filed; no dependency added |
+| 74 | Bounded concurrent multi-agent orchestration | Backend / QA / Security / Release | orchestrator, sync/async orchestration regressions, ADR-026, README/API docs, changelog, review/QA artifacts | Bounded sync/async fan-out, deterministic joins, sync-only fallback, worker exception isolation, invalid limit, static/package/doctor gates | done: code commit `b2cccfb`; agent/orchestrator regression `43 passed in 0.33s`; changed-file Ruff/Black/isort/mypy pass; docs and release evidence filed; no dependency added |
 
 ## Threat sketch
 
@@ -312,3 +313,8 @@ ADR-025 are filed; no new dependency, publication, or website change was made.
 `1282` items, passed the application suites through `90%`, and entered the slow
 Doctrine gold phase before bounded interruption. No failure output or pytest
 summary was produced, so the exact full-suite gate remains open.
+
+2026-08-25 bounded orchestration closure: commit `b2cccfb` adds bounded sync
+and async fan-out for supervised and consensus teams, stable result joins, and
+normalized worker exceptions. The agent/orchestrator regression reports `43
+passed in 0.33s`; no new dependency, publication, or website change was made.
