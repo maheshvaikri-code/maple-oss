@@ -19,7 +19,7 @@
   Focused validation reports `32 passed in 0.27s`; the tracked application
   regression reports `1265 passed, 1 skipped in 203.80s`. Black, Ruff,
   changed-boundary mypy, compile, doctor, and security review pass. A clean
-  committed-HEAD archive package audit rebuilt wheel/sdist `1.1.3` with build
+  committed-HEAD archive package audit at `025b6a7` rebuilt wheel/sdist `1.1.3` with build
   and Twine exit 0; the sdist contains `510` entries, all 5 required
   public-file checks pass, and the workspace-only audit is empty. No
   publication was performed.
