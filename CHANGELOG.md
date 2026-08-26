@@ -18,9 +18,14 @@
   `model.chunk` events for sync and async ReAct steps; default completion
   behavior is unchanged. Raw content, arguments, provider SDK objects, remote
   transport, trace/span export, backpressure, and hard cancellation remain
-  outside this bounded local contract. Focused validation currently reports
-  `19 passed`; full release-gate evidence will be added after the exact
-  tracked-suite and package audit. No publication was performed.
+  outside this bounded local contract. Focused validation reports `54 passed
+  in 0.61s`; the exact tracked manifest reports `1253 passed, 1 skipped in
+  260.34s` across 108 tracked test files. Black, Ruff, changed-boundary mypy,
+  compile, diff, and network-free doctor pass; doctor reports `ready=true`,
+  all eight checks true, and network false. A clean committed-HEAD ZIP archive
+  rebuilt wheel/sdist `1.1.3`; build and Twine exited 0, the sdist contains 496
+  entries including ADR-050, and the workspace-only audit is empty. No
+  publication was performed.
 - **Durable local handoff identity and ownership**: added bounded
   `HandoffRecord`/`HandoffStore` contracts with thread-safe in-memory and
   atomic file-backed stores, SHA-256 task/context digests instead of raw task
