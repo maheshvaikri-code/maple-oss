@@ -14,6 +14,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Protocol, Tuple, Union
 
 from ..core.result import Result
+from ..resources.lease import FileLeaseManager
+from .durable_leases import DurableRecordLease
 from .sessions import SessionMessage
 
 Error = Dict[str, Any]
@@ -27,6 +29,7 @@ _IDENTIFIER = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
 _STATUSES = {"running", "paused", "completed", "failed"}
 _MAX_JSON_DEPTH = 16
 _MAX_JSON_ITEMS = 10_000
+_RUN_LEASE_TTL_SECONDS = 30.0
 
 
 def _error(error_type: str, message: str, **details: Any) -> Error:
@@ -430,8 +433,9 @@ class InMemoryAgentRunStore:
 class FileAgentRunStore:
     """Atomic JSON store for local process-restart agent recovery.
 
-    The store is thread-safe within one process. Cross-process leases and
-    exactly-once external effects remain host responsibilities.
+    The store is thread-safe within one process and fences each run's
+    load/compare-and-set save operation across local processes. Exactly-once
+    external effects and host notifications remain host responsibilities.
     """
 
     def __init__(
@@ -439,6 +443,8 @@ class FileAgentRunStore:
         directory: Union[str, Path],
         *,
         max_checkpoint_bytes: int = DEFAULT_MAX_RUN_BYTES,
+        lease_manager: Optional[FileLeaseManager] = None,
+        lease_ttl_seconds: float = _RUN_LEASE_TTL_SECONDS,
     ) -> None:
         if max_checkpoint_bytes <= 0:
             raise ValueError("max_checkpoint_bytes must be positive")
@@ -446,6 +452,13 @@ class FileAgentRunStore:
         self.directory.mkdir(parents=True, exist_ok=True)
         self.max_checkpoint_bytes = max_checkpoint_bytes
         self._lock = threading.RLock()
+        self._record_leases = DurableRecordLease(
+            self.directory,
+            namespace="run",
+            holder_label="run",
+            lease_manager=lease_manager,
+            lease_ttl_seconds=lease_ttl_seconds,
+        )
 
     def _path(self, run_id: str) -> Path:
         identifier_error = _valid_identifier(run_id, "run_id")
@@ -465,7 +478,30 @@ class FileAgentRunStore:
         with path.open("r", encoding="utf-8") as handle:
             return AgentRunCheckpoint.from_dict(json.load(handle))
 
-    def load(self, run_id: str) -> Result[Optional[AgentRunCheckpoint], Error]:
+    def _with_run_lease(
+        self,
+        run_id: str,
+        operation: str,
+        callback: Any,
+    ) -> Result[Any, Error]:
+        identifier_error = _valid_identifier(run_id, "run_id")
+        if identifier_error:
+            return Result.err(identifier_error)
+        return self._record_leases.run(
+            run_id,
+            operation,
+            callback,
+            acquire_error_type="RUN_CHECKPOINT_LEASE_ERROR",
+            acquire_error_message="Agent run checkpoint lease is unavailable.",
+            release_error_type="RUN_CHECKPOINT_LEASE_RELEASE_ERROR",
+            release_error_message=(
+                "Agent run checkpoint lease could not be released safely."
+            ),
+        )
+
+    def _load_without_lease(
+        self, run_id: str
+    ) -> Result[Optional[AgentRunCheckpoint], Error]:
         try:
             with self._lock:
                 checkpoint = self._read_unlocked(run_id)
@@ -483,15 +519,18 @@ class FileAgentRunStore:
                 )
             )
 
-    def save(
+    def load(self, run_id: str) -> Result[Optional[AgentRunCheckpoint], Error]:
+        return self._with_run_lease(
+            run_id,
+            "load",
+            lambda: self._load_without_lease(run_id),
+        )
+
+    def _save_without_lease(
         self,
-        checkpoint: AgentRunCheckpoint,
+        candidate: AgentRunCheckpoint,
         expected_version: Optional[int] = None,
     ) -> Result[AgentRunCheckpoint, Error]:
-        normalized = _normalize_checkpoint(checkpoint, self.max_checkpoint_bytes)
-        if normalized.is_err():
-            return Result.err(normalized.unwrap_err())
-        candidate = normalized.unwrap()
         temporary_path: Optional[Path] = None
         try:
             with self._lock:
@@ -565,3 +604,18 @@ class FileAgentRunStore:
                     temporary_path.unlink()
                 except OSError:
                     pass
+
+    def save(
+        self,
+        checkpoint: AgentRunCheckpoint,
+        expected_version: Optional[int] = None,
+    ) -> Result[AgentRunCheckpoint, Error]:
+        normalized = _normalize_checkpoint(checkpoint, self.max_checkpoint_bytes)
+        if normalized.is_err():
+            return Result.err(normalized.unwrap_err())
+        candidate = normalized.unwrap()
+        return self._with_run_lease(
+            candidate.run_id,
+            "save",
+            lambda: self._save_without_lease(candidate, expected_version),
+        )
