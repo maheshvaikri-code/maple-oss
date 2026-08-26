@@ -42,8 +42,28 @@ tracked application coverage.
 
 ## Release disposition
 
-Behavioral QA passes. Package build/Twine and workspace-only archive checks are
-recorded by the release closure after this QA artifact is committed. The
-dependency-governance gate remains open because the current shared interpreter
-reports `383 known vulnerabilities in 77 packages`, and `gitleaks`/`bandit`
-are unavailable in the environment.
+Behavioral QA passes. The clean committed-HEAD package candidate `1ff12ce`
+rebuilt wheel/sdist `1.1.3`; both Twine checks passed, the sdist contains `516`
+entries, all six checked public/slice files are present, and the workspace-only
+audit is zero:
+
+```text
+source=git archive HEAD
+head=1ff12ce
+build_exit=0
+twine_wheel=PASSED
+twine_sdist=PASSED
+sdist_entries=516
+required_files=6/6
+workspace_only_hits=0
+present=README.md, LICENSE, CHANGELOG.md,
+  docs/adr/056-bounded-model-provider-retries.md,
+  docs/qa/maple-agent-runtime-slice110.md,
+  docs/reviews/maple-agent-runtime-slice110.md
+absent=AGENTS.md, CLAUDE.md, COMMERCIAL_LICENSE.md, Makefile,
+  docs/brief.md, docs/maximus.md
+```
+
+The dependency-governance gate remains open because the current shared
+interpreter reports `383 known vulnerabilities in 77 packages`, and
+`gitleaks`/`bandit` are unavailable in the environment.

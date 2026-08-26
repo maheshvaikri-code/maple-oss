@@ -15,9 +15,13 @@
   retryable error types, conservative OpenAI/Anthropic exception
   classification, and metadata-only `model.retry_scheduled` events. Tools are
   not replayed by model retries and permanent/provider-installation failures
-  remain fail-fast. Focused validation reports `46 passed`; remote scheduling,
-  circuit-integrated coordination, and dependency-audit disposition remain
-  open. No publication was performed.
+  remain fail-fast. Focused validation reports `48 passed in 0.52s`; the
+  tracked application regression reports `1273 passed, 1 skipped in 250.94s`.
+  Clean package candidate `1ff12ce` rebuilt wheel/sdist `1.1.3`, both Twine
+  checks passed, the sdist contains `516` entries, required files are `6/6`,
+  and workspace-only audit is `0`. Remote scheduling, circuit-integrated
+  coordination, and dependency-audit disposition remain open. No publication
+  was performed.
 - **Durable parallel-branch workflow retries**: fan-out branches now use the
   configured bounded `RetryPolicy`, persist per-branch retry counts and due times
   in checkpoints, retry only pending branches in bounded waves, and expose
