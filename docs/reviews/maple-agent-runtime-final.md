@@ -287,6 +287,15 @@ verification remain open.
 - The tracked application suite is green. The workspace-only Doctrine gold
   verifier and fresh-context review are still separate open release gates.
 
+## Slice 80 revalidation
+
+- Release packaging was repeated from a temporary `git archive HEAD` snapshot,
+  not the dirty shared workspace.
+- Wheel/sdist construction and both Twine checks passed. The sdist content
+  audit found zero preserved workspace-only files.
+- This is the correct artifact boundary for future publication; no publication
+  or external registry action occurred.
+
 ## Verdict
 
 **Feature review:** PASS for the twenty-three implemented capability slices.

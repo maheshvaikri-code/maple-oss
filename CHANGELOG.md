@@ -13,6 +13,9 @@
 - **Tracked release-suite revalidation**: the 100 tracked test files now report
   `1,185 passed, 1 skipped in 210.07s` with no warning output; the slow
   workspace-only Doctrine gold verifier remains separately documented as open.
+- **Clean tracked release artifacts**: a `git archive HEAD` snapshot built the
+  wheel and sdist successfully; both Twine checks passed, and a 460-file sdist
+  contained none of the preserved workspace-only files.
 - **Explicit release boundaries**: documented the fail-closed status of the
   Redis, mutual-TLS, OAuth2, and untrusted-code execution compatibility
   surfaces and added regression assertions so unsupported functionality is not

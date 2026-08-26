@@ -82,6 +82,11 @@ feature list.
 8. Existing tests remain green, new behavior has failure-path and boundary
    tests, and no external registry, cloud service, or website is modified.
 
+Release artifacts must be built from a clean tracked checkout or equivalent
+`git archive` snapshot. A dirty shared workspace may contain preserved
+user-owned files under broad `MANIFEST.in` documentation/test globs; artifacts
+from that workspace are diagnostic only and are not publish candidates.
+
 ## Constraints
 
 - Python support remains the version range declared by `pyproject.toml`.

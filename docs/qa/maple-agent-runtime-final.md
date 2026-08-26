@@ -291,6 +291,18 @@ slow Doctrine gold phase before interruption without a pytest summary.
 - This closes the tracked application-suite gate. The separate untracked
   Doctrine gold verifier and fresh independent review remain open.
 
+## Slice 80 revalidation — clean tracked release artifact boundary
+
+- A temporary `git archive HEAD` snapshot was built with
+  `python -m build --wheel --sdist --no-isolation`.
+- The clean snapshot produced wheel and sdist artifacts for version `1.1.3`;
+  `twine check` reported `PASSED` for both.
+- The clean sdist contained 460 files, and the explicit audit found no
+  preserved workspace-only Doctrine tests, `docs/brief.md`, `docs/maximus.md`,
+  or `tools/doctrine_*.py` files.
+- The earlier dirty-workspace artifact was not treated as a release candidate.
+  The build boundary is now documented as clean-checkout/archive only.
+
 ## Security conclusions
 
 - No new dependency, credential, cloud call, website mutation, or publication
