@@ -707,6 +707,32 @@ slow Doctrine gold phase before interruption without a pytest summary.
   publication, website, cloud, registry, or user-owned untracked file change
   was made.
 
+## Slice 103 QA — durable local handoff identity and ownership transfer
+
+- `tests/autonomy/test_handoffs.py` and the existing handoff regressions report
+  `30 passed in 0.31s`, covering in-memory and file restart recovery, source /
+  target ownership checks, terminal transitions, hash-only persistence, sync
+  and async tool integration, and target failure normalization.
+- `HandoffRecord` persists only bounded agent IDs, SHA-256 task/context digests,
+  state, ownership, target goal ID or failure type, and finite timestamps. The
+  explicit state machine is source-owned `pending`, target-owned `accepted`,
+  then source-owned `completed` or `failed`; wrong owners and invalid states
+  fail closed. File operations use the existing per-record fencing lease and
+  atomic replacement.
+- The exact tracked manifest contains 108 tracked Python test files and reports
+  `1248 passed, 1 skipped in 238.37s` with no warning output. Black, Ruff,
+  changed-boundary mypy, compile, and diff checks pass. Network-free doctor
+  returns `ready: true`, `status: SUCCESS`, version `1.1.3`, all eight checks
+  true, and `network: false`.
+- A clean committed-HEAD archive rebuilt wheel/sdist `1.1.3`; build and Twine
+  both exited 0, the sdist contains 495 entries including ADR-049, the handoff
+  module, public exports, and regressions, and the workspace-only audit found
+  zero preserved Doctrine files.
+- Remote routing/authentication, scheduling, notifications, hard target
+  cancellation, duplicate-delivery resolution, and exactly-once external
+  effects remain outside this local identity/state journal. No publication,
+  website, cloud, registry, or user-owned untracked file change was made.
+
 ## Security conclusions
 
 - No new dependency, credential, cloud call, website mutation, or publication

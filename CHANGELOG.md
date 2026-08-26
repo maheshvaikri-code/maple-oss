@@ -16,8 +16,13 @@
   persistence, explicit `pending → accepted → completed/failed` ownership
   transitions, fencing leases, and optional sync/async `create_handoff_tool`
   integration. Remote routing, scheduling, notifications, hard cancellation,
-  and exactly-once side effects remain outside the contract. No publication was
-  performed.
+  and exactly-once side effects remain outside the contract. Focused handoff
+  and store coverage reports `30 passed in 0.31s`; the exact tracked manifest
+  reports `1248 passed, 1 skipped in 238.37s` across 108 tracked test files.
+  Black, Ruff, changed-boundary mypy, compile, diff, and network-free doctor
+  pass. A clean committed-HEAD archive rebuilt wheel/sdist `1.1.3`; build and
+  Twine exited 0, the sdist contains 495 entries including ADR-049, and the
+  workspace-only audit is empty. No publication was performed.
 - **Versioned evaluation fixtures and optional judge contract**: `EvalCase`
   now carries a bounded `fixture_version` and trajectory quota, while
   `EvaluationHarness.run` accepts an optional provider-neutral host judge with
