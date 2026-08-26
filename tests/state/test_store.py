@@ -371,3 +371,8 @@ class TestRedisBackend:
     def test_delete_not_implemented(self, store):
         result = store.delete("key")
         assert result.is_err()
+
+    def test_list_keys_not_implemented(self, store):
+        result = store.list_keys()
+        assert result.is_err()
+        assert 'NOT_IMPLEMENTED' in result.unwrap_err()['errorType']

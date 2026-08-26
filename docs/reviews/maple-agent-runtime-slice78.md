@@ -5,7 +5,8 @@
 ## Review result
 
 PASS. The documentation records the exact fail-closed boundaries found in the
-runtime without overstating parity or adding a placeholder implementation.
+runtime without overstating parity or adding a placeholder implementation. The
+new boundary assertions report `73 passed in 3.44s`.
 
 ## Security and release notes
 

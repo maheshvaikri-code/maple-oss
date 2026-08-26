@@ -259,9 +259,11 @@ slow Doctrine gold phase before interruption without a pytest summary.
 - The release brief and README now explicitly distinguish supported local
   state/authentication/execution surfaces from Redis, mutual-TLS, OAuth2, and
   untrusted-code paths that fail closed or remain deferred.
-- `rg -n "NOT_IMPLEMENTED" maple` was used as the inventory cross-check; no
-  runtime files or tests changed, and no unsupported feature was implemented by
-  documentation alone.
+- `rg -n "NOT_IMPLEMENTED" maple` was used as the inventory cross-check. The
+  state/authentication regression reports `73 passed in 3.44s`, including Redis
+  `list_keys` and mutual-TLS/OAuth2 fail-closed assertions; Ruff passes on both
+  changed test files.
+- No unsupported feature was implemented by documentation alone.
 - No dependency, credential, cloud call, publication, or website mutation was
   performed. The exact full-suite and fresh independent-verifier gates remain
   open.

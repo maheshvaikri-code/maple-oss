@@ -142,6 +142,18 @@ class TestAPIKeyAuthentication:
         assert result.unwrap_err()['errorType'] == 'API_KEY_EXPIRED'
 
 
+class TestDeferredAuthenticationMethods:
+    """Unsupported transport/provider methods fail closed explicitly."""
+
+    @pytest.mark.parametrize("method", [AuthMethod.MUTUAL_TLS, AuthMethod.OAUTH2])
+    def test_deferred_methods_return_not_implemented(self, auth, method):
+        result = auth.authenticate(
+            AuthCredentials(method=method, principal="agent", credentials={})
+        )
+        assert result.is_err()
+        assert result.unwrap_err()['errorType'] == 'NOT_IMPLEMENTED'
+
+
 class TestAuthCredentials:
     """Test AuthCredentials dataclass."""
 

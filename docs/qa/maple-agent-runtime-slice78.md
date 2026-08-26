@@ -5,7 +5,8 @@
 ## Scope
 
 This slice makes the remaining intentional `NOT_IMPLEMENTED` paths explicit
-in the release brief and public README. It does not add Redis, mutual-TLS,
+in the release brief and public README, then pins the existing fail-closed
+contracts with regression assertions. It does not add Redis, mutual-TLS,
 OAuth2, subprocess, browser, or hosted-sandbox behavior.
 
 ## Evidence
@@ -13,8 +14,12 @@ OAuth2, subprocess, browser, or hosted-sandbox behavior.
 - `rg -n "NOT_IMPLEMENTED" maple` identifies only the documented Redis and
   mutual-TLS/OAuth2 boundaries plus intentional protocol/serialization
   fallback paths.
-- Existing state and authentication regressions cover fail-closed behavior;
-  no test files were changed in this slice.
+- `python -m pytest tests/state/test_store.py tests/security/test_authentication.py
+  --no-cov -p no:dash -p no:benchmark -q --tb=short` -> `73 passed in 3.44s`.
+- The added assertions cover Redis `list_keys` and both deferred authentication
+  methods; all existing state/authentication behavior remains green.
+- `ruff check tests/state/test_store.py tests/security/test_authentication.py`
+  -> `All checks passed!`
 - No dependency, network, cloud, publication, or website action occurred.
 
 ## Disposition
