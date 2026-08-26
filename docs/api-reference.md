@@ -916,6 +916,11 @@ Bounded provider request IDs are copied into `model.response` events and
 `DecisionTrace` records for local joins. `dropped_count` exposes bounded-ring
 eviction, while cursor reads make that gap explicit.
 
+`EventStream.metrics()` returns a thread-safe snapshot of retained events,
+configured capacity, evictions, and subscriber count. `SpanRecorder.metrics()`
+returns the equivalent span capacity/eviction counts plus open-span count.
+These are local integer snapshots; they do not export or persist telemetry.
+
 ```python
 from maple import AutonomousAgent, AutonomousConfig, Config, EventStream, LLMConfig
 
@@ -948,9 +953,9 @@ for span in spans.snapshot().unwrap():
     print(span.name, span.status, span.trace_id, span.span_id)
 ```
 
-This is an in-process inspection contract. Sampling, backpressure metrics,
-durable/remote exporters, approval-replay correlation, and hosted trace search
-remain host-owned or deferred.
+This is an in-process inspection contract. Sampling controls, latency
+histograms, durable/remote exporters, approval-replay correlation, and hosted
+trace search remain host-owned or deferred.
 
 ## Evaluation and Provider Capabilities (preview)
 

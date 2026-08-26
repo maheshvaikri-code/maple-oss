@@ -10,6 +10,11 @@
 
 ### Additions
 
+- **Bounded local observability retention metrics**: `EventStream.metrics()`
+  and `SpanRecorder.metrics()` now expose retained capacity, eviction counts,
+  subscriber count, and open-span count as thread-safe integer snapshots.
+  Sampling, histograms, remote aggregation, and exporter delivery remain
+  deferred. Focused validation is in progress; no publication was performed.
 - **Bounded local tool spans**: normal sync and async ReAct tool executions
   now record optional `agent.tool` child spans under their open model-step
   span. Only bounded tool identity, step, error status, and result length are

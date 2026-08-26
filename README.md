@@ -66,7 +66,7 @@ Most agent frameworks give you either **infrastructure** (messaging, security, f
 - **Observability** — Full decision traces with bounded provider correlation, optional thread-safe local `TraceSpan`/`SpanRecorder` model-step linkage, agent snapshots, and per-goal token usage tracking with optional hard budgets; hosted exporters and remote trace search remain outside the local contract.
 - **Workflow Runtime (preview)** — Define validated workflows with stable run IDs, JSON-safe node-boundary checkpoints, bounded fan-out/fan-in, interruption, conditional routing, local file-backed resume, bounded in-process history inspection, and opt-in crash-window output recovery.
 
-**Local Tool Spans (preview)** - When a `SpanRecorder` is attached, normal sync and async tool executions are recorded as bounded `agent.tool` child spans under the active model span. Arguments, results, and provider objects are not retained.
+**Local Tool Spans (preview)** - When a `SpanRecorder` is attached, normal sync and async tool executions are recorded as bounded `agent.tool` child spans under the active model span. Arguments, results, and provider objects are not retained; local buffer metrics expose retention pressure.
 
 ### Production Infrastructure
 

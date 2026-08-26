@@ -566,3 +566,13 @@ class EventStream:
         """Return the number of events evicted by the retention bound."""
         with self._condition:
             return self._dropped
+
+    def metrics(self) -> Dict[str, int]:
+        """Return bounded local retention and subscriber metrics."""
+        with self._condition:
+            return {
+                "retained_events": len(self._events),
+                "max_events": self.max_events,
+                "dropped_events": self._dropped,
+                "subscriber_count": len(self._callbacks),
+            }

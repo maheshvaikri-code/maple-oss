@@ -207,6 +207,7 @@ class SpanRecorder:
             raise ValueError(config_error["message"])
         self._spans: Deque[TraceSpan] = deque(maxlen=max_spans)
         self._by_id: Dict[str, TraceSpan] = {}
+        self._dropped = 0
         self._lock = threading.RLock()
 
     def _prepare_attributes(
@@ -370,6 +371,7 @@ class SpanRecorder:
             if len(self._spans) == self.max_spans:
                 evicted = self._spans[0]
                 self._by_id.pop(evicted.span_id, None)
+                self._dropped += 1
             self._spans.append(span)
             self._by_id[span.span_id] = span
             return Result.ok(span)
@@ -495,6 +497,16 @@ class SpanRecorder:
         """Return the number of retained spans."""
         with self._lock:
             return len(self._spans)
+
+    def metrics(self) -> Dict[str, int]:
+        """Return bounded local retention and open-span metrics."""
+        with self._lock:
+            return {
+                "retained_spans": len(self._spans),
+                "max_spans": self.max_spans,
+                "dropped_spans": self._dropped,
+                "open_spans": sum(span.status == "running" for span in self._spans),
+            }
 
 
 class DecisionLogger:

@@ -201,6 +201,12 @@ class TestTraceSpan:
 
         recorder.start_span("evicting")
         assert recorder.get_span(parent.span_id).is_err()
+        assert recorder.metrics() == {
+            "retained_spans": 2,
+            "max_spans": 2,
+            "dropped_spans": 1,
+            "open_spans": 2,
+        }
 
     def test_recorder_rejects_nested_attributes_and_exports_json(self):
         recorder = SpanRecorder()

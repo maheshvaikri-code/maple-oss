@@ -39,6 +39,12 @@ def test_ring_buffer_tracks_evictions_and_snapshot_order():
     assert snapshot.is_ok()
     assert [event.sequence for event in snapshot.unwrap()] == [2, 3]
     assert stream.dropped_count == 1
+    assert stream.metrics() == {
+        "retained_events": 2,
+        "max_events": 2,
+        "dropped_events": 1,
+        "subscriber_count": 0,
+    }
 
 
 def test_payload_bounds_and_malformed_values_fail_closed():

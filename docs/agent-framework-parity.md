@@ -52,6 +52,11 @@ for normal sync and async tool execution under the active model span. Hosted
 export, sampling/backpressure metrics, approval-replay correlation, and remote
 trace search remain separate boundaries.
 
+Local `EventStream.metrics()` and `SpanRecorder.metrics()` now expose bounded
+retention/eviction pressure, subscriber count, and open-span count without a
+metrics backend. Sampling controls, latency histograms, and remote aggregation
+remain deferred.
+
 ## Highest-value gaps before a publish claim
 
 The next implementation work should be ordered by runtime correctness, not by
@@ -68,8 +73,8 @@ the number of framework checkmarks:
 3. **Unified streaming and observability:** local provider chunk aggregation
    and metadata-only `model.chunk` lifecycle events now link bounded usage and
    provider correlation into agent runs, and optional local model spans link
-   chunks, responses, and decisions. Add tool spans, sampling/backpressure
-   metrics, and remote transport while retaining cancellation and the
+   chunks, responses, decisions, and normal tool executions. Add sampling
+   controls, latency/backpressure metrics, and remote transport while retaining cancellation and the
    host-owned exporter seam.
 4. **Evaluation depth:** retain deterministic retrieval/grounding metrics and
    add versioned trajectory fixtures plus an optional model-judge contract.
