@@ -33,6 +33,7 @@
 | Per-goal token accounting/budget boundary | PASS | 30 focused agent/session tests cover sync/async aggregation, reflection accounting, invalid/missing usage, positive-budget validation, and budget-overrun side-effect protection. |
 | Bounded multi-agent orchestration boundary | PASS | 43 agent/orchestrator tests cover sync/async fan-out, deterministic joins, sync-only fallback, bounded limits, and per-member exception isolation. |
 | Bounded structured-output repair boundary | PASS | 28 agent tests cover sync/async repair, default fail-fast, retry exhaustion, invalid retry limits, and token-budget consumption across retries. |
+| Async orchestration deadline/cancellation boundary | PASS | 24 orchestrator tests cover request-wide timeout, native async task cancellation and draining, cooperative `CancellationToken`, invalid timeout configuration, and consensus deadline behavior. |
 | Independent review | OPEN | Fresh verifier sessions are unavailable in this tool context. |
 | External publish / website | NOT RUN | Explicitly outside current authorization and scope. |
 
@@ -212,6 +213,22 @@ slow Doctrine gold phase before interruption without a pytest summary.
   entered the slow Doctrine gold phase before bounded interruption. No failure
   output or pytest summary was produced; the full-suite and fresh
   independent-verifier gates remain open.
+
+## Slice 76 revalidation
+
+- The orchestrator regression reports `24 passed in 0.43s`; the core/autonomy
+  regression reports `257 passed in 3.60s`.
+- Async supervised and consensus execution now accepts a total
+  `timeout_seconds` budget and an existing `CancellationToken`. Native async
+  child tasks are canceled and drained, and interruption returns typed
+  `ORCHESTRATION_TIMEOUT` or `ORCHESTRATION_CANCELLED` errors.
+- Invalid timeout values fail closed as `ORCHESTRATION_CONFIG_INVALID`. Sync-only
+  executor fallbacks remain explicitly cooperative because Python cannot
+  forcibly stop a running thread.
+- Repository Ruff, Black, mypy, and compile checks pass. ADR-028, public docs,
+  changelog, QA, and review evidence are filed; no dependency was added.
+- Exact-current full-suite and fresh independent-verifier gates remain open;
+  no publication or website change was performed.
 
 ## Security conclusions
 

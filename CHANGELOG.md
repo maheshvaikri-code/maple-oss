@@ -10,6 +10,12 @@
 
 ### Additions
 
+- **Deadline-bounded async orchestration**: async supervised and consensus
+  execution now accepts a total `timeout_seconds` budget and a cooperative
+  `CancellationToken`. Native async child tasks are canceled and drained, while
+  sync-only executor fallbacks are documented as unable to be forcibly stopped;
+  interruption returns typed `ORCHESTRATION_TIMEOUT` or
+  `ORCHESTRATION_CANCELLED` errors.
 - **Bounded structured-output repair**: `AutonomousConfig.max_output_retries`
   optionally allows up to three correction attempts for invalid typed/schema
   output or output-guardrail rejection. Retries consume normal reasoning and

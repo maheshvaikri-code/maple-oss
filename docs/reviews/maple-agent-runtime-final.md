@@ -51,6 +51,9 @@ The feature program now includes:
   deterministic joins, and per-member worker error isolation (ADR-026).
 - opt-in bounded structured-output repair retries with fail-fast defaults,
   sync/async parity, and token-budget accounting (ADR-027).
+- async supervised/consensus request budgets and cooperative cancellation with
+  native child-task draining, typed interruption errors, and an explicit
+  sync-only executor limitation (ADR-028).
 
 Slice-level review artifacts are filed in `docs/reviews/` and corresponding QA
 artifacts in `docs/qa/`. No website, cloud, external publication, license, or
@@ -226,9 +229,24 @@ verification remain open.
   static checks pass; no model, dependency, or external integration changed.
   Exact full-suite and fresh-context verification remain open.
 
+## Slice 76 revalidation
+
+- The orchestrator regression reports `24 passed in 0.43s`; the combined
+  core/autonomy regression reports `257 passed in 3.60s`.
+- `execute_supervised_async` and `execute_consensus_async` validate additive
+  keyword-only `timeout_seconds` and `CancellationToken` bounds across
+  decomposition, fan-out, collection, and synthesis.
+- Native async child tasks are canceled and drained before typed
+  `ORCHESTRATION_CANCELLED` or `ORCHESTRATION_TIMEOUT` results return. The
+  existing sync-only executor fallback is documented as cooperative rather
+  than falsely claiming hard thread termination.
+- Ruff, Black, mypy, and compile checks pass; ADR-028, public docs, changelog,
+  QA, and release-plan evidence are filed. No dependency or external action was
+  introduced.
+
 ## Verdict
 
-**Feature review:** PASS for the twenty-two implemented capability slices.
+**Feature review:** PASS for the twenty-three implemented capability slices.
 **Publish readiness:** NOT YET APPROVED. A release manager should close the
 open full-suite and fresh-verifier gates before publishing. The remaining
 Bandit findings are documented low-severity legacy debt; external publication

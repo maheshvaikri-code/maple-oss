@@ -647,9 +647,10 @@ prefer native `pursue_goal_async` implementations and use an executor for
 sync-only agents:
 
 ```python
-from maple import AgentOrchestrator, TeamMember
+from maple import AgentOrchestrator, CancellationToken, TeamMember
 
 orchestrator = AgentOrchestrator(max_parallel_agents=4)
+token = CancellationToken()
 team_id = orchestrator.form_team(
     "research",
     [
@@ -659,13 +660,22 @@ team_id = orchestrator.form_team(
     ],
 ).unwrap()
 
-result = await orchestrator.execute_supervised_async(team_id, "Compare sources")
+result = await orchestrator.execute_supervised_async(
+    team_id,
+    "Compare sources",
+    cancellation=token,
+    timeout_seconds=30,
+)
 ```
 
 The limit is validated from 1 through 64. A member exception becomes an
 `AGENT_EXECUTION_ERROR` entry for that member while sibling work continues.
-This is bounded local concurrency, not a distributed scheduler or untrusted
-execution sandbox.
+`timeout_seconds` is one total budget covering decomposition, fan-out, and
+collection; expiry returns `ORCHESTRATION_TIMEOUT`. A canceled request returns
+`ORCHESTRATION_CANCELLED` after native async child tasks are canceled and
+drained. Sync-only agents use an executor fallback and cannot be forcibly
+stopped by Python, so their handlers must remain cooperative. This is bounded
+local concurrency, not a distributed scheduler or untrusted execution sandbox.
 
 ### Bounded structured-output repair
 
