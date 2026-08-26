@@ -12,7 +12,7 @@
 | 3 | Exclude tool arguments and results from retained span data | Sync/async span tests and targeted source scan | Tests assert `secret-input` is absent from `tool_span.to_dict()`; scan exit `0` found no new raw-payload retention path | Yes |
 | 4 | Preserve approval/HITL, tool-error, and run-result behavior | Exact tracked regression manifest | `1263 passed, 1 skipped in 263.89s` across 108 tracked test files | Yes |
 | 5 | Keep the slice bounded, typed, and dependency-free | Static gates and security audit | Black/Ruff/mypy/compile/diff/doctor pass; no dependency changed; `SpanRecorder` bounds and typed failures remain in force | Yes |
-| 6 | Document the public boundary and produce a clean package | API/README/parity/ADR review plus package audit | ADR-052, API docs, README, parity plan, changelog, QA/review artifacts present; final package audit pending | Pending |
+| 6 | Document the public boundary and produce a clean package | API/README/parity/ADR review plus package audit | Package candidate `ccdf03d`: `build_exit=0`, `twine_exit=0`, `sdist_entries=504`, required public files `5/5`, workspace-only audit `0` | Yes |
 
 ## Adversarial & edge matrix
 
@@ -49,6 +49,20 @@ collected 1264 items
 
 Flakes: none observed in the final exact run.
 
+Package audit on committed candidate `ccdf03d`:
+
+```text
+head=ccdf03d
+build_exit=0
+twine_exit=0
+artifact_count=2
+sdist_entries=504
+required_hits=5/5
+workspace_only_hits=0
+maple_oss-1.1.3-py3-none-any.whl: PASSED
+maple_oss-1.1.3.tar.gz: PASSED
+```
+
 ## Bugs found
 
 | # | Repro steps (minimal) | Severity | Fixed @ | Re-verified | Regression test |
@@ -77,5 +91,5 @@ model span; tool and telemetry failures are typed or isolated.
 **Security verdict:** **VETO** for a final repository publication claim until
 the dependency-audit findings are dispositioned; no new Slice 106 security
 defect found. Human override: n/a.  
-**QA verdict:** pass for Slice 106 behavior; package evidence remains to be
-attached after the final documentation commit. No publication was performed.
+**QA verdict:** pass for Slice 106 behavior and committed-package boundaries.
+No publication was performed.

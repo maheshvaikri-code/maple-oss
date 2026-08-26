@@ -17,8 +17,10 @@
   boundaries. Focused validation reports `38 passed in 0.34s`; the exact
   tracked manifest reports `1263 passed, 1 skipped in 263.89s` across 108
   tracked test files. Black, Ruff, changed-boundary mypy, compile, diff, and
-  network-free doctor pass. Package evidence is pending; no publication was
-  performed.
+  network-free doctor pass. A clean committed-candidate package audit rebuilt
+  wheel/sdist `1.1.3` with build and Twine exit 0; the sdist contains `504`
+  entries, all 5 required public-file checks pass, and the workspace-only audit
+  is empty. No publication was performed.
 - **Bounded local trace spans**: added thread-safe `TraceSpan` and
   `SpanRecorder` contracts with bounded retention, redacted flat attributes,
   parent/trace validation, terminal status transitions, and JSON inspection.
