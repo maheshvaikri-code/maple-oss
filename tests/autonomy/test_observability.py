@@ -14,7 +14,11 @@ def make_trace(agent_id="agent-1", goal_id="goal-1", step=0, duration_ms=100.0):
         prompt_summary=f"Step {step}",
         response_summary=f"Response for step {step}",
         tool_calls=[{"name": "search", "args": {"q": "test"}}] if step % 2 == 0 else [],
-        token_usage={"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150},
+        token_usage={
+            "prompt_tokens": 100,
+            "completion_tokens": 50,
+            "total_tokens": 150,
+        },
         duration_ms=duration_ms,
     )
 
@@ -29,8 +33,12 @@ class TestDecisionTrace:
 
     def test_defaults(self):
         trace = DecisionTrace(
-            agent_id="a", goal_id="g", step_number=0,
-            timestamp=time.time(), prompt_summary="", response_summary="",
+            agent_id="a",
+            goal_id="g",
+            step_number=0,
+            timestamp=time.time(),
+            prompt_summary="",
+            response_summary="",
         )
         assert trace.tool_calls == []
         assert trace.tool_results == []
@@ -82,7 +90,9 @@ class TestDecisionLogger:
 
     def test_export_json(self):
         logger = DecisionLogger()
-        logger.log_decision(make_trace(step=0))
+        trace = make_trace(step=0)
+        trace.provider_request_id = "provider-1"
+        logger.log_decision(trace)
         logger.log_decision(make_trace(step=1))
 
         exported = logger.export_json()
@@ -90,6 +100,7 @@ class TestDecisionLogger:
         assert len(parsed) == 2
         assert parsed[0]["step_number"] == 0
         assert "agent_id" in parsed[0]
+        assert parsed[0]["provider_request_id"] == "provider-1"
 
     def test_export_json_filtered(self):
         logger = DecisionLogger()
@@ -163,10 +174,14 @@ class TestAgentSnapshot:
             tool_registry = ToolRegistry()
 
         agent = FakeAgent()
-        agent.tool_registry.register(Tool(
-            name="test_tool", description="test", parameters={},
-            handler=lambda: Result.ok(None),
-        ))
+        agent.tool_registry.register(
+            Tool(
+                name="test_tool",
+                description="test",
+                parameters={},
+                handler=lambda: Result.ok(None),
+            )
+        )
 
         snapshot = AgentSnapshot.capture(agent)
         assert "test_tool" in snapshot["registered_tools"]

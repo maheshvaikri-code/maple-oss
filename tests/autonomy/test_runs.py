@@ -260,8 +260,13 @@ def test_agent_publishes_bounded_lifecycle_events_with_usage_trailer():
                     ToolCall(id="event-call", name="write_value", arguments={})
                 ],
                 finish_reason="tool_calls",
+                request_id="provider-run-1",
             ),
-            LLMResponse(content="complete", finish_reason="stop"),
+            LLMResponse(
+                content="complete",
+                finish_reason="stop",
+                request_id="provider-run-2",
+            ),
         ]
     )
     agent.set_run_store(run_store)
@@ -289,6 +294,11 @@ def test_agent_publishes_bounded_lifecycle_events_with_usage_trailer():
     ]
     assert all(event.run_id == "event-run" for event in retained)
     assert retained[-1].payload["usage"]["total_tokens"] == 0
+    model_events = [event for event in retained if event.event_type == "model.response"]
+    assert [event.payload["provider_request_id"] for event in model_events] == [
+        "provider-run-1",
+        "provider-run-2",
+    ]
 
 
 def test_async_run_pauses_for_approval_and_resumes_after_restart():
@@ -542,9 +552,7 @@ def test_async_durable_human_input_rejection_resumes_as_typed_tool_error():
     assert started.unwrap().status == "paused"
     interaction_id = started.unwrap().result["details"]["interaction_id"]
     assert first.reject_human_input(interaction_id, "No change window.").is_ok()
-    restarted = make_agent(
-        [LLMResponse(content="do not deploy", finish_reason="stop")]
-    )
+    restarted = make_agent([LLMResponse(content="do not deploy", finish_reason="stop")])
     restarted.set_run_store(run_store)
     restarted.set_human_input_store(input_store)
 

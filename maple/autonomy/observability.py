@@ -36,6 +36,7 @@ class DecisionTrace:
     tool_results: List[Dict[str, Any]] = field(default_factory=list)
     token_usage: Dict[str, int] = field(default_factory=dict)
     duration_ms: float = 0.0
+    provider_request_id: Optional[str] = None
 
 
 class DecisionLogger:
@@ -94,6 +95,7 @@ class DecisionLogger:
                     "tool_results": t.tool_results,
                     "token_usage": t.token_usage,
                     "duration_ms": t.duration_ms,
+                    "provider_request_id": t.provider_request_id,
                 }
                 for t in traces
             ],

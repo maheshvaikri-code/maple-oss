@@ -883,8 +883,10 @@ them; OpenAI-compatible providers opt into the usage request with
 `LLMConfig.extra["include_stream_usage"] = True`. Subscribers and exporters are
 synchronous and
 should hand off to a host-owned queue when callback work may block. The agent
-lifecycle uses metadata-only events and usage trailers; prompts, tool
-arguments, tool output, and final result data are not emitted. `dropped_count`
+lifecycle uses metadata-only events and usage trailers; bounded provider request
+IDs are copied into `model.response` events and `DecisionTrace` records for
+local joins. Prompts, tool arguments, tool output, and final result data are
+not emitted. `dropped_count`
 exposes bounded-ring eviction, while cursor reads make that gap explicit.
 
 ## Evaluation and Provider Capabilities (preview)

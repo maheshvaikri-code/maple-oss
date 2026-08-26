@@ -1455,16 +1455,20 @@ class AutonomousAgent(Agent):
             if usage_result.is_err():
                 return Result.err(usage_result.unwrap_err())
             duration_ms = (time.time() - start_time) * 1000
+            model_payload = {
+                "step": step_num,
+                "tool_call_count": len(response.tool_calls),
+                "finish_reason": response.finish_reason,
+                "duration_ms": int(duration_ms),
+                "usage": self._run_event_usage(goal),
+            }
+            provider_request_id = self._bounded_provider_request_id(response.request_id)
+            if provider_request_id is not None:
+                model_payload["provider_request_id"] = provider_request_id
             self._publish_run_event(
                 goal,
                 "model.response",
-                {
-                    "step": step_num,
-                    "tool_call_count": len(response.tool_calls),
-                    "finish_reason": response.finish_reason,
-                    "duration_ms": int(duration_ms),
-                    "usage": self._run_event_usage(goal),
-                },
+                model_payload,
             )
 
             # Record reasoning step
@@ -2361,6 +2365,9 @@ Instructions:
                 tool_results=[],
                 token_usage=response.usage.__dict__ if response.usage else {},
                 duration_ms=duration_ms,
+                provider_request_id=self._bounded_provider_request_id(
+                    response.request_id
+                ),
             )
             self._decision_logger.log_decision(trace)
 
@@ -2391,6 +2398,18 @@ Instructions:
             "completion_tokens": goal.token_usage.completion_tokens,
             "total_tokens": goal.token_usage.total_tokens,
         }
+
+    @staticmethod
+    def _bounded_provider_request_id(value: Any) -> Optional[str]:
+        """Return only safe provider correlation metadata for observability."""
+        if (
+            not isinstance(value, str)
+            or not value
+            or len(value) > 256
+            or any(ord(char) < 32 for char in value)
+        ):
+            return None
+        return value
 
     def _publish_run_completed(self, goal: Goal, step_count: int) -> None:
         """Publish the terminal usage trailer for a successful run."""
@@ -2803,16 +2822,20 @@ Instructions:
             if usage_result.is_err():
                 return Result.err(usage_result.unwrap_err())
             duration_ms = (time.time() - start_time) * 1000
+            model_payload = {
+                "step": step_num,
+                "tool_call_count": len(response.tool_calls),
+                "finish_reason": response.finish_reason,
+                "duration_ms": int(duration_ms),
+                "usage": self._run_event_usage(goal),
+            }
+            provider_request_id = self._bounded_provider_request_id(response.request_id)
+            if provider_request_id is not None:
+                model_payload["provider_request_id"] = provider_request_id
             self._publish_run_event(
                 goal,
                 "model.response",
-                {
-                    "step": step_num,
-                    "tool_call_count": len(response.tool_calls),
-                    "finish_reason": response.finish_reason,
-                    "duration_ms": int(duration_ms),
-                    "usage": self._run_event_usage(goal),
-                },
+                model_payload,
             )
             step = ReasoningStep(
                 step_number=step_num,
