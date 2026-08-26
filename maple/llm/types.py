@@ -15,9 +15,10 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 
 # LLM types for MAPLE autonomy layer.
 
+import math
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 
 class ChatRole(Enum):
@@ -113,3 +114,81 @@ class LLMConfig:
     system_prompt: Optional[str] = None
     timeout: float = 120.0
     extra: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ModelRetryPolicy:
+    """Bounded retry policy for classified model/provider failures.
+
+    Retries are opt-in and apply only to exact ``errorType`` values listed in
+    ``retryable_error_types``. This keeps authentication, validation, and
+    other non-transient failures fail-fast while allowing hosts to choose a
+    small amount of resilience for rate limits and temporary outages.
+    """
+
+    max_retries: int = 0
+    base_delay_seconds: float = 0.0
+    max_delay_seconds: float = 60.0
+    retryable_error_types: Tuple[str, ...] = (
+        "LLM_RATE_LIMITED",
+        "LLM_TIMEOUT",
+        "LLM_TRANSIENT_ERROR",
+    )
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.max_retries, int)
+            or isinstance(self.max_retries, bool)
+            or not 0 <= self.max_retries <= 3
+        ):
+            raise ValueError("max_retries must be an integer from 0 to 3")
+        for name, value in (
+            ("base_delay_seconds", self.base_delay_seconds),
+            ("max_delay_seconds", self.max_delay_seconds),
+        ):
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(float(value))
+                or value < 0
+                or value > 60
+            ):
+                raise ValueError(f"{name} must be a finite number from 0 to 60")
+        if self.max_delay_seconds < self.base_delay_seconds:
+            raise ValueError("max_delay_seconds must be at least base_delay_seconds")
+        if (
+            not isinstance(self.retryable_error_types, tuple)
+            or not self.retryable_error_types
+            or len(self.retryable_error_types) > 16
+        ):
+            raise ValueError("retryable_error_types must be a tuple of 1 to 16 values")
+        for error_type in self.retryable_error_types:
+            if (
+                not isinstance(error_type, str)
+                or not error_type
+                or len(error_type) > 64
+                or any(
+                    not (character.isupper() or character.isdigit() or character == "_")
+                    for character in error_type
+                )
+            ):
+                raise ValueError(
+                    "retryable_error_types must contain bounded uppercase identifiers"
+                )
+
+    def delay_for_retry(self, retry_number: int) -> float:
+        """Return the capped delay before a one-based retry attempt."""
+        if (
+            not isinstance(retry_number, int)
+            or isinstance(retry_number, bool)
+            or not 1 <= retry_number <= self.max_retries
+        ):
+            raise ValueError("retry_number must be within the configured retry limit")
+        return min(
+            float(self.max_delay_seconds),
+            float(self.base_delay_seconds) * float(2 ** (retry_number - 1)),
+        )
+
+    def is_retryable(self, error: Mapping[str, Any]) -> bool:
+        """Return whether an error has an explicitly retryable type."""
+        return error.get("errorType") in self.retryable_error_types

@@ -21,7 +21,7 @@ from .capabilities import (
     ProviderRequirements,
     ProviderRouter,
 )
-from .provider import LLMProvider
+from .provider import LLMProvider, classify_provider_exception
 from .registry import LLMProviderRegistry
 from .types import (
     ChatMessage,
@@ -29,6 +29,7 @@ from .types import (
     LLMChunk,
     LLMConfig,
     LLMResponse,
+    ModelRetryPolicy,
     TokenUsage,
     ToolCall,
     ToolDefinition,
@@ -45,7 +46,9 @@ __all__ = [
     "LLMResponse",
     "LLMChunk",
     "LLMConfig",
+    "ModelRetryPolicy",
     "LLMProvider",
+    "classify_provider_exception",
     "LLMProviderRegistry",
     "ProviderCapabilities",
     "ProviderDescriptor",

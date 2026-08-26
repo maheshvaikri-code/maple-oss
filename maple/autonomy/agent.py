@@ -39,7 +39,7 @@ from ..agent.agent import Agent
 from ..agent.config import Config
 from ..broker.broker import MessageBroker
 from ..core.result import Result
-from ..llm.provider import LLMProvider
+from ..llm.provider import LLMProvider, classify_provider_exception
 from ..llm.registry import LLMProviderRegistry
 from ..llm.types import (
     ChatMessage,
@@ -47,6 +47,7 @@ from ..llm.types import (
     LLMChunk,
     LLMConfig,
     LLMResponse,
+    ModelRetryPolicy,
     TokenUsage,
     ToolCall,
     ToolResult,
@@ -135,6 +136,8 @@ class AutonomousConfig:
     effects if the budget is exceeded.
     ``max_output_retries`` enables bounded correction attempts for invalid
     structured output; the default ``0`` preserves fail-fast behavior.
+    ``model_retry_policy`` enables bounded retries for explicitly classified
+    transient provider failures; it is disabled by default.
     """
 
     llm: LLMConfig
@@ -151,6 +154,7 @@ class AutonomousConfig:
     max_total_tokens: Optional[int] = None
     max_output_retries: int = 0
     stream_model_events: bool = False
+    model_retry_policy: Optional[ModelRetryPolicy] = None
 
 
 class AutonomousAgent(Agent):
@@ -192,6 +196,10 @@ class AutonomousAgent(Agent):
             )
         if not isinstance(autonomy_config.stream_model_events, bool):
             raise ValueError("stream_model_events must be a boolean")
+        if autonomy_config.model_retry_policy is not None and not isinstance(
+            autonomy_config.model_retry_policy, ModelRetryPolicy
+        ):
+            raise ValueError("model_retry_policy must be a ModelRetryPolicy")
         self._output_schema: Optional[Dict[str, Any]] = autonomy_config.response_schema
         if autonomy_config.output_model is not None:
             output_schema = structured_model_schema(autonomy_config.output_model)
@@ -2626,7 +2634,51 @@ Instructions:
         step_num: int,
         span: Optional[TraceSpan] = None,
     ) -> Result[LLMResponse, Dict[str, Any]]:
-        """Complete one sync ReAct step, optionally through the stream collector."""
+        """Complete one sync ReAct step with optional bounded model retries."""
+        policy = self.autonomy_config.model_retry_policy
+        retry_count = 0
+        while True:
+            result = self._complete_model_once(
+                messages,
+                tools=tools,
+                goal=goal,
+                step_num=step_num,
+                span=span,
+            )
+            if (
+                result.is_ok()
+                or policy is None
+                or retry_count >= policy.max_retries
+                or not policy.is_retryable(result.unwrap_err())
+            ):
+                return result
+            retry_count += 1
+            delay = policy.delay_for_retry(retry_count)
+            error = result.unwrap_err()
+            self._publish_run_event(
+                goal,
+                "model.retry_scheduled",
+                {
+                    "step": step_num,
+                    "retry_count": retry_count,
+                    "max_retries": policy.max_retries,
+                    "delay_seconds": delay,
+                    "error_type": error.get("errorType", "LLM_ERROR"),
+                },
+            )
+            if delay > 0:
+                time.sleep(delay)
+
+    def _complete_model_once(
+        self,
+        messages: List[ChatMessage],
+        *,
+        tools: Optional[List[Any]],
+        goal: Goal,
+        step_num: int,
+        span: Optional[TraceSpan] = None,
+    ) -> Result[LLMResponse, Dict[str, Any]]:
+        """Perform one sync model request without retrying it."""
         if not self.autonomy_config.stream_model_events:
             return self.llm.complete(messages, tools=tools)
 
@@ -2649,7 +2701,9 @@ Instructions:
                 result_holder["result"] = asyncio.run(coroutine)
             except Exception as exc:
                 result_holder["error"] = {
-                    "errorType": "LLM_STREAM_ERROR",
+                    "errorType": classify_provider_exception(
+                        exc, fallback="LLM_STREAM_ERROR"
+                    ),
                     "message": "stream collector failed.",
                     "details": {"exception": type(exc).__name__},
                 }
@@ -2678,7 +2732,51 @@ Instructions:
         step_num: int,
         span: Optional[TraceSpan] = None,
     ) -> Result[LLMResponse, Dict[str, Any]]:
-        """Complete one async ReAct step, optionally through the stream collector."""
+        """Complete one async ReAct step with optional bounded model retries."""
+        policy = self.autonomy_config.model_retry_policy
+        retry_count = 0
+        while True:
+            result = await self._complete_model_once_async(
+                messages,
+                tools=tools,
+                goal=goal,
+                step_num=step_num,
+                span=span,
+            )
+            if (
+                result.is_ok()
+                or policy is None
+                or retry_count >= policy.max_retries
+                or not policy.is_retryable(result.unwrap_err())
+            ):
+                return result
+            retry_count += 1
+            delay = policy.delay_for_retry(retry_count)
+            error = result.unwrap_err()
+            self._publish_run_event(
+                goal,
+                "model.retry_scheduled",
+                {
+                    "step": step_num,
+                    "retry_count": retry_count,
+                    "max_retries": policy.max_retries,
+                    "delay_seconds": delay,
+                    "error_type": error.get("errorType", "LLM_ERROR"),
+                },
+            )
+            if delay > 0:
+                await asyncio.sleep(delay)
+
+    async def _complete_model_once_async(
+        self,
+        messages: List[ChatMessage],
+        *,
+        tools: Optional[List[Any]],
+        goal: Goal,
+        step_num: int,
+        span: Optional[TraceSpan] = None,
+    ) -> Result[LLMResponse, Dict[str, Any]]:
+        """Perform one async model request without retrying it."""
         if not self.autonomy_config.stream_model_events:
             return await self.llm.complete_async(messages, tools=tools)
         return await self.llm.complete_from_stream(

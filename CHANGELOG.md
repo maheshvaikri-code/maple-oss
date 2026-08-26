@@ -10,6 +10,14 @@
 
 ### Additions
 
+- **Bounded model/provider retries**: added opt-in `ModelRetryPolicy` support
+  for sync and async autonomous model requests, with capped backoff, exact
+  retryable error types, conservative OpenAI/Anthropic exception
+  classification, and metadata-only `model.retry_scheduled` events. Tools are
+  not replayed by model retries and permanent/provider-installation failures
+  remain fail-fast. Focused validation reports `46 passed`; remote scheduling,
+  circuit-integrated coordination, and dependency-audit disposition remain
+  open. No publication was performed.
 - **Durable parallel-branch workflow retries**: fan-out branches now use the
   configured bounded `RetryPolicy`, persist per-branch retry counts and due times
   in checkpoints, retry only pending branches in bounded waves, and expose

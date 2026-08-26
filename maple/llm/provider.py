@@ -47,6 +47,53 @@ _MAX_STREAM_ARGUMENT_BYTES = 262_144
 _MAX_STREAM_FINISH_REASON_LENGTH = 128
 
 
+def classify_provider_exception(exc: BaseException, *, fallback: str) -> str:
+    """Map common provider failures to bounded, retry-aware error types.
+
+    Classification is intentionally conservative: unknown exceptions retain
+    the provider operation's existing fallback type. Wrapped stream errors
+    inspect their direct cause so native provider exceptions are not hidden by
+    an adapter wrapper.
+    """
+    cause = getattr(exc, "__cause__", None)
+    if isinstance(cause, BaseException) and cause is not exc:
+        classified = classify_provider_exception(cause, fallback=fallback)
+        if classified != fallback:
+            return classified
+
+    status: Any = getattr(exc, "status_code", None)
+    if status is None:
+        status = getattr(exc, "status", None)
+    if isinstance(status, bool) or not isinstance(status, int):
+        status = None
+    name = type(exc).__name__.casefold().replace("_", "")
+    if status == 429 or any(
+        marker in name for marker in ("ratelimit", "toomanyrequests")
+    ):
+        return "LLM_RATE_LIMITED"
+    if (
+        status == 408
+        or isinstance(exc, TimeoutError)
+        or any(marker in name for marker in ("timeout", "timedout"))
+    ):
+        return "LLM_TIMEOUT"
+    if status is not None and 500 <= status <= 599:
+        return "LLM_TRANSIENT_ERROR"
+    if any(
+        marker in name
+        for marker in (
+            "connection",
+            "serviceunavailable",
+            "internalserver",
+            "badgateway",
+            "temporarilyunavailable",
+            "overloaded",
+        )
+    ):
+        return "LLM_TRANSIENT_ERROR"
+    return fallback
+
+
 class LLMProvider(ABC):
     """
     Abstract base class for LLM providers.
@@ -159,7 +206,9 @@ class LLMProvider(ABC):
         except Exception as exc:
             return Result.err(
                 {
-                    "errorType": "LLM_STREAM_ERROR",
+                    "errorType": classify_provider_exception(
+                        exc, fallback="LLM_STREAM_ERROR"
+                    ),
                     "message": "provider stream could not be opened.",
                     "details": {"exception": type(exc).__name__},
                 }

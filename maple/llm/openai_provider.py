@@ -20,7 +20,7 @@ import logging
 from typing import Any, AsyncIterator, Dict, List, Optional, cast
 
 from ..core.result import Result
-from .provider import LLMProvider
+from .provider import LLMProvider, classify_provider_exception
 from .types import (
     ChatMessage,
     LLMChunk,
@@ -101,7 +101,9 @@ class OpenAIProvider(LLMProvider):
         except Exception as e:
             return Result.err(
                 {
-                    "errorType": "LLM_COMPLETION_ERROR",
+                    "errorType": classify_provider_exception(
+                        e, fallback="LLM_COMPLETION_ERROR"
+                    ),
                     "message": f"OpenAI completion failed: {str(e)}",
                 }
             )
@@ -144,7 +146,9 @@ class OpenAIProvider(LLMProvider):
         except Exception as e:
             return Result.err(
                 {
-                    "errorType": "LLM_STREAM_ERROR",
+                    "errorType": classify_provider_exception(
+                        e, fallback="LLM_STREAM_ERROR"
+                    ),
                     "message": f"OpenAI streaming failed: {str(e)}",
                 }
             )

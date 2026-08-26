@@ -179,7 +179,7 @@ from .llm.capabilities import (
     ProviderRouter,
 )
 from .llm.registry import LLMProviderRegistry
-from .llm.types import ChatMessage, ChatRole, LLMConfig
+from .llm.types import ChatMessage, ChatRole, LLMConfig, ModelRetryPolicy
 from .resources.lease import Lease, LeaseManager
 from .resources.manager import (
     DEFAULT_LIFECYCLES,
@@ -365,6 +365,7 @@ __all__ = [
     "FileExecutionJournal",
     "InMemoryExecutionJournal",
     "LLMConfig",
+    "ModelRetryPolicy",
     "ChatMessage",
     "ChatRole",
     "LLMProviderRegistry",

@@ -15,10 +15,17 @@ from maple.autonomy.agent import (
     ReasoningStep,
 )
 from maple.autonomy.approval import InMemoryApprovalStore
+from maple.autonomy.events import EventStream
 from maple.core.result import Result
 from maple.llm.provider import LLMProvider
 from maple.llm.registry import LLMProviderRegistry
-from maple.llm.types import LLMConfig, LLMResponse, TokenUsage, ToolCall
+from maple.llm.types import (
+    LLMConfig,
+    LLMResponse,
+    ModelRetryPolicy,
+    TokenUsage,
+    ToolCall,
+)
 
 
 class MockLLMProvider(LLMProvider):
@@ -45,6 +52,28 @@ class MockLLMProvider(LLMProvider):
         )
         self._track_usage(default)
         return Result.ok(default)
+
+
+class ScriptedResultProvider(LLMProvider):
+    """Provider that returns explicit success and failure results in order."""
+
+    def __init__(self, config, results):
+        super().__init__(config)
+        self._results = list(results)
+        self.calls = 0
+
+    def complete(
+        self, messages, tools=None, temperature=None, max_tokens=None, stop=None
+    ):
+        self.calls += 1
+        if not self._results:
+            return Result.err(
+                {"errorType": "SCRIPT_EXHAUSTED", "message": "no scripted result"}
+            )
+        result = self._results.pop(0)
+        if result.is_ok():
+            self._track_usage(result.unwrap())
+        return result
 
 
 def make_config():
@@ -134,6 +163,100 @@ class TestAutonomousAgent:
     def test_invalid_output_retry_limit_is_rejected(self):
         with pytest.raises(ValueError, match="max_output_retries"):
             AutonomousAgent(make_config(), make_auto_config(max_output_retries=4))
+
+    def test_model_retry_policy_retries_classified_failure_and_emits_metadata(self):
+        auto_config = make_auto_config(
+            model_retry_policy=ModelRetryPolicy(max_retries=1),
+            stream_model_events=True,
+        )
+        agent = AutonomousAgent(make_config(), auto_config)
+        provider = ScriptedResultProvider(
+            auto_config.llm,
+            [
+                Result.err(
+                    {
+                        "errorType": "LLM_RATE_LIMITED",
+                        "message": "retryable provider response",
+                    }
+                ),
+                Result.ok(LLMResponse(content="done", finish_reason="stop")),
+            ],
+        )
+        agent.llm = provider
+        events = EventStream(max_events=20)
+        agent.set_event_stream(events)
+
+        result = agent.pursue_goal("Complete after a transient provider error")
+
+        assert result.is_ok()
+        assert result.unwrap().status == "completed"
+        assert provider.calls == 2
+        retry_events = [
+            event
+            for event in events.snapshot().unwrap()
+            if event.event_type == "model.retry_scheduled"
+        ]
+        assert len(retry_events) == 1
+        assert retry_events[0].payload == {
+            "step": 0,
+            "retry_count": 1,
+            "max_retries": 1,
+            "delay_seconds": 0.0,
+            "error_type": "LLM_RATE_LIMITED",
+            "agent_id": "auto-test-agent",
+        }
+
+    def test_model_retry_policy_does_not_retry_non_transient_failure(self):
+        auto_config = make_auto_config(
+            model_retry_policy=ModelRetryPolicy(max_retries=1)
+        )
+        agent = AutonomousAgent(make_config(), auto_config)
+        provider = ScriptedResultProvider(
+            auto_config.llm,
+            [
+                Result.err(
+                    {
+                        "errorType": "LLM_AUTHENTICATION_ERROR",
+                        "message": "credentials rejected",
+                    }
+                ),
+                Result.ok(LLMResponse(content="should not run", finish_reason="stop")),
+            ],
+        )
+        agent.llm = provider
+
+        result = agent.pursue_goal("Fail fast on an authentication error")
+
+        assert result.is_ok()
+        goal = result.unwrap()
+        assert goal.status == "failed"
+        assert goal.result["errorType"] == "LLM_AUTHENTICATION_ERROR"
+        assert provider.calls == 1
+
+    def test_async_model_retry_policy_retries_classified_failure(self):
+        auto_config = make_auto_config(
+            model_retry_policy=ModelRetryPolicy(max_retries=1)
+        )
+        agent = AutonomousAgent(make_config(), auto_config)
+        provider = ScriptedResultProvider(
+            auto_config.llm,
+            [
+                Result.err(
+                    {
+                        "errorType": "LLM_TIMEOUT",
+                        "message": "retryable timeout",
+                    }
+                ),
+                Result.ok(LLMResponse(content="async done", finish_reason="stop")),
+            ],
+        )
+        agent.llm = provider
+
+        result = asyncio.run(agent.pursue_goal_async("Complete asynchronously"))
+
+        assert result.is_ok()
+        assert result.unwrap().status == "completed"
+        assert provider.calls == 2
 
     def test_token_budget_tracks_usage_and_blocks_tool_side_effect(self):
         from maple.autonomy.tools import Tool

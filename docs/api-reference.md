@@ -789,6 +789,42 @@ Each correction is a normal ReAct model response: it appears in
 hit `max_total_tokens`. Exhaustion returns the original structured error. The
 retry request includes only a controlled error type, not validation payloads.
 
+### Bounded model/provider retry
+
+Model retries are disabled by default. To retry transient provider failures in
+both `pursue_goal` and `pursue_goal_async`, pass a `ModelRetryPolicy`:
+
+```python
+from maple import AutonomousConfig, ModelRetryPolicy
+
+config = AutonomousConfig(
+    llm=llm_config,
+    model_retry_policy=ModelRetryPolicy(
+        max_retries=2,
+        base_delay_seconds=0.25,
+        max_delay_seconds=2.0,
+    ),
+)
+```
+
+`max_retries` is capped at three and delays at 60 seconds. The default
+retryable types are `LLM_RATE_LIMITED`, `LLM_TIMEOUT`, and
+`LLM_TRANSIENT_ERROR`; hosts may provide a bounded tuple of exact uppercase
+error types. Unknown, authentication, validation, and provider-installation
+errors remain terminal. A retry is attempted before the current step can
+execute tools, so no tool handler is replayed by this policy. A successful
+response is accounted once.
+
+When an `EventStream` is attached, each scheduled retry emits a bounded
+`model.retry_scheduled` event containing `step`, `retry_count`, `max_retries`,
+`delay_seconds`, and `error_type`, plus the normal `agent_id`/`run_id`
+metadata. It never contains prompts, model output, credentials, or raw SDK
+objects. OpenAI-compatible and Anthropic adapters classify common rate-limit,
+timeout, and 5xx/connection failures; unknown exception types retain the
+operation's existing terminal error type. This is a local request retry
+boundary, not a durable distributed scheduler, hosted rate-limit service, or
+exactly-once tool execution guarantee.
+
 ## Retrieval and Source References (preview)
 
 The retrieval contract keeps document identity, source citations, chunk offsets,
