@@ -325,10 +325,23 @@ verification remain open.
 - No security, dependency, license, cloud, publication, or website action was
   introduced. Async durable runs remain a separately visible follow-on.
 
+## Slice 83 revalidation
+
+- The current tracked manifest contains 101 Python test files and reports
+  `1191 passed, 1 skipped in 217.81s` with no warning output.
+- The current clean archive rebuilt wheel/sdist `1.1.3`; both Twine checks
+  passed, the sdist contained 466 entries, `maple/autonomy/runs.py` was
+  present, and the workspace-only audit found zero preserved Doctrine files.
+- The network-free doctor returned `ready: true`, `status: SUCCESS`, all eight
+  checks true, and `network: false`.
+- These checks close the tracked application and current artifact gates. The
+  workspace-only Doctrine gold verifier and fresh-context independent review
+  remain open. No external action was taken.
+
 ## Verdict
 
 **Feature review:** PASS for the twenty-three implemented capability slices.
 **Publish readiness:** NOT YET APPROVED. A release manager should close the
-open full-suite and fresh-verifier gates before publishing. The remaining
-Bandit findings are documented low-severity legacy debt; external publication
-remains awaiting explicit human approval.
+workspace-only Doctrine gold and fresh-verifier gates before publishing. The
+remaining Bandit findings are documented low-severity legacy debt; external
+publication remains awaiting explicit human approval.

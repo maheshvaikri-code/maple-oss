@@ -93,6 +93,7 @@
 | 80 | Clean tracked release artifact boundary | Release / DevOps / QA | clean archive build evidence, release plan, QA/review evidence | Build wheel/sdist from `git archive HEAD`, Twine checks, sdist content audit, no workspace-only files | done: clean snapshot built wheel/sdist `1.1.3`; both Twine checks `PASSED`; 460 sdist files; preserved workspace-only files absent; dirty-workspace artifact not treated as publishable |
 | 81 | Agent-framework parity ledger | Release / Chief Architect / QA | `docs/agent-framework-parity.md`, README, changelog, QA/review evidence | Source-backed five-framework matrix, explicit status vocabulary, code-block/sandbox boundary, prioritized gap list | done: functionality-only ledger filed; no adapter-as-parity claim; no runtime/dependency change |
 | 82 | Bounded durable synchronous agent-run checkpoints and approval resume | Chief Architect / Backend / Security / QA | `docs/adr/030-*`, `maple/autonomy/runs.py`, autonomy exports/agent, run tests, API docs, README, changelog, QA/review evidence | JSON-safe bounded snapshots, memory/file CAS, atomic restart recovery, per-step cursor, paused approval replacement, no duplicate completed tool call, synchronous resume, static/package/doctor gates | done: `45 passed in 0.36s` compatibility slice; autonomy suite `240 passed in 3.59s`; Ruff/Black/mypy/compile pass; async parity remains a follow-on slice |
+| 83 | Current tracked-suite and clean-artifact revalidation | QA / Release / DevOps | tracked test manifest, clean archive build, doctor output, README, changelog, QA/review evidence | Full tracked application suite, warning-free result, clean wheel/sdist, Twine, sdist boundary audit, network-free doctor | done: 101 tracked Python files; `1191 passed, 1 skipped in 217.81s`; clean `1.1.3` wheel/sdist; Twine passed; 466 sdist entries; doctor `ready: true`; workspace-only Doctrine and fresh-review gates remain open |
 
 ## Threat sketch
 
@@ -413,3 +414,14 @@ continuing. The focused compatibility slice reports `45 passed in 0.36s`, and
 the full autonomy directory reports `240 passed in 3.59s`. Async run-store
 integration, distributed leases, and exactly-once external effects remain
 explicit follow-on boundaries.
+
+2026-08-26 current tracked-suite revalidation: Git supplied 101 tracked Python
+test files and pytest reported `1191 passed, 1 skipped in 217.81s` with no
+warning output. This closes the tracked application-suite gate after the
+durable-run slice.
+
+2026-08-26 current clean artifact revalidation: a temporary `git archive HEAD`
+snapshot rebuilt wheel/sdist `1.1.3`; both Twine checks passed, the sdist
+contained 466 entries including `maple/autonomy/runs.py`, and the
+workspace-only audit found zero preserved Doctrine files. The network-free
+doctor returned `ready: true`, all eight checks true, and `network: false`.

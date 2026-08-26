@@ -336,6 +336,23 @@ slow Doctrine gold phase before interruption without a pytest summary.
   durable run persistence yet. Cross-process leases, exactly-once effects,
   and full trace replay remain explicitly out of scope.
 
+## Slice 83 revalidation — current tracked suite and clean artifact
+
+- Git supplied 101 tracked Python test files to pytest, excluding preserved
+  untracked workspace Doctrine fixtures.
+- `python -m pytest <tracked test files> --no-cov -p no:dash -p no:benchmark
+  -q --tb=short --no-header` -> `1191 passed, 1 skipped in 217.81s` with no
+  warning output.
+- `python -m maple.cli doctor --json` returned `ready: true`, `status:
+  SUCCESS`, `version: 1.1.3`, all eight checks true, and `network: false`.
+- A clean `git archive HEAD` snapshot built wheel and sdist `1.1.3`; both
+  `twine check` invocations passed. The sdist contained 466 entries,
+  included `maple/autonomy/runs.py`, and contained zero preserved
+  workspace-only Doctrine files.
+- This closes the tracked application-suite and current clean-artifact gates.
+  The workspace-only Doctrine gold verifier and fresh independent review are
+  still open; no publication or website action was taken.
+
 ## Security conclusions
 
 - No new dependency, credential, cloud call, website mutation, or publication
@@ -350,8 +367,7 @@ slow Doctrine gold phase before interruption without a pytest summary.
 
 ## Release decision
 
-**QA status: CONDITIONAL / NOT PUBLISH-READY.** The implementation is
-feature-complete for the tracked implemented capability slices, the built wheel
-passes a clean-venv doctor smoke test, and the isolated dependency audit is
-clean. The release gate must remain open for the exact full-suite and
-fresh-verifier checks. No external release action was taken.
+**QA status: CONDITIONAL / NOT PUBLISH-READY.** The tracked application suite,
+current clean archive, Twine, and network-free doctor gates pass. The release
+gate must remain open for the workspace-only Doctrine gold verifier and fresh
+independent review. No external release action was taken.

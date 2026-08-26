@@ -494,15 +494,16 @@ python -m pytest tests/security/ -v       # Security tests
 python -m pytest tests/broker/ -v         # Broker tests
 ```
 
-Current status: the tracked repository suite reports **1,185 passed, 1 skipped
-in 210.07s**, with no warning output. Focused LLM/autonomy/CLI, MCP/governance,
-artifact, retrieval evaluation, session, server, execution-journal, and
-grounded-answer gates also pass, alongside local compile/doctor/package
-preflight checks. The separate workspace Doctrine gold verifier remains an
-open release gate because its fixture tests are not part of the tracked
-package suite and are extremely slow on this Windows host. Coverage is not
-treated as a release gate until the exact release matrix and fresh review are
-closed.
+Current status: the 101 tracked Python test files report **1,191 passed, 1
+skipped in 217.81s**, with no warning output. Focused LLM/autonomy/CLI,
+MCP/governance, artifact, retrieval evaluation, session, server,
+execution-journal, and grounded-answer gates also pass. The current clean
+archive builds wheel and sdist `1.1.3`, both pass Twine validation, and the
+network-free doctor reports `ready: true`. The separate workspace Doctrine
+gold verifier remains an open release gate because its fixture tests are not
+part of the tracked package suite and are extremely slow on this Windows host.
+Coverage is not treated as a release gate until the exact release matrix and
+fresh review are closed.
 
 ---
 

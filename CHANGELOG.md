@@ -20,6 +20,11 @@
   Synchronous goals can pause on durable approval and resume after restart
   without repeating a completed tool call; async run persistence remains an
   explicit follow-on boundary.
+- **Post-slice release revalidation**: the 101 tracked Python test files now
+  report `1,191 passed, 1 skipped in 217.81s` with no warning output. A clean
+  archive rebuilt wheel/sdist `1.1.3`; both Twine checks passed, the 466-entry
+  sdist includes the durable-run module, and network-free doctor readiness is
+  true. Workspace-only Doctrine and fresh-review gates remain open.
 - **Tracked release-suite revalidation**: the 100 tracked test files now report
   `1,185 passed, 1 skipped in 210.07s` with no warning output; the slow
   workspace-only Doctrine gold verifier remains separately documented as open.
