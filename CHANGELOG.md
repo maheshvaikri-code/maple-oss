@@ -10,6 +10,12 @@
 
 ### Additions
 
+- **Durable parallel-branch workflow retries**: fan-out branches now use the
+  configured bounded `RetryPolicy`, persist per-branch retry counts and due times
+  in checkpoints, retry only pending branches in bounded waves, and expose
+  `retry_count` to branch handlers. Exhaustion remains typed as
+  `NODE_RETRY_EXHAUSTED`; external effects remain at-least-once and require
+  idempotent handlers. Focused and release-gate evidence is pending.
 - **Local observability sampling and latency/backpressure metrics**: configure
   stable bounded span sampling with `SpanRecorder(sample_rate=...)`; local
   metrics now include completed span latency/status counters plus accepted event

@@ -1183,15 +1183,17 @@ workflow.add_fan_out("start", ("web", "docs"), "join")
 workflow.add_edge("join")
 ```
 
-### Bounded per-node workflow retry
+### Bounded workflow retry
 
 Pass `RetryPolicy` values through `retry_policies=` or register one with
 `set_retry_policy(node_name, policy)`. `max_retries` is the number of retries
 after the initial attempt and is capped at eight; delays use capped exponential
 backoff with a maximum of 60 seconds. The current `retry_count` is available in
-`WorkflowContext`, and retry counts plus a scheduled `retry_after` timestamp are
-persisted in `WorkflowCheckpoint` so `recover()` can continue the same bounded
-policy after a process restart.
+`WorkflowContext`, and retry counts plus scheduled retry timestamps are persisted
+in `WorkflowCheckpoint` so `recover()` can continue the same bounded policy after
+a process restart. The same policy applies to ordinary nodes and named fan-out
+branches; branch attempts are retried in bounded waves and successful branches
+are not re-executed within the current process.
 
 ```python
 from maple import RetryPolicy, Workflow
@@ -1209,19 +1211,21 @@ workflow = Workflow(
 workflow.add_node("fetch", lambda ctx: {"retry": ctx.retry_count})
 ```
 
-When a node fails, MAPLE persists `NODE_RETRY_SCHEDULED` before retrying. When
-the policy is exhausted, the run fails with `NODE_RETRY_EXHAUSTED` and retains
-the retry count. Parallel fan-out branches remain outside this persisted
-per-node policy; external side effects still require idempotent handlers.
+When a node or branch fails, MAPLE persists `NODE_RETRY_SCHEDULED` before
+retrying. When the policy is exhausted, the run fails with
+`NODE_RETRY_EXHAUSTED` and retains the retry count. Branch checkpoints expose
+`branch_retry_counts` and `branch_retry_after`; `WorkflowRun` exposes the same
+diagnostic fields. External side effects still require idempotent handlers.
 
 Checkpoint data accepts JSON-compatible values only, is size-bounded, and is
 restored as data rather than executable objects. The current file store is
 atomic and thread-safe within one process. Fan-out uses bounded trusted
 in-process threads; it is not a hard sandbox, and a pause before the group
-checkpoint may repeat branch side effects when resumed. Cross-process
-coordination and per-branch retry remain planned follow-on capabilities. The
-history decorator below provides bounded current-process inspection, while the
-optional execution journal provides a separate crash-window recovery surface.
+checkpoint may repeat branch side effects when resumed. Per-branch retry state is
+durable in the configured checkpoint store, but the local runtime does not claim
+distributed scheduling or exactly-once effects. The history decorator below
+provides bounded current-process inspection, while the optional execution journal
+provides a separate crash-window recovery surface.
 
 Wrap any checkpoint store with `HistoryCheckpointStore` to retain bounded
 immutable snapshots for current-process inspection:

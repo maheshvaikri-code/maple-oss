@@ -257,6 +257,8 @@ class WorkflowCheckpoint:
     error: Optional[Error] = None
     retry_counts: Dict[str, int] = field(default_factory=dict)
     retry_after: Optional[float] = None
+    branch_retry_counts: Dict[str, int] = field(default_factory=dict)
+    branch_retry_after: Dict[str, float] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         """Return the persistence representation."""
@@ -275,6 +277,8 @@ class WorkflowCheckpoint:
             "error": self.error,
             "retry_counts": dict(self.retry_counts),
             "retry_after": self.retry_after,
+            "branch_retry_counts": dict(self.branch_retry_counts),
+            "branch_retry_after": dict(self.branch_retry_after),
         }
 
     @classmethod
@@ -342,6 +346,34 @@ class WorkflowCheckpoint:
                 raise ValueError("invalid checkpoint retry_after")
             if not math.isfinite(retry_after):
                 raise ValueError("invalid checkpoint retry_after")
+        raw_branch_retry_counts = data.get("branch_retry_counts", {})
+        if not isinstance(raw_branch_retry_counts, dict):
+            raise ValueError("checkpoint branch_retry_counts must be an object")
+        branch_retry_counts: Dict[str, int] = {}
+        for branch_name, retry_count in raw_branch_retry_counts.items():
+            if _valid_identifier(branch_name, "branch_retry_node"):
+                raise ValueError("invalid checkpoint branch retry node")
+            if (
+                not isinstance(retry_count, int)
+                or isinstance(retry_count, bool)
+                or not 0 <= retry_count <= _MAX_NODE_RETRIES
+            ):
+                raise ValueError("invalid checkpoint branch retry count")
+            branch_retry_counts[branch_name] = retry_count
+        raw_branch_retry_after = data.get("branch_retry_after", {})
+        if not isinstance(raw_branch_retry_after, dict):
+            raise ValueError("checkpoint branch_retry_after must be an object")
+        branch_retry_after: Dict[str, float] = {}
+        for branch_name, retry_at in raw_branch_retry_after.items():
+            if _valid_identifier(branch_name, "branch_retry_node"):
+                raise ValueError("invalid checkpoint branch retry node")
+            try:
+                retry_at = float(retry_at)
+            except (TypeError, ValueError):
+                raise ValueError("invalid checkpoint branch retry_after")
+            if not math.isfinite(retry_at):
+                raise ValueError("invalid checkpoint branch retry_after")
+            branch_retry_after[branch_name] = retry_at
         return cls(
             run_id=data["run_id"],
             workflow_name=data["workflow_name"],
@@ -357,6 +389,8 @@ class WorkflowCheckpoint:
             error=error,
             retry_counts=retry_counts,
             retry_after=retry_after,
+            branch_retry_counts=branch_retry_counts,
+            branch_retry_after=branch_retry_after,
         )
 
 
@@ -376,6 +410,8 @@ class WorkflowRun:
     error: Optional[Error] = None
     retry_counts: Dict[str, int] = field(default_factory=dict)
     retry_after: Optional[float] = None
+    branch_retry_counts: Dict[str, int] = field(default_factory=dict)
+    branch_retry_after: Dict[str, float] = field(default_factory=dict)
 
     @classmethod
     def from_checkpoint(cls, checkpoint: WorkflowCheckpoint) -> "WorkflowRun":
@@ -392,6 +428,8 @@ class WorkflowRun:
             error=checkpoint.error,
             retry_counts=dict(checkpoint.retry_counts),
             retry_after=checkpoint.retry_after,
+            branch_retry_counts=dict(checkpoint.branch_retry_counts),
+            branch_retry_after=dict(checkpoint.branch_retry_after),
         )
 
 
@@ -1267,6 +1305,11 @@ class Workflow:
                     payload_error = _validate_json_value(pause.payload)
                     if payload_error:
                         return self._fail(current, store, payload_error)
+                    latest_result = store.load(current.run_id)
+                    if latest_result.is_err():
+                        return Result.err(latest_result.unwrap_err())
+                    if latest_result.unwrap() is not None:
+                        current = latest_result.unwrap()
                     paused = replace(
                         current,
                         status="interrupted",
@@ -1331,6 +1374,8 @@ class Workflow:
                         prospective_state,
                         current.run_id,
                         current.step_count,
+                        current,
+                        store,
                         resume_value=node_resume_value,
                     )
                 except WorkflowPause as pause:
@@ -1350,8 +1395,13 @@ class Workflow:
                         return Result.err(saved_result.unwrap_err())
                     return Result.ok(WorkflowRun.from_checkpoint(saved_result.unwrap()))
                 if parallel_result.is_err():
+                    latest_result = store.load(current.run_id)
+                    if latest_result.is_err():
+                        return Result.err(latest_result.unwrap_err())
+                    if latest_result.unwrap() is not None:
+                        current = latest_result.unwrap()
                     return self._fail(current, store, parallel_result.unwrap_err())
-                branch_updates = parallel_result.unwrap()
+                branch_updates, current = parallel_result.unwrap()
                 conflicting_keys = [key for key in updates if key in branch_updates]
                 if conflicting_keys:
                     return self._fail(
@@ -1392,6 +1442,8 @@ class Workflow:
                 error=None,
                 interrupt_payload=None,
                 retry_after=None,
+                branch_retry_counts={},
+                branch_retry_after={},
                 updated_at=time.time(),
             )
             saved_result = store.save(updated, expected_version=current.version)
@@ -1406,12 +1458,31 @@ class Workflow:
         state: Mapping[str, Any],
         run_id: str,
         step_count: int,
+        checkpoint: WorkflowCheckpoint,
+        store: CheckpointStore,
         *,
         resume_value: Any = None,
-    ) -> Result[Dict[str, Any], Error]:
-        """Execute one fan-out group and merge its results deterministically."""
+    ) -> Result[Tuple[Dict[str, Any], WorkflowCheckpoint], Error]:
+        """Execute one fan-out group with durable bounded branch retries."""
 
-        def execute_branch(branch: str) -> Tuple[str, Any]:
+        current_checkpoint = checkpoint
+        branch_retry_counts = dict(checkpoint.branch_retry_counts)
+        branch_retry_after = dict(checkpoint.branch_retry_after)
+        pending = list(branches)
+        branch_outputs: Dict[str, Dict[str, Any]] = {}
+
+        def wait_for_pending_retries() -> None:
+            retry_times = [
+                branch_retry_after[branch]
+                for branch in pending
+                if branch in branch_retry_after
+            ]
+            if retry_times:
+                remaining = max(retry_times) - time.time()
+                if remaining > 0:
+                    time.sleep(remaining)
+
+        def execute_branch(branch: str, retry_count: int) -> Tuple[str, Any]:
             handler = self._nodes.get(branch)
             if handler is None:
                 return (
@@ -1432,6 +1503,7 @@ class Workflow:
                 node_name=branch,
                 resume_value=resume_value,
                 execution_key=execution_key,
+                retry_count=retry_count,
             )
             replay_result = self._load_replay(
                 execution_key,
@@ -1477,34 +1549,102 @@ class Workflow:
                 return ("error", journal_result.unwrap_err())
             return ("ok", updates)
 
-        with concurrent.futures.ThreadPoolExecutor(
-            max_workers=min(len(branches), self.max_parallel_branches),
-            thread_name_prefix="maple-workflow",
-        ) as executor:
-            futures = [executor.submit(execute_branch, branch) for branch in branches]
-            results = [future.result() for future in futures]
-
-        for branch, (status, value) in zip(branches, results):
-            if status == "pause":
-                raise WorkflowPause(
-                    {"branch": branch, "payload": value, "fan_out": list(branches)}
-                )
-            if status == "error":
-                if isinstance(value, dict) and value.get("errorType"):
-                    return Result.err(value)
-                return Result.err(
-                    _error(
-                        "PARALLEL_BRANCH_ERROR",
-                        "Parallel branch returned an invalid error.",
-                        node=branch,
+        while pending:
+            wait_for_pending_retries()
+            with concurrent.futures.ThreadPoolExecutor(
+                max_workers=min(len(pending), self.max_parallel_branches),
+                thread_name_prefix="maple-workflow",
+            ) as executor:
+                futures = [
+                    executor.submit(
+                        execute_branch,
+                        branch,
+                        branch_retry_counts.get(branch, 0),
                     )
+                    for branch in pending
+                ]
+                results = [future.result() for future in futures]
+
+            next_pending: List[str] = []
+            for branch, (status, value) in zip(pending, results):
+                if status == "pause":
+                    raise WorkflowPause(
+                        {"branch": branch, "payload": value, "fan_out": list(branches)}
+                    )
+                if status == "ok":
+                    branch_outputs[branch] = value
+                    continue
+                if status != "error":
+                    return Result.err(
+                        _error(
+                            "PARALLEL_BRANCH_ERROR",
+                            "Parallel branch returned an invalid status.",
+                            node=branch,
+                        )
+                    )
+                if not isinstance(value, dict) or not value.get("errorType"):
+                    return Result.err(
+                        _error(
+                            "PARALLEL_BRANCH_ERROR",
+                            "Parallel branch returned an invalid error.",
+                            node=branch,
+                        )
+                    )
+                policy = self._retry_policies.get(branch)
+                retry_count = branch_retry_counts.get(branch, 0)
+                if policy is None:
+                    return Result.err(value)
+                if retry_count >= policy.max_retries:
+                    return Result.err(
+                        _error(
+                            "NODE_RETRY_EXHAUSTED",
+                            "Parallel workflow branch retry policy is exhausted.",
+                            node=branch,
+                            retry_count=retry_count,
+                            max_retries=policy.max_retries,
+                            last_error_type=value.get("errorType", "NODE_ERROR"),
+                        )
+                    )
+                next_retry_count = retry_count + 1
+                delay = policy.delay_for_retry(next_retry_count)
+                branch_retry_counts[branch] = next_retry_count
+                if delay > 0:
+                    branch_retry_after[branch] = time.time() + delay
+                else:
+                    branch_retry_after.pop(branch, None)
+                retry_error = _error(
+                    "NODE_RETRY_SCHEDULED",
+                    "Parallel workflow branch failed; a bounded retry is scheduled.",
+                    node=branch,
+                    retry_count=next_retry_count,
+                    max_retries=policy.max_retries,
+                    delay_seconds=delay,
+                    last_error_type=value.get("errorType", "NODE_ERROR"),
                 )
+                retry_after = (
+                    max(branch_retry_after.values()) if branch_retry_after else None
+                )
+                scheduled = replace(
+                    current_checkpoint,
+                    status="running",
+                    error=retry_error,
+                    retry_after=retry_after,
+                    branch_retry_counts=dict(branch_retry_counts),
+                    branch_retry_after=dict(branch_retry_after),
+                    updated_at=time.time(),
+                )
+                saved_result = store.save(
+                    scheduled, expected_version=current_checkpoint.version
+                )
+                if saved_result.is_err():
+                    return Result.err(saved_result.unwrap_err())
+                current_checkpoint = saved_result.unwrap()
+                next_pending.append(branch)
+            pending = next_pending
 
         merged: Dict[str, Any] = {}
-        for branch, (status, value) in zip(branches, results):
-            if status != "ok":
-                continue
-            for key, item in value.items():
+        for branch in branches:
+            for key, item in branch_outputs[branch].items():
                 if key in merged:
                     return Result.err(
                         _error(
@@ -1516,7 +1656,7 @@ class Workflow:
                         )
                     )
                 merged[key] = item
-        return Result.ok(merged)
+        return Result.ok((merged, current_checkpoint))
 
     def _fail(
         self,

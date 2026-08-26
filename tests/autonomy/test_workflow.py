@@ -212,6 +212,85 @@ def test_node_retry_policy_exhaustion_is_typed_and_bounded():
     assert calls == [0, 1]
 
 
+def test_parallel_branch_retry_is_checkpointed_and_replayed_with_context():
+    calls = []
+    history_store = HistoryCheckpointStore(InMemoryCheckpointStore())
+
+    def start(context):
+        return {"prepared": True}
+
+    def flaky(context):
+        calls.append(context.retry_count)
+        if context.retry_count == 0:
+            return Result.err({"errorType": "DEPENDENCY_DOWN", "message": "try again"})
+        return {"recovered": True}
+
+    workflow = Workflow(
+        "parallel-retry",
+        checkpoint_store=history_store,
+        retry_policies={"flaky": RetryPolicy(max_retries=1, base_delay_seconds=0.01)},
+    )
+    workflow.add_node("start", start)
+    workflow.add_node("flaky", flaky)
+    workflow.add_node("join", lambda context: {"joined": True})
+    workflow.set_entry_point("start")
+    workflow.add_fan_out("start", ("flaky",), "join")
+    workflow.add_edge("join")
+
+    result = workflow.run({}, run_id="parallel-retry-run")
+
+    assert result.is_ok()
+    completed = result.unwrap()
+    assert completed.status == "completed"
+    assert completed.state == {
+        "prepared": True,
+        "recovered": True,
+        "joined": True,
+    }
+    assert calls == [0, 1]
+    assert completed.branch_retry_counts == {}
+    snapshots = history_store.history("parallel-retry-run").unwrap()
+    scheduled = [
+        item
+        for item in snapshots
+        if item.error and item.error.get("errorType") == "NODE_RETRY_SCHEDULED"
+    ]
+    assert len(scheduled) == 1
+    assert scheduled[0].branch_retry_counts == {"flaky": 1}
+    assert scheduled[0].branch_retry_after["flaky"] > scheduled[0].updated_at
+
+
+def test_parallel_branch_retry_exhaustion_is_typed_and_bounded():
+    calls = []
+    workflow = Workflow(
+        "parallel-retry-exhaustion",
+        retry_policies={"broken": RetryPolicy(max_retries=1)},
+    )
+    workflow.add_node("start", lambda context: None)
+
+    def broken(context):
+        calls.append(context.retry_count)
+        return Result.err(
+            {"errorType": "DEPENDENCY_DOWN", "message": "still unavailable"}
+        )
+
+    workflow.add_node("broken", broken)
+    workflow.add_node("join", lambda context: None)
+    workflow.set_entry_point("start")
+    workflow.add_fan_out("start", ("broken",), "join")
+    workflow.add_edge("join")
+
+    result = workflow.run({}, run_id="parallel-retry-exhaustion-run")
+
+    assert result.is_ok()
+    failed = result.unwrap()
+    assert failed.status == "failed"
+    assert failed.error["errorType"] == "NODE_RETRY_EXHAUSTED"
+    assert failed.error["details"]["node"] == "broken"
+    assert failed.error["details"]["retry_count"] == 1
+    assert calls == [0, 1]
+
+
 def test_retry_policy_rejects_unbounded_configuration():
     with pytest.raises(ValueError, match="max_retries"):
         RetryPolicy(max_retries=9)
