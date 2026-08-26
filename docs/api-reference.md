@@ -1118,6 +1118,36 @@ Without `session_id`, existing agent behavior is unchanged. Full ReAct trace
 replay, tool-result replay, compaction, authentication, and cross-process
 turn leases remain separate capabilities.
 
+### Durable synchronous agent runs (preview)
+
+Attach an `InMemoryAgentRunStore` or `FileAgentRunStore` to persist a bounded
+JSON-safe ReAct message cursor. Supplying `run_id` makes a new goal resumable;
+`resume_run()` loads the latest checkpoint and continues from the next model
+step. The store uses compare-and-set versions and atomic file replacement, is
+thread-safe within one process, and does not serialize Python objects.
+
+```python
+from maple import FileAgentRunStore
+
+agent.set_run_store(FileAgentRunStore("./.maple-runs"))
+started = agent.pursue_goal("Review this request", run_id="review-1")
+
+# A new agent instance configured with the same store can recover the run.
+recovered = restarted_agent.resume_run("review-1")
+```
+
+When a tool requires durable approval, the run returns a `Goal` with
+`status == "paused"` and an `AGENT_RUN_PAUSED` result containing the bounded
+`run_id` and `approval_id`. After `decide_approval`, `resume_run()` replaces
+the pending tool placeholder with the approved or denied result before asking
+the model for another step. A pending run without a decision returns
+`RUN_WAITING_APPROVAL`. Completed tool calls are represented in the checkpoint
+before the next model call, but external side effects remain at-least-once and
+must be made idempotent by the handler when required.
+
+This slice covers synchronous `pursue_goal`/`resume_run` only. The async agent
+entry point does not yet persist run checkpoints and is a planned follow-on.
+
 ### Loopback workflow run server
 
 `WorkflowRegistry` and `RunServer` expose configured workflows to local tools

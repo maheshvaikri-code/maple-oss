@@ -1,0 +1,244 @@
+"""Tests for bounded durable autonomous agent-run checkpoints."""
+
+import json
+
+import pytest
+
+from maple.agent.config import Config
+from maple.autonomy.agent import AutonomousAgent, AutonomousConfig
+from maple.autonomy.approval import InMemoryApprovalStore
+from maple.autonomy.runs import (
+    AgentRunCheckpoint,
+    FileAgentRunStore,
+    InMemoryAgentRunStore,
+)
+from maple.autonomy.sessions import SessionMessage
+from maple.autonomy.tools import Tool
+from maple.core.result import Result
+from maple.llm.provider import LLMProvider
+from maple.llm.registry import LLMProviderRegistry
+from maple.llm.types import LLMConfig, LLMResponse, ToolCall
+
+
+def make_checkpoint(run_id="run-1", *, status="running", result=None):
+    return AgentRunCheckpoint(
+        run_id=run_id,
+        agent_id="agent-1",
+        description="Persist this run",
+        status=status,
+        messages=(SessionMessage(role="user", content="hello"),),
+        reasoning_steps=(
+            {
+                "step_number": 0,
+                "phase": "think",
+                "content": "plan",
+                "tool_calls": [],
+                "tool_results": [],
+                "timestamp": 1.0,
+            },
+        ),
+        step_count=1,
+        token_usage={"prompt_tokens": 2, "completion_tokens": 3, "total_tokens": 5},
+        result=result,
+    )
+
+
+def test_in_memory_run_store_round_trips_and_uses_compare_and_set():
+    store = InMemoryAgentRunStore()
+
+    saved = store.save(make_checkpoint())
+
+    assert saved.is_ok()
+    assert saved.unwrap().version == 1
+    loaded = store.load("run-1")
+    assert loaded.is_ok()
+    assert loaded.unwrap().to_dict() == saved.unwrap().to_dict()
+
+    changed = make_checkpoint(status="paused")
+    conflict = store.save(changed, expected_version=0)
+    assert conflict.is_err()
+    assert conflict.unwrap_err()["errorType"] == "RUN_CHECKPOINT_CONFLICT"
+
+    updated = store.save(changed, expected_version=1)
+    assert updated.is_ok()
+    assert updated.unwrap().version == 2
+    assert store.load("run-1").unwrap().status == "paused"
+
+
+def test_file_run_store_survives_recreation_and_rejects_oversized_state(tmp_path):
+    store = FileAgentRunStore(tmp_path)
+    assert store.save(make_checkpoint(result={"answer": "ok"})).is_ok()
+
+    restarted = FileAgentRunStore(tmp_path)
+    loaded = restarted.load("run-1")
+    assert loaded.is_ok()
+    assert loaded.unwrap().result == {"answer": "ok"}
+
+    tiny = FileAgentRunStore(tmp_path / "tiny", max_checkpoint_bytes=32)
+    oversized = tiny.save(make_checkpoint())
+    assert oversized.is_err()
+    assert oversized.unwrap_err()["errorType"] == "RUN_CHECKPOINT_SIZE_EXCEEDED"
+
+
+def test_checkpoint_rejects_non_json_values_before_store_mutation():
+    store = InMemoryAgentRunStore()
+    invalid = make_checkpoint(result=object())
+
+    saved = store.save(invalid)
+
+    assert saved.is_err()
+    assert saved.unwrap_err()["errorType"] == "RUN_CHECKPOINT_INVALID"
+    assert store.load("run-1").unwrap() is None
+
+
+def test_checkpoint_parser_does_not_execute_embedded_values():
+    payload = make_checkpoint().to_dict()
+    payload["result"] = {"__class__": "os.system", "args": ["not executed"]}
+
+    parsed = AgentRunCheckpoint.from_dict(payload)
+
+    assert parsed.result == payload["result"]
+    assert json.dumps(parsed.to_dict(), allow_nan=False)
+
+
+class ScriptedProvider(LLMProvider):
+    """Small provider double for restart and approval boundaries."""
+
+    def __init__(self, config, responses=None):
+        super().__init__(config)
+        self.responses = list(responses or [])
+
+    def complete(
+        self, messages, tools=None, temperature=None, max_tokens=None, stop=None
+    ):
+        response = self.responses.pop(0)
+        return response if isinstance(response, Result) else Result.ok(response)
+
+
+@pytest.fixture(autouse=True)
+def register_run_provider():
+    original = dict(LLMProviderRegistry._providers)
+    LLMProviderRegistry.register("run-test", ScriptedProvider)
+    yield
+    LLMProviderRegistry._providers = original
+
+
+def make_agent(responses):
+    config = Config(agent_id="run-agent", broker_url="memory://test")
+    autonomy_config = AutonomousConfig(
+        llm=LLMConfig(provider="run-test", model="run-v1"),
+        max_reasoning_steps=4,
+        reflection_frequency=10,
+    )
+    agent = AutonomousAgent(config, autonomy_config)
+    agent.llm = ScriptedProvider(autonomy_config.llm, responses)
+    return agent
+
+
+def approval_tool(calls):
+    return Tool(
+        name="write_value",
+        description="Write one value",
+        parameters={"type": "object", "additionalProperties": True},
+        requires_approval=True,
+        handler=lambda **kwargs: (calls.append(kwargs) or Result.ok({"written": True})),
+    )
+
+
+def test_sync_run_pauses_for_approval_and_resumes_after_restart():
+    run_store = InMemoryAgentRunStore()
+    approval_store = InMemoryApprovalStore()
+    calls = []
+    first = make_agent(
+        [
+            LLMResponse(
+                content="request write",
+                tool_calls=[
+                    ToolCall(
+                        id="call-write",
+                        name="write_value",
+                        arguments={"value": "ready"},
+                    )
+                ],
+                finish_reason="tool_calls",
+            )
+        ]
+    )
+    first.set_run_store(run_store)
+    first.set_approval_store(approval_store)
+    assert first.register_tool(approval_tool(calls)).is_ok()
+
+    started = first.pursue_goal("Write the value", run_id="run-approval")
+
+    assert started.is_ok()
+    assert started.unwrap().status == "paused"
+    approval_id = started.unwrap().result["details"]["approval_id"]
+    checkpoint = run_store.load("run-approval").unwrap()
+    assert checkpoint is not None
+    assert checkpoint.status == "paused"
+    assert checkpoint.pending_approval_id == approval_id
+    assert calls == []
+    assert first.resume_run("run-approval").unwrap_err()["errorType"] == (
+        "RUN_WAITING_APPROVAL"
+    )
+
+    assert first.decide_approval(approval_id, approved=True).is_ok()
+    restarted = make_agent(
+        [LLMResponse(content="write complete", finish_reason="stop")]
+    )
+    restarted.set_run_store(run_store)
+    restarted.set_approval_store(approval_store)
+    assert restarted.register_tool(approval_tool(calls)).is_ok()
+
+    resumed = restarted.resume_run("run-approval")
+
+    assert resumed.is_ok()
+    assert resumed.unwrap().status == "completed"
+    assert calls == [{"value": "ready"}]
+    final_checkpoint = run_store.load("run-approval").unwrap()
+    assert final_checkpoint is not None
+    assert final_checkpoint.status == "completed"
+    assert final_checkpoint.pending_approval_id is None
+
+
+def test_sync_resume_does_not_repeat_completed_tool_after_model_interruption():
+    run_store = InMemoryAgentRunStore()
+    calls = []
+    first = make_agent(
+        [
+            LLMResponse(
+                content="call tool",
+                tool_calls=[ToolCall(id="call-once", name="write_value", arguments={})],
+                finish_reason="tool_calls",
+            ),
+            Result.err({"errorType": "MODEL_INTERRUPTED", "message": "retry"}),
+        ]
+    )
+    first.set_run_store(run_store)
+    tool = Tool(
+        name="write_value",
+        description="Write one value",
+        parameters={"type": "object"},
+        handler=lambda **kwargs: (calls.append("called") or Result.ok({"ok": True})),
+    )
+    assert first.register_tool(tool).is_ok()
+
+    interrupted = first.pursue_goal("Perform one write", run_id="run-recover")
+
+    assert interrupted.is_ok()
+    assert interrupted.unwrap().status == "failed"
+    assert calls == ["called"]
+    checkpoint = run_store.load("run-recover").unwrap()
+    assert checkpoint is not None
+    assert checkpoint.status == "running"
+    assert checkpoint.step_count == 1
+
+    restarted = make_agent([LLMResponse(content="recovered", finish_reason="stop")])
+    restarted.set_run_store(run_store)
+    assert restarted.register_tool(tool).is_ok()
+
+    resumed = restarted.resume_run("run-recover")
+
+    assert resumed.is_ok()
+    assert resumed.unwrap().status == "completed"
+    assert calls == ["called"]

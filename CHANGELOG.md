@@ -15,6 +15,11 @@
   and OpenAI Agents SDK. It separates MAPLE's native infrastructure strengths
   from partial/deferred runtime surfaces and records the next highest-value
   gaps without counting adapters as parity.
+- **Durable synchronous agent runs**: added bounded in-memory and atomic file
+  `AgentRunStore` implementations with versioned JSON-safe ReAct checkpoints.
+  Synchronous goals can pause on durable approval and resume after restart
+  without repeating a completed tool call; async run persistence remains an
+  explicit follow-on boundary.
 - **Tracked release-suite revalidation**: the 100 tracked test files now report
   `1,185 passed, 1 skipped in 210.07s` with no warning output; the slow
   workspace-only Doctrine gold verifier remains separately documented as open.

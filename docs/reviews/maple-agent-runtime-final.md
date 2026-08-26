@@ -312,6 +312,19 @@ verification remain open.
 - No code, dependency, user-owned untracked file, external service, website,
   or publication target was changed.
 
+## Slice 82 revalidation
+
+- The new `AgentRunStore` boundary is additive and reuses the existing
+  JSON-safe `SessionMessage` representation rather than serializing Goal,
+  provider, tool, or executable objects.
+- File saves use a temporary file, flush/fsync, and atomic replacement;
+  memory/file stores use compare-and-set versions and bounded payloads.
+- Approval pause happens before subsequent model-requested tool side effects;
+  resume replaces the pending tool placeholder and the regression proves a
+  completed tool is not repeated after a model interruption.
+- No security, dependency, license, cloud, publication, or website action was
+  introduced. Async durable runs remain a separately visible follow-on.
+
 ## Verdict
 
 **Feature review:** PASS for the twenty-three implemented capability slices.

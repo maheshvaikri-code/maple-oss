@@ -92,7 +92,7 @@
 | 79 | Tracked release-suite warning closure | QA / Release / Backend | `tests/test_fixes.py`, release plan, README, changelog, QA/review evidence | Tracked-test manifest execution, warning-free summary, focused test, Ruff, diff check | done: 100 tracked test files; `1185 passed, 1 skipped in 210.07s`; fixed a test returning a value to pytest; no runtime behavior or dependency change |
 | 80 | Clean tracked release artifact boundary | Release / DevOps / QA | clean archive build evidence, release plan, QA/review evidence | Build wheel/sdist from `git archive HEAD`, Twine checks, sdist content audit, no workspace-only files | done: clean snapshot built wheel/sdist `1.1.3`; both Twine checks `PASSED`; 460 sdist files; preserved workspace-only files absent; dirty-workspace artifact not treated as publishable |
 | 81 | Agent-framework parity ledger | Release / Chief Architect / QA | `docs/agent-framework-parity.md`, README, changelog, QA/review evidence | Source-backed five-framework matrix, explicit status vocabulary, code-block/sandbox boundary, prioritized gap list | done: functionality-only ledger filed; no adapter-as-parity claim; no runtime/dependency change |
-| 82 | Bounded durable agent-run checkpoints and approval resume | Chief Architect / Backend / Security / QA | `docs/adr/030-*`, `maple/autonomy/runs.py`, autonomy exports/agent, run tests, API docs, README, changelog, QA/review evidence | JSON-safe bounded snapshots, memory/file CAS, atomic restart recovery, per-step cursor, paused approval replacement, no duplicate completed tool call, sync/async resume, static/package/doctor gates | in progress: G1 ADR accepted; implementation and tests next |
+| 82 | Bounded durable synchronous agent-run checkpoints and approval resume | Chief Architect / Backend / Security / QA | `docs/adr/030-*`, `maple/autonomy/runs.py`, autonomy exports/agent, run tests, API docs, README, changelog, QA/review evidence | JSON-safe bounded snapshots, memory/file CAS, atomic restart recovery, per-step cursor, paused approval replacement, no duplicate completed tool call, synchronous resume, static/package/doctor gates | done: `45 passed in 0.36s` compatibility slice; autonomy suite `240 passed in 3.59s`; Ruff/Black/mypy/compile pass; async parity remains a follow-on slice |
 
 ## Threat sketch
 
@@ -395,3 +395,21 @@ and separately reviewed execution integrations.
 The exact current clean archive at the parity-ledger commit rebuilt wheel/sdist
 `1.1.3`; both Twine checks passed, the sdist contained 463 entries including
 the ledger, and the preserved workspace-only Doctrine files were absent.
+
+2026-08-25 durable synchronous agent-run slice: ADR-030 defines a bounded
+JSON-safe `AgentRunStore` with in-memory/file CAS persistence. The implementation
+checkpoints the ReAct message cursor after each completed step, pauses before
+additional tool side effects when a durable approval is pending, and resumes a
+paused or interrupted run without repeating the completed tool. Focused
+store/agent regression evidence reports `45 passed in 0.36s`; asynchronous
+run-store integration remains an explicit follow-on rather than an unverified
+claim.
+
+Slice 82 implementation evidence: `AgentRunCheckpoint` and the in-memory/file
+`AgentRunStore` are exported publicly. Sync ReAct runs checkpoint their message
+cursor and token usage after each completed step; durable approval pauses return
+`AGENT_RUN_PAUSED`, and `resume_run()` replaces the pending tool result before
+continuing. The focused compatibility slice reports `45 passed in 0.36s`, and
+the full autonomy directory reports `240 passed in 3.59s`. Async run-store
+integration, distributed leases, and exactly-once external effects remain
+explicit follow-on boundaries.

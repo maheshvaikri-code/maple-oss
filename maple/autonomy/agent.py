@@ -19,7 +19,7 @@ import json
 import logging
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Type
 
 from ..agent.agent import Agent
@@ -46,6 +46,7 @@ from .contracts import (
     structured_model_schema,
 )
 from .memory import MemoryManager
+from .runs import AgentRunCheckpoint, AgentRunStore
 from .sessions import SessionMessage, SessionSnapshot, SessionStore
 from .tools import Tool, ToolRegistry, create_builtin_tools
 
@@ -77,6 +78,7 @@ class Goal:
     result: Optional[Any] = None
     reasoning_trace: List[ReasoningStep] = field(default_factory=list)
     session_id: Optional[str] = None
+    run_id: Optional[str] = None
     session_error: Optional[Dict[str, Any]] = None
     token_usage: TokenUsage = field(default_factory=TokenUsage)
 
@@ -88,6 +90,15 @@ class _SessionTurn:
     session_id: str
     version: int
     messages: Tuple[SessionMessage, ...]
+
+
+@dataclass
+class _RunState:
+    """Mutable compare-and-set cursor owned by one active agent run."""
+
+    run_id: str
+    version: Optional[int] = None
+    session_version: Optional[int] = None
 
 
 @dataclass
@@ -187,6 +198,7 @@ class AutonomousAgent(Agent):
         self._approval_store: Optional[ApprovalStore] = None
         self._approval_namespace = uuid.uuid4().hex
         self._session_store: Optional[SessionStore] = None
+        self._run_store: Optional[AgentRunStore] = None
 
         # Active goals
         self._active_goals: Dict[str, Goal] = {}
@@ -213,6 +225,16 @@ class AutonomousAgent(Agent):
                     "session store must implement create, load, append, and clear"
                 )
         self._session_store = store
+
+    def set_run_store(self, store: Optional[AgentRunStore]) -> None:
+        """Set the opt-in store used for durable autonomous run checkpoints."""
+        if store is not None:
+            required_methods = ("load", "save")
+            if any(
+                not callable(getattr(store, name, None)) for name in required_methods
+            ):
+                raise TypeError("run store must implement load and save")
+        self._run_store = store
 
     def set_approval_store(self, store: Optional[ApprovalStore]) -> None:
         """Set a durable store used when approval callbacks are unavailable."""
@@ -472,8 +494,450 @@ class AutonomousAgent(Agent):
             None, self._record_session_turn, session_turn, goal
         )
 
+    @staticmethod
+    def _run_store_failure(operation: str, error: Dict[str, Any]) -> Dict[str, Any]:
+        """Normalize a store failure without copying untrusted payloads."""
+        return {
+            "errorType": "RUN_STORE_ERROR",
+            "message": "Agent run checkpoint operation failed.",
+            "details": {
+                "operation": operation,
+                "cause": error.get("errorType", "UNKNOWN"),
+            },
+        }
+
+    def _new_run_state(
+        self, run_id: Optional[str]
+    ) -> Result[Optional[_RunState], Dict[str, Any]]:
+        """Validate a new run identity before session or model side effects."""
+        if self._run_store is None:
+            if run_id is not None:
+                return Result.err(
+                    {
+                        "errorType": "RUN_STORE_UNAVAILABLE",
+                        "message": "A run store is required when run_id is provided.",
+                    }
+                )
+            return Result.ok(None)
+        chosen_id = run_id or f"run-{uuid.uuid4().hex}"
+        try:
+            loaded = self._run_store.load(chosen_id)
+        except Exception as exc:
+            return Result.err(
+                self._run_store_failure("load", {"errorType": type(exc).__name__})
+            )
+        if loaded.is_err():
+            return Result.err(self._run_store_failure("load", loaded.unwrap_err()))
+        if loaded.unwrap() is not None:
+            return Result.err(
+                {
+                    "errorType": "RUN_EXISTS",
+                    "message": "An agent run with this run_id already exists.",
+                    "details": {"run_id": chosen_id},
+                }
+            )
+        return Result.ok(_RunState(run_id=chosen_id))
+
+    @staticmethod
+    def _serialize_run_value(value: Any) -> Result[Any, Dict[str, Any]]:
+        """Normalize optional model output into JSON-safe checkpoint data."""
+        candidate = value
+        if candidate is not None and hasattr(candidate, "model_dump"):
+            try:
+                candidate = candidate.model_dump(mode="json")
+            except (TypeError, ValueError):
+                return Result.err(
+                    {
+                        "errorType": "RUN_VALUE_INVALID",
+                        "message": "Run value could not be converted to JSON data.",
+                    }
+                )
+        elif candidate is not None and hasattr(candidate, "dict"):
+            try:
+                candidate = candidate.dict()
+            except (TypeError, ValueError):
+                return Result.err(
+                    {
+                        "errorType": "RUN_VALUE_INVALID",
+                        "message": "Run value could not be converted to JSON data.",
+                    }
+                )
+        try:
+            encoded = json.dumps(candidate, ensure_ascii=False, allow_nan=False)
+            return Result.ok(json.loads(encoded))
+        except (TypeError, ValueError, OverflowError, json.JSONDecodeError):
+            return Result.err(
+                {
+                    "errorType": "RUN_VALUE_INVALID",
+                    "message": "Run value must be JSON-compatible data.",
+                }
+            )
+
+    @classmethod
+    def _run_messages(
+        cls, messages: Sequence[ChatMessage]
+    ) -> Result[Tuple[SessionMessage, ...], Dict[str, Any]]:
+        try:
+            stored = tuple(
+                SessionMessage.from_chat_message(message) for message in messages
+            )
+            normalized = cls._serialize_run_value(
+                [message.to_dict() for message in stored]
+            )
+            if normalized.is_err() or not isinstance(normalized.unwrap(), list):
+                return Result.err(
+                    {
+                        "errorType": "RUN_MESSAGES_INVALID",
+                        "message": "Agent run messages are not JSON-compatible.",
+                    }
+                )
+            return Result.ok(
+                tuple(SessionMessage.from_dict(item) for item in normalized.unwrap())
+            )
+        except (TypeError, ValueError, KeyError) as exc:
+            return Result.err(
+                {
+                    "errorType": "RUN_MESSAGES_INVALID",
+                    "message": "Agent run messages are invalid.",
+                    "details": {"reason": str(exc)[:256]},
+                }
+            )
+
+    @classmethod
+    def _run_trace(
+        cls, goal: Goal
+    ) -> Result[Tuple[Dict[str, Any], ...], Dict[str, Any]]:
+        trace: List[Dict[str, Any]] = []
+        for step in goal.reasoning_trace:
+            item = {
+                "step_number": step.step_number,
+                "phase": step.phase,
+                "content": step.content,
+                "tool_calls": [
+                    {"id": call.id, "name": call.name, "arguments": call.arguments}
+                    for call in step.tool_calls
+                ],
+                "tool_results": [
+                    {
+                        "tool_call_id": result.tool_call_id,
+                        "content": result.content,
+                        "is_error": result.is_error,
+                    }
+                    for result in step.tool_results
+                ],
+                "timestamp": step.timestamp,
+            }
+            normalized = cls._serialize_run_value(item)
+            if normalized.is_err() or not isinstance(normalized.unwrap(), dict):
+                return Result.err(
+                    {
+                        "errorType": "RUN_TRACE_INVALID",
+                        "message": "Agent reasoning trace is not JSON-compatible.",
+                    }
+                )
+            trace.append(normalized.unwrap())
+        return Result.ok(tuple(trace))
+
+    def _checkpoint_run(
+        self,
+        state: Optional[_RunState],
+        goal: Goal,
+        messages: Sequence[ChatMessage],
+        *,
+        status: str,
+        step_count: int,
+        output_retries_used: int,
+        pending_approval_id: Optional[str] = None,
+        result: Any = None,
+        error: Optional[Dict[str, Any]] = None,
+    ) -> Result[Optional[AgentRunCheckpoint], Dict[str, Any]]:
+        """Persist one run cursor; no-op when durable runs are not enabled."""
+        if state is None:
+            return Result.ok(None)
+        if self._run_store is None:
+            return Result.err(
+                {
+                    "errorType": "RUN_STORE_UNAVAILABLE",
+                    "message": "The configured run store is no longer available.",
+                }
+            )
+        stored_messages = self._run_messages(messages)
+        if stored_messages.is_err():
+            return Result.err(stored_messages.unwrap_err())
+        stored_trace = self._run_trace(goal)
+        if stored_trace.is_err():
+            return Result.err(stored_trace.unwrap_err())
+        stored_result = self._serialize_run_value(result)
+        if stored_result.is_err():
+            return Result.err(stored_result.unwrap_err())
+        stored_error = self._serialize_run_value(error)
+        if stored_error.is_err():
+            return Result.err(stored_error.unwrap_err())
+        checkpoint = AgentRunCheckpoint(
+            run_id=state.run_id,
+            agent_id=self.agent_id,
+            description=goal.description,
+            status=status,
+            messages=stored_messages.unwrap(),
+            reasoning_steps=stored_trace.unwrap(),
+            step_count=step_count,
+            output_retries_used=output_retries_used,
+            pending_approval_id=pending_approval_id,
+            session_id=goal.session_id,
+            session_version=state.session_version,
+            token_usage={
+                "prompt_tokens": goal.token_usage.prompt_tokens,
+                "completion_tokens": goal.token_usage.completion_tokens,
+                "total_tokens": goal.token_usage.total_tokens,
+            },
+            result=stored_result.unwrap(),
+            error=stored_error.unwrap(),
+        )
+        try:
+            saved = self._run_store.save(checkpoint, expected_version=state.version)
+        except Exception as exc:
+            return Result.err(
+                self._run_store_failure("save", {"errorType": type(exc).__name__})
+            )
+        if saved.is_err():
+            return Result.err(self._run_store_failure("save", saved.unwrap_err()))
+        state.version = saved.unwrap().version
+        return Result.ok(saved.unwrap())
+
+    @staticmethod
+    def _restore_trace(
+        checkpoint: AgentRunCheckpoint,
+    ) -> Result[List[ReasoningStep], Dict[str, Any]]:
+        restored: List[ReasoningStep] = []
+        try:
+            for item in checkpoint.reasoning_steps:
+                calls = [
+                    ToolCall(
+                        id=call["id"],
+                        name=call["name"],
+                        arguments=dict(call["arguments"]),
+                    )
+                    for call in item.get("tool_calls", [])
+                ]
+                results = [
+                    ToolResult(
+                        tool_call_id=result["tool_call_id"],
+                        content=result["content"],
+                        is_error=result["is_error"],
+                    )
+                    for result in item.get("tool_results", [])
+                ]
+                restored.append(
+                    ReasoningStep(
+                        step_number=item["step_number"],
+                        phase=item["phase"],
+                        content=item["content"],
+                        tool_calls=calls,
+                        tool_results=results,
+                        timestamp=float(item["timestamp"]),
+                    )
+                )
+        except (KeyError, TypeError, ValueError):
+            return Result.err(
+                {
+                    "errorType": "RUN_TRACE_INVALID",
+                    "message": "Persisted reasoning trace cannot be restored.",
+                }
+            )
+        return Result.ok(restored)
+
+    @staticmethod
+    def _replace_pending_tool_result(
+        messages: Sequence[SessionMessage], result: ToolResult
+    ) -> Result[List[ChatMessage], Dict[str, Any]]:
+        restored = [message.to_chat_message() for message in messages]
+        for index in range(len(restored) - 1, -1, -1):
+            message = restored[index]
+            if (
+                message.role == ChatRole.TOOL
+                and message.tool_call_id == result.tool_call_id
+            ):
+                restored[index] = ChatMessage(
+                    role=ChatRole.TOOL,
+                    content=result.content,
+                    tool_call_id=result.tool_call_id,
+                )
+                return Result.ok(restored)
+        return Result.err(
+            {
+                "errorType": "RUN_PENDING_TOOL_MISSING",
+                "message": "The persisted approval tool result could not be located.",
+            }
+        )
+
+    def resume_run(self, run_id: str) -> Result[Goal, Dict[str, Any]]:
+        """Resume a running or approval-paused durable agent run."""
+        if self._run_store is None:
+            return Result.err(
+                {
+                    "errorType": "RUN_STORE_UNAVAILABLE",
+                    "message": "A run store is required to resume an agent run.",
+                }
+            )
+        try:
+            loaded = self._run_store.load(run_id)
+        except Exception as exc:
+            return Result.err(
+                self._run_store_failure("load", {"errorType": type(exc).__name__})
+            )
+        if loaded.is_err():
+            return Result.err(self._run_store_failure("load", loaded.unwrap_err()))
+        checkpoint = loaded.unwrap()
+        if checkpoint is None:
+            return Result.err(
+                {
+                    "errorType": "RUN_NOT_FOUND",
+                    "message": "Agent run checkpoint was not found.",
+                }
+            )
+        if checkpoint.status in {"completed", "failed"}:
+            return Result.err(
+                {
+                    "errorType": "RUN_NOT_RESUMABLE",
+                    "message": "Only running or paused agent runs can be resumed.",
+                    "details": {"status": checkpoint.status},
+                }
+            )
+
+        messages = list(checkpoint.messages)
+        if checkpoint.pending_approval_id is not None:
+            if self._approval_store is None:
+                return Result.err(
+                    {
+                        "errorType": "APPROVAL_STORE_UNAVAILABLE",
+                        "message": "An approval store is required to resume this run.",
+                    }
+                )
+            request_result = self._approval_store.get(checkpoint.pending_approval_id)
+            if request_result.is_err():
+                return Result.err(
+                    self._run_store_failure(
+                        "approval_load", request_result.unwrap_err()
+                    )
+                )
+            request = request_result.unwrap()
+            if request is None:
+                return Result.err(
+                    {
+                        "errorType": "APPROVAL_NOT_FOUND",
+                        "message": "The pending approval request was not found.",
+                    }
+                )
+            if request.status == "pending":
+                return Result.err(
+                    {
+                        "errorType": "RUN_WAITING_APPROVAL",
+                        "message": "The agent run is waiting for operator approval.",
+                        "details": {"approval_id": request.approval_id},
+                    }
+                )
+            if request.status == "approved":
+                tool_result = self.execute_approved_tool(request.approval_id)
+            elif request.status == "denied":
+                tool_result = self._approval_error(
+                    request.tool_call_id,
+                    "APPROVAL_DENIED",
+                    "Action was not approved by the operator.",
+                )
+            else:
+                return Result.err(
+                    {
+                        "errorType": "APPROVAL_CONSUMED",
+                        "message": "The pending approval request was already consumed.",
+                    }
+                )
+            replaced = self._replace_pending_tool_result(messages, tool_result)
+            if replaced.is_err():
+                return Result.err(replaced.unwrap_err())
+            messages = [
+                SessionMessage.from_chat_message(message)
+                for message in replaced.unwrap()
+            ]
+            checkpoint = replace(
+                checkpoint,
+                status="running",
+                pending_approval_id=None,
+                messages=tuple(messages),
+                error=None,
+                result=None,
+            )
+            try:
+                saved = self._run_store.save(
+                    checkpoint, expected_version=checkpoint.version
+                )
+            except Exception as exc:
+                return Result.err(
+                    self._run_store_failure(
+                        "approval_resume", {"errorType": type(exc).__name__}
+                    )
+                )
+            if saved.is_err():
+                return Result.err(
+                    self._run_store_failure("approval_resume", saved.unwrap_err())
+                )
+            checkpoint = saved.unwrap()
+
+        trace = self._restore_trace(checkpoint)
+        if trace.is_err():
+            return Result.err(trace.unwrap_err())
+        goal = Goal(
+            goal_id=checkpoint.run_id,
+            description=checkpoint.description,
+            status="in_progress",
+            session_id=checkpoint.session_id,
+            run_id=checkpoint.run_id,
+            reasoning_trace=trace.unwrap(),
+            token_usage=TokenUsage(
+                prompt_tokens=checkpoint.token_usage.get("prompt_tokens", 0),
+                completion_tokens=checkpoint.token_usage.get("completion_tokens", 0),
+                total_tokens=checkpoint.token_usage.get("total_tokens", 0),
+            ),
+        )
+        self._active_goals[goal.goal_id] = goal
+        state = _RunState(
+            run_id=checkpoint.run_id,
+            version=checkpoint.version,
+            session_version=checkpoint.session_version,
+        )
+        resumed = self._react_loop(
+            goal,
+            run_state=state,
+            initial_messages=[message.to_chat_message() for message in messages],
+            starting_step=checkpoint.step_count,
+            output_retries_used=checkpoint.output_retries_used,
+        )
+        if resumed.is_ok():
+            goal.status = "completed"
+            goal.result = resumed.unwrap()
+        else:
+            goal.status = (
+                "paused"
+                if resumed.unwrap_err().get("errorType") == "AGENT_RUN_PAUSED"
+                else "failed"
+            )
+            goal.result = resumed.unwrap_err()
+        if goal.status != "paused" and goal.session_id is not None:
+            session_turn = _SessionTurn(
+                session_id=goal.session_id,
+                version=checkpoint.session_version or 0,
+                messages=(),
+            )
+            session_record = self._record_session_turn(session_turn, goal)
+            if session_record.is_err():
+                goal.session_error = session_record.unwrap_err()
+        return Result.ok(goal)
+
     def pursue_goal(
-        self, description: str, *, session_id: Optional[str] = None
+        self,
+        description: str,
+        *,
+        session_id: Optional[str] = None,
+        run_id: Optional[str] = None,
     ) -> Result[Goal, Dict[str, Any]]:
         """
         Main entry point: pursue a high-level goal using the ReAct loop.
@@ -485,21 +949,29 @@ class AutonomousAgent(Agent):
         )
         if input_guardrails.is_err():
             return Result.err(input_guardrails.unwrap_err())
+        run_state_result = self._new_run_state(run_id)
+        if run_state_result.is_err():
+            return Result.err(run_state_result.unwrap_err())
+        run_state = run_state_result.unwrap()
         session_result = self._prepare_session_turn(description, session_id)
         if session_result.is_err():
             return Result.err(session_result.unwrap_err())
         session_turn = session_result.unwrap()
+        if run_state is not None and session_turn is not None:
+            run_state.session_version = session_turn.version
         goal = Goal(
             goal_id=str(uuid.uuid4()),
             description=description,
             status="in_progress",
             session_id=session_id,
+            run_id=run_state.run_id if run_state is not None else None,
         )
         self._active_goals[goal.goal_id] = goal
 
         try:
             result = self._react_loop(
                 goal,
+                run_state=run_state,
                 session_messages=(
                     session_turn.messages if session_turn is not None else None
                 ),
@@ -508,11 +980,16 @@ class AutonomousAgent(Agent):
                 goal.status = "completed"
                 goal.result = result.unwrap()
             else:
-                goal.status = "failed"
+                goal.status = (
+                    "paused"
+                    if result.unwrap_err().get("errorType") == "AGENT_RUN_PAUSED"
+                    else "failed"
+                )
                 goal.result = result.unwrap_err()
-            session_record = self._record_session_turn(session_turn, goal)
-            if session_record.is_err():
-                goal.session_error = session_record.unwrap_err()
+            if goal.status != "paused":
+                session_record = self._record_session_turn(session_turn, goal)
+                if session_record.is_err():
+                    goal.session_error = session_record.unwrap_err()
             return Result.ok(goal)
         except Exception as e:
             goal.status = "failed"
@@ -525,11 +1002,33 @@ class AutonomousAgent(Agent):
                 }
             )
 
+    @staticmethod
+    def _approval_id_from_tool_result(tool_result: ToolResult) -> Optional[str]:
+        """Extract only the stable approval ID from a pending tool result."""
+        if not tool_result.is_error:
+            return None
+        try:
+            payload = json.loads(tool_result.content)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return None
+        if (
+            not isinstance(payload, dict)
+            or payload.get("errorType") != "APPROVAL_PENDING"
+        ):
+            return None
+        details = payload.get("details")
+        approval_id = details.get("approval_id") if isinstance(details, dict) else None
+        return approval_id if isinstance(approval_id, str) else None
+
     def _react_loop(
         self,
         goal: Goal,
         *,
         session_messages: Optional[Sequence[SessionMessage]] = None,
+        run_state: Optional[_RunState] = None,
+        initial_messages: Optional[Sequence[ChatMessage]] = None,
+        starting_step: int = 0,
+        output_retries_used: int = 0,
     ) -> Result[Any, Dict[str, Any]]:
         """
         ReAct (Reasoning + Acting) loop.
@@ -538,10 +1037,23 @@ class AutonomousAgent(Agent):
         2. ACT: Execute tool calls or send messages
         3. REFLECT: Assess progress, update memory, decide if done
         """
-        messages = self._build_initial_context(goal, session_messages=session_messages)
-        output_retries_used = 0
+        messages = (
+            list(initial_messages)
+            if initial_messages is not None
+            else self._build_initial_context(goal, session_messages=session_messages)
+        )
+        initial_checkpoint = self._checkpoint_run(
+            run_state,
+            goal,
+            messages,
+            status="running",
+            step_count=starting_step,
+            output_retries_used=output_retries_used,
+        )
+        if initial_checkpoint.is_err():
+            return Result.err(initial_checkpoint.unwrap_err())
 
-        for step_num in range(self.autonomy_config.max_reasoning_steps):
+        for step_num in range(starting_step, self.autonomy_config.max_reasoning_steps):
             start_time = time.time()
 
             # THINK: Get LLM response
@@ -575,6 +1087,23 @@ class AutonomousAgent(Agent):
             if not response.tool_calls and response.finish_reason == "stop":
                 final_result = self._finalize_output(response.content)
                 if final_result.is_ok():
+                    messages.append(
+                        ChatMessage(
+                            role=ChatRole.ASSISTANT,
+                            content=response.content or "",
+                        )
+                    )
+                    completed_checkpoint = self._checkpoint_run(
+                        run_state,
+                        goal,
+                        messages,
+                        status="completed",
+                        step_count=step_num + 1,
+                        output_retries_used=output_retries_used,
+                        result=final_result.unwrap(),
+                    )
+                    if completed_checkpoint.is_err():
+                        return Result.err(completed_checkpoint.unwrap_err())
                     return final_result
                 if self._queue_output_retry(
                     messages,
@@ -583,7 +1112,28 @@ class AutonomousAgent(Agent):
                     output_retries_used,
                 ):
                     output_retries_used += 1
+                    retry_checkpoint = self._checkpoint_run(
+                        run_state,
+                        goal,
+                        messages,
+                        status="running",
+                        step_count=step_num + 1,
+                        output_retries_used=output_retries_used,
+                    )
+                    if retry_checkpoint.is_err():
+                        return Result.err(retry_checkpoint.unwrap_err())
                     continue
+                failed_checkpoint = self._checkpoint_run(
+                    run_state,
+                    goal,
+                    messages,
+                    status="failed",
+                    step_count=step_num + 1,
+                    output_retries_used=output_retries_used,
+                    error=final_result.unwrap_err(),
+                )
+                if failed_checkpoint.is_err():
+                    return Result.err(failed_checkpoint.unwrap_err())
                 return final_result
 
             # ACT: Execute tool calls
@@ -611,6 +1161,32 @@ class AutonomousAgent(Agent):
                         )
                     )
 
+                    pending_approval_id = self._approval_id_from_tool_result(
+                        tool_result
+                    )
+                    if pending_approval_id is not None and run_state is not None:
+                        paused_error = {
+                            "errorType": "AGENT_RUN_PAUSED",
+                            "message": "Agent run is waiting for operator approval.",
+                            "details": {
+                                "run_id": run_state.run_id,
+                                "approval_id": pending_approval_id,
+                            },
+                        }
+                        paused_checkpoint = self._checkpoint_run(
+                            run_state,
+                            goal,
+                            messages,
+                            status="paused",
+                            step_count=step_num + 1,
+                            output_retries_used=output_retries_used,
+                            pending_approval_id=pending_approval_id,
+                            error=paused_error,
+                        )
+                        if paused_checkpoint.is_err():
+                            return Result.err(paused_checkpoint.unwrap_err())
+                        return Result.err(paused_error)
+
                     # Update working memory
                     self.memory.working.add(
                         key=f"tool:{tool_call.name}:{step_num}",
@@ -633,6 +1209,23 @@ class AutonomousAgent(Agent):
                     final_content = reflection.get("conclusion", response.content)
                     final_result = self._finalize_output(final_content)
                     if final_result.is_ok():
+                        messages.append(
+                            ChatMessage(
+                                role=ChatRole.ASSISTANT,
+                                content=final_content or "",
+                            )
+                        )
+                        completed_checkpoint = self._checkpoint_run(
+                            run_state,
+                            goal,
+                            messages,
+                            status="completed",
+                            step_count=step_num + 1,
+                            output_retries_used=output_retries_used,
+                            result=final_result.unwrap(),
+                        )
+                        if completed_checkpoint.is_err():
+                            return Result.err(completed_checkpoint.unwrap_err())
                         return final_result
                     if self._queue_output_retry(
                         messages,
@@ -641,8 +1234,40 @@ class AutonomousAgent(Agent):
                         output_retries_used,
                     ):
                         output_retries_used += 1
+                        retry_checkpoint = self._checkpoint_run(
+                            run_state,
+                            goal,
+                            messages,
+                            status="running",
+                            step_count=step_num + 1,
+                            output_retries_used=output_retries_used,
+                        )
+                        if retry_checkpoint.is_err():
+                            return Result.err(retry_checkpoint.unwrap_err())
                         continue
+                    failed_checkpoint = self._checkpoint_run(
+                        run_state,
+                        goal,
+                        messages,
+                        status="failed",
+                        step_count=step_num + 1,
+                        output_retries_used=output_retries_used,
+                        error=final_result.unwrap_err(),
+                    )
+                    if failed_checkpoint.is_err():
+                        return Result.err(failed_checkpoint.unwrap_err())
                     return final_result
+
+            running_checkpoint = self._checkpoint_run(
+                run_state,
+                goal,
+                messages,
+                status="running",
+                step_count=step_num + 1,
+                output_retries_used=output_retries_used,
+            )
+            if running_checkpoint.is_err():
+                return Result.err(running_checkpoint.unwrap_err())
 
         return Result.err(
             {

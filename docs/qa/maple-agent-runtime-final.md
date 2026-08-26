@@ -321,6 +321,21 @@ slow Doctrine gold phase before interruption without a pytest summary.
   parity ledger while excluding all preserved workspace-only Doctrine files.
 - Documentation-only change; no runtime behavior or dependency changed.
 
+## Slice 82 revalidation — durable synchronous agent runs
+
+- `tests/autonomy/test_runs.py` reports `6 passed in 0.25s` for store bounds,
+  JSON-safe parsing, file restart persistence, CAS conflicts, approval pause/
+  resume, and completed-tool non-repetition after model interruption.
+- The compatibility set (`test_runs.py`, `test_agent.py`,
+  `test_agent_sessions.py`, and `test_approval.py`) reports `45 passed in
+  0.36s`.
+- Public imports for `AgentRunCheckpoint`, `AgentRunStore`,
+  `InMemoryAgentRunStore`, and `FileAgentRunStore` pass. Changed-source
+  Ruff, Black, mypy, and compile checks pass.
+- The synchronous boundary is documented; `pursue_goal_async` does not claim
+  durable run persistence yet. Cross-process leases, exactly-once effects,
+  and full trace replay remain explicitly out of scope.
+
 ## Security conclusions
 
 - No new dependency, credential, cloud call, website mutation, or publication
