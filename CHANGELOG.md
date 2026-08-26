@@ -122,7 +122,10 @@
   separate boundaries. Focused event/lifecycle coverage reports `37 passed in
   2.28s`; the exact tracked manifest reports `1226 passed, 1 skipped in
   216.99s`; Ruff, Black, compile, diff, doctor, and changed-boundary mypy
-  pass. No publication was performed.
+  pass. A clean committed-HEAD archive rebuilt wheel/sdist `1.1.3`; build and
+  Twine exited 0, the sdist contains 487 entries including all three slice
+  files, and the workspace-only audit found zero preserved Doctrine files. No
+  publication was performed.
 - **Agent-framework parity ledger**: added a source-backed functionality and
   runtime matrix for LangGraph, CrewAI, Microsoft Agent Framework, LlamaIndex,
   and OpenAI Agents SDK. It separates MAPLE's native infrastructure strengths

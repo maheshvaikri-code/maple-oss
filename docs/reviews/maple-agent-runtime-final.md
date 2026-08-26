@@ -577,8 +577,11 @@ remain explicit follow-on work.
 - Focused event/lifecycle coverage reports `37 passed in 2.28s`; the exact
   tracked manifest reports `1226 passed, 1 skipped in 216.99s` across 107 tracked
   test files. Ruff, Black, compile, diff, doctor, and changed-boundary mypy
-  pass. Remote transport, provider token linkage, durable broker storage, and
-  exporter behavior remain unimplemented by design.
+  pass. A clean committed-HEAD archive rebuilt wheel/sdist `1.1.3`; build and
+  Twine both exited 0, the sdist contains 487 entries including ADR-043, the
+  event module, and its regression, and the workspace-only audit found zero
+  preserved Doctrine files. Remote transport, provider token linkage, durable
+  broker storage, and exporter behavior remain unimplemented by design.
 
 ## Verdict
 

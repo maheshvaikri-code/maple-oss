@@ -582,6 +582,10 @@ slow Doctrine gold phase before interruption without a pytest summary.
 - Ruff, Black, and changed-boundary mypy pass for the edited event and export
   boundaries; compile and diff checks also pass. The exact tracked manifest
   reports `1226 passed, 1 skipped in 216.99s` across 107 tracked test files.
+- A clean archive from committed `HEAD` rebuilt wheel/sdist `1.1.3`; build and
+  Twine both exited 0, the sdist contains 487 entries including ADR-043, the
+  event module, and its regression, and the workspace-only audit found zero
+  preserved Doctrine files.
 - This slice remains local and in-process: no durable broker, remote transport,
   provider token stream, or exporter is claimed.
 
