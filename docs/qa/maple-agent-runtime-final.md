@@ -409,6 +409,23 @@ slow Doctrine gold phase before interruption without a pytest summary.
 - No publication, registry upload, cloud call, website mutation, or user-owned
   untracked-file change was made.
 
+## Slice 88 QA — bounded editable durable approvals
+
+- `tests/autonomy/test_approval.py`, `tests/autonomy/test_runs.py`, and
+  `tests/autonomy/test_agent.py` report `44 passed in 0.46s`.
+- The exact tracked application manifest reports `1197 passed, 1 skipped in
+  204.41s`; the two new approval regressions cover in-memory/file persistence,
+  invalid-edit no-mutation, denied-edit rejection, and sync/async durable
+  resume execution of the persisted replacement.
+- Ruff reports `All checks passed!`; Black reports `94 files would be left
+  unchanged`; mypy reports `Success: no issues found in 94 source files`;
+  compile and `git diff --check` pass.
+- Network-free doctor returns `ready: true`, `status: SUCCESS`, version
+  `1.1.3`, all eight checks true, and `network: false`.
+- Clean wheel/sdist and Twine evidence for the final documentation commit is
+  still pending. No publication, website, cloud, registry, or user-owned
+  untracked-file change was made.
+
 ## Security conclusions
 
 - No new dependency, credential, cloud call, website mutation, or publication

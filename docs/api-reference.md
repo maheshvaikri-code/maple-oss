@@ -1064,19 +1064,28 @@ agent.set_approval_store(store)
 goal = agent.pursue_goal("perform the approval-gated action")
 pending = goal.unwrap().reasoning_trace[-1].tool_results[-1]
 approval_id = json.loads(pending.content)["details"]["approval_id"]
-decision = agent.decide_approval(approval_id, approved=True)
+decision = agent.decide_approval(
+    approval_id,
+    approved=True,
+    edited_arguments={"key": "status", "value": "corrected"},
+)
 if decision.is_ok():
     result = agent.execute_approved_tool(approval_id)
 ```
 
 `decide_approval` is a pending-to-approved/denied compare-and-set operation;
+an approved decision may include a bounded JSON `edited_arguments` replacement.
+`None` keeps the original model arguments, while `{}` intentionally supplies an
+empty object. Invalid edits or edits attached to a denial return
+`APPROVAL_DECISION_INVALID` without changing the pending record.
 `execute_approved_tool` claims the request before executing it and a second
 attempt in the same process returns `APPROVAL_CONSUMED`. File persistence is
 atomic and thread-safe within one process; cross-process leases remain a host
 responsibility. Approval arguments may contain application-sensitive data and
 should be protected with host filesystem access controls. The store does not
-persist the full ReAct conversation, and failed tool execution requires a new
-approval request.
+persist the full ReAct conversation, does not implement arbitrary
+request/response HITL forms, and failed tool execution requires a new approval
+request.
 
 ### Bounded conversation sessions
 

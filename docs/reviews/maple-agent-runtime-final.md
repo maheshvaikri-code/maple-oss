@@ -386,9 +386,27 @@ verification remain open.
   `network: false`. No publication, website, cloud, or registry action was
   taken.
 
+## Slice 88 implementation review
+
+- `ApprovalDecision` now carries an optional keyword-only `edited_arguments`
+  replacement. In-memory and atomic file stores validate the replacement with
+  the existing JSON depth, item, finite-number, and byte quotas before any
+  state transition or file write.
+- Approved edits are selected after one-time claim by
+  `execute_approved_tool()` and are honored by sync and async durable resume;
+  invalid edits and denied-with-edit decisions leave the pending record
+  unchanged. Arbitrary multi-turn request/response HITL and cross-process
+  approval leases remain explicit gaps.
+- Focused approval/run/agent regression reports `44 passed in 0.46s`; the
+  exact tracked application manifest reports `1197 passed, 1 skipped in
+  204.41s`. Ruff, Black, mypy, compile, and network-free doctor checks pass.
+- Package and clean-current-commit artifact evidence is pending the release
+  documentation commit; no publication, website, cloud, or registry action
+  was taken.
+
 ## Verdict
 
-**Feature review:** PASS for the twenty-six implemented capability slices.
+**Feature review:** PASS for the twenty-seven implemented capability slices.
 **Publish readiness:** NOT YET APPROVED. A release manager should close the
 workspace-only Doctrine gold and fresh-verifier gates before publishing. The
 remaining Bandit findings are documented low-severity legacy debt; external

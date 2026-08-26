@@ -10,6 +10,12 @@
 
 ### Additions
 
+- **Editable durable tool approvals**: approved decisions may persist one
+  bounded JSON `edited_arguments` object through the in-memory or atomic file
+  approval store. Sync and async durable resume execute the persisted edit after
+  one-time claim; invalid or denied-with-edit decisions fail closed without
+  mutating the pending request. Arbitrary multi-turn request/response HITL and
+  cross-process leases remain separate follow-on boundaries.
 - **Agent-framework parity ledger**: added a source-backed functionality and
   runtime matrix for LangGraph, CrewAI, Microsoft Agent Framework, LlamaIndex,
   and OpenAI Agents SDK. It separates MAPLE's native infrastructure strengths
