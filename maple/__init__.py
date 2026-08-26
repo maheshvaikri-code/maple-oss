@@ -97,6 +97,12 @@ from .autonomy.execution import (
     TrustedLocalExecutor,
 )
 from .autonomy.interop import InteropEnvelope, round_trip_json
+from .autonomy.handoffs import (
+    FileHandoffStore,
+    HandoffRecord,
+    HandoffStore,
+    InMemoryHandoffStore,
+)
 from .autonomy.memory import MemoryManager
 from .autonomy.orchestrator import AgentOrchestrator
 from .autonomy.replay import (
@@ -321,6 +327,10 @@ __all__ = [
     "RetrievalEvalCase",
     "InteropEnvelope",
     "round_trip_json",
+    "HandoffRecord",
+    "HandoffStore",
+    "FileHandoffStore",
+    "InMemoryHandoffStore",
     "Artifact",
     "ArtifactStore",
     "CodeBlock",

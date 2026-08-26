@@ -14,9 +14,11 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 """
 
 import asyncio
+import hashlib
 import json
 import logging
 import math
+import uuid
 from dataclasses import dataclass, field
 from typing import (
     TYPE_CHECKING,
@@ -41,6 +43,7 @@ from .contracts import (
     validate_typed_value,
 )
 from .execution import ExecutionExecutor
+from .handoffs import HandoffRecord, HandoffStore
 
 if TYPE_CHECKING:
     from .agent import AutonomousAgent
@@ -553,6 +556,119 @@ def _format_handoff_result(
     )
 
 
+def _handoff_digest(value: Any) -> Optional[str]:
+    try:
+        encoded = json.dumps(
+            value,
+            ensure_ascii=False,
+            allow_nan=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _handoff_store_error(
+    operation: str, result: Optional[Result[Any, Dict[str, Any]]] = None
+) -> Result[Any, Dict[str, Any]]:
+    reason = "UNKNOWN"
+    if result is not None and result.is_err():
+        error = result.unwrap_err()
+        if isinstance(error, dict) and isinstance(error.get("errorType"), str):
+            reason = error["errorType"][:128]
+    return Result.err(
+        {
+            "errorType": "HANDOFF_STORE_ERROR",
+            "message": "Handoff ownership state could not be persisted.",
+            "details": {"operation": operation, "reason": reason},
+        }
+    )
+
+
+def _start_persisted_handoff(
+    store: HandoffStore,
+    source_agent_id: str,
+    target_agent_id: str,
+    task: str,
+    context: Mapping[str, Any],
+) -> Result[str, Dict[str, Any]]:
+    task_digest = _handoff_digest(task)
+    context_digest = _handoff_digest(context) if context else None
+    if task_digest is None or (context and context_digest is None):
+        return _handoff_store_error("create")
+    handoff_id = uuid.uuid4().hex
+    try:
+        created = store.create(
+            HandoffRecord.pending(
+                handoff_id,
+                source_agent_id,
+                target_agent_id,
+                task_digest,
+                context_digest,
+            )
+        )
+        if created.is_err():
+            return _handoff_store_error("create", created)
+        accepted = store.accept(handoff_id, target_agent_id)
+        if accepted.is_err():
+            return _handoff_store_error("accept", accepted)
+    except Exception:
+        return _handoff_store_error("create")
+    return Result.ok(handoff_id)
+
+
+def _finish_persisted_handoff(
+    store: HandoffStore,
+    handoff_id: str,
+    target_agent_id: str,
+    formatted: Result[Dict[str, Any], Dict[str, Any]],
+) -> Result[Dict[str, Any], Dict[str, Any]]:
+    try:
+        if formatted.is_ok():
+            target_goal_id = formatted.unwrap().get("goal_id")
+            if not isinstance(target_goal_id, str):
+                finalized = store.fail(
+                    handoff_id, target_agent_id, "HANDOFF_TARGET_INVALID"
+                )
+            else:
+                finalized = store.complete(handoff_id, target_agent_id, target_goal_id)
+        else:
+            error = formatted.unwrap_err()
+            error_type = (
+                error.get("errorType")
+                if isinstance(error, dict)
+                else "HANDOFF_TARGET_FAILED"
+            )
+            finalized = store.fail(
+                handoff_id,
+                target_agent_id,
+                error_type if isinstance(error_type, str) else "HANDOFF_TARGET_FAILED",
+            )
+    except Exception:
+        return _handoff_store_error("finalize")
+    if finalized.is_err():
+        return _handoff_store_error("finalize", finalized)
+    if formatted.is_ok():
+        payload = dict(formatted.unwrap())
+        payload["handoff_id"] = handoff_id
+        return Result.ok(payload)
+    error = dict(formatted.unwrap_err())
+    details = error.get("details")
+    merged_details = dict(details) if isinstance(details, dict) else {}
+    merged_details["handoff_id"] = handoff_id
+    error["details"] = merged_details
+    return Result.err(error)
+
+
+async def _run_handoff_store_async(
+    callback: Callable[[], Result[Any, Dict[str, Any]]],
+) -> Result[Any, Dict[str, Any]]:
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, callback)
+
+
 def create_handoff_tool(
     target_agent: "AutonomousAgent",
     *,
@@ -560,6 +676,8 @@ def create_handoff_tool(
     description: Optional[str] = None,
     requires_approval: bool = True,
     allowed_context_keys: Optional[Sequence[str]] = None,
+    handoff_store: Optional[HandoffStore] = None,
+    source_agent_id: Optional[str] = None,
 ) -> Tool:
     """Create a bounded tool that delegates one task to another agent.
 
@@ -567,16 +685,36 @@ def create_handoff_tool(
     optional context object is copied, bounded, and filtered by an explicit
     ``allowed_context_keys`` list. Non-empty context requires the target to
     expose ``pursue_goal_with_context``; legacy targets remain compatible when
-    no context is supplied.
+    no context is supplied. When ``handoff_store`` is provided, a bounded
+    identity record transfers ownership from ``source_agent_id`` (or ``host``)
+    to the target before execution and returns ownership after completion.
     """
     target_id = getattr(target_agent, "agent_id", None)
     pursue_goal = getattr(target_agent, "pursue_goal", None)
-    if not isinstance(target_id, str) or not target_id or len(target_id) > 256:
+    if (
+        not isinstance(target_id, str)
+        or not target_id
+        or len(target_id) > 256
+        or any(ord(char) < 32 for char in target_id)
+    ):
         raise ValueError("target_agent must expose a bounded non-empty agent_id")
     if not callable(pursue_goal):
         raise ValueError("target_agent must expose a callable pursue_goal method")
     if not isinstance(requires_approval, bool):
         raise ValueError("requires_approval must be boolean")
+    source_id = "host" if source_agent_id is None else source_agent_id
+    if (
+        not isinstance(source_id, str)
+        or not source_id
+        or len(source_id) > 256
+        or any(ord(char) < 32 for char in source_id)
+    ):
+        raise ValueError("source_agent_id must be bounded text")
+    if handoff_store is not None and any(
+        not callable(getattr(handoff_store, method, None))
+        for method in ("create", "get", "accept", "complete", "fail", "list_open")
+    ):
+        raise ValueError("handoff_store does not implement the handoff contract")
     if allowed_context_keys is None:
         allowed_keys: frozenset[str] = frozenset()
     else:
@@ -622,22 +760,33 @@ def create_handoff_tool(
                     "details": {"keys": denied_keys},
                 }
             )
+        handoff_id: Optional[str] = None
+        if handoff_store is not None:
+            started = _start_persisted_handoff(
+                handoff_store, source_id, target_id, task, handoff_context
+            )
+            if started.is_err():
+                return Result.err(started.unwrap_err())
+            handoff_id = started.unwrap()
         pursue_with_context = getattr(target_agent, "pursue_goal_with_context", None)
+        execution_error: Optional[Result[Dict[str, Any], Dict[str, Any]]] = None
         try:
             if handoff_context:
                 if not callable(pursue_with_context):
-                    return Result.err(
+                    target_result = Result.err(
                         {
                             "errorType": "HANDOFF_CONTEXT_UNSUPPORTED",
                             "message": "Target agent does not declare context-aware handoff.",
                             "details": {"agent_id": target_id},
                         }
                     )
-                target_result = pursue_with_context(task, handoff_context)
+                    execution_error = target_result
+                else:
+                    target_result = pursue_with_context(task, handoff_context)
             else:
                 target_result = pursue_goal(task)
         except Exception as exc:
-            return Result.err(
+            target_result = Result.err(
                 {
                     "errorType": "HANDOFF_TARGET_ERROR",
                     "message": "Delegated agent execution failed.",
@@ -647,7 +796,17 @@ def create_handoff_tool(
                     },
                 }
             )
-        return _format_handoff_result(target_result, target_id)
+            execution_error = target_result
+        formatted = (
+            execution_error
+            if execution_error is not None
+            else _format_handoff_result(target_result, target_id)
+        )
+        if handoff_store is not None and handoff_id is not None:
+            return _finish_persisted_handoff(
+                handoff_store, handoff_id, target_id, formatted
+            )
+        return formatted
 
     async_handler: Optional[Callable[..., Awaitable[Result[Any, Dict[str, Any]]]]] = (
         None
@@ -674,23 +833,36 @@ def create_handoff_tool(
                         "details": {"keys": denied_keys},
                     }
                 )
+            handoff_id: Optional[str] = None
+            if handoff_store is not None:
+                started = await _run_handoff_store_async(
+                    lambda: _start_persisted_handoff(
+                        handoff_store, source_id, target_id, task, handoff_context
+                    )
+                )
+                if started.is_err():
+                    return Result.err(started.unwrap_err())
+                handoff_id = started.unwrap()
+            execution_error: Optional[Result[Dict[str, Any], Dict[str, Any]]] = None
             try:
                 if handoff_context:
                     if not callable(pursue_with_context_async):
-                        return Result.err(
+                        target_result = Result.err(
                             {
                                 "errorType": "HANDOFF_CONTEXT_UNSUPPORTED",
                                 "message": "Target agent does not declare async context-aware handoff.",
                                 "details": {"agent_id": target_id},
                             }
                         )
-                    target_result = await pursue_with_context_async(
-                        task, handoff_context
-                    )
+                        execution_error = target_result
+                    else:
+                        target_result = await pursue_with_context_async(
+                            task, handoff_context
+                        )
                 else:
                     target_result = await pursue_goal_async(task)
             except Exception as exc:
-                return Result.err(
+                target_result = Result.err(
                     {
                         "errorType": "HANDOFF_TARGET_ERROR",
                         "message": "Delegated agent execution failed.",
@@ -700,7 +872,20 @@ def create_handoff_tool(
                         },
                     }
                 )
-            return _format_handoff_result(target_result, target_id)
+                execution_error = target_result
+            formatted = (
+                execution_error
+                if execution_error is not None
+                else _format_handoff_result(target_result, target_id)
+            )
+            if handoff_store is not None and handoff_id is not None:
+                finalized = await _run_handoff_store_async(
+                    lambda: _finish_persisted_handoff(
+                        handoff_store, handoff_id, target_id, formatted
+                    )
+                )
+                return finalized
+            return formatted
 
         async_handler = async_handoff_handler
 

@@ -10,6 +10,14 @@
 
 ### Additions
 
+- **Durable local handoff identity and ownership**: added bounded
+  `HandoffRecord`/`HandoffStore` contracts with thread-safe in-memory and
+  atomic file-backed stores, SHA-256 task/context digests instead of raw task
+  persistence, explicit `pending → accepted → completed/failed` ownership
+  transitions, fencing leases, and optional sync/async `create_handoff_tool`
+  integration. Remote routing, scheduling, notifications, hard cancellation,
+  and exactly-once side effects remain outside the contract. No publication was
+  performed.
 - **Versioned evaluation fixtures and optional judge contract**: `EvalCase`
   now carries a bounded `fixture_version` and trajectory quota, while
   `EvaluationHarness.run` accepts an optional provider-neutral host judge with

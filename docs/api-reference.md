@@ -682,8 +682,29 @@ host-controlled handoff. The target's initial context message is part of a
 durable local run checkpoint. `Tool.execute_async` awaits an async-capable
 target and otherwise runs the synchronous compatibility path in an executor;
 the async agent loop preserves the same approval boundary. Durable handoff
-identity/leases, explicit ownership transfer, remote routing, and hard target
-cancellation remain separate capabilities.
+identity and ownership transfer can be enabled with `HandoffStore`; records
+contain only bounded IDs, state, timestamps, and SHA-256 task/context digests.
+`FileHandoffStore` uses atomic JSON replacement and the existing per-record
+fencing lease. The record is accepted before target execution and finalized by
+the target owner after execution:
+
+```python
+from maple import FileHandoffStore, create_handoff_tool
+
+handoff = create_handoff_tool(
+    specialist,
+    handoff_store=FileHandoffStore(".maple-handoffs"),
+    source_agent_id="orchestrator",
+)
+result = handoff.execute(task="Summarize the release risks")
+# A successful result includes a bounded handoff_id.
+```
+
+`InMemoryHandoffStore` is available for local tests. Store failures fail closed
+and finalization failures do not claim success. The store is an identity/state
+journal, not a remote queue, scheduler, notification service, or exactly-once
+side-effect mechanism; remote routing/authentication, hard target cancellation,
+and distributed delivery remain separate capabilities.
 
 ### Per-goal token accounting and budgets
 

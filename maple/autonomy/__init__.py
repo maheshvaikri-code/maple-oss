@@ -80,6 +80,12 @@ from .execution import (
     TrustedLocalExecutor,
 )
 from .interop import InteropEnvelope, round_trip_json
+from .handoffs import (
+    FileHandoffStore,
+    HandoffRecord,
+    HandoffStore,
+    InMemoryHandoffStore,
+)
 from .mcp_tools import discover_mcp_tools, register_mcp_tools
 from .memory import EpisodicMemory, MemoryManager, SemanticMemory, WorkingMemory
 from .observability import AgentSnapshot, DecisionLogger, DecisionTrace
@@ -220,6 +226,10 @@ __all__ = [
     "RetrievalEvalCase",
     "InteropEnvelope",
     "round_trip_json",
+    "HandoffRecord",
+    "HandoffStore",
+    "FileHandoffStore",
+    "InMemoryHandoffStore",
     "Artifact",
     "ArtifactStore",
     "CodeBlock",
