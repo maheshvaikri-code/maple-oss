@@ -17,6 +17,11 @@ token/step budgets.
   passed.
 - Black, isort, and `python -m mypy maple/autonomy/agent.py
   --ignore-missing-imports`: passed.
+- Core/autonomy regression: `253 passed in 3.37s`.
+- Exact-current wheel and sdist built as `maple_oss-1.1.3`; Twine reports
+  `PASSED` for both artifacts.
+- Network-free doctor reports all eight checks true with `ready: true`,
+  `network: false`, version `1.1.3`.
 
 ## Boundary review
 
