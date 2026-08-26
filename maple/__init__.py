@@ -60,6 +60,8 @@ from .autonomy.contracts import (
 )
 from .autonomy.evaluation import (
     EvalCase,
+    EvalJudge,
+    EvalJudgeResult,
     EvalObservation,
     EvalReport,
     EvalResult,
@@ -307,6 +309,8 @@ __all__ = [
     "FileHumanInputStore",
     "InMemoryHumanInputStore",
     "EvalCase",
+    "EvalJudge",
+    "EvalJudgeResult",
     "EvalObservation",
     "EvalReport",
     "EvalResult",

@@ -7,7 +7,7 @@ import math
 import re
 import time
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
 from ..core.result import Result
 from .contracts import validate_json_schema
@@ -19,6 +19,10 @@ _UNSET = object()
 _GROUNDING_TOKEN = re.compile(r"[^\W_]+", re.UNICODE)
 _GROUNDING_MAX_CLAIMS = 256
 _GROUNDING_MAX_SOURCES = 256
+_EVAL_MAX_FIXTURE_VERSION = 32
+_EVAL_MAX_TRAJECTORY_TOOLS = 256
+_EVAL_MAX_TOOL_NAME_LENGTH = 256
+_EVAL_MAX_JUDGE_RATIONALE_BYTES = 4_096
 _GROUNDING_STOPWORDS = frozenset(
     {
         "a",
@@ -57,6 +61,7 @@ class EvalCase:
     output_schema: Optional[Mapping[str, Any]] = None
     expected_tool_names: Tuple[str, ...] = ()
     metadata: Mapping[str, Any] = field(default_factory=dict)
+    fixture_version: int = 1
 
     def validate(self) -> Optional[Error]:
         if (
@@ -77,12 +82,31 @@ class EvalCase:
                 "errorType": "EVAL_CASE_INVALID",
                 "message": "case must define an output or trajectory expectation.",
             }
+        if (
+            not isinstance(self.fixture_version, int)
+            or isinstance(self.fixture_version, bool)
+            or self.fixture_version < 1
+            or self.fixture_version > _EVAL_MAX_FIXTURE_VERSION
+        ):
+            return {
+                "errorType": "EVAL_CASE_INVALID",
+                "message": "fixture_version must be between 1 and 32.",
+            }
         if not isinstance(self.expected_tool_names, tuple) or not all(
-            isinstance(name, str) and name for name in self.expected_tool_names
+            isinstance(name, str)
+            and name
+            and len(name) <= _EVAL_MAX_TOOL_NAME_LENGTH
+            and not any(ord(char) < 32 for char in name)
+            for name in self.expected_tool_names
         ):
             return {
                 "errorType": "EVAL_CASE_INVALID",
                 "message": "expected_tool_names must be a tuple of names.",
+            }
+        if len(self.expected_tool_names) > _EVAL_MAX_TRAJECTORY_TOOLS:
+            return {
+                "errorType": "EVAL_CASE_INVALID",
+                "message": "expected_tool_names exceeds the trajectory limit.",
             }
         try:
             json.dumps(self.metadata, allow_nan=False)
@@ -293,6 +317,53 @@ class EvalObservation:
 
 
 @dataclass(frozen=True)
+class EvalJudgeResult:
+    """Bounded result returned by an optional generation-quality judge."""
+
+    score: float
+    passed: bool
+    rationale: str = ""
+
+    def validate(self) -> Optional[Error]:
+        if isinstance(self.score, (int, float)) and not isinstance(self.score, bool):
+            try:
+                finite_score = math.isfinite(self.score)
+            except OverflowError:
+                finite_score = False
+        else:
+            finite_score = False
+        if not finite_score or self.score < 0.0 or self.score > 1.0:
+            return {
+                "errorType": "EVAL_JUDGE_RESULT_INVALID",
+                "message": "judge score must be a finite number between 0 and 1.",
+            }
+        if not isinstance(self.passed, bool):
+            return {
+                "errorType": "EVAL_JUDGE_RESULT_INVALID",
+                "message": "judge passed must be a boolean.",
+            }
+        if (
+            not isinstance(self.rationale, str)
+            or len(self.rationale.encode("utf-8")) > _EVAL_MAX_JUDGE_RATIONALE_BYTES
+            or any(
+                ord(char) < 32 and char not in ("\r", "\n", "\t")
+                for char in self.rationale
+            )
+        ):
+            return {
+                "errorType": "EVAL_JUDGE_RESULT_INVALID",
+                "message": "judge rationale must be bounded text.",
+            }
+        return None
+
+
+EvalJudge = Callable[
+    [EvalCase, EvalObservation],
+    Union[EvalJudgeResult, Result[EvalJudgeResult, Error]],
+]
+
+
+@dataclass(frozen=True)
 class GroundednessObservation:
     """Runner result for one generated answer."""
 
@@ -325,6 +396,9 @@ class EvalResult:
     actual_output: Any = None
     errors: Tuple[Error, ...] = ()
     duration_ms: float = 0.0
+    fixture_version: int = 1
+    judge_score: Optional[float] = None
+    judge_rationale: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -364,6 +438,9 @@ class EvalReport:
                     "actual_output": result.actual_output,
                     "errors": list(result.errors),
                     "duration_ms": result.duration_ms,
+                    "fixture_version": result.fixture_version,
+                    "judge_score": result.judge_score,
+                    "judge_rationale": result.judge_rationale,
                 }
                 for result in self.results
             ],
@@ -398,12 +475,37 @@ class EvaluationHarness:
             return None
         return redacted.unwrap()
 
+    def _safe_judge_rationale(self, value: str) -> Optional[str]:
+        safe = self._safe_output(value)
+        return safe if isinstance(safe, str) else None
+
+    @staticmethod
+    def _valid_tool_names(value: Any) -> bool:
+        return (
+            isinstance(value, tuple)
+            and len(value) <= _EVAL_MAX_TRAJECTORY_TOOLS
+            and all(
+                isinstance(name, str)
+                and name
+                and len(name) <= _EVAL_MAX_TOOL_NAME_LENGTH
+                and not any(ord(char) < 32 for char in name)
+                for name in value
+            )
+        )
+
     def run(
         self,
         cases: Sequence[EvalCase],
         runner: Callable[[Any], Any],
+        judge: Optional[EvalJudge] = None,
     ) -> Result[EvalReport, Error]:
-        """Run cases, returning per-case failures instead of aborting the set."""
+        """Run cases, returning per-case failures instead of aborting the set.
+
+        ``judge`` is an optional local callback supplied by the host. It receives
+        the validated case and bounded runner observation, and may return an
+        ``EvalJudgeResult`` directly or through ``Result``. MAPLE does not
+        select a provider, retry a judge, or claim semantic faithfulness.
+        """
         if (
             not isinstance(self.max_cases, int)
             or isinstance(self.max_cases, bool)
@@ -433,6 +535,13 @@ class EvaluationHarness:
                     "message": "runner must be callable.",
                 }
             )
+        if judge is not None and not callable(judge):
+            return Result.err(
+                {
+                    "errorType": "EVAL_INPUT_INVALID",
+                    "message": "judge must be callable.",
+                }
+            )
         if len(cases) > self.max_cases:
             return Result.err(
                 {
@@ -450,6 +559,9 @@ class EvaluationHarness:
             errors: List[Error] = []
             actual: Any = None
             tool_names: Tuple[str, ...] = ()
+            judge_score: Optional[float] = None
+            judge_rationale: Optional[str] = None
+            observation_valid = True
             try:
                 observation = runner(case.input)
                 if isinstance(observation, Result):
@@ -466,6 +578,14 @@ class EvaluationHarness:
                     if isinstance(observation, EvalObservation):
                         actual = observation.output
                         tool_names = observation.tool_names
+                        if not self._valid_tool_names(tool_names):
+                            errors.append(
+                                {
+                                    "errorType": "EVAL_OBSERVATION_INVALID",
+                                    "message": "observed tool names are invalid or unbounded.",
+                                }
+                            )
+                            observation_valid = False
                     else:
                         actual = observation
                     expected_checks = 0
@@ -510,6 +630,61 @@ class EvaluationHarness:
                                     ),
                                 }
                             )
+                    if judge is not None and observation_valid:
+                        expected_checks += 1
+                        judge_observation = EvalObservation(
+                            output=self._safe_output(actual),
+                            tool_names=tuple(tool_names),
+                        )
+                        try:
+                            judged = judge(case, judge_observation)
+                            if isinstance(judged, Result):
+                                if judged.is_err():
+                                    errors.append(
+                                        {
+                                            "errorType": "EVAL_JUDGE_ERROR",
+                                            "message": "judge returned an error.",
+                                        }
+                                    )
+                                    judged = None
+                                else:
+                                    judged = judged.unwrap()
+                            if judged is not None:
+                                if not isinstance(judged, EvalJudgeResult):
+                                    errors.append(
+                                        {
+                                            "errorType": "EVAL_JUDGE_RESULT_INVALID",
+                                            "message": (
+                                                "judge must return an EvalJudgeResult."
+                                            ),
+                                        }
+                                    )
+                                else:
+                                    judge_error = judged.validate()
+                                    if judge_error is not None:
+                                        errors.append(judge_error)
+                                    else:
+                                        judge_score = judged.score
+                                        judge_rationale = self._safe_judge_rationale(
+                                            judged.rationale
+                                        )
+                                        if judged.passed:
+                                            passed_checks += 1
+                                        else:
+                                            errors.append(
+                                                {
+                                                    "errorType": "EVAL_JUDGE_FAILED",
+                                                    "message": "judge marked case as failed.",
+                                                }
+                                            )
+                        except Exception as exc:
+                            errors.append(
+                                {
+                                    "errorType": "EVAL_JUDGE_EXCEPTION",
+                                    "message": "judge raised an exception.",
+                                    "details": {"exception": type(exc).__name__},
+                                }
+                            )
                     score = passed_checks / expected_checks if expected_checks else 0.0
                 else:
                     score = 0.0
@@ -530,6 +705,9 @@ class EvaluationHarness:
                     actual_output=self._safe_output(actual),
                     errors=tuple(errors),
                     duration_ms=(time.perf_counter() - started) * 1000,
+                    fixture_version=case.fixture_version,
+                    judge_score=judge_score,
+                    judge_rationale=judge_rationale,
                 )
             )
         return Result.ok(EvalReport(results=tuple(results)))

@@ -10,6 +10,13 @@
 
 ### Additions
 
+- **Versioned evaluation fixtures and optional judge contract**: `EvalCase`
+  now carries a bounded `fixture_version` and trajectory quota, while
+  `EvaluationHarness.run` accepts an optional provider-neutral host judge with
+  bounded score/decision/rationale results, redacted observations, and typed
+  fail-closed errors. Deterministic evaluation remains the baseline; provider
+  orchestration, calibration, async judges, and semantic-faithfulness claims
+  remain outside this contract. No publication was performed.
 - **Provider correlation in agent observability**: bounded provider request IDs
   now flow from `LLMResponse` into sync/async `model.response` lifecycle events
   and `DecisionTrace` JSON export, with malformed IDs omitted. No raw provider

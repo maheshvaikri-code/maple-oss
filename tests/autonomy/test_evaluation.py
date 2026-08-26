@@ -4,6 +4,7 @@ import pytest
 
 from maple.autonomy.evaluation import (
     EvalCase,
+    EvalJudgeResult,
     EvalObservation,
     EvaluationHarness,
     GroundednessEvalCase,
@@ -99,6 +100,120 @@ def test_invalid_case_and_runner_exception_fail_closed():
     )
 
 
+def test_evaluation_supports_versioned_fixtures_and_optional_judge():
+    case = EvalCase(
+        "answer-v2",
+        {"question": "2+2"},
+        expected_output={"answer": 4},
+        expected_tool_names=("calculator",),
+        fixture_version=2,
+    )
+
+    report = EvaluationHarness().run(
+        [case],
+        lambda value: EvalObservation({"answer": 4}, ("calculator",)),
+        judge=lambda fixture, observation: EvalJudgeResult(
+            score=0.95,
+            passed=True,
+            rationale="answer is correct",
+        ),
+    )
+
+    assert report.is_ok()
+    result = report.unwrap().results[0]
+    assert result.passed
+    assert result.fixture_version == 2
+    assert result.judge_score == pytest.approx(0.95)
+    assert result.judge_rationale == "answer is correct"
+    assert report.unwrap().as_dict()["results"][0]["fixture_version"] == 2
+
+
+def test_evaluation_judge_receives_redacted_bounded_output_and_can_fail_case():
+    case = EvalCase(
+        "judge",
+        "input",
+        output_schema={"type": "object", "required": ["status"]},
+    )
+    observed = []
+
+    def judge(fixture, observation):
+        observed.append(observation.output)
+        return EvalJudgeResult(0.25, False, "contains api_key")
+
+    report = EvaluationHarness(max_value_bytes=128).run(
+        [case],
+        lambda value: {"status": "ok", "api_key": "secret"},
+        judge=judge,
+    )
+
+    assert report.is_ok()
+    result = report.unwrap().results[0]
+    assert not result.passed
+    assert result.errors[0]["errorType"] == "EVAL_JUDGE_FAILED"
+    assert observed == [{"status": "ok", "api_key": "[REDACTED]"}]
+    assert result.judge_score == 0.25
+    assert result.judge_rationale == "contains api_key"
+
+
+def test_evaluation_judge_errors_and_invalid_results_fail_closed():
+    case = EvalCase("judge", "input", expected_output="ok")
+    returned_error = EvaluationHarness().run(
+        [case], lambda value: "ok", judge=lambda fixture, observation: Result.err({})
+    )
+    invalid_result = EvaluationHarness().run(
+        [case], lambda value: "ok", judge=lambda fixture, observation: {"score": 1}
+    )
+    invalid_score = EvaluationHarness().run(
+        [case],
+        lambda value: "ok",
+        judge=lambda fixture, observation: EvalJudgeResult(2.0, True),
+    )
+
+    assert returned_error.unwrap().results[0].errors[0]["errorType"] == (
+        "EVAL_JUDGE_ERROR"
+    )
+    assert invalid_result.unwrap().results[0].errors[0]["errorType"] == (
+        "EVAL_JUDGE_RESULT_INVALID"
+    )
+    assert invalid_score.unwrap().results[0].errors[0]["errorType"] == (
+        "EVAL_JUDGE_RESULT_INVALID"
+    )
+
+
+def test_evaluation_rejects_invalid_fixture_versions_and_trajectories():
+    invalid_version = EvalCase(
+        "version", "input", expected_output="ok", fixture_version=0
+    )
+    oversized_trajectory = EvalCase(
+        "trajectory",
+        "input",
+        expected_tool_names=("tool",) * 257,
+    )
+
+    version_result = EvaluationHarness().run([invalid_version], lambda value: "ok")
+    trajectory_result = EvaluationHarness().run(
+        [oversized_trajectory], lambda value: "ok"
+    )
+
+    assert version_result.unwrap_err()["errorType"] == "EVAL_CASE_INVALID"
+    assert trajectory_result.unwrap_err()["errorType"] == "EVAL_CASE_INVALID"
+
+
+def test_evaluation_rejects_unbounded_runner_trajectories():
+    case = EvalCase("trajectory", "input", expected_output="ok")
+
+    report = EvaluationHarness().run(
+        [case],
+        lambda value: EvalObservation("ok", ("tool",) * 257),
+        judge=lambda fixture, observation: EvalJudgeResult(1.0, True),
+    )
+
+    assert report.is_ok()
+    assert report.unwrap().results[0].errors[0]["errorType"] == (
+        "EVAL_OBSERVATION_INVALID"
+    )
+
+
 def test_retrieval_evaluation_measures_source_precision_recall_and_f1():
     retriever = InMemoryLexicalRetriever()
     retriever.add_document(
@@ -186,9 +301,7 @@ def test_retrieval_evaluation_isolates_malformed_and_raising_runners():
     assert report.unwrap().results[1].errors[0]["errorType"] == (
         "RAG_OBSERVATION_INVALID"
     )
-    assert report.unwrap().results[2].errors[0]["errorType"] == (
-        "RAG_RUNNER_EXCEPTION"
-    )
+    assert report.unwrap().results[2].errors[0]["errorType"] == ("RAG_RUNNER_EXCEPTION")
 
 
 def test_retrieval_evaluation_rejects_invalid_golden_cases():

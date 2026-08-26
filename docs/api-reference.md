@@ -891,10 +891,12 @@ exposes bounded-ring eviction, while cursor reads make that gap explicit.
 
 ## Evaluation and Provider Capabilities (preview)
 
-The evaluation harness runs local runners against golden cases. A case can
-assert exact output, a bounded JSON schema, and an ordered tool trajectory.
-Failures are recorded per case so one bad case does not abort the report; actual
-values are redacted and size-bounded before they are returned.
+The evaluation harness runs local runners against versioned golden cases. A
+case can assert exact output, a bounded JSON schema, and an ordered tool
+trajectory. `fixture_version` defaults to 1 and is reported with each result;
+trajectory expectations are bounded to 256 tool names. Failures are recorded
+per case so one bad case does not abort the report; actual values are redacted
+and size-bounded before they are returned.
 
 ```python
 from maple import EvalCase, EvalObservation, EvaluationHarness
@@ -915,6 +917,41 @@ report = EvaluationHarness().run(
     ),
 )
 ```
+
+An optional host-supplied judge can add a generation-quality check without
+making MAPLE select a provider. The callback receives the case and a redacted,
+bounded `EvalObservation`, and returns `EvalJudgeResult` directly or through
+`Result`. Its score must be finite and between 0 and 1, and its explicit
+`passed` decision participates as one additional report check.
+
+```python
+from maple import EvalJudgeResult
+
+case = EvalCase(
+    case_id="lookup-v2",
+    input={"query": "MAPLE"},
+    output_schema={"type": "object", "required": ["answer"]},
+    expected_tool_names=("search",),
+    fixture_version=2,
+)
+report = EvaluationHarness().run(
+    [case],
+    lambda value: EvalObservation(
+        output={"answer": "ready"},
+        tool_names=("search",),
+    ),
+    judge=lambda fixture, observation: EvalJudgeResult(
+        score=0.9,
+        passed=True,
+        rationale="answer is relevant",
+    ),
+)
+```
+
+Judge errors, exceptions, malformed results, and invalid bounds fail the
+individual case with typed errors. MAPLE does not invoke or retry a model
+provider, calibrate scores, or claim semantic faithfulness; provider choice,
+rubric, privacy, and repeatability remain host-owned.
 
 Retrieval quality can be evaluated separately from answer generation with
 bounded golden source URIs. `run_retrieval` accepts lexical
