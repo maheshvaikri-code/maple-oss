@@ -627,6 +627,27 @@ remain explicit follow-on work.
   handoff identity, ownership transfer, remote routing, hard cancellation, and
   exactly-once external effects remain unclaimed.
 
+## Slice 100 implementation review
+
+- `LLMChunk` adds optional bounded `TokenUsage` and provider request
+  correlation fields without changing existing text, tool-call, or finish
+  consumers. OpenAI-compatible usage requests are opt-in; Anthropic partial
+  usage fields are merged before the final trailer.
+- `EventExporter` is a host-owned protocol attached to `EventStream` after
+  redaction and retention. Invalid exporters fail closed at publish time, and
+  exporter exceptions are isolated so telemetry cannot change run outcomes.
+- Public root/autonomy exports and API/parity documentation describe the new
+  fields and limits. No raw SDK object, secret-bearing payload, durable queue,
+  or remote transport was added.
+- Focused provider/event coverage reports `16 passed in 0.28s`; Black, Ruff,
+  changed-boundary mypy, compile, and diff checks pass. The exact tracked
+  manifest reports `1237 passed, 1 skipped in 253.10s` across 107 tracked test
+  files. A clean committed-HEAD archive rebuilt wheel/sdist `1.1.3`; build and
+  Twine exited 0, the sdist contains 490 entries including ADR-046 and the
+  Slice 100 files, and the workspace-only audit found zero preserved Doctrine
+  files. Automatic provider-to-agent trace linkage, durable/remote exporters,
+  hard cancellation, and exactly-once external effects remain unclaimed.
+
 ## Verdict
 
 **Feature review:** PASS for the twenty-eight implemented capability slices.

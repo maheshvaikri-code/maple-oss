@@ -10,6 +10,20 @@
 
 ### Additions
 
+- **Bounded stream usage and exporter seams**: native OpenAI-compatible and
+  Anthropic streams now expose bounded final `TokenUsage` trailers and provider
+  request IDs when available; OpenAI usage requests are opt-in and Anthropic
+  partial usage is merged. `EventStream` accepts a host-owned exporter that
+  receives only redacted events, validates its contract, and isolates exporter
+  failures from runs. Focused provider/event coverage reports `16 passed in
+  0.28s`; the exact tracked manifest reports `1237 passed, 1 skipped in
+  253.10s` across 107 tracked test files. Black, Ruff, changed-boundary mypy,
+  compile, diff, and network-free doctor pass. A clean committed-HEAD archive
+  rebuilt wheel/sdist `1.1.3`; build and Twine exited 0, the sdist contains 490
+  entries with ADR-046 and the Slice 100 files, and the workspace-only audit is
+  empty. Automatic provider-to-agent trace linkage, durable/remote exporters,
+  and hard cancellation remain separate boundaries. No publication was
+  performed.
 - **Async-capable tools and handoffs**: added optional awaitable tool handlers,
   async registry execution, and async agent-loop dispatch. Existing synchronous
   tools remain compatible through executor-backed fallback; configured trusted

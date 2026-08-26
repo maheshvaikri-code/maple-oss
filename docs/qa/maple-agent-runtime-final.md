@@ -632,6 +632,32 @@ slow Doctrine gold phase before interruption without a pytest summary.
   remain outside this local contract. No publication, website, cloud,
   registry, or user-owned untracked file change was made.
 
+## Slice 100 QA — bounded provider-stream usage/correlation and event exporter
+
+- `tests/llm/test_provider_native_streaming.py`,
+  `tests/llm/test_provider_streaming.py`, and `tests/autonomy/test_events.py`
+  report `16 passed in 0.28s` with offline fixtures for OpenAI usage-only
+  trailers, Anthropic partial-usage merging, bounded request IDs, redacted
+  exporter delivery, exporter failure isolation, and invalid exporter config.
+- Native stream consumers receive an optional final `TokenUsage` trailer and
+  bounded provider request ID. OpenAI usage requests are opt-in through
+  `LLMConfig.extra["include_stream_usage"]`; missing or malformed usage is not
+  invented. `EventExporter` receives only the already-redacted `AgentEvent`,
+  and exporter exceptions do not change publish success.
+- The exact tracked manifest contains 107 tracked Python test files and reports
+  `1237 passed, 1 skipped in 253.10s` with no warning output. Black, Ruff,
+  changed-boundary mypy, compile, and diff checks pass. Network-free doctor
+  returns `ready: true`, `status: SUCCESS`, version `1.1.3`, all eight checks
+  true, and `network: false`.
+- A clean committed-HEAD archive rebuilt wheel/sdist `1.1.3`; build and Twine
+  both exited 0, the sdist contains 490 entries including ADR-046, the
+  provider/event modules, public exports, and their regressions, and the
+  workspace-only audit found zero preserved Doctrine files.
+- Automatic provider-to-agent event/trace linkage, durable exporter queues,
+  remote delivery/authentication, hard cancellation, and exactly-once external
+  effects remain outside this local contract. No publication, website, cloud,
+  registry, or user-owned untracked file change was made.
+
 ## Security conclusions
 
 - No new dependency, credential, cloud call, website mutation, or publication
