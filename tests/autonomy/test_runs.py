@@ -1,5 +1,6 @@
 """Tests for bounded durable autonomous agent-run checkpoints."""
 
+import asyncio
 import json
 
 import pytest
@@ -238,6 +239,156 @@ def test_sync_resume_does_not_repeat_completed_tool_after_model_interruption():
     assert restarted.register_tool(tool).is_ok()
 
     resumed = restarted.resume_run("run-recover")
+
+    assert resumed.is_ok()
+    assert resumed.unwrap().status == "completed"
+    assert calls == ["called"]
+
+
+def test_async_run_pauses_for_approval_and_resumes_after_restart():
+    run_store = InMemoryAgentRunStore()
+    approval_store = InMemoryApprovalStore()
+    calls = []
+    first = make_agent(
+        [
+            LLMResponse(
+                content="request write",
+                tool_calls=[
+                    ToolCall(
+                        id="async-call-write",
+                        name="write_value",
+                        arguments={"value": "ready"},
+                    )
+                ],
+                finish_reason="tool_calls",
+            )
+        ]
+    )
+    first.set_run_store(run_store)
+    first.set_approval_store(approval_store)
+    assert first.register_tool(approval_tool(calls)).is_ok()
+
+    started = asyncio.run(
+        first.pursue_goal_async("Write the value", run_id="async-run-approval")
+    )
+
+    assert started.is_ok()
+    assert started.unwrap().status == "paused"
+    approval_id = started.unwrap().result["details"]["approval_id"]
+    checkpoint = run_store.load("async-run-approval").unwrap()
+    assert checkpoint is not None
+    assert checkpoint.status == "paused"
+    assert checkpoint.pending_approval_id == approval_id
+    assert calls == []
+    waiting = asyncio.run(first.resume_run_async("async-run-approval"))
+    assert waiting.is_err()
+    assert waiting.unwrap_err()["errorType"] == "RUN_WAITING_APPROVAL"
+
+    assert first.decide_approval(approval_id, approved=True).is_ok()
+    restarted = make_agent(
+        [LLMResponse(content="write complete", finish_reason="stop")]
+    )
+    restarted.set_run_store(run_store)
+    restarted.set_approval_store(approval_store)
+    assert restarted.register_tool(approval_tool(calls)).is_ok()
+
+    resumed = asyncio.run(restarted.resume_run_async("async-run-approval"))
+
+    assert resumed.is_ok()
+    assert resumed.unwrap().status == "completed"
+    assert calls == [{"value": "ready"}]
+    final_checkpoint = run_store.load("async-run-approval").unwrap()
+    assert final_checkpoint is not None
+    assert final_checkpoint.status == "completed"
+    assert final_checkpoint.pending_approval_id is None
+
+
+def test_async_durable_approval_pauses_before_later_tool_side_effects():
+    run_store = InMemoryAgentRunStore()
+    approval_store = InMemoryApprovalStore()
+    calls = []
+    agent = make_agent(
+        [
+            LLMResponse(
+                content="prepare and write",
+                tool_calls=[
+                    ToolCall(id="async-safe", name="safe_value", arguments={}),
+                    ToolCall(
+                        id="async-gated",
+                        name="write_value",
+                        arguments={"value": "ready"},
+                    ),
+                ],
+                finish_reason="tool_calls",
+            )
+        ]
+    )
+    agent.set_run_store(run_store)
+    agent.set_approval_store(approval_store)
+    assert agent.register_tool(
+        Tool(
+            name="safe_value",
+            description="Perform a safe side effect",
+            parameters={"type": "object"},
+            handler=lambda **kwargs: (calls.append("safe") or Result.ok({"ok": True})),
+        )
+    ).is_ok()
+    assert agent.register_tool(approval_tool(calls)).is_ok()
+
+    started = asyncio.run(
+        agent.pursue_goal_async("Prepare and write", run_id="async-run-order")
+    )
+
+    assert started.is_ok()
+    assert started.unwrap().status == "paused"
+    assert calls == ["safe"]
+    checkpoint = run_store.load("async-run-order").unwrap()
+    assert checkpoint is not None
+    assert checkpoint.status == "paused"
+    assert checkpoint.pending_approval_id is not None
+
+
+def test_async_resume_does_not_repeat_completed_tool_after_model_interruption():
+    run_store = InMemoryAgentRunStore()
+    calls = []
+    first = make_agent(
+        [
+            LLMResponse(
+                content="call tool",
+                tool_calls=[
+                    ToolCall(id="async-call-once", name="write_value", arguments={})
+                ],
+                finish_reason="tool_calls",
+            ),
+            Result.err({"errorType": "MODEL_INTERRUPTED", "message": "retry"}),
+        ]
+    )
+    first.set_run_store(run_store)
+    tool = Tool(
+        name="write_value",
+        description="Write one value",
+        parameters={"type": "object"},
+        handler=lambda **kwargs: (calls.append("called") or Result.ok({"ok": True})),
+    )
+    assert first.register_tool(tool).is_ok()
+
+    interrupted = asyncio.run(
+        first.pursue_goal_async("Perform one write", run_id="async-run-recover")
+    )
+
+    assert interrupted.is_ok()
+    assert interrupted.unwrap().status == "failed"
+    assert calls == ["called"]
+    checkpoint = run_store.load("async-run-recover").unwrap()
+    assert checkpoint is not None
+    assert checkpoint.status == "running"
+    assert checkpoint.step_count == 1
+
+    restarted = make_agent([LLMResponse(content="recovered", finish_reason="stop")])
+    restarted.set_run_store(run_store)
+    assert restarted.register_tool(tool).is_ok()
+
+    resumed = asyncio.run(restarted.resume_run_async("async-run-recover"))
 
     assert resumed.is_ok()
     assert resumed.unwrap().status == "completed"

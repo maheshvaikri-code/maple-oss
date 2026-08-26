@@ -20,6 +20,7 @@ import logging
 import time
 import uuid
 from dataclasses import dataclass, field, replace
+from functools import partial
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Type
 
 from ..agent.agent import Agent
@@ -538,6 +539,13 @@ class AutonomousAgent(Agent):
             )
         return Result.ok(_RunState(run_id=chosen_id))
 
+    async def _new_run_state_async(
+        self, run_id: Optional[str]
+    ) -> Result[Optional[_RunState], Dict[str, Any]]:
+        """Validate an async run identity without blocking the event loop."""
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, partial(self._new_run_state, run_id))
+
     @staticmethod
     def _serialize_run_value(value: Any) -> Result[Any, Dict[str, Any]]:
         """Normalize optional model output into JSON-safe checkpoint data."""
@@ -703,6 +711,35 @@ class AutonomousAgent(Agent):
             return Result.err(self._run_store_failure("save", saved.unwrap_err()))
         state.version = saved.unwrap().version
         return Result.ok(saved.unwrap())
+
+    async def _checkpoint_run_async(
+        self,
+        state: Optional[_RunState],
+        goal: Goal,
+        messages: Sequence[ChatMessage],
+        *,
+        status: str,
+        step_count: int,
+        output_retries_used: int,
+        pending_approval_id: Optional[str] = None,
+        result: Any = None,
+        error: Optional[Dict[str, Any]] = None,
+    ) -> Result[Optional[AgentRunCheckpoint], Dict[str, Any]]:
+        """Persist an async run cursor without blocking the event loop."""
+        loop = asyncio.get_running_loop()
+        operation = partial(
+            self._checkpoint_run,
+            state,
+            goal,
+            messages,
+            status=status,
+            step_count=step_count,
+            output_retries_used=output_retries_used,
+            pending_approval_id=pending_approval_id,
+            result=result,
+            error=error,
+        )
+        return await loop.run_in_executor(None, operation)
 
     @staticmethod
     def _restore_trace(
@@ -1713,9 +1750,13 @@ Instructions:
     # --- Async support ---
 
     async def pursue_goal_async(
-        self, description: str, *, session_id: Optional[str] = None
+        self,
+        description: str,
+        *,
+        session_id: Optional[str] = None,
+        run_id: Optional[str] = None,
     ) -> Result["Goal", Dict[str, Any]]:
-        """Async entry point: pursue a high-level goal using the async ReAct loop."""
+        """Async entry point with optional durable run checkpoints."""
         input_guardrails = run_guardrails(
             description,
             self.autonomy_config.input_guardrails,
@@ -1723,21 +1764,29 @@ Instructions:
         )
         if input_guardrails.is_err():
             return Result.err(input_guardrails.unwrap_err())
+        run_state_result = await self._new_run_state_async(run_id)
+        if run_state_result.is_err():
+            return Result.err(run_state_result.unwrap_err())
+        run_state = run_state_result.unwrap()
         session_result = await self._prepare_session_turn_async(description, session_id)
         if session_result.is_err():
             return Result.err(session_result.unwrap_err())
         session_turn = session_result.unwrap()
+        if run_state is not None and session_turn is not None:
+            run_state.session_version = session_turn.version
         goal = Goal(
             goal_id=str(uuid.uuid4()),
             description=description,
             status="in_progress",
             session_id=session_id,
+            run_id=run_state.run_id if run_state is not None else None,
         )
         self._active_goals[goal.goal_id] = goal
 
         try:
             result = await self._react_loop_async(
                 goal,
+                run_state=run_state,
                 session_messages=(
                     session_turn.messages if session_turn is not None else None
                 ),
@@ -1746,11 +1795,18 @@ Instructions:
                 goal.status = "completed"
                 goal.result = result.unwrap()
             else:
-                goal.status = "failed"
+                goal.status = (
+                    "paused"
+                    if result.unwrap_err().get("errorType") == "AGENT_RUN_PAUSED"
+                    else "failed"
+                )
                 goal.result = result.unwrap_err()
-            session_record = await self._record_session_turn_async(session_turn, goal)
-            if session_record.is_err():
-                goal.session_error = session_record.unwrap_err()
+            if goal.status != "paused":
+                session_record = await self._record_session_turn_async(
+                    session_turn, goal
+                )
+                if session_record.is_err():
+                    goal.session_error = session_record.unwrap_err()
             return Result.ok(goal)
         except Exception as e:
             goal.status = "failed"
@@ -1763,25 +1819,216 @@ Instructions:
                 }
             )
 
+    async def resume_run_async(self, run_id: str) -> Result[Goal, Dict[str, Any]]:
+        """Resume a durable run through the async LLM and tool boundaries."""
+        if self._run_store is None:
+            return Result.err(
+                {
+                    "errorType": "RUN_STORE_UNAVAILABLE",
+                    "message": "A run store is required to resume an agent run.",
+                }
+            )
+        run_store = self._run_store
+        loop = asyncio.get_running_loop()
+        try:
+            loaded = await loop.run_in_executor(None, partial(run_store.load, run_id))
+        except Exception as exc:
+            return Result.err(
+                self._run_store_failure("load", {"errorType": type(exc).__name__})
+            )
+        if loaded.is_err():
+            return Result.err(self._run_store_failure("load", loaded.unwrap_err()))
+        checkpoint = loaded.unwrap()
+        if checkpoint is None:
+            return Result.err(
+                {
+                    "errorType": "RUN_NOT_FOUND",
+                    "message": "Agent run checkpoint was not found.",
+                }
+            )
+        if checkpoint.status in {"completed", "failed"}:
+            return Result.err(
+                {
+                    "errorType": "RUN_NOT_RESUMABLE",
+                    "message": "Only running or paused agent runs can be resumed.",
+                    "details": {"status": checkpoint.status},
+                }
+            )
+
+        messages = list(checkpoint.messages)
+        if checkpoint.pending_approval_id is not None:
+            approval_store = self._approval_store
+            if approval_store is None:
+                return Result.err(
+                    {
+                        "errorType": "APPROVAL_STORE_UNAVAILABLE",
+                        "message": "An approval store is required to resume this run.",
+                    }
+                )
+            request_result = await loop.run_in_executor(
+                None,
+                partial(approval_store.get, checkpoint.pending_approval_id),
+            )
+            if request_result.is_err():
+                return Result.err(
+                    self._run_store_failure(
+                        "approval_load", request_result.unwrap_err()
+                    )
+                )
+            request = request_result.unwrap()
+            if request is None:
+                return Result.err(
+                    {
+                        "errorType": "APPROVAL_NOT_FOUND",
+                        "message": "The pending approval request was not found.",
+                    }
+                )
+            if request.status == "pending":
+                return Result.err(
+                    {
+                        "errorType": "RUN_WAITING_APPROVAL",
+                        "message": "The agent run is waiting for operator approval.",
+                        "details": {"approval_id": request.approval_id},
+                    }
+                )
+            if request.status == "approved":
+                tool_result = await loop.run_in_executor(
+                    None, partial(self.execute_approved_tool, request.approval_id)
+                )
+            elif request.status == "denied":
+                tool_result = self._approval_error(
+                    request.tool_call_id,
+                    "APPROVAL_DENIED",
+                    "Action was not approved by the operator.",
+                )
+            else:
+                return Result.err(
+                    {
+                        "errorType": "APPROVAL_CONSUMED",
+                        "message": "The pending approval request was already consumed.",
+                    }
+                )
+            replaced = self._replace_pending_tool_result(messages, tool_result)
+            if replaced.is_err():
+                return Result.err(replaced.unwrap_err())
+            messages = [
+                SessionMessage.from_chat_message(message)
+                for message in replaced.unwrap()
+            ]
+            checkpoint = replace(
+                checkpoint,
+                status="running",
+                pending_approval_id=None,
+                messages=tuple(messages),
+                error=None,
+                result=None,
+            )
+            try:
+                saved = await loop.run_in_executor(
+                    None,
+                    partial(
+                        run_store.save,
+                        checkpoint,
+                        expected_version=checkpoint.version,
+                    ),
+                )
+            except Exception as exc:
+                return Result.err(
+                    self._run_store_failure(
+                        "approval_resume", {"errorType": type(exc).__name__}
+                    )
+                )
+            if saved.is_err():
+                return Result.err(
+                    self._run_store_failure("approval_resume", saved.unwrap_err())
+                )
+            checkpoint = saved.unwrap()
+
+        trace = self._restore_trace(checkpoint)
+        if trace.is_err():
+            return Result.err(trace.unwrap_err())
+        goal = Goal(
+            goal_id=checkpoint.run_id,
+            description=checkpoint.description,
+            status="in_progress",
+            session_id=checkpoint.session_id,
+            run_id=checkpoint.run_id,
+            reasoning_trace=trace.unwrap(),
+            token_usage=TokenUsage(
+                prompt_tokens=checkpoint.token_usage.get("prompt_tokens", 0),
+                completion_tokens=checkpoint.token_usage.get("completion_tokens", 0),
+                total_tokens=checkpoint.token_usage.get("total_tokens", 0),
+            ),
+        )
+        self._active_goals[goal.goal_id] = goal
+        state = _RunState(
+            run_id=checkpoint.run_id,
+            version=checkpoint.version,
+            session_version=checkpoint.session_version,
+        )
+        resumed = await self._react_loop_async(
+            goal,
+            run_state=state,
+            initial_messages=[message.to_chat_message() for message in messages],
+            starting_step=checkpoint.step_count,
+            output_retries_used=checkpoint.output_retries_used,
+        )
+        if resumed.is_ok():
+            goal.status = "completed"
+            goal.result = resumed.unwrap()
+        else:
+            goal.status = (
+                "paused"
+                if resumed.unwrap_err().get("errorType") == "AGENT_RUN_PAUSED"
+                else "failed"
+            )
+            goal.result = resumed.unwrap_err()
+        if goal.status != "paused" and goal.session_id is not None:
+            session_turn = _SessionTurn(
+                session_id=goal.session_id,
+                version=checkpoint.session_version or 0,
+                messages=(),
+            )
+            session_record = await self._record_session_turn_async(session_turn, goal)
+            if session_record.is_err():
+                goal.session_error = session_record.unwrap_err()
+        return Result.ok(goal)
+
     async def _react_loop_async(
         self,
         goal: Goal,
         *,
         session_messages: Optional[Sequence[SessionMessage]] = None,
+        run_state: Optional[_RunState] = None,
+        initial_messages: Optional[Sequence[ChatMessage]] = None,
+        starting_step: int = 0,
+        output_retries_used: int = 0,
     ) -> Result[Any, Dict[str, Any]]:
-        """Async ReAct loop — enables parallel tool execution and async LLM calls."""
-        messages = self._build_initial_context(goal, session_messages=session_messages)
-        output_retries_used = 0
+        """Async ReAct loop with optional bounded durable checkpoints."""
+        messages = (
+            list(initial_messages)
+            if initial_messages is not None
+            else self._build_initial_context(goal, session_messages=session_messages)
+        )
+        initial_checkpoint = await self._checkpoint_run_async(
+            run_state,
+            goal,
+            messages,
+            status="running",
+            step_count=starting_step,
+            output_retries_used=output_retries_used,
+        )
+        if initial_checkpoint.is_err():
+            return Result.err(initial_checkpoint.unwrap_err())
 
-        for step_num in range(self.autonomy_config.max_reasoning_steps):
+        loop = asyncio.get_running_loop()
+        for step_num in range(starting_step, self.autonomy_config.max_reasoning_steps):
             start_time = time.time()
 
-            # THINK: Get LLM response (async when available)
             tool_defs = self.tool_registry.get_llm_definitions()
             response_result = await self.llm.complete_async(
                 messages, tools=tool_defs if tool_defs else None
             )
-
             if response_result.is_err():
                 return response_result
 
@@ -1790,7 +2037,6 @@ Instructions:
             if usage_result.is_err():
                 return Result.err(usage_result.unwrap_err())
             duration_ms = (time.time() - start_time) * 1000
-
             step = ReasoningStep(
                 step_number=step_num,
                 phase="think",
@@ -1803,6 +2049,23 @@ Instructions:
             if not response.tool_calls and response.finish_reason == "stop":
                 final_result = self._finalize_output(response.content)
                 if final_result.is_ok():
+                    messages.append(
+                        ChatMessage(
+                            role=ChatRole.ASSISTANT,
+                            content=response.content or "",
+                        )
+                    )
+                    completed_checkpoint = await self._checkpoint_run_async(
+                        run_state,
+                        goal,
+                        messages,
+                        status="completed",
+                        step_count=step_num + 1,
+                        output_retries_used=output_retries_used,
+                        result=final_result.unwrap(),
+                    )
+                    if completed_checkpoint.is_err():
+                        return Result.err(completed_checkpoint.unwrap_err())
                     return final_result
                 if self._queue_output_retry(
                     messages,
@@ -1811,7 +2074,28 @@ Instructions:
                     output_retries_used,
                 ):
                     output_retries_used += 1
+                    retry_checkpoint = await self._checkpoint_run_async(
+                        run_state,
+                        goal,
+                        messages,
+                        status="running",
+                        step_count=step_num + 1,
+                        output_retries_used=output_retries_used,
+                    )
+                    if retry_checkpoint.is_err():
+                        return Result.err(retry_checkpoint.unwrap_err())
                     continue
+                failed_checkpoint = await self._checkpoint_run_async(
+                    run_state,
+                    goal,
+                    messages,
+                    status="failed",
+                    step_count=step_num + 1,
+                    output_retries_used=output_retries_used,
+                    error=final_result.unwrap_err(),
+                )
+                if failed_checkpoint.is_err():
+                    return Result.err(failed_checkpoint.unwrap_err())
                 return final_result
 
             if response.tool_calls:
@@ -1822,21 +2106,35 @@ Instructions:
                         tool_calls=response.tool_calls,
                     )
                 )
-
                 tool_calls = response.tool_calls[
                     : self.autonomy_config.max_tool_calls_per_step
                 ]
-                loop = asyncio.get_running_loop()
-                tool_results = await asyncio.gather(
-                    *[
-                        loop.run_in_executor(None, self._execute_tool_call, tool_call)
-                        for tool_call in tool_calls
-                    ],
-                    return_exceptions=True,
-                )
-                for tool_call, tool_result in zip(tool_calls, tool_results):
-                    if isinstance(tool_result, BaseException):
-                        normalized_result = ToolResult(
+
+                def append_tool_result(
+                    tool_call: ToolCall, tool_result: ToolResult
+                ) -> Optional[str]:
+                    step.tool_results.append(tool_result)
+                    messages.append(
+                        ChatMessage(
+                            role=ChatRole.TOOL,
+                            content=tool_result.content,
+                            tool_call_id=tool_result.tool_call_id,
+                            name=tool_call.name,
+                        )
+                    )
+                    self.memory.working.add(
+                        key=f"tool:{tool_call.name}:{step_num}",
+                        content=tool_result.content[:500],
+                    )
+                    return self._approval_id_from_tool_result(tool_result)
+
+                async def execute_tool(tool_call: ToolCall) -> ToolResult:
+                    try:
+                        return await loop.run_in_executor(
+                            None, partial(self._execute_tool_call, tool_call)
+                        )
+                    except Exception as exc:
+                        return ToolResult(
                             tool_call_id=tool_call.id,
                             content=json.dumps(
                                 {
@@ -1844,29 +2142,52 @@ Instructions:
                                     "message": "Tool execution worker failed.",
                                     "details": {
                                         "tool": tool_call.name,
-                                        "exception": type(tool_result).__name__,
+                                        "exception": type(exc).__name__,
                                     },
                                 }
                             ),
                             is_error=True,
                         )
-                    else:
-                        normalized_result = tool_result
-                    step.tool_results.append(normalized_result)
 
-                    messages.append(
-                        ChatMessage(
-                            role=ChatRole.TOOL,
-                            content=normalized_result.content,
-                            tool_call_id=normalized_result.tool_call_id,
-                            name=tool_call.name,
+                if run_state is not None:
+                    tool_results = []
+                    for tool_call in tool_calls:
+                        tool_result = await execute_tool(tool_call)
+                        tool_results.append((tool_call, tool_result))
+                        pending_approval_id = append_tool_result(tool_call, tool_result)
+                        if pending_approval_id is not None:
+                            paused_error = {
+                                "errorType": "AGENT_RUN_PAUSED",
+                                "message": "Agent run is waiting for operator approval.",
+                                "details": {
+                                    "run_id": run_state.run_id,
+                                    "approval_id": pending_approval_id,
+                                },
+                            }
+                            paused_checkpoint = await self._checkpoint_run_async(
+                                run_state,
+                                goal,
+                                messages,
+                                status="paused",
+                                step_count=step_num + 1,
+                                output_retries_used=output_retries_used,
+                                pending_approval_id=pending_approval_id,
+                                error=paused_error,
+                            )
+                            if paused_checkpoint.is_err():
+                                return Result.err(paused_checkpoint.unwrap_err())
+                            return Result.err(paused_error)
+                else:
+                    tool_results = list(
+                        zip(
+                            tool_calls,
+                            await asyncio.gather(
+                                *(execute_tool(tool_call) for tool_call in tool_calls)
+                            ),
                         )
                     )
-
-                    self.memory.working.add(
-                        key=f"tool:{tool_call.name}:{step_num}",
-                        content=normalized_result.content[:500],
-                    )
+                    for tool_call, tool_result in tool_results:
+                        append_tool_result(tool_call, tool_result)
             else:
                 messages.append(
                     ChatMessage(
@@ -1883,6 +2204,23 @@ Instructions:
                     final_content = reflection.get("conclusion", response.content)
                     final_result = self._finalize_output(final_content)
                     if final_result.is_ok():
+                        messages.append(
+                            ChatMessage(
+                                role=ChatRole.ASSISTANT,
+                                content=final_content or "",
+                            )
+                        )
+                        completed_checkpoint = await self._checkpoint_run_async(
+                            run_state,
+                            goal,
+                            messages,
+                            status="completed",
+                            step_count=step_num + 1,
+                            output_retries_used=output_retries_used,
+                            result=final_result.unwrap(),
+                        )
+                        if completed_checkpoint.is_err():
+                            return Result.err(completed_checkpoint.unwrap_err())
                         return final_result
                     if self._queue_output_retry(
                         messages,
@@ -1891,15 +2229,57 @@ Instructions:
                         output_retries_used,
                     ):
                         output_retries_used += 1
+                        retry_checkpoint = await self._checkpoint_run_async(
+                            run_state,
+                            goal,
+                            messages,
+                            status="running",
+                            step_count=step_num + 1,
+                            output_retries_used=output_retries_used,
+                        )
+                        if retry_checkpoint.is_err():
+                            return Result.err(retry_checkpoint.unwrap_err())
                         continue
+                    failed_checkpoint = await self._checkpoint_run_async(
+                        run_state,
+                        goal,
+                        messages,
+                        status="failed",
+                        step_count=step_num + 1,
+                        output_retries_used=output_retries_used,
+                        error=final_result.unwrap_err(),
+                    )
+                    if failed_checkpoint.is_err():
+                        return Result.err(failed_checkpoint.unwrap_err())
                     return final_result
 
-        return Result.err(
-            {
-                "errorType": "MAX_STEPS_REACHED",
-                "message": (
-                    "Reached maximum reasoning steps "
-                    f"({self.autonomy_config.max_reasoning_steps})"
-                ),
-            }
+            running_checkpoint = await self._checkpoint_run_async(
+                run_state,
+                goal,
+                messages,
+                status="running",
+                step_count=step_num + 1,
+                output_retries_used=output_retries_used,
+            )
+            if running_checkpoint.is_err():
+                return Result.err(running_checkpoint.unwrap_err())
+
+        max_steps_error = {
+            "errorType": "MAX_STEPS_REACHED",
+            "message": (
+                "Reached maximum reasoning steps "
+                f"({self.autonomy_config.max_reasoning_steps})"
+            ),
+        }
+        failed_checkpoint = await self._checkpoint_run_async(
+            run_state,
+            goal,
+            messages,
+            status="failed",
+            step_count=self.autonomy_config.max_reasoning_steps,
+            output_retries_used=output_retries_used,
+            error=max_steps_error,
         )
+        if failed_checkpoint.is_err():
+            return Result.err(failed_checkpoint.unwrap_err())
+        return Result.err(max_steps_error)

@@ -1118,7 +1118,7 @@ Without `session_id`, existing agent behavior is unchanged. Full ReAct trace
 replay, tool-result replay, compaction, authentication, and cross-process
 turn leases remain separate capabilities.
 
-### Durable synchronous agent runs (preview)
+### Durable agent runs (preview)
 
 Attach an `InMemoryAgentRunStore` or `FileAgentRunStore` to persist a bounded
 JSON-safe ReAct message cursor. Supplying `run_id` makes a new goal resumable;
@@ -1136,6 +1136,14 @@ started = agent.pursue_goal("Review this request", run_id="review-1")
 recovered = restarted_agent.resume_run("review-1")
 ```
 
+The async entry point uses the same checkpoint contract and keeps file-backed
+store I/O off the event loop:
+
+```python
+started = await agent.pursue_goal_async("Review this request", run_id="review-2")
+recovered = await restarted_agent.resume_run_async("review-2")
+```
+
 When a tool requires durable approval, the run returns a `Goal` with
 `status == "paused"` and an `AGENT_RUN_PAUSED` result containing the bounded
 `run_id` and `approval_id`. After `decide_approval`, `resume_run()` replaces
@@ -1145,8 +1153,14 @@ the model for another step. A pending run without a decision returns
 before the next model call, but external side effects remain at-least-once and
 must be made idempotent by the handler when required.
 
-This slice covers synchronous `pursue_goal`/`resume_run` only. The async agent
-entry point does not yet persist run checkpoints and is a planned follow-on.
+Both sync and async run paths checkpoint the initial message cursor and each
+completed ReAct step. When durable persistence is enabled, async tool calls in
+one model step are executed in order so an approval pause happens before later
+tool side effects. The local store is thread-safe within one process, not a
+distributed lease service; external effects remain at-least-once and handler
+idempotency remains the host's responsibility. Full trace replay, durable
+streaming cursors, arbitrary request/response HITL, and sandboxing are separate
+capabilities.
 
 ### Loopback workflow run server
 

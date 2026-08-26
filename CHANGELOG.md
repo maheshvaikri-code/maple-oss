@@ -18,8 +18,13 @@
 - **Durable synchronous agent runs**: added bounded in-memory and atomic file
   `AgentRunStore` implementations with versioned JSON-safe ReAct checkpoints.
   Synchronous goals can pause on durable approval and resume after restart
-  without repeating a completed tool call; async run persistence remains an
-  explicit follow-on boundary.
+  without repeating a completed tool call; the async path is extended in the
+  following entry.
+- **Async durable agent runs**: `pursue_goal_async(..., run_id=...)` now writes
+  the same bounded checkpoints through executor-backed local store operations,
+  and `resume_run_async()` recovers interrupted or approval-paused runs. Durable
+  async tool calls pause before later side effects; distributed leases,
+  exactly-once effects, and sandboxing remain outside the contract.
 - **Post-slice release revalidation**: the 101 tracked Python test files now
   report `1,191 passed, 1 skipped in 217.81s` with no warning output. A clean
   archive rebuilt wheel/sdist `1.1.3`; both Twine checks passed, the 466-entry
