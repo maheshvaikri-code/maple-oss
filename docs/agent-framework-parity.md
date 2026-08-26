@@ -1,8 +1,8 @@
 # MAPLE Agent-Framework Parity Ledger
 
-**Observed:** 2026-08-25  
+**Observed:** 2026-08-25
 **Scope:** functionality and developer/runtime surfaces only; adoption and
-licensing are intentionally excluded.  
+licensing are intentionally excluded.
 **Comparison set:** LangGraph, CrewAI, Microsoft Agent Framework (the current
 AutoGen successor), LlamaIndex, and OpenAI Agents SDK.
 
@@ -86,4 +86,3 @@ future parity update:
 - [Microsoft Agent Framework overview](https://learn.microsoft.com/en-us/agent-framework/), [workflow concepts](https://learn.microsoft.com/en-us/agent-framework/concepts/workflows/), [HITL](https://learn.microsoft.com/en-us/agent-framework/workflows/human-in-the-loop), and [checkpoints](https://learn.microsoft.com/en-us/agent-framework/workflows/checkpoints)
 - [LlamaIndex agent workflows](https://developers.llamaindex.ai/python/llamaagents/workflows/) and [structured output](https://docs.llamaindex.ai/en/latest/understanding/agent/structured_output/)
 - [OpenAI Agents SDK agents](https://openai.github.io/openai-agents-python/agents/), [handoffs](https://openai.github.io/openai-agents-python/handoffs/), [sessions](https://openai.github.io/openai-agents-python/sessions/), [tracing](https://openai.github.io/openai-agents-python/tracing/), and [testing](https://openai.github.io/openai-agents-python/testing/)
-
