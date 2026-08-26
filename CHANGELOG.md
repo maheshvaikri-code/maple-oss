@@ -16,8 +16,13 @@
   Optional agent wiring links model-step spans to `model.chunk`,
   `model.response`, and `DecisionTrace` IDs for sync and async ReAct runs.
   Tool spans, hosted/remote exporters, sampling, and backpressure remain
-  outside this local contract. Focused validation is in progress; no
-  publication was performed.
+  outside this local contract. Focused validation reports `36 passed in
+  0.43s`; the exact tracked manifest reports `1261 passed, 1 skipped in
+  260.28s` across 108 tracked test files. Black, Ruff, changed-boundary
+  mypy, compile, diff, and network-free doctor pass. The direct public span
+  constructor also enforces the serialized attribute byte bound. Package
+  evidence is pending the final documentation commit; no publication was
+  performed.
 - **Bounded provider stream aggregation and agent chunk events**: added
   `LLMProvider.complete_from_stream` to reconstruct streamed text, fragmented
   JSON tool calls, usage trailers, finish reasons, and safe request IDs into a
@@ -31,7 +36,7 @@
   260.34s` across 108 tracked test files. Black, Ruff, changed-boundary mypy,
   compile, diff, and network-free doctor pass; doctor reports `ready=true`,
   all eight checks true, and network false. A clean committed-HEAD ZIP archive
-  rebuilt wheel/sdist `1.1.3`; build and Twine exited 0, the sdist contains 496
+  rebuilt wheel/sdist `1.1.3`; build and Twine exited 0, the sdist contains 498
   entries including ADR-050 and the QA/review artifacts, and the workspace-only
   audit is empty. No publication was performed.
 - **Durable local handoff identity and ownership**: added bounded
