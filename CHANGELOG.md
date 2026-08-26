@@ -14,7 +14,10 @@
   and `SpanRecorder.metrics()` now expose retained capacity, eviction counts,
   subscriber count, and open-span count as thread-safe integer snapshots.
   Sampling, histograms, remote aggregation, and exporter delivery remain
-  deferred. Focused validation is in progress; no publication was performed.
+  deferred. Focused validation reports `30 passed in 0.25s`; the exact tracked
+  manifest reports `1263 passed, 1 skipped in 248.55s` across 108 tracked test
+  files. Black, Ruff, changed-boundary mypy, compile, diff, and network-free
+  doctor pass. Package evidence is pending; no publication was performed.
 - **Bounded local tool spans**: normal sync and async ReAct tool executions
   now record optional `agent.tool` child spans under their open model-step
   span. Only bounded tool identity, step, error status, and result length are
