@@ -10,6 +10,14 @@
 
 ### Additions
 
+- **Bounded local trace spans**: added thread-safe `TraceSpan` and
+  `SpanRecorder` contracts with bounded retention, redacted flat attributes,
+  parent/trace validation, terminal status transitions, and JSON inspection.
+  Optional agent wiring links model-step spans to `model.chunk`,
+  `model.response`, and `DecisionTrace` IDs for sync and async ReAct runs.
+  Tool spans, hosted/remote exporters, sampling, and backpressure remain
+  outside this local contract. Focused validation is in progress; no
+  publication was performed.
 - **Bounded provider stream aggregation and agent chunk events**: added
   `LLMProvider.complete_from_stream` to reconstruct streamed text, fragmented
   JSON tool calls, usage trailers, finish reasons, and safe request IDs into a

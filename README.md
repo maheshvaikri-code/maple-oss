@@ -63,7 +63,7 @@ Most agent frameworks give you either **infrastructure** (messaging, security, f
 - **Three-Tier Memory** — Working memory (context window), episodic memory (task history), semantic memory (learned facts). LLM-assisted summarization when context fills up.
 - **Multi-Agent Orchestration** — Form teams by capability, execute via bounded parallel supervisor delegation or consensus voting with deterministic joins, and use async cancellation or total time budgets for request-scoped fan-out.
 - **MCP Tool Discovery** — Discover live `tools/list` descriptors over bounded Streamable HTTP and use approved external tools as native MAPLE tools; the legacy URL-only helper remains offline for compatibility.
-- **Observability** — Full decision traces with bounded provider correlation, agent snapshots, and per-goal token usage tracking with optional hard budgets.
+- **Observability** — Full decision traces with bounded provider correlation, optional thread-safe local `TraceSpan`/`SpanRecorder` model-step linkage, agent snapshots, and per-goal token usage tracking with optional hard budgets; hosted exporters and remote trace search remain outside the local contract.
 - **Workflow Runtime (preview)** — Define validated workflows with stable run IDs, JSON-safe node-boundary checkpoints, bounded fan-out/fan-in, interruption, conditional routing, local file-backed resume, bounded in-process history inspection, and opt-in crash-window output recovery.
 
 ### Production Infrastructure

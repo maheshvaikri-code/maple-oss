@@ -10,6 +10,7 @@ from maple.autonomy.agent import AutonomousAgent, AutonomousConfig
 from maple.autonomy.approval import InMemoryApprovalStore
 from maple.autonomy.events import EventStream
 from maple.autonomy.interactions import InMemoryHumanInputStore
+from maple.autonomy.observability import DecisionLogger, SpanRecorder
 from maple.autonomy.runs import (
     AgentRunCheckpoint,
     FileAgentRunStore,
@@ -353,6 +354,60 @@ def test_async_agent_can_publish_metadata_only_model_chunk_events():
         "async-streamed".encode("utf-8")
     )
     assert chunk_events[1].payload["content_bytes"] == 0
+
+
+def test_agent_links_model_events_to_a_finished_span():
+    events = EventStream(max_events=20)
+    spans = SpanRecorder(max_spans=10)
+    agent = make_agent(
+        [
+            LLMResponse(
+                content="traced",
+                finish_reason="stop",
+                request_id="provider-trace-1",
+            )
+        ],
+        stream_model_events=True,
+    )
+    agent.set_event_stream(events)
+    agent.set_span_recorder(spans)
+    decision_logger = DecisionLogger()
+    agent._decision_logger = decision_logger
+
+    result = agent.pursue_goal("Trace one model step")
+
+    assert result.is_ok()
+    retained = events.snapshot().unwrap()
+    model_events = [
+        event
+        for event in retained
+        if event.event_type in {"model.chunk", "model.response"}
+    ]
+    span = spans.snapshot().unwrap()[0]
+    assert span.status == "ok"
+    assert all(event.payload["trace_id"] == span.trace_id for event in model_events)
+    assert all(event.payload["span_id"] == span.span_id for event in model_events)
+    assert span.attributes["provider_request_id"] == "provider-trace-1"
+    decision = decision_logger.get_traces()[0]
+    assert decision.trace_id == span.trace_id
+    assert decision.span_id == span.span_id
+
+
+def test_async_agent_links_model_events_to_a_finished_span():
+    events = EventStream(max_events=20)
+    spans = SpanRecorder(max_spans=10)
+    agent = make_agent(
+        [LLMResponse(content="async-traced", finish_reason="stop")],
+        stream_model_events=True,
+    )
+    agent.set_event_stream(events)
+    agent.set_span_recorder(spans)
+
+    result = asyncio.run(agent.pursue_goal_async("Trace async model step"))
+
+    assert result.is_ok()
+    assert len(spans.snapshot().unwrap()) == 1
+    assert spans.snapshot().unwrap()[0].status == "ok"
 
 
 def test_async_run_pauses_for_approval_and_resumes_after_restart():

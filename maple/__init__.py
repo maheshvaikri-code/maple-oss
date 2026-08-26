@@ -104,6 +104,7 @@ from .autonomy.handoffs import (
     InMemoryHandoffStore,
 )
 from .autonomy.memory import MemoryManager
+from .autonomy.observability import SpanRecorder, TraceSpan
 from .autonomy.orchestrator import AgentOrchestrator
 from .autonomy.replay import (
     DEFAULT_MAX_RECORD_BYTES,
@@ -257,6 +258,8 @@ __all__ = [
     "ToolRegistry",
     "create_handoff_tool",
     "MemoryManager",
+    "SpanRecorder",
+    "TraceSpan",
     "AgentOrchestrator",
     "END",
     "CheckpointStore",

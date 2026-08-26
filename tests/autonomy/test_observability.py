@@ -2,7 +2,17 @@
 
 import json
 import time
-from maple.autonomy.observability import DecisionTrace, DecisionLogger, AgentSnapshot
+from concurrent.futures import ThreadPoolExecutor
+
+import pytest
+
+from maple.autonomy.observability import (
+    AgentSnapshot,
+    DecisionLogger,
+    DecisionTrace,
+    SpanRecorder,
+    TraceSpan,
+)
 
 
 def make_trace(agent_id="agent-1", goal_id="goal-1", step=0, duration_ms=100.0):
@@ -119,6 +129,105 @@ class TestDecisionLogger:
         # Oldest should be evicted
         traces = logger.get_traces()
         assert traces[0].step_number == 5
+
+
+class TestTraceSpan:
+    def test_creation_and_validation(self):
+        span = TraceSpan(
+            trace_id="trace-1",
+            span_id="span-1",
+            name="model",
+            start_time=1.0,
+            attributes={"step": 1},
+        )
+
+        assert span.status == "running"
+        assert span.to_dict()["attributes"] == {"step": 1}
+
+        with pytest.raises(ValueError, match="finite"):
+            TraceSpan(
+                trace_id="trace-1",
+                span_id="span-2",
+                name="model",
+                start_time=float("nan"),
+            )
+        with pytest.raises(ValueError, match="terminal"):
+            TraceSpan(
+                trace_id="trace-1",
+                span_id="span-3",
+                name="model",
+                start_time=1.0,
+                status="ok",
+            )
+
+    def test_recorder_redacts_and_finishes_once(self):
+        recorder = SpanRecorder(max_spans=4)
+        started = recorder.start_span(
+            "model",
+            trace_id="trace-1",
+            attributes={"token": "secret", "step": 1},
+            start_time=1.0,
+        )
+
+        assert started.is_ok()
+        span = started.unwrap()
+        assert span.attributes["token"] == "[REDACTED]"
+        finished = recorder.finish_span(
+            span.span_id,
+            status="ok",
+            attributes={"total_tokens": 4},
+            end_time=2.0,
+        )
+
+        assert finished.is_ok()
+        assert finished.unwrap().status == "ok"
+        assert finished.unwrap().attributes["total_tokens"] == 4
+        again = recorder.finish_span(span.span_id, status="error", end_time=3.0)
+        assert again.is_err()
+        assert again.unwrap_err()["errorType"] == "SPAN_ALREADY_FINISHED"
+
+    def test_recorder_enforces_parent_trace_and_retention(self):
+        recorder = SpanRecorder(max_spans=2)
+        parent = recorder.start_span("parent", trace_id="trace-1").unwrap()
+        child = recorder.start_span(
+            "child", trace_id="trace-1", parent_span_id=parent.span_id
+        )
+        assert child.is_ok()
+        mismatch = recorder.start_span(
+            "mismatch", trace_id="trace-2", parent_span_id=parent.span_id
+        )
+        assert mismatch.is_err()
+        assert mismatch.unwrap_err()["errorType"] == "SPAN_TRACE_MISMATCH"
+
+        recorder.start_span("evicting")
+        assert recorder.get_span(parent.span_id).is_err()
+
+    def test_recorder_rejects_nested_attributes_and_exports_json(self):
+        recorder = SpanRecorder()
+        invalid = recorder.start_span("model", attributes={"payload": {"raw": 1}})
+
+        assert invalid.is_err()
+        assert invalid.unwrap_err()["errorType"] == "SPAN_ATTRIBUTES_INVALID"
+        span = recorder.start_span("model", trace_id="trace-1").unwrap()
+        exported = recorder.export_json(trace_id=span.trace_id)
+        assert exported.is_ok()
+        assert '"span_id":"' + span.span_id + '"' in exported.unwrap()
+
+    def test_recorder_is_thread_safe_for_concurrent_starts(self):
+        recorder = SpanRecorder(max_spans=32)
+
+        def start(index):
+            return recorder.start_span(
+                "worker", trace_id="trace-concurrent", attributes={"index": index}
+            )
+
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            results = list(executor.map(start, range(16)))
+
+        assert all(result.is_ok() for result in results)
+        retained = recorder.snapshot(trace_id="trace-concurrent").unwrap()
+        assert len(retained) == 16
+        assert len({span.span_id for span in retained}) == 16
 
 
 class TestAgentSnapshot:

@@ -929,6 +929,26 @@ agent = AutonomousAgent(
 agent.set_event_stream(EventStream())
 ```
 
+For local trace correlation, attach a bounded `SpanRecorder`. It records one
+`agent.model` span per ReAct model step and copies the span's `trace_id` and
+`span_id` into model chunk/response events and `DecisionTrace` records. Span
+attributes are redacted and limited to flat JSON scalars; recording failures
+are observational and do not change the run result.
+
+```python
+from maple import SpanRecorder
+
+spans = SpanRecorder(max_spans=1_000)
+agent.set_span_recorder(spans)
+completed = agent.pursue_goal("Summarize this document.")
+for span in spans.snapshot().unwrap():
+    print(span.name, span.status, span.trace_id, span.span_id)
+```
+
+This is an in-process inspection contract. Tool-level spans, sampling,
+backpressure metrics, durable/remote exporters, and hosted trace search remain
+host-owned or deferred.
+
 ## Evaluation and Provider Capabilities (preview)
 
 The evaluation harness runs local runners against versioned golden cases. A

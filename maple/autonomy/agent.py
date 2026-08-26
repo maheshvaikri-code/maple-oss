@@ -22,7 +22,18 @@ import time
 import uuid
 from dataclasses import dataclass, field, replace
 from functools import partial
-from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple, Type
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+    Type,
+    cast,
+)
 
 from ..agent.agent import Agent
 from ..agent.config import Config
@@ -51,6 +62,7 @@ from .contracts import (
 from .events import EventStream
 from .interactions import HumanInputRequest, HumanInputStore
 from .memory import MemoryManager
+from .observability import DecisionTrace, SpanRecorder, TraceSpan
 from .runs import AgentRunCheckpoint, AgentRunStore
 from .sessions import SessionMessage, SessionSnapshot, SessionStore
 from .tools import (
@@ -214,6 +226,7 @@ class AutonomousAgent(Agent):
         self._session_store: Optional[SessionStore] = None
         self._run_store: Optional[AgentRunStore] = None
         self._event_stream: Optional[EventStream] = None
+        self._span_recorder: Optional[SpanRecorder] = None
 
         # Active goals
         self._active_goals: Dict[str, Goal] = {}
@@ -256,6 +269,15 @@ class AutonomousAgent(Agent):
         if stream is not None and not callable(getattr(stream, "publish", None)):
             raise TypeError("event stream must implement publish")
         self._event_stream = stream
+
+    def set_span_recorder(self, recorder: Optional[SpanRecorder]) -> None:
+        """Set the optional local recorder used for model-step spans."""
+        if recorder is not None and any(
+            not callable(getattr(recorder, name, None))
+            for name in ("start_span", "finish_span")
+        ):
+            raise TypeError("span recorder must implement start_span and finish_span")
+        self._span_recorder = recorder
 
     def set_approval_store(self, store: Optional[ApprovalStore]) -> None:
         """Set a durable store used when approval callbacks are unavailable."""
@@ -1448,19 +1470,23 @@ class AutonomousAgent(Agent):
 
             # THINK: Get LLM response
             tool_defs = self.tool_registry.get_llm_definitions()
+            model_span = self._start_model_span(goal, step_num)
             response_result = self._complete_model(
                 messages,
                 tools=tool_defs if tool_defs else None,
                 goal=goal,
                 step_num=step_num,
+                span=model_span,
             )
 
             if response_result.is_err():
+                self._finish_model_span(model_span, "error")
                 return response_result
 
             response = response_result.unwrap()
             usage_result = self._account_response_usage(goal, response)
             if usage_result.is_err():
+                self._finish_model_span(model_span, "error", response)
                 return Result.err(usage_result.unwrap_err())
             duration_ms = (time.time() - start_time) * 1000
             model_payload = {
@@ -1473,6 +1499,10 @@ class AutonomousAgent(Agent):
             provider_request_id = self._bounded_provider_request_id(response.request_id)
             if provider_request_id is not None:
                 model_payload["provider_request_id"] = provider_request_id
+            if model_span is not None:
+                model_payload["trace_id"] = model_span.trace_id
+                model_payload["span_id"] = model_span.span_id
+            self._finish_model_span(model_span, "ok", response)
             self._publish_run_event(
                 goal,
                 "model.response",
@@ -1489,7 +1519,7 @@ class AutonomousAgent(Agent):
             goal.reasoning_trace.append(step)
 
             # Log decision
-            self._log_decision(goal, step, response, duration_ms)
+            self._log_decision(goal, step, response, duration_ms, span=model_span)
 
             # Check if done (no tool calls and finish_reason == "stop")
             if not response.tool_calls and response.finish_reason == "stop":
@@ -2353,12 +2383,15 @@ Instructions:
             return Result.err({"errorType": "DECOMPOSITION_ERROR", "message": str(e)})
 
     def _log_decision(
-        self, goal: Goal, step: ReasoningStep, response: LLMResponse, duration_ms: float
+        self,
+        goal: Goal,
+        step: ReasoningStep,
+        response: LLMResponse,
+        duration_ms: float,
+        span: Optional[TraceSpan] = None,
     ) -> None:
         """Log a decision for observability."""
         if self._decision_logger:
-            from .observability import DecisionTrace
-
             trace = DecisionTrace(
                 agent_id=self.agent_id,
                 goal_id=goal.goal_id,
@@ -2376,6 +2409,8 @@ Instructions:
                 provider_request_id=self._bounded_provider_request_id(
                     response.request_id
                 ),
+                trace_id=span.trace_id if span is not None else None,
+                span_id=span.span_id if span is not None else None,
             )
             self._decision_logger.log_decision(trace)
 
@@ -2398,13 +2433,22 @@ Instructions:
                 result.unwrap_err().get("errorType", "EVENT_ERROR"),
             )
 
-    def _publish_model_chunk(self, goal: Goal, step_num: int, chunk: LLMChunk) -> None:
+    def _publish_model_chunk(
+        self,
+        goal: Goal,
+        step_num: int,
+        chunk: LLMChunk,
+        span: Optional[TraceSpan] = None,
+    ) -> None:
         """Publish metadata for one model chunk without exposing its payload."""
         event_payload: Dict[str, Any] = {
             "step": step_num,
             "content_bytes": len(chunk.content.encode("utf-8")),
             "has_tool_call": chunk.tool_call_delta is not None,
         }
+        if span is not None:
+            event_payload["trace_id"] = span.trace_id
+            event_payload["span_id"] = span.span_id
         if chunk.finish_reason is not None:
             event_payload["finish_reason"] = chunk.finish_reason
         if isinstance(chunk.usage, TokenUsage):
@@ -2418,6 +2462,57 @@ Instructions:
             event_payload["provider_request_id"] = provider_request_id
         self._publish_run_event(goal, "model.chunk", event_payload)
 
+    def _start_model_span(self, goal: Goal, step_num: int) -> Optional[TraceSpan]:
+        """Start an optional local model span without affecting the run."""
+        if self._span_recorder is None:
+            return None
+        result = self._span_recorder.start_span(
+            "agent.model",
+            trace_id=goal.run_id or goal.goal_id,
+            attributes={
+                "agent_id": self.agent_id,
+                "goal_id": goal.goal_id,
+                "step": step_num,
+            },
+        )
+        if result.is_err():
+            logger.debug(
+                "model span start dropped: %s",
+                result.unwrap_err().get("errorType", "SPAN_ERROR"),
+            )
+            return None
+        return cast(TraceSpan, result.unwrap())
+
+    def _finish_model_span(
+        self,
+        span: Optional[TraceSpan],
+        status: str,
+        response: Optional[LLMResponse] = None,
+    ) -> None:
+        """Finish an optional model span with bounded response metadata."""
+        if span is None or self._span_recorder is None:
+            return
+        attributes: Dict[str, Any] = {}
+        if response is not None:
+            attributes["tool_call_count"] = len(response.tool_calls)
+            if response.finish_reason:
+                attributes["finish_reason"] = response.finish_reason
+            if response.usage is not None:
+                attributes["total_tokens"] = response.usage.total_tokens
+            provider_request_id = self._bounded_provider_request_id(response.request_id)
+            if provider_request_id is not None:
+                attributes["provider_request_id"] = provider_request_id
+        result = self._span_recorder.finish_span(
+            span.span_id,
+            status=status,
+            attributes=attributes,
+        )
+        if result.is_err():
+            logger.debug(
+                "model span finish dropped: %s",
+                result.unwrap_err().get("errorType", "SPAN_ERROR"),
+            )
+
     def _complete_model(
         self,
         messages: List[ChatMessage],
@@ -2425,6 +2520,7 @@ Instructions:
         tools: Optional[List[Any]],
         goal: Goal,
         step_num: int,
+        span: Optional[TraceSpan] = None,
     ) -> Result[LLMResponse, Dict[str, Any]]:
         """Complete one sync ReAct step, optionally through the stream collector."""
         if not self.autonomy_config.stream_model_events:
@@ -2433,7 +2529,9 @@ Instructions:
         coroutine = self.llm.complete_from_stream(
             messages,
             tools=tools,
-            on_chunk=lambda chunk: self._publish_model_chunk(goal, step_num, chunk),
+            on_chunk=lambda chunk: self._publish_model_chunk(
+                goal, step_num, chunk, span
+            ),
         )
         try:
             asyncio.get_running_loop()
@@ -2474,6 +2572,7 @@ Instructions:
         tools: Optional[List[Any]],
         goal: Goal,
         step_num: int,
+        span: Optional[TraceSpan] = None,
     ) -> Result[LLMResponse, Dict[str, Any]]:
         """Complete one async ReAct step, optionally through the stream collector."""
         if not self.autonomy_config.stream_model_events:
@@ -2481,7 +2580,9 @@ Instructions:
         return await self.llm.complete_from_stream(
             messages,
             tools=tools,
-            on_chunk=lambda chunk: self._publish_model_chunk(goal, step_num, chunk),
+            on_chunk=lambda chunk: self._publish_model_chunk(
+                goal, step_num, chunk, span
+            ),
         )
 
     @staticmethod
@@ -2905,18 +3006,22 @@ Instructions:
             start_time = time.time()
 
             tool_defs = self.tool_registry.get_llm_definitions()
+            model_span = self._start_model_span(goal, step_num)
             response_result = await self._complete_model_async(
                 messages,
                 tools=tool_defs if tool_defs else None,
                 goal=goal,
                 step_num=step_num,
+                span=model_span,
             )
             if response_result.is_err():
+                self._finish_model_span(model_span, "error")
                 return response_result
 
             response = response_result.unwrap()
             usage_result = self._account_response_usage(goal, response)
             if usage_result.is_err():
+                self._finish_model_span(model_span, "error", response)
                 return Result.err(usage_result.unwrap_err())
             duration_ms = (time.time() - start_time) * 1000
             model_payload = {
@@ -2929,6 +3034,10 @@ Instructions:
             provider_request_id = self._bounded_provider_request_id(response.request_id)
             if provider_request_id is not None:
                 model_payload["provider_request_id"] = provider_request_id
+            if model_span is not None:
+                model_payload["trace_id"] = model_span.trace_id
+                model_payload["span_id"] = model_span.span_id
+            self._finish_model_span(model_span, "ok", response)
             self._publish_run_event(
                 goal,
                 "model.response",
@@ -2941,7 +3050,7 @@ Instructions:
                 tool_calls=response.tool_calls,
             )
             goal.reasoning_trace.append(step)
-            self._log_decision(goal, step, response, duration_ms)
+            self._log_decision(goal, step, response, duration_ms, span=model_span)
 
             if not response.tool_calls and response.finish_reason == "stop":
                 final_result = self._finalize_output(response.content)

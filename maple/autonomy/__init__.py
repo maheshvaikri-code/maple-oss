@@ -88,7 +88,13 @@ from .handoffs import (
 )
 from .mcp_tools import discover_mcp_tools, register_mcp_tools
 from .memory import EpisodicMemory, MemoryManager, SemanticMemory, WorkingMemory
-from .observability import AgentSnapshot, DecisionLogger, DecisionTrace
+from .observability import (
+    AgentSnapshot,
+    DecisionLogger,
+    DecisionTrace,
+    SpanRecorder,
+    TraceSpan,
+)
 from .orchestrator import AgentOrchestrator, TeamMember
 from .replay import (
     DEFAULT_MAX_RECORD_BYTES,
@@ -204,6 +210,8 @@ __all__ = [
     "EventExporter",
     "EventStream",
     "RedactionPolicy",
+    "SpanRecorder",
+    "TraceSpan",
     "HumanInputDecision",
     "HumanInputNotification",
     "HumanInputNotifier",
