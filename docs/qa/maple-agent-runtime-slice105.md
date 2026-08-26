@@ -12,7 +12,7 @@
 | 3 | Enforce parent/trace integrity and terminal transitions | Focused observability tests | `test_recorder_enforces_parent_trace_and_retention` passed; mismatched traces, evicted parents, and finish-once behavior are typed failures | Yes |
 | 4 | Link optional sync and async model steps to spans | `tests/autonomy/test_runs.py` | `36 passed in 0.43s`; sync and async model events, response metadata, and decision traces carry the same trace/span IDs | Yes |
 | 5 | Preserve existing behavior and fail safely when telemetry is unavailable | Exact tracked regression manifest and full gates | `1261 passed, 1 skipped in 260.28s` across 108 tracked test files; telemetry failures are isolated from agent outcomes | Yes |
-| 6 | Keep the public/package boundary documented and committed | API/README/parity/ADR review plus package audit | Public exports, API usage, ADR-051, and parity boundaries are documented; final package audit is pending the evidence commit | Pending |
+| 6 | Keep the public/package boundary documented and committed | API/README/parity/ADR review plus package audit | Package candidate `fc39e9a`: `build_exit=0`, `twine_exit=0`, `sdist_entries=501`, required public files `5/5`, workspace-only audit `0` | Yes |
 
 ## Adversarial & edge matrix
 
@@ -53,6 +53,16 @@ pytest_exit=0
 
 Flakes: none observed in the final exact run.
 
+Package audit on committed candidate `fc39e9a`:
+
+```text
+build_exit=0
+twine_exit=0
+sdist_entries=501
+required_hits=5/5
+workspace_only_hits=0
+```
+
 ## Bugs found
 
 | # | Repro steps (minimal) | Severity | Fixed @ | Re-verified | Regression test |
@@ -81,6 +91,5 @@ recorder failures do not alter agent outcomes.
 **Security verdict:** **VETO** for a final repository publication claim until
 the dependency-audit findings are dispositioned; no new Slice 105 security
 defect found. Human override: n/a.  
-**QA verdict:** pass for the Slice 105 behavior; package evidence remains to
-be attached after the final documentation commit. No publication was
-performed.
+**QA verdict:** pass for Slice 105 behavior and committed-package boundaries.
+No publication was performed.

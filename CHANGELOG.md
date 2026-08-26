@@ -21,8 +21,9 @@
   260.28s` across 108 tracked test files. Black, Ruff, changed-boundary
   mypy, compile, diff, and network-free doctor pass. The direct public span
   constructor also enforces the serialized attribute byte bound. Package
-  evidence is pending the final documentation commit; no publication was
-  performed.
+  candidate `fc39e9a` rebuilt wheel/sdist `1.1.3` with build and Twine exit 0;
+  the sdist contains `501` entries, all 5 required public-file checks pass,
+  and the workspace-only audit is empty. No publication was performed.
 - **Bounded provider stream aggregation and agent chunk events**: added
   `LLMProvider.complete_from_stream` to reconstruct streamed text, fragmented
   JSON tool calls, usage trailers, finish reasons, and safe request IDs into a
