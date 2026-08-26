@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import hmac
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Dict, Mapping, Optional, Tuple
-from urllib.parse import unquote, urlsplit
+from urllib.error import HTTPError, URLError
+from urllib.parse import quote, unquote, urlsplit, urlunsplit
+from urllib.request import Request, urlopen
 
 from ..core.result import Result
 from .workflow import Workflow, WorkflowRun
@@ -17,6 +20,7 @@ _MAX_PATH_BYTES = 4_096
 _MAX_WORKFLOWS = 64
 _DEFAULT_MAX_BODY_BYTES = 1 * 1024 * 1024
 _DEFAULT_MAX_RESPONSE_BYTES = 2 * 1024 * 1024
+_DEFAULT_CLIENT_TIMEOUT_SECONDS = 10.0
 
 
 def _error(error_type: str, message: str, **details: Any) -> Error:
@@ -24,6 +28,15 @@ def _error(error_type: str, message: str, **details: Any) -> Error:
     if details:
         result["details"] = details
     return result
+
+
+def _validate_auth_token(auth_token: Optional[str]) -> None:
+    if auth_token is None:
+        return
+    if not isinstance(auth_token, str) or not auth_token.strip():
+        raise ValueError("auth_token must be a non-empty string when provided")
+    if any(ord(character) < 0x20 or ord(character) == 0x7F for character in auth_token):
+        raise ValueError("auth_token must not contain control characters")
 
 
 def _run_to_dict(run: WorkflowRun) -> Dict[str, Any]:
@@ -185,6 +198,8 @@ class _RequestHandler(BaseHTTPRequestHandler):
 
     def _dispatch(self, method: str) -> None:
         try:
+            if not self._authorize():
+                return
             path = self._path_segments()
             if path is None:
                 return
@@ -242,6 +257,21 @@ class _RequestHandler(BaseHTTPRequestHandler):
             self._write_error(
                 500, _error("INTERNAL_ERROR", "Request could not be processed.")
             )
+
+    def _authorize(self) -> bool:
+        expected_token = self.server.application.auth_token
+        if expected_token is None:
+            return True
+        presented = self.headers.get("Authorization", "")
+        expected = f"Bearer {expected_token}"
+        if not hmac.compare_digest(presented, expected):
+            self._write_json(
+                401,
+                {"error": _error("UNAUTHORIZED", "A valid bearer token is required.")},
+                extra_headers={"WWW-Authenticate": "Bearer"},
+            )
+            return False
+        return True
 
     def _path_segments(self) -> Optional[Tuple[str, ...]]:
         raw_path = self.path.encode("utf-8", errors="replace")
@@ -338,7 +368,13 @@ class _RequestHandler(BaseHTTPRequestHandler):
     def _write_error(self, status: int, error: Error) -> None:
         self._write_json(status, {"error": error})
 
-    def _write_json(self, status: int, payload: Dict[str, Any]) -> None:
+    def _write_json(
+        self,
+        status: int,
+        payload: Dict[str, Any],
+        *,
+        extra_headers: Optional[Mapping[str, str]] = None,
+    ) -> None:
         try:
             encoded = json.dumps(
                 payload,
@@ -362,6 +398,8 @@ class _RequestHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(encoded)))
         self.send_header("Connection", "close")
+        for name, value in (extra_headers or {}).items():
+            self.send_header(name, value)
         self.end_headers()
         self.close_connection = True
         self.wfile.write(encoded)
@@ -383,6 +421,7 @@ class RunServer:
         port: int = 0,
         max_body_bytes: int = _DEFAULT_MAX_BODY_BYTES,
         max_response_bytes: int = _DEFAULT_MAX_RESPONSE_BYTES,
+        auth_token: Optional[str] = None,
     ) -> None:
         if not isinstance(registry, WorkflowRegistry):
             raise TypeError("registry must be a WorkflowRegistry")
@@ -407,13 +446,20 @@ class RunServer:
             for value in limits
         ):
             raise ValueError("server limits must be positive integers")
+        _validate_auth_token(auth_token)
         self.registry = registry
         self.host = host
         self.port = port
         self.max_body_bytes = max_body_bytes
         self.max_response_bytes = max_response_bytes
+        self._auth_token = auth_token
         self._server: Optional[_MAPLEHTTPServer] = None
         self._thread: Optional[threading.Thread] = None
+
+    @property
+    def auth_token(self) -> Optional[str]:
+        """Return the configured bearer token without exposing a setter."""
+        return self._auth_token
 
     @property
     def url(self) -> str:
@@ -456,4 +502,235 @@ class RunServer:
         self.close()
 
 
-__all__ = ["RunServer", "WorkflowRegistry"]
+class RunClient:
+    """Bounded dependency-free client for the MAPLE workflow HTTP contract.
+
+    The client can target a loopback ``RunServer`` or a separately hosted
+    implementation of the same contract. It performs no retries and never
+    embeds credentials in URLs; callers own transport retry and idempotency
+    policy for remote side effects.
+    """
+
+    def __init__(
+        self,
+        base_url: str,
+        *,
+        auth_token: Optional[str] = None,
+        timeout_seconds: float = _DEFAULT_CLIENT_TIMEOUT_SECONDS,
+        max_body_bytes: int = _DEFAULT_MAX_BODY_BYTES,
+        max_response_bytes: int = _DEFAULT_MAX_RESPONSE_BYTES,
+    ) -> None:
+        if not isinstance(base_url, str) or not base_url.strip():
+            raise ValueError("base_url must be a non-empty URL")
+        if any(
+            ord(character) < 0x20 or ord(character) == 0x7F for character in base_url
+        ):
+            raise ValueError("base_url must not contain control characters")
+        parsed = urlsplit(base_url.strip())
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("base_url must use http or https and include a host")
+        if not parsed.hostname:
+            raise ValueError("base_url must include a host")
+        hostname = parsed.hostname.lower()
+        is_loopback = hostname == "localhost"
+        if not is_loopback:
+            try:
+                is_loopback = ipaddress.ip_address(hostname).is_loopback
+            except ValueError:
+                is_loopback = False
+        if parsed.username is not None or parsed.password is not None:
+            raise ValueError("base_url must not include user information")
+        if parsed.query or parsed.fragment:
+            raise ValueError("base_url must not include a query or fragment")
+        _validate_auth_token(auth_token)
+        if (
+            not isinstance(timeout_seconds, (int, float))
+            or isinstance(timeout_seconds, bool)
+            or timeout_seconds <= 0
+        ):
+            raise ValueError("timeout_seconds must be a positive number")
+        if (
+            not isinstance(max_body_bytes, int)
+            or isinstance(max_body_bytes, bool)
+            or max_body_bytes <= 0
+        ):
+            raise ValueError("max_body_bytes must be a positive integer")
+        if (
+            not isinstance(max_response_bytes, int)
+            or isinstance(max_response_bytes, bool)
+            or max_response_bytes <= 0
+        ):
+            raise ValueError("max_response_bytes must be a positive integer")
+        if auth_token is not None and parsed.scheme != "https" and not is_loopback:
+            raise ValueError("authenticated non-loopback transport requires https")
+        self.base_url = urlunsplit(
+            (parsed.scheme, parsed.netloc, parsed.path.rstrip("/"), "", "")
+        )
+        self.auth_token = auth_token
+        self.timeout_seconds = float(timeout_seconds)
+        self.max_body_bytes = max_body_bytes
+        self.max_response_bytes = max_response_bytes
+
+    def healthz(self) -> Result[Dict[str, Any], Error]:
+        """Check the remote workflow service health endpoint."""
+        return self._request("GET", ("healthz",))
+
+    def run(
+        self,
+        workflow_name: str,
+        state: Mapping[str, Any],
+        *,
+        run_id: Optional[str] = None,
+    ) -> Result[Dict[str, Any], Error]:
+        """Start a workflow run and return the remote response envelope."""
+        if not isinstance(state, Mapping):
+            return Result.err(_error("INVALID_STATE", "Run state must be an object."))
+        if run_id is not None and not isinstance(run_id, str):
+            return Result.err(_error("INVALID_IDENTIFIER", "run_id must be a string."))
+        body: Dict[str, Any] = {"state": dict(state)}
+        if run_id is not None:
+            body["run_id"] = run_id
+        return self._request("POST", ("v1", "workflows", workflow_name, "runs"), body)
+
+    def resume(
+        self,
+        workflow_name: str,
+        run_id: str,
+        *,
+        resume_value: Any = None,
+    ) -> Result[Dict[str, Any], Error]:
+        """Resume a paused workflow run."""
+        return self._request(
+            "POST",
+            ("v1", "workflows", workflow_name, "runs", run_id, "resume"),
+            {"value": resume_value},
+        )
+
+    def inspect(self, workflow_name: str, run_id: str) -> Result[Dict[str, Any], Error]:
+        """Inspect a persisted workflow run."""
+        return self._request("GET", ("v1", "workflows", workflow_name, "runs", run_id))
+
+    def _request(
+        self,
+        method: str,
+        segments: Tuple[str, ...],
+        payload: Optional[Dict[str, Any]] = None,
+    ) -> Result[Dict[str, Any], Error]:
+        if any(
+            not isinstance(segment, str) or not segment or segment in {".", ".."}
+            for segment in segments
+        ):
+            return Result.err(
+                _error("INVALID_IDENTIFIER", "Path segments are invalid.")
+            )
+        path = "/".join(quote(segment, safe="") for segment in segments)
+        url = f"{self.base_url}/{path}"
+        if len(url.encode("utf-8")) > _MAX_PATH_BYTES:
+            return Result.err(_error("PATH_TOO_LARGE", "Request path is too large."))
+        data: Optional[bytes] = None
+        headers = {"Accept": "application/json"}
+        if self.auth_token is not None:
+            headers["Authorization"] = f"Bearer {self.auth_token}"
+        if payload is not None:
+            try:
+                data = json.dumps(
+                    payload, ensure_ascii=False, allow_nan=False, separators=(",", ":")
+                ).encode("utf-8")
+            except (TypeError, ValueError):
+                return Result.err(
+                    _error(
+                        "REQUEST_BODY_INVALID",
+                        "Request payload is not JSON-compatible.",
+                    )
+                )
+            if len(data) > self.max_body_bytes:
+                return Result.err(
+                    _error(
+                        "REQUEST_TOO_LARGE",
+                        "Request body exceeds the configured byte limit.",
+                        max_bytes=self.max_body_bytes,
+                    )
+                )
+            headers["Content-Type"] = "application/json"
+        request = Request(url, data=data, headers=headers, method=method)
+        try:
+            with urlopen(request, timeout=self.timeout_seconds) as response:
+                return self._decode_response(response, int(response.status))
+        except HTTPError as exc:
+            decoded = self._decode_response(exc, int(exc.code))
+            if decoded.is_ok():
+                body = decoded.unwrap()
+                error = body.get("error")
+                if isinstance(error, dict):
+                    return Result.err(error)
+                return Result.err(
+                    _error(
+                        "REMOTE_HTTP_ERROR",
+                        "Remote service returned an error.",
+                        status=exc.code,
+                    )
+                )
+            return Result.err(decoded.unwrap_err())
+        except (URLError, TimeoutError, OSError):
+            return Result.err(
+                _error(
+                    "TRANSPORT_ERROR",
+                    "The remote workflow service could not be reached.",
+                )
+            )
+
+    def _decode_response(
+        self, response: Any, status: int
+    ) -> Result[Dict[str, Any], Error]:
+        raw_length = response.headers.get("Content-Length")
+        if raw_length is not None:
+            try:
+                declared_length = int(raw_length)
+            except (TypeError, ValueError):
+                return Result.err(
+                    _error(
+                        "REMOTE_RESPONSE_INVALID", "Remote response length is invalid."
+                    )
+                )
+            if declared_length < 0 or declared_length > self.max_response_bytes:
+                return Result.err(
+                    _error(
+                        "RESPONSE_TOO_LARGE",
+                        "Remote response exceeds the configured byte limit.",
+                    )
+                )
+        try:
+            raw = response.read(self.max_response_bytes + 1)
+        except (OSError, TimeoutError):
+            return Result.err(
+                _error("TRANSPORT_ERROR", "The remote response could not be read.")
+            )
+        if len(raw) > self.max_response_bytes:
+            return Result.err(
+                _error(
+                    "RESPONSE_TOO_LARGE",
+                    "Remote response exceeds the configured byte limit.",
+                )
+            )
+        try:
+            decoded = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return Result.err(
+                _error("REMOTE_RESPONSE_INVALID", "Remote response is not valid JSON.")
+            )
+        if not isinstance(decoded, dict):
+            return Result.err(
+                _error("REMOTE_RESPONSE_INVALID", "Remote response must be an object.")
+            )
+        if status >= 400 and not isinstance(decoded.get("error"), dict):
+            return Result.err(
+                _error(
+                    "REMOTE_HTTP_ERROR",
+                    "Remote service returned an error.",
+                    status=status,
+                )
+            )
+        return Result.ok(decoded)
+
+
+__all__ = ["RunClient", "RunServer", "WorkflowRegistry"]

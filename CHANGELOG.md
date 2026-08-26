@@ -10,6 +10,12 @@
 
 ### Additions
 
+- **Bounded workflow HTTP transport**: added dependency-free `RunClient`
+  support for health, workflow run, resume, and inspection calls with request,
+  URL, and response bounds, typed transport errors, and optional bearer authentication.
+  `RunServer(auth_token=...)` validates every route with a constant-time
+  comparison while retaining loopback-only binding. TLS, tenancy, remote
+  scheduling, streaming delivery, and exactly-once effects remain host-owned.
 - **Bounded local latency percentiles**: `EventStream.metrics()` and
   `SpanRecorder.metrics()` now expose deterministic integer p50/p95/p99 views
   from bounded recent sample rings, while preserving existing totals, maxima,

@@ -1515,15 +1515,16 @@ responsibility. Full trace replay, durable
 streaming cursors, arbitrary request/response HITL, and sandboxing are separate
 capabilities.
 
-### Loopback workflow run server
+### Workflow run HTTP transport
 
 `WorkflowRegistry` and `RunServer` expose configured workflows to local tools
 without adding an HTTP framework. Register workflows before starting the
 server; the server binds to `127.0.0.1` by default and owns a daemon request
-thread that `close()` shuts down.
+thread that `close()` shuts down. `RunClient` uses the same bounded contract
+for local or separately hosted implementations.
 
 ```python
-from maple import RunServer, WorkflowRegistry
+from maple import RunClient, RunServer, WorkflowRegistry
 
 registry = WorkflowRegistry()
 registry.register(workflow)
@@ -1533,17 +1534,25 @@ with RunServer(registry) as server:
     # POST /v1/workflows/<workflow>/runs
     # POST /v1/workflows/<workflow>/runs/<run_id>/resume
     # GET  /v1/workflows/<workflow>/runs/<run_id>
+
+    client = RunClient(server.url)
+    result = client.run("my-workflow", {"input": "MAPLE"})
+    assert result.is_ok()
 ```
 
 `GET /healthz` returns `{"status": "ok", "service":
 "maple-run-server"}`. Run creation returns `201` and resume/inspection return
 `200`; errors use `{"error": {"errorType": ..., "message": ...}}` with
-`400`, `404`, `409`, `413`, or `500` status codes. Run bodies require
+`400`, `401`, `404`, `409`, `413`, `414`, or `500` status codes. Run bodies require
 `application/json`; request and response bytes are bounded, and workflow
-state/resume values still pass through the workflow JSON boundary. This is a
-local host surface, not an authenticated or TLS-enabled remote service: no
-non-loopback host, arbitrary workflow registration, streaming transport,
-multi-tenant authorization, or hard sandbox is claimed.
+state/resume values still pass through the workflow JSON boundary. Set
+`RunServer(auth_token="...")` to require `Authorization: Bearer ...` on every
+route; unauthorized calls return `401`. `RunClient(auth_token="...")` sends
+that header without putting credentials in the URL. The built-in server still
+rejects non-loopback binding and does not provide TLS, token issuance,
+multi-tenant authorization, streaming transport, or a hard sandbox. A remote
+deployment must supply those host-owned controls and must not infer exactly-once
+effects from this transport.
 
 ## Usage Example
 

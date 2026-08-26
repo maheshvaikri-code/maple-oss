@@ -8,6 +8,7 @@ import pytest
 
 from maple.autonomy import (
     InMemoryCheckpointStore,
+    RunClient,
     RunServer,
     Workflow,
     WorkflowPause,
@@ -25,13 +26,15 @@ def _workflow(name="echo"):
     return workflow
 
 
-def _request(url, *, method="GET", payload=None):
+def _request(url, *, method="GET", payload=None, headers=None):
     data = None
-    headers = {}
+    request_headers = dict(headers or {})
     if payload is not None:
         data = json.dumps(payload).encode("utf-8")
-        headers["Content-Type"] = "application/json"
-    request = urllib.request.Request(url, data=data, headers=headers, method=method)
+        request_headers["Content-Type"] = "application/json"
+    request = urllib.request.Request(
+        url, data=data, headers=request_headers, method=method
+    )
     try:
         with urllib.request.urlopen(request, timeout=2) as response:
             return response.status, json.loads(response.read().decode("utf-8"))
@@ -154,3 +157,76 @@ def test_run_server_rejects_non_loopback_host_and_malformed_json():
 
     assert error.value.code == 400
     assert payload["error"]["errorType"] == "REQUEST_BODY_INVALID"
+
+
+def test_authenticated_run_client_round_trips_workflow_operations():
+    registry = WorkflowRegistry()
+    assert registry.register(_workflow()).is_ok()
+    server = RunServer(registry, auth_token="test-token")
+    base_url = server.start()
+
+    try:
+        client = RunClient(base_url, auth_token="test-token")
+        health = client.healthz()
+        run = client.run("echo", {"value": "remote"}, run_id="client-run")
+        inspected = client.inspect("echo", "client-run")
+        unauthorized = _request(f"{base_url}/healthz")
+        wrong_token = RunClient(base_url, auth_token="wrong-token").healthz()
+    finally:
+        server.close()
+
+    assert health.is_ok()
+    assert health.unwrap() == {"status": "ok", "service": "maple-run-server"}
+    assert run.is_ok()
+    assert run.unwrap()["run"]["state"]["echo"] == "remote"
+    assert inspected.is_ok()
+    assert inspected.unwrap()["run"]["run_id"] == "client-run"
+    assert unauthorized[0] == 401
+    assert unauthorized[1]["error"]["errorType"] == "UNAUTHORIZED"
+    assert wrong_token.is_err()
+    assert wrong_token.unwrap_err()["errorType"] == "UNAUTHORIZED"
+
+
+def test_run_client_bounds_inputs_and_normalizes_transport_errors():
+    with pytest.raises(ValueError):
+        RunClient("file:///tmp/maple")
+    with pytest.raises(ValueError):
+        RunClient("http://user:password@example.test")
+    with pytest.raises(ValueError):
+        RunClient("http://example.test", auth_token=" ")
+    with pytest.raises(ValueError):
+        RunClient("http://example.test", auth_token="safe-token")
+    with pytest.raises(ValueError):
+        RunClient("http://example.test", auth_token="safe\r\nInjected: value")
+    with pytest.raises(ValueError):
+        RunClient("http://example.test/unsafe\npath")
+
+    client = RunClient("http://127.0.0.1:1", timeout_seconds=0.1)
+    invalid_state = client.run("echo", [])
+    unreachable = client.healthz()
+    oversized_request = RunClient("http://127.0.0.1:1", max_body_bytes=32).run(
+        "echo", {"value": "x" * 100}
+    )
+
+    assert invalid_state.is_err()
+    assert invalid_state.unwrap_err()["errorType"] == "INVALID_STATE"
+    assert unreachable.is_err()
+    assert unreachable.unwrap_err()["errorType"] == "TRANSPORT_ERROR"
+    assert oversized_request.is_err()
+    assert oversized_request.unwrap_err()["errorType"] == "REQUEST_TOO_LARGE"
+
+
+def test_run_client_rejects_responses_over_its_configured_limit():
+    registry = WorkflowRegistry()
+    assert registry.register(_workflow()).is_ok()
+    server = RunServer(registry, auth_token="test-token")
+    base_url = server.start()
+
+    try:
+        client = RunClient(base_url, auth_token="test-token", max_response_bytes=1)
+        result = client.healthz()
+    finally:
+        server.close()
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "RESPONSE_TOO_LARGE"

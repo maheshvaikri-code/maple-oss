@@ -43,9 +43,14 @@ with that capability, nor that an adapter makes MAPLE equivalent to it.
 | Evaluations | **Preview** — versioned deterministic output/schema/trajectory cases plus retrieval and grounded-answer harnesses with redacted reports; optional host-supplied bounded judge result is provider-neutral | OpenAI testing utilities and framework-specific eval/observability integrations support broader trajectory, model-judge, or trace evaluation | P1: async/provider-owned judge orchestration, calibration, and trace scoring; preserve deterministic baseline |
 | Retry, cancellation, and resilience | **Native infrastructure / Partial agent runtime** — retry/circuit-breaker primitives, bounded async fan-out, deadlines, cooperative cancellation, persisted bounded workflow retry/backoff for ordinary nodes and parallel branches, and opt-in sync/async model retries for exact classified provider failures | LangGraph fault-tolerance/retry, LlamaIndex retry policies, and workflow runtimes make step retry more central | Add provider-specific contract fixtures and remote/circuit-integrated coordination; retain cooperative cancellation truthfulness |
 | Provider breadth and portable model contracts | **Native abstraction / Partial adapters** — OpenAI, Anthropic, and compatible provider contracts with capability routing | The comparison set has wider provider/integration catalogs and often provider-specific middleware | Expand only behind capability tests; no provider count claims without live contract evidence |
-| Hosting, visual tooling, and managed runtime | **Deferred** — loopback `RunServer` only; no hosted multi-tenant service, dashboard, or studio | Microsoft hosting, LlamaIndex server/deploy tooling, and ecosystem UIs make this a separate product surface | Defer until local contracts, auth, tenancy, and cloud target are explicitly approved |
+| Hosting, visual tooling, and managed runtime | **Deferred** — loopback `RunServer` plus dependency-free `RunClient` transport contract; no hosted multi-tenant service, dashboard, or studio | Microsoft hosting, LlamaIndex server/deploy tooling, and ecosystem UIs make this a separate product surface | Defer hosted service until local contracts, TLS, auth, tenancy, and cloud target are explicitly approved |
 | Language SDK breadth | **Deferred** — Python runtime | Microsoft Agent Framework and LlamaIndex document multiple language surfaces; others have additional SDK/community surfaces | P2: define a language-neutral protocol contract before another SDK |
 | Infrastructure and protocol security | **Native differentiator** — broker, resource negotiation, leases, circuit breakers, cryptographic link/security layers, discovery/health, and protocol adapters | This is not the primary center of gravity of the five agent runtimes | Keep as MAPLE's distinct strength; do not use it to hide the runtime gaps above |
+
+The workflow transport contract now includes a dependency-free `RunClient`
+with bounded JSON responses and optional bearer authentication on
+`RunServer`. Loopback binding remains the default; TLS, token issuance,
+tenancy, and remote scheduling remain host-owned.
 
 The local observability contract now includes bounded `agent.tool` child spans
 for normal sync and async tool execution under the active model span. Hosted
@@ -73,8 +78,9 @@ the number of framework checkmarks:
 3. **Unified streaming and observability:** local provider chunk aggregation
    and metadata-only `model.chunk` lifecycle events now link bounded usage and
    provider correlation into agent runs, and optional local model spans link
-   chunks, responses, decisions, and normal tool executions. Add percentile
-   latency views and remote transport while retaining local sampling,
+   chunks, responses, decisions, and normal tool executions. Percentile latency
+   views are now local and bounded; add remote event transport and aggregation
+   while retaining local sampling,
    cancellation, and the host-owned exporter seam.
 4. **Evaluation depth:** retain deterministic retrieval/grounding metrics and
    add versioned trajectory fixtures plus an optional model-judge contract.

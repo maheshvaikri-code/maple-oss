@@ -137,7 +137,7 @@ from .autonomy.runs import (
     FileAgentRunStore,
     InMemoryAgentRunStore,
 )
-from .autonomy.server import RunServer, WorkflowRegistry
+from .autonomy.server import RunClient, RunServer, WorkflowRegistry
 from .autonomy.sessions import (
     DEFAULT_MAX_MESSAGE_BYTES,
     DEFAULT_MAX_MESSAGES,
@@ -356,6 +356,7 @@ __all__ = [
     "SessionSnapshot",
     "SessionStore",
     "RunServer",
+    "RunClient",
     "WorkflowRegistry",
     "DEFAULT_MAX_RECORD_BYTES",
     "DEFAULT_MAX_RECORDS",
