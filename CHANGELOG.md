@@ -24,8 +24,8 @@
   compile, diff, and network-free doctor pass; doctor reports `ready=true`,
   all eight checks true, and network false. A clean committed-HEAD ZIP archive
   rebuilt wheel/sdist `1.1.3`; build and Twine exited 0, the sdist contains 496
-  entries including ADR-050, and the workspace-only audit is empty. No
-  publication was performed.
+  entries including ADR-050 and the QA/review artifacts, and the workspace-only
+  audit is empty. No publication was performed.
 - **Durable local handoff identity and ownership**: added bounded
   `HandoffRecord`/`HandoffStore` contracts with thread-safe in-memory and
   atomic file-backed stores, SHA-256 task/context digests instead of raw task

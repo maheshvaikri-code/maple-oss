@@ -1,7 +1,7 @@
-# QA + Security Report — provider stream aggregation and agent chunks @ afc3a33
+# QA + Security Report — provider stream aggregation and agent chunks @ 9c8fcd4
 
 **QA Engineer** · **Security Reviewer** · **Date:** 2026-08-26  
-**Build under test:** `afc3a33 feat(streaming): add bounded agent chunk events`
+**Build under test:** `9c8fcd4 docs(release): record streaming gate evidence`
 
 ## Acceptance criteria verification
 
@@ -12,7 +12,7 @@
 | 3 | Emit safe chunk progress for sync and async ReAct runs only when opted in | Run/event and autonomy tests | `54 passed` focused across provider, native stream, run, and autonomy tests; sync/async `model.chunk` ordering and payload redaction covered | Yes |
 | 4 | Fail closed on malformed or over-quota streams | Adversarial collector tests | Oversized chunk returns `LLM_STREAM_CHUNK_TOO_LARGE`; malformed tool arguments and invalid chunk paths are typed in the implementation contract | Yes |
 | 5 | Existing default completion behavior remains unchanged | Exact tracked regression suite | `1253 passed, 1 skipped in 260.34s` across `108` tracked test files | Yes |
-| 6 | Release artifact contains committed files only | Clean ZIP archive build and audit | `build_exit=0`, `twine_exit=0`, `sdist_entries=496`, `required_hits=5/5`, `workspace_only_hits=0` | Yes |
+| 6 | Release artifact contains committed files only | Clean final-HEAD ZIP archive build and audit | `build_exit=0`, `twine_exit=0`, `sdist_entries=498`, `required_hits=5/5`, `workspace_only_hits=0` | Yes |
 
 ## Adversarial & edge matrix
 

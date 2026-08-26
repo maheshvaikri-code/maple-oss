@@ -37,8 +37,8 @@ implementation.
 - Mypy: `Success: no issues found in 3 source files`.
 - Compile and diff checks: exit 0.
 - Doctor: `ready=true`, all eight checks true, network false.
-- Clean committed-HEAD ZIP archive: build/Twine exit 0, 496 sdist entries,
-  5/5 required files, zero workspace-only files.
+- Clean final-HEAD ZIP archive: build/Twine exit 0, 498 sdist entries, 5/5
+  required files, zero workspace-only files.
 
 ## Verdict
 
