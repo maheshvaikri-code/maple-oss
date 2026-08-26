@@ -30,6 +30,7 @@ def test_publish_redacts_nested_secrets_and_preserves_sequence():
 
 def test_ring_buffer_tracks_evictions_and_snapshot_order():
     stream = EventStream(max_events=2)
+    assert stream.subscribe(lambda event: None).is_ok()
     stream.publish("one", {})
     stream.publish("two", {})
     stream.publish("three", {})
@@ -43,7 +44,7 @@ def test_ring_buffer_tracks_evictions_and_snapshot_order():
         "retained_events": 2,
         "max_events": 2,
         "dropped_events": 1,
-        "subscriber_count": 0,
+        "subscriber_count": 1,
     }
 
 

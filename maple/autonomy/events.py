@@ -572,7 +572,7 @@ class EventStream:
         with self._condition:
             return {
                 "retained_events": len(self._events),
-                "max_events": self.max_events,
+                "max_events": self._events.maxlen or 0,
                 "dropped_events": self._dropped,
                 "subscriber_count": len(self._callbacks),
             }
