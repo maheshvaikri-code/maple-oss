@@ -39,6 +39,7 @@ Most agent frameworks give you either **infrastructure** (messaging, security, f
 - **Tool Framework** — Register custom tools with JSON Schema parameters or optional Pydantic-style input/output models. Built-in tools cover inter-agent communication, state read/write, resource checks, and secure link establishment.
 - **Bounded Serialization Formats** — JSON, restricted Pickle, optional MessagePack, and optional 1 MiB-bounded Protobuf envelopes for MAPLE JSON-compatible data; missing optional libraries fail explicitly.
 - **Typed Contracts and Guardrails (preview)** — Validate bounded JSON or typed model inputs and outputs, request structured model responses, and fail closed on rejected or unavailable guardrails.
+- **Bounded Structured-Output Repair (preview)** — Optionally give invalid typed/schema/guardrail output up to three correction attempts; retries remain inside reasoning and token budgets, with fail-fast behavior by default.
 - **Trusted Local Execution (preview)** — Opt tools into bounded input/output, timeout, cooperative cancellation, approval, and concurrency controls; this is not an untrusted-code sandbox.
 - **Retrieval/Data Primitives (preview)** — Ingest bounded documents, split deterministic chunks, run local lexical or caller-supplied-vector retrieval, and retain source references for grounded answers.
 - **Event Streaming and Redaction (preview)** — Publish bounded sequenced events with ring retention, wait/snapshot consumers, subscriber isolation, and recursive credential redaction.

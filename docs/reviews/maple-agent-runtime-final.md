@@ -49,6 +49,8 @@ The feature program now includes:
   validation before tool side effects (ADR-025).
 - bounded synchronous/asynchronous fan-out for supervised and consensus teams,
   deterministic joins, and per-member worker error isolation (ADR-026).
+- opt-in bounded structured-output repair retries with fail-fast defaults,
+  sync/async parity, and token-budget accounting (ADR-027).
 
 Slice-level review artifacts are filed in `docs/reviews/` and corresponding QA
 artifacts in `docs/qa/`. No website, cloud, external publication, license, or
@@ -209,7 +211,17 @@ verification remain open.
   isolates worker exceptions as structured errors.
 - Changed-file Ruff, Black, isort, and mypy checks pass. No external
   integration or dependency was introduced; exact full-suite and fresh-context
-  verification remain open.
+verification remain open.
+
+## Slice 75 revalidation
+
+- The agent regression reports `28 passed in 0.33s`.
+- `max_output_retries` is validated from 0 through 3 and applied consistently
+  to sync and async typed/schema/guardrail output failures. Retries remain
+  ordinary reasoning steps and are charged to provider token usage.
+- Exhaustion remains fail-closed with the original structured error. Changed
+  static checks pass; no model, dependency, or external integration changed.
+  Exact full-suite and fresh-context verification remain open.
 
 ## Verdict
 

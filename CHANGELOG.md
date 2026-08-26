@@ -10,6 +10,11 @@
 
 ### Additions
 
+- **Bounded structured-output repair**: `AutonomousConfig.max_output_retries`
+  optionally allows up to three correction attempts for invalid typed/schema
+  output or output-guardrail rejection. Retries consume normal reasoning and
+  token budgets, preserve structured errors on exhaustion, and default to
+  fail-fast behavior.
 - **Bounded multi-agent orchestration**: supervisor and consensus execution now
   fan out independent goals with a configurable `max_parallel_agents` limit,
   deterministic result ordering, sync/async entry points, and normalized worker

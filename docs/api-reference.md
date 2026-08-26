@@ -667,6 +667,26 @@ The limit is validated from 1 through 64. A member exception becomes an
 This is bounded local concurrency, not a distributed scheduler or untrusted
 execution sandbox.
 
+### Bounded structured-output repair
+
+Structured output remains fail-fast by default. Set
+`AutonomousConfig.max_output_retries` from 1 through 3 to let the model correct
+an invalid typed/schema response or output-guardrail rejection:
+
+```python
+config = AutonomousConfig(
+    llm=llm_config,
+    output_model=LookupResult,
+    max_output_retries=1,
+    max_total_tokens=12_000,
+)
+```
+
+Each correction is a normal ReAct model response: it appears in
+`goal.reasoning_trace`, consumes a reasoning step and provider tokens, and can
+hit `max_total_tokens`. Exhaustion returns the original structured error. The
+retry request includes only a controlled error type, not validation payloads.
+
 ## Retrieval and Source References (preview)
 
 The retrieval contract keeps document identity, source citations, chunk offsets,
