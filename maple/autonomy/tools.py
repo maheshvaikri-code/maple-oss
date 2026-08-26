@@ -13,6 +13,7 @@ received a copy of the GNU Affero General Public License along with MAPLE - Mult
 Language Engine. If not, see <https://www.gnu.org/licenses/>.
 """
 
+import asyncio
 import json
 import logging
 import math
@@ -20,6 +21,7 @@ from dataclasses import dataclass, field
 from typing import (
     TYPE_CHECKING,
     Any,
+    Awaitable,
     Callable,
     Dict,
     List,
@@ -189,6 +191,9 @@ class Tool:
     executor: Optional[ExecutionExecutor] = None
     input_model: Optional[Type[Any]] = None
     output_model: Optional[Type[Any]] = None
+    async_handler: Optional[Callable[..., Awaitable[Result[Any, Dict[str, Any]]]]] = (
+        None
+    )
     _input_model_schema: Optional[Dict[str, Any]] = field(
         default=None, init=False, repr=False
     )
@@ -212,6 +217,101 @@ class Tool:
             description=self.description,
             parameters=self._input_model_schema or self.parameters,
         )
+
+    def _prepare_arguments(
+        self, kwargs: Dict[str, Any]
+    ) -> Result[Dict[str, Any], Dict[str, Any]]:
+        """Validate and guard tool arguments before either execution path."""
+        call_kwargs = kwargs
+        if self.input_model is not None:
+            input_validation = validate_typed_value(kwargs, self.input_model)
+            if input_validation.is_err():
+                return Result.err(
+                    {
+                        "errorType": "TOOL_INPUT_INVALID",
+                        "message": f'Tool "{self.name}" received invalid arguments',
+                        "details": input_validation.unwrap_err(),
+                    }
+                )
+            model_value = input_validation.unwrap()
+            dump = getattr(model_value, "model_dump", None)
+            if not callable(dump):
+                dump = getattr(model_value, "dict", None)
+            if not callable(dump):
+                return Result.err(
+                    {
+                        "errorType": "TOOL_INPUT_INVALID",
+                        "message": f'Tool "{self.name}" model cannot produce arguments',
+                    }
+                )
+            try:
+                dumped = dump()
+            except Exception as exc:
+                return Result.err(
+                    {
+                        "errorType": "TOOL_INPUT_INVALID",
+                        "message": f'Tool "{self.name}" model could not produce arguments',
+                        "details": {"exception": type(exc).__name__},
+                    }
+                )
+            if not isinstance(dumped, dict):
+                return Result.err(
+                    {
+                        "errorType": "TOOL_INPUT_INVALID",
+                        "message": f'Tool "{self.name}" model must produce an object',
+                    }
+                )
+            call_kwargs = dumped
+        else:
+            input_validation = validate_json_schema(kwargs, self.parameters)
+            if input_validation.is_err():
+                return Result.err(
+                    {
+                        "errorType": "TOOL_INPUT_INVALID",
+                        "message": f'Tool "{self.name}" received invalid arguments',
+                        "details": input_validation.unwrap_err(),
+                    }
+                )
+        input_guardrails = run_guardrails(
+            call_kwargs, self.input_guardrails, stage=f"tool:{self.name}:input"
+        )
+        if input_guardrails.is_err():
+            return Result.err(input_guardrails.unwrap_err())
+        return Result.ok(call_kwargs)
+
+    def _finish_result(self, result: Any) -> Result[Any, Dict[str, Any]]:
+        """Validate and guard a handler result shared by sync/async paths."""
+        if not isinstance(result, Result):
+            return Result.err(
+                {
+                    "errorType": "TOOL_EXECUTION_ERROR",
+                    "message": f'Tool "{self.name}" returned a non-Result value',
+                }
+            )
+        if result.is_err():
+            return result
+        output = result.unwrap()
+        if self.output_model is not None:
+            output_validation = validate_typed_value(output, self.output_model)
+        else:
+            output_validation = validate_json_schema(output, self.result_schema)
+        if output_validation.is_err():
+            return Result.err(
+                {
+                    "errorType": "TOOL_OUTPUT_INVALID",
+                    "message": f'Tool "{self.name}" returned invalid output',
+                    "details": output_validation.unwrap_err(),
+                }
+            )
+        if self.output_model is not None:
+            output = output_validation.unwrap()
+            result = Result.ok(output)
+        output_guardrails = run_guardrails(
+            output, self.output_guardrails, stage=f"tool:{self.name}:output"
+        )
+        if output_guardrails.is_err():
+            return Result.err(output_guardrails.unwrap_err())
+        return result
 
     def execute(self, **kwargs: Any) -> Result[Any, Dict[str, Any]]:
         """Execute this tool with the given arguments."""
@@ -320,6 +420,30 @@ class Tool:
             return Result.err(output_guardrails.unwrap_err())
         return result
 
+    async def execute_async(self, **kwargs: Any) -> Result[Any, Dict[str, Any]]:
+        """Execute an async handler without blocking the event loop.
+
+        Tools without an async handler use the existing synchronous path in a
+        worker so legacy tools remain usable from async agent turns.
+        """
+        if self.async_handler is None:
+            loop = asyncio.get_running_loop()
+            return await loop.run_in_executor(None, lambda: self.execute(**kwargs))
+        prepared = self._prepare_arguments(kwargs)
+        if prepared.is_err():
+            return Result.err(prepared.unwrap_err())
+        try:
+            result = await self.async_handler(**prepared.unwrap())
+        except Exception as exc:
+            return Result.err(
+                {
+                    "errorType": "TOOL_EXECUTION_ERROR",
+                    "message": f'Tool "{self.name}" failed: {str(exc)}',
+                    "details": {"tool": self.name},
+                }
+            )
+        return self._finish_result(result)
+
 
 class ToolRegistry:
     """Registry for discovering and executing tools."""
@@ -366,6 +490,64 @@ class ToolRegistry:
             return Result.err(tool_result.unwrap_err())
         tool = tool_result.unwrap()
         return tool.execute(**arguments)
+
+    async def execute_async(
+        self, name: str, arguments: Dict[str, Any]
+    ) -> Result[Any, Dict[str, Any]]:
+        """Execute a tool through its async handler when one is available."""
+        tool_result = self.get(name)
+        if tool_result.is_err():
+            return Result.err(tool_result.unwrap_err())
+        tool = tool_result.unwrap()
+        return await tool.execute_async(**arguments)
+
+
+def _format_handoff_result(
+    target_result: Any, target_id: str
+) -> Result[Dict[str, Any], Dict[str, Any]]:
+    """Normalize a target goal result without forwarding raw target errors."""
+    if not isinstance(target_result, Result):
+        return Result.err(
+            {
+                "errorType": "HANDOFF_TARGET_INVALID",
+                "message": "Delegated agent returned an invalid result.",
+                "details": {"agent_id": target_id},
+            }
+        )
+    if target_result.is_err():
+        target_error = target_result.unwrap_err()
+        error_type = (
+            target_error.get("errorType") if isinstance(target_error, dict) else None
+        )
+        return Result.err(
+            {
+                "errorType": "HANDOFF_TARGET_FAILED",
+                "message": "Delegated agent reported a failure.",
+                "details": {
+                    "agent_id": target_id,
+                    "target_error_type": error_type or "UNKNOWN",
+                },
+            }
+        )
+    goal = target_result.unwrap()
+    goal_id = getattr(goal, "goal_id", None)
+    status = getattr(goal, "status", None)
+    if not isinstance(goal_id, str) or not isinstance(status, str):
+        return Result.err(
+            {
+                "errorType": "HANDOFF_TARGET_INVALID",
+                "message": "Delegated agent returned an invalid goal.",
+                "details": {"agent_id": target_id},
+            }
+        )
+    return Result.ok(
+        {
+            "agent_id": target_id,
+            "goal_id": goal_id,
+            "status": status,
+            "result": getattr(goal, "result", None),
+        }
+    )
 
 
 def create_handoff_tool(
@@ -462,51 +644,62 @@ def create_handoff_tool(
                     },
                 }
             )
-        if not isinstance(target_result, Result):
-            return Result.err(
-                {
-                    "errorType": "HANDOFF_TARGET_INVALID",
-                    "message": "Delegated agent returned an invalid result.",
-                    "details": {"agent_id": target_id},
-                }
-            )
-        if target_result.is_err():
-            target_error = target_result.unwrap_err()
-            error_type = (
-                target_error.get("errorType")
-                if isinstance(target_error, dict)
-                else None
-            )
-            return Result.err(
-                {
-                    "errorType": "HANDOFF_TARGET_FAILED",
-                    "message": "Delegated agent reported a failure.",
-                    "details": {
-                        "agent_id": target_id,
-                        "target_error_type": error_type or "UNKNOWN",
-                    },
-                }
-            )
+        return _format_handoff_result(target_result, target_id)
 
-        goal = target_result.unwrap()
-        goal_id = getattr(goal, "goal_id", None)
-        status = getattr(goal, "status", None)
-        if not isinstance(goal_id, str) or not isinstance(status, str):
-            return Result.err(
-                {
-                    "errorType": "HANDOFF_TARGET_INVALID",
-                    "message": "Delegated agent returned an invalid goal.",
-                    "details": {"agent_id": target_id},
-                }
-            )
-        return Result.ok(
-            {
-                "agent_id": target_id,
-                "goal_id": goal_id,
-                "status": status,
-                "result": getattr(goal, "result", None),
-            }
-        )
+    async_handler: Optional[Callable[..., Awaitable[Result[Any, Dict[str, Any]]]]] = (
+        None
+    )
+    pursue_goal_async = getattr(target_agent, "pursue_goal_async", None)
+    pursue_with_context_async = getattr(
+        target_agent, "pursue_goal_with_context_async", None
+    )
+    if callable(pursue_goal_async):
+
+        async def async_handoff_handler(
+            task: str, context: Optional[Dict[str, Any]] = None
+        ) -> Result[Dict[str, Any], Dict[str, Any]]:
+            context_result = _normalize_handoff_context(context)
+            if context_result.is_err():
+                return Result.err(context_result.unwrap_err())
+            handoff_context = context_result.unwrap()
+            denied_keys = sorted(set(handoff_context).difference(allowed_keys))
+            if denied_keys:
+                return Result.err(
+                    {
+                        "errorType": "HANDOFF_CONTEXT_KEY_DENIED",
+                        "message": "Handoff context contains a key outside the allowlist.",
+                        "details": {"keys": denied_keys},
+                    }
+                )
+            try:
+                if handoff_context:
+                    if not callable(pursue_with_context_async):
+                        return Result.err(
+                            {
+                                "errorType": "HANDOFF_CONTEXT_UNSUPPORTED",
+                                "message": "Target agent does not declare async context-aware handoff.",
+                                "details": {"agent_id": target_id},
+                            }
+                        )
+                    target_result = await pursue_with_context_async(
+                        task, handoff_context
+                    )
+                else:
+                    target_result = await pursue_goal_async(task)
+            except Exception as exc:
+                return Result.err(
+                    {
+                        "errorType": "HANDOFF_TARGET_ERROR",
+                        "message": "Delegated agent execution failed.",
+                        "details": {
+                            "agent_id": target_id,
+                            "exception": type(exc).__name__,
+                        },
+                    }
+                )
+            return _format_handoff_result(target_result, target_id)
+
+        async_handler = async_handoff_handler
 
     return Tool(
         name=tool_name,
@@ -533,6 +726,7 @@ def create_handoff_tool(
             "additionalProperties": False,
         },
         handler=handoff_handler,
+        async_handler=async_handler,
         requires_approval=requires_approval,
         tags=["delegation", "handoff"],
     )

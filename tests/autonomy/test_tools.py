@@ -122,6 +122,30 @@ class TestToolRegistry:
         result = reg.execute("missing", {})
         assert result.is_err()
 
+    async def test_execute_async_uses_declared_handler(self):
+        async def async_handler(x):
+            return Result.ok({"doubled": x * 2})
+
+        reg = ToolRegistry()
+        reg.register(
+            Tool(
+                name="async_doubler",
+                description="Double asynchronously",
+                parameters={
+                    "type": "object",
+                    "properties": {"x": {"type": "integer"}},
+                    "required": ["x"],
+                },
+                handler=lambda x: Result.ok({"doubled": x * 2}),
+                async_handler=async_handler,
+            )
+        )
+
+        result = await reg.execute_async("async_doubler", {"x": 6})
+
+        assert result.is_ok()
+        assert result.unwrap() == {"doubled": 12}
+
 
 class HandoffAgent:
     """Minimal synchronous target for handoff-tool tests."""
@@ -150,6 +174,17 @@ class ContextHandoffAgent(HandoffAgent):
         self.contexts = []
 
     def pursue_goal_with_context(self, description, context):
+        self.contexts.append(context)
+        return self.pursue_goal(description)
+
+
+class AsyncHandoffAgent(ContextHandoffAgent):
+    """Target that explicitly accepts async handoff execution."""
+
+    async def pursue_goal_async(self, description):
+        return self.pursue_goal(description)
+
+    async def pursue_goal_with_context_async(self, description, context):
         self.contexts.append(context)
         return self.pursue_goal(description)
 
@@ -253,6 +288,18 @@ class TestHandoffTool:
         assert result.is_err()
         assert result.unwrap_err()["errorType"] == "HANDOFF_CONTEXT_UNSUPPORTED"
         assert target.tasks == []
+
+    async def test_async_handoff_uses_async_target_contract(self):
+        target = AsyncHandoffAgent()
+        tool = create_handoff_tool(target, allowed_context_keys=["project"])
+
+        result = await tool.execute_async(
+            task="Use the release notes",
+            context={"project": "MAPLE"},
+        )
+
+        assert result.is_ok()
+        assert target.contexts == [{"project": "MAPLE"}]
 
 
 class TestBuiltinTools:

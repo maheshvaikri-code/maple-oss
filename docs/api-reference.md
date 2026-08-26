@@ -662,6 +662,13 @@ result = handoff.execute(
     task="Summarize the release risks",
     context={"project": "MAPLE", "constraints": {"max_words": 200}},
 )
+
+# Async callers use the target's declared async handoff contract when present.
+async def run_async():
+    return await handoff.execute_async(
+        task="Summarize the release risks",
+        context={"project": "MAPLE", "constraints": {"max_words": 200}},
+    )
 ```
 
 The task is limited to 8,192 characters and rejects extra arguments. Context is
@@ -672,7 +679,9 @@ returns `HANDOFF_CONTEXT_UNSUPPORTED`. A target failure returns
 an invalid target result returns `HANDOFF_TARGET_INVALID`; raw target error
 payloads are not forwarded. Set `requires_approval=False` only for a trusted
 host-controlled handoff. The target's initial context message is part of a
-durable local run checkpoint, but async target invocation, durable handoff
+durable local run checkpoint. `Tool.execute_async` awaits an async-capable
+target and otherwise runs the synchronous compatibility path in an executor;
+the async agent loop preserves the same approval boundary. Durable handoff
 identity/leases, explicit ownership transfer, remote routing, and hard target
 cancellation remain separate capabilities.
 

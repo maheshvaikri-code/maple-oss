@@ -1264,6 +1264,22 @@ class AutonomousAgent(Agent):
             context=context,
         )
 
+    async def pursue_goal_with_context_async(
+        self,
+        description: str,
+        context: Mapping[str, Any],
+        *,
+        session_id: Optional[str] = None,
+        run_id: Optional[str] = None,
+    ) -> Result["Goal", Dict[str, Any]]:
+        """Pursue a goal asynchronously with bounded handoff context."""
+        return await self.pursue_goal_async(
+            description,
+            session_id=session_id,
+            run_id=run_id,
+            context=context,
+        )
+
     def _human_input_id_for_tool_call(self, run_id: str, tool_call: ToolCall) -> str:
         payload = json.dumps(
             {
@@ -1799,6 +1815,163 @@ class AutonomousAgent(Agent):
             interaction_id=stored.interaction_id,
         )
 
+    def _authorize_tool_call(
+        self,
+        tool_call: ToolCall,
+        tool: Tool,
+        *,
+        skip_approval: bool = False,
+    ) -> Result[Dict[str, Any], ToolResult]:
+        """Resolve approval and return the arguments permitted to execute."""
+        execution_arguments = tool_call.arguments
+        if skip_approval or not (
+            tool.requires_approval
+            or tool_call.name in self.autonomy_config.require_approval_for
+        ):
+            return Result.ok(execution_arguments)
+
+        if self._approval_callback is None and self._approval_store is not None:
+            approval_id = self._approval_id_for_tool_call(tool_call)
+            try:
+                request = ApprovalRequest(
+                    approval_id=approval_id,
+                    tool_call_id=tool_call.id,
+                    tool_name=tool_call.name,
+                    arguments=dict(tool_call.arguments),
+                )
+                request_result = self._approval_store.create(request)
+            except (TypeError, ValueError):
+                return Result.err(
+                    self._approval_error(
+                        tool_call.id,
+                        "APPROVAL_ERROR",
+                        "Approval request arguments are invalid.",
+                    )
+                )
+            if request_result.is_err():
+                return Result.err(
+                    self._approval_error(
+                        tool_call.id,
+                        "APPROVAL_ERROR",
+                        "Approval request could not be persisted.",
+                    )
+                )
+            request = request_result.unwrap()
+            if request.status == "pending":
+                return Result.err(
+                    self._approval_error(
+                        tool_call.id,
+                        "APPROVAL_PENDING",
+                        "Tool execution is waiting for operator approval.",
+                        approval_id=request.approval_id,
+                    )
+                )
+            if request.status == "denied":
+                return Result.err(
+                    self._approval_error(
+                        tool_call.id,
+                        "APPROVAL_DENIED",
+                        "Action was not approved by the operator.",
+                        approval_id=request.approval_id,
+                    )
+                )
+            if request.status == "consumed":
+                return Result.err(
+                    self._approval_error(
+                        tool_call.id,
+                        "APPROVAL_CONSUMED",
+                        "Approval request was already consumed.",
+                        approval_id=request.approval_id,
+                    )
+                )
+            if request.decision is not None and (
+                request.decision.edited_arguments is not None
+            ):
+                execution_arguments = request.decision.edited_arguments
+            consumed_result = self._approval_store.consume(request.approval_id)
+            if consumed_result.is_err():
+                return Result.err(
+                    self._approval_error(
+                        tool_call.id,
+                        "APPROVAL_ERROR",
+                        "Approval request could not be claimed.",
+                    )
+                )
+        elif self._approval_callback is None:
+            return Result.err(
+                ToolResult(
+                    tool_call_id=tool_call.id,
+                    content=json.dumps(
+                        {
+                            "errorType": "APPROVAL_REQUIRED",
+                            "message": "Tool execution requires approval.",
+                            "details": {"tool": tool_call.name},
+                        }
+                    ),
+                    is_error=True,
+                )
+            )
+
+        approval_callback = self._approval_callback
+        if approval_callback is None:
+            return Result.err(
+                self._approval_error(
+                    tool_call.id,
+                    "APPROVAL_REQUIRED",
+                    "Tool execution requires approval.",
+                )
+            )
+        try:
+            approved = approval_callback(tool_call.name, tool_call.arguments)
+        except Exception as exc:
+            return Result.err(
+                ToolResult(
+                    tool_call_id=tool_call.id,
+                    content=json.dumps(
+                        {
+                            "errorType": "APPROVAL_ERROR",
+                            "message": "Approval failed closed.",
+                            "details": {
+                                "tool": tool_call.name,
+                                "exception": type(exc).__name__,
+                            },
+                        }
+                    ),
+                    is_error=True,
+                )
+            )
+        if not approved:
+            return Result.err(
+                ToolResult(
+                    tool_call_id=tool_call.id,
+                    content=json.dumps(
+                        {
+                            "errorType": "APPROVAL_DENIED",
+                            "message": "Action was not approved by the operator.",
+                            "details": {"tool": tool_call.name},
+                        }
+                    ),
+                    is_error=True,
+                )
+            )
+        return Result.ok(execution_arguments)
+
+    @staticmethod
+    def _tool_result_from_execution(
+        tool_call: ToolCall, exec_result: Result[Any, Dict[str, Any]]
+    ) -> ToolResult:
+        """Serialize a validated tool result for model context."""
+        if exec_result.is_ok():
+            return ToolResult(
+                tool_call_id=tool_call.id,
+                content=json.dumps(exec_result.unwrap(), default=str),
+            )
+        return ToolResult(
+            tool_call_id=tool_call.id,
+            content=json.dumps(exec_result.unwrap_err()),
+            is_error=True,
+        )
+
     def _execute_tool_call(
         self,
         tool_call: ToolCall,
@@ -1816,130 +1989,70 @@ class AutonomousAgent(Agent):
             )
 
         tool = tool_result.unwrap()
-        execution_arguments = tool_call.arguments
-
         if tool_call.name == "request_human_input":
             return self._request_human_input_tool_call(tool_call, run_id)
 
-        # Human-in-the-loop check
-        if not skip_approval and (
-            tool.requires_approval
-            or tool_call.name in self.autonomy_config.require_approval_for
-        ):
-            if self._approval_callback is None and self._approval_store is not None:
-                approval_id = self._approval_id_for_tool_call(tool_call)
-                try:
-                    request = ApprovalRequest(
-                        approval_id=approval_id,
-                        tool_call_id=tool_call.id,
-                        tool_name=tool_call.name,
-                        arguments=dict(tool_call.arguments),
-                    )
-                    request_result = self._approval_store.create(request)
-                except (TypeError, ValueError):
-                    return self._approval_error(
-                        tool_call.id,
-                        "APPROVAL_ERROR",
-                        "Approval request arguments are invalid.",
-                    )
-                if request_result.is_err():
-                    return self._approval_error(
-                        tool_call.id,
-                        "APPROVAL_ERROR",
-                        "Approval request could not be persisted.",
-                    )
-                request = request_result.unwrap()
-                if request.status == "pending":
-                    return self._approval_error(
-                        tool_call.id,
-                        "APPROVAL_PENDING",
-                        "Tool execution is waiting for operator approval.",
-                        approval_id=request.approval_id,
-                    )
-                if request.status == "denied":
-                    return self._approval_error(
-                        tool_call.id,
-                        "APPROVAL_DENIED",
-                        "Action was not approved by the operator.",
-                        approval_id=request.approval_id,
-                    )
-                if request.status == "consumed":
-                    return self._approval_error(
-                        tool_call.id,
-                        "APPROVAL_CONSUMED",
-                        "Approval request was already consumed.",
-                        approval_id=request.approval_id,
-                    )
-                if request.decision is not None and (
-                    request.decision.edited_arguments is not None
-                ):
-                    execution_arguments = request.decision.edited_arguments
-                consumed_result = self._approval_store.consume(request.approval_id)
-                if consumed_result.is_err():
-                    return self._approval_error(
-                        tool_call.id,
-                        "APPROVAL_ERROR",
-                        "Approval request could not be claimed.",
-                    )
-            elif self._approval_callback is None:
-                return ToolResult(
-                    tool_call_id=tool_call.id,
-                    content=json.dumps(
-                        {
-                            "errorType": "APPROVAL_REQUIRED",
-                            "message": "Tool execution requires approval.",
-                            "details": {"tool": tool_call.name},
-                        }
-                    ),
-                    is_error=True,
-                )
-            approval_callback = self._approval_callback
-            if approval_callback is None:
-                return self._approval_error(
-                    tool_call.id,
-                    "APPROVAL_REQUIRED",
-                    "Tool execution requires approval.",
-                )
-            try:
-                approved = approval_callback(tool_call.name, tool_call.arguments)
-            except Exception as exc:
-                return ToolResult(
-                    tool_call_id=tool_call.id,
-                    content=json.dumps(
-                        {
-                            "errorType": "APPROVAL_ERROR",
-                            "message": "Approval failed closed.",
-                            "details": {
-                                "tool": tool_call.name,
-                                "exception": type(exc).__name__,
-                            },
-                        }
-                    ),
-                    is_error=True,
-                )
-            if not approved:
-                return ToolResult(
-                    tool_call_id=tool_call.id,
-                    content=json.dumps(
-                        {
-                            "errorType": "APPROVAL_DENIED",
-                            "message": "Action was not approved by the operator.",
-                            "details": {"tool": tool_call.name},
-                        }
-                    ),
-                    is_error=True,
-                )
+        authorized = self._authorize_tool_call(
+            tool_call, tool, skip_approval=skip_approval
+        )
+        if authorized.is_err():
+            return authorized.unwrap_err()
+        exec_result = tool.execute(**authorized.unwrap())
+        return self._tool_result_from_execution(tool_call, exec_result)
 
-        exec_result = tool.execute(**execution_arguments)
-        if exec_result.is_ok():
-            content = json.dumps(exec_result.unwrap(), default=str)
-            return ToolResult(tool_call_id=tool_call.id, content=content)
-        else:
+    async def _execute_tool_call_async(
+        self,
+        tool_call: ToolCall,
+        *,
+        skip_approval: bool = False,
+        run_id: Optional[str] = None,
+    ) -> ToolResult:
+        """Execute a tool through its async handler without blocking the loop."""
+        tool_result = self.tool_registry.get(tool_call.name)
+        if tool_result.is_err():
             return ToolResult(
                 tool_call_id=tool_call.id,
-                content=json.dumps(exec_result.unwrap_err()),
+                content=json.dumps(tool_result.unwrap_err()),
                 is_error=True,
             )
+
+        tool = tool_result.unwrap()
+        loop = asyncio.get_running_loop()
+        if tool_call.name == "request_human_input":
+            return await loop.run_in_executor(
+                None,
+                partial(self._request_human_input_tool_call, tool_call, run_id),
+            )
+
+        authorized = await loop.run_in_executor(
+            None,
+            partial(
+                self._authorize_tool_call,
+                tool_call,
+                tool,
+                skip_approval=skip_approval,
+            ),
+        )
+        if authorized.is_err():
+            return authorized.unwrap_err()
+        try:
+            exec_result = await tool.execute_async(**authorized.unwrap())
+        except Exception as exc:
+            return ToolResult(
+                tool_call_id=tool_call.id,
+                content=json.dumps(
+                    {
+                        "errorType": "TOOL_EXECUTION_ERROR",
+                        "message": "Tool execution failed.",
+                        "details": {
+                            "tool": tool_call.name,
+                            "exception": type(exc).__name__,
+                        },
+                    }
+                ),
+                is_error=True,
+            )
+        return self._tool_result_from_execution(tool_call, exec_result)
 
     def _approval_id_for_tool_call(self, tool_call: ToolCall) -> str:
         payload = json.dumps(
@@ -2670,7 +2783,6 @@ Instructions:
         if initial_checkpoint.is_err():
             return Result.err(initial_checkpoint.unwrap_err())
 
-        loop = asyncio.get_running_loop()
         self._publish_run_event(
             goal,
             "run.resumed" if starting_step else "run.started",
@@ -2807,14 +2919,10 @@ Instructions:
 
                 async def execute_tool(tool_call: ToolCall) -> ToolResult:
                     try:
-                        return await loop.run_in_executor(
-                            None,
-                            partial(
-                                self._execute_tool_call,
-                                tool_call,
-                                run_id=(
-                                    run_state.run_id if run_state is not None else None
-                                ),
+                        return await self._execute_tool_call_async(
+                            tool_call,
+                            run_id=(
+                                run_state.run_id if run_state is not None else None
                             ),
                         )
                     except Exception as exc:

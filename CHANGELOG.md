@@ -10,6 +10,13 @@
 
 ### Additions
 
+- **Async-capable tools and handoffs**: added optional awaitable tool handlers,
+  async registry execution, and async agent-loop dispatch. Existing synchronous
+  tools remain compatible through executor-backed fallback; approval, bounded
+  validation, guardrails, and structured error handling remain shared. Handoffs
+  use explicitly declared async target/context methods when available, while
+  durable handoff identity, ownership transfer, remote routing, and hard
+  cancellation remain separate boundaries.
 - **Editable durable tool approvals**: approved decisions may persist one
   bounded JSON `edited_arguments` object through the in-memory or atomic file
   approval store. Sync and async durable resume execute the persisted edit after

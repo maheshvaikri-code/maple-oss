@@ -529,6 +529,104 @@ class TestAutonomousAgent:
         assert [item.tool_call_id for item in tool_results] == ["call-1", "call-2"]
         assert all(not item.is_error for item in tool_results)
 
+    def test_async_agent_uses_declared_async_tool_handler(self):
+        """Async agent turns await declared handlers instead of sync fallback."""
+        config = make_config()
+        auto_config = make_auto_config()
+        agent = AutonomousAgent(config, auto_config)
+        calls = []
+
+        async def async_handler(label):
+            await asyncio.sleep(0)
+            calls.append(label)
+            return Result.ok({"label": label})
+
+        from maple.autonomy.tools import Tool
+
+        agent.register_tool(
+            Tool(
+                name="async_label",
+                description="Record a label asynchronously",
+                parameters={
+                    "type": "object",
+                    "properties": {"label": {"type": "string"}},
+                    "required": ["label"],
+                },
+                handler=lambda label: Result.ok({"label": label}),
+                async_handler=async_handler,
+            )
+        )
+        agent.llm = MockLLMProvider(
+            auto_config.llm,
+            responses=[
+                LLMResponse(
+                    content="Run the async tool.",
+                    tool_calls=[
+                        ToolCall(
+                            id="async-handler-call",
+                            name="async_label",
+                            arguments={"label": "ready"},
+                        )
+                    ],
+                    finish_reason="tool_calls",
+                ),
+                LLMResponse(content="Done.", finish_reason="stop"),
+            ],
+        )
+
+        result = asyncio.run(agent.pursue_goal_async("Run the async tool"))
+
+        assert result.is_ok()
+        assert calls == ["ready"]
+        assert not result.unwrap().reasoning_trace[0].tool_results[0].is_error
+
+    def test_async_agent_approval_still_precedes_async_handler(self):
+        calls = []
+
+        async def async_handler():
+            calls.append("executed")
+            return Result.ok({"ok": True})
+
+        from maple.autonomy.tools import Tool
+
+        config = make_config()
+        auto_config = make_auto_config()
+        agent = AutonomousAgent(config, auto_config)
+        agent.register_tool(
+            Tool(
+                name="async_side_effect",
+                description="An approval-gated async action",
+                parameters={"type": "object"},
+                handler=lambda: Result.ok({"ok": True}),
+                async_handler=async_handler,
+                requires_approval=True,
+            )
+        )
+        agent.llm = MockLLMProvider(
+            auto_config.llm,
+            responses=[
+                LLMResponse(
+                    content="Request approval.",
+                    tool_calls=[
+                        ToolCall(
+                            id="async-approval-call",
+                            name="async_side_effect",
+                            arguments={},
+                        )
+                    ],
+                    finish_reason="tool_calls",
+                ),
+                LLMResponse(content="The action was blocked.", finish_reason="stop"),
+            ],
+        )
+
+        result = asyncio.run(agent.pursue_goal_async("Run the gated action"))
+
+        assert result.is_ok()
+        tool_result = result.unwrap().reasoning_trace[0].tool_results[0]
+        assert json.loads(tool_result.content)["errorType"] == "APPROVAL_REQUIRED"
+        assert calls == []
+
     def test_async_token_budget_blocks_tool_side_effect(self):
         from maple.autonomy.tools import Tool
 

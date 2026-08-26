@@ -24,10 +24,11 @@ are not copied into the caller's model context.
 
 The task is constrained to 8,192 characters and rejects additional arguments.
 Handoffs require approval by default because they can trigger tools and external
-side effects in the target agent; trusted hosts may opt out explicitly. Async
-MAPLE turns use the existing executor-backed tool-call path for this synchronous
-handoff, so the event loop is not blocked. The target handler remains subject
-to its own agent budgets and approval policies.
+side effects in the target agent; trusted hosts may opt out explicitly. The
+initial implementation used the synchronous target contract from async turns
+through an executor. ADR-045 extends that boundary with an optional async
+target contract while retaining the synchronous fallback. The target handler
+remains subject to its own agent budgets and approval policies.
 
 ## Alternatives considered
 
@@ -44,7 +45,7 @@ to its own agent budgets and approval policies.
   tool contract used for ordinary tools.
 - Positive: approval, input validation, provider schema publication, and
   structured failure handling are reused instead of forked.
-- Negative / debt accepted: this is local synchronous target invocation, not
-  durable routing, hard cancellation, or a distributed handoff protocol.
+- Negative / debt accepted: this is local target invocation, not durable
+  routing, hard cancellation, or a distributed handoff protocol.
 - Invalidation triggers: provider-native handoff APIs, cross-process target
   execution, or a requirement to transfer full conversation state.
