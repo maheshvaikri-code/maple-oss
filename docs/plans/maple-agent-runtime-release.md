@@ -103,6 +103,7 @@
 | 90 | Cross-process durable fencing leases | Chief Architect / Backend / Security / QA / Release | `docs/adr/036-*`, `maple/resources/lease.py`, resource exports/tests, API/README/parity docs, changelog, QA/review evidence | Bounded file-backed lease state, OS-level inter-process lock, atomic replacement, persisted fencing counter, expiry, renew/release, typed fail-closed storage behavior; durable-store integration and remote authentication remain explicit follow-ons | done: focused resource model + file lease `41 passed in 3.64s`; tracked manifest `1207 passed, 1 skipped in 214.53s`; Ruff/Black/compile/doctor pass and changed-boundary mypy pass; clean archive wheel/sdist `1.1.3`, Twine passed, sdist `475` entries with ADR-035/036, workspace-only audit zero; no publication |
 | 91 | Cross-process durable approval-store ownership | Chief Architect / Backend / Security / QA / Release | `docs/adr/037-*`, `maple/autonomy/approval.py`, approval lease tests, API/README/parity docs, changelog, QA/review evidence | Per-record lease acquisition for file get/create/decide/consume/list, no mutation on acquisition failure, explicit uncertain-commit release error, existing atomic/thread-safe behavior retained; input/run store integration remains separate | done: focused approval + lease boundary `8 passed in 0.31s`; tracked manifest `1209 passed, 1 skipped in 199.58s`; Ruff/Black/compile/diff/doctor pass and changed-boundary mypy pass; clean archive wheel/sdist `1.1.3`, Twine passed, sdist `477` entries with ADR-037, workspace-only audit zero; no publication |
 | 92 | Cross-process durable human-input-store ownership | Chief Architect / Backend / Security / QA / Release | `docs/adr/038-*`, `maple/autonomy/durable_leases.py`, `maple/autonomy/interactions.py`, interaction lease tests, approval regressions, API/README/parity docs, changelog, QA/review evidence | Shared lease wrapper, per-record human-input get/create/respond/reject/consume/list ownership, no mutation on acquisition failure, explicit uncertain-commit release error, approval behavior preserved; run-store integration remains separate | done: focused approval/input/lease boundary `13 passed in 0.48s`; tracked manifest `1211 passed, 1 skipped in 219.68s`; Ruff/Black/compile/diff/doctor pass and changed-boundary mypy pass; clean archive wheel/sdist `1.1.3`, Twine passed, sdist `480` entries with ADR-038, workspace-only audit zero; no publication |
+| 93 | Cross-process durable run-store ownership | Chief Architect / Backend / Security / QA / Release | `docs/adr/039-*`, `maple/autonomy/runs.py`, run lease tests, API/README/parity docs, changelog, QA/review evidence | Per-run fencing lease across load and complete CAS save, no read/mutation on acquisition failure, explicit uncertain-commit release error, existing bounds/atomic replacement/CAS preserved; host side-effect policy and notifications remain separate | done: focused run-store suite `14 passed in 2.66s`; tracked manifest `1213 passed, 1 skipped in 228.60s`; Ruff/Black/compile/diff/doctor pass and changed-boundary mypy pass; clean archive wheel/sdist `1.1.3`, Twine passed, sdist `482` entries with ADR-039/run module/run test, workspace-only audit zero; no publication |
 
 ## Threat sketch
 
@@ -531,3 +532,16 @@ including ADR-038 and the shared durable lease helper, and the workspace-only
 audit found zero preserved Doctrine files. Run-store ownership, notifications,
 remote authentication, and multi-round interaction remain separate follow-on
 boundaries.
+
+2026-08-26 run-store ownership closure: ADR-039 applies the shared
+`DurableRecordLease` wrapper to `FileAgentRunStore`. File-backed load and the
+complete compare-and-set save operation now acquire a namespaced
+`run:<run_id>` fencing lease; acquisition failure is read/mutation-free and
+release uncertainty is typed. The focused run-store suite reports `14 passed
+in 2.66s`; the tracked manifest reports `1213 passed, 1 skipped in 228.60s`;
+Ruff, Black, compile, diff, doctor, and changed-boundary mypy pass. A clean
+archive rebuilt wheel/sdist `1.1.3`; Twine passed for both, the sdist contains
+482 entries including ADR-039, the run module, and the run lease regression,
+and the workspace-only audit found zero preserved Doctrine files. Host
+notifications, remote authentication, exactly-once external effects, and
+multi-round interaction remain separate follow-on boundaries.

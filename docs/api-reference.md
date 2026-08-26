@@ -1212,7 +1212,14 @@ Attach an `InMemoryAgentRunStore` or `FileAgentRunStore` to persist a bounded
 JSON-safe ReAct message cursor. Supplying `run_id` makes a new goal resumable;
 `resume_run()` loads the latest checkpoint and continues from the next model
 step. The store uses compare-and-set versions and atomic file replacement, is
-thread-safe within one process, and does not serialize Python objects.
+thread-safe within one process, and does not serialize Python objects. A
+`FileAgentRunStore` acquires a per-run `FileLeaseManager` fencing lease by
+default under `<directory>/.maple-leases`; pass `lease_manager=` for
+caller-owned coordination or `lease_ttl_seconds=` to override the bounded
+30-second default. Failed acquisition returns `RUN_CHECKPOINT_LEASE_ERROR`
+without reading or mutating the checkpoint; failed release returns
+`RUN_CHECKPOINT_LEASE_RELEASE_ERROR` and means a save may already be durable,
+so inspect the checkpoint before retrying.
 
 ```python
 from maple import FileAgentRunStore
@@ -1244,9 +1251,10 @@ must be made idempotent by the handler when required.
 Both sync and async run paths checkpoint the initial message cursor and each
 completed ReAct step. When durable persistence is enabled, async tool calls in
 one model step are executed in order so an approval pause happens before later
-tool side effects. The local store is thread-safe within one process, not a
-distributed lease service; external effects remain at-least-once and handler
-idempotency remains the host's responsibility. Full trace replay, durable
+tool side effects. The local store fences one run cursor at a time across local
+processes; it is not a distributed identity or side-effect service. External
+effects remain at-least-once and handler idempotency remains the host's
+responsibility. Full trace replay, durable
 streaming cursors, arbitrary request/response HITL, and sandboxing are separate
 capabilities.
 

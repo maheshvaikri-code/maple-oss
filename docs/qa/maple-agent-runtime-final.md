@@ -498,6 +498,23 @@ slow Doctrine gold phase before interruption without a pytest summary.
 - No publication, website, cloud, registry, or user-owned untracked file
   change was made.
 
+## Slice 93 QA — cross-process durable run-store ownership
+
+- `tests/autonomy/test_runs.py` and
+  `tests/autonomy/test_run_leases.py` report `14 passed in 2.66s`.
+- Coverage proves external run ownership blocks both load and compare-and-set
+  save without checkpoint mutation, and that a successful save releases its
+  run lease for another store instance.
+- The exact tracked manifest reports `1213 passed, 1 skipped in 228.60s`.
+  Ruff, Black, compile, diff, network-free doctor, and changed-boundary mypy
+  pass.
+- A clean current archive rebuilt wheel/sdist `1.1.3`; Twine passed for both,
+  the sdist contains 482 entries including ADR-039, the run module, and the
+  run lease regression, and the workspace-only audit found zero preserved
+  Doctrine files.
+- No publication, website, cloud, registry, or user-owned untracked file
+  change was made.
+
 ## Security conclusions
 
 - No new dependency, credential, cloud call, website mutation, or publication

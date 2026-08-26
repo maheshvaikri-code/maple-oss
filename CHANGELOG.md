@@ -64,6 +64,17 @@
   entries including ADR-038, and the workspace-only audit found zero preserved
   Doctrine files. Run-store ownership, notifications, authentication, and
   multi-round interaction remain outside this slice.
+- **Run-store ownership**: `FileAgentRunStore` now acquires a namespaced
+  per-run fencing lease for load and the complete compare-and-set save
+  operation. Acquisition failures return `RUN_CHECKPOINT_LEASE_ERROR` without
+  reading or mutating the checkpoint; release uncertainty is typed. Focused
+  run-store coverage reports `14 passed in 2.66s`; the exact tracked manifest
+  reports `1213 passed, 1 skipped in 228.60s`; Ruff, Black, changed-boundary
+  mypy, compile, diff, and doctor pass. A clean archive rebuilt wheel/sdist
+  `1.1.3`; Twine passed for both, the sdist contains 482 entries including
+  ADR-039, and the workspace-only audit found zero preserved Doctrine files.
+  Host notifications, authentication, exactly-once effects, and multi-round
+  interaction remain outside this slice.
 - **Agent-framework parity ledger**: added a source-backed functionality and
   runtime matrix for LangGraph, CrewAI, Microsoft Agent Framework, LlamaIndex,
   and OpenAI Agents SDK. It separates MAPLE's native infrastructure strengths

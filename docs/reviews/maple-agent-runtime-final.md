@@ -477,6 +477,26 @@ remain explicit follow-on work.
   entries including ADR-038, and the workspace-only audit found zero preserved
   Doctrine files.
 
+## Slice 93 implementation review
+
+- `FileAgentRunStore` now uses the shared `DurableRecordLease` with a distinct
+  `run:<run_id>` namespace. Both load and the complete compare-and-set save
+  operation are fenced while the existing thread lock, bounds, atomic replace,
+  and version conflict behavior remain intact.
+- Lease acquisition failure returns `RUN_CHECKPOINT_LEASE_ERROR` before a read
+  or mutation. Release uncertainty returns
+  `RUN_CHECKPOINT_LEASE_RELEASE_ERROR`; the API and ADR require inspection
+  before retrying a potentially committed save.
+- Focused run-store coverage reports `14 passed in 2.66s`; the exact tracked
+  manifest reports `1213 passed, 1 skipped in 228.60s`. Ruff, Black, compile,
+  diff, doctor, and changed-boundary mypy pass. A clean archive rebuilt
+  wheel/sdist `1.1.3`; Twine passed for both, the sdist contains 482 entries
+  including ADR-039, the run module, and the run lease regression, and the
+  workspace-only audit found zero preserved Doctrine files.
+- Host notifications, remote authentication, distributed identity,
+  exactly-once external effects, and multi-round human input remain explicit
+  follow-on gaps; this slice does not overclaim them.
+
 ## Verdict
 
 **Feature review:** PASS for the twenty-eight implemented capability slices.
