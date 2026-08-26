@@ -278,6 +278,15 @@ verification remain open.
 - No user-owned untracked files were changed or staged; no external action was
   taken.
 
+## Slice 79 revalidation
+
+- The tracked-test manifest contains 100 Python files and reports `1185 passed,
+  1 skipped in 210.07s` with no warning output.
+- The only warning was a test function returning a boolean; the fix preserves
+  standalone invocation behavior and makes pytest assert the helper result.
+- The tracked application suite is green. The workspace-only Doctrine gold
+  verifier and fresh-context review are still separate open release gates.
+
 ## Verdict
 
 **Feature review:** PASS for the twenty-three implemented capability slices.

@@ -278,6 +278,19 @@ slow Doctrine gold phase before interruption without a pytest summary.
 - This is diagnostic evidence, not a full-suite pass; the gold and exact
   repository gates remain open pending a practical, complete run.
 
+## Slice 79 revalidation — tracked repository suite
+
+- Git supplied 100 tracked Python test files to pytest, excluding preserved
+  untracked workspace Doctrine fixtures.
+- `python -m pytest <tracked test files> --no-cov -p no:dash -p no:benchmark
+  -q --tb=short --durations=20` -> `1185 passed, 1 skipped in 210.07s`.
+- The prior `PytestReturnNotNoneWarning` in `tests/test_fixes.py` was removed by
+  keeping the standalone helper's boolean contract while adding a pytest
+  wrapper that asserts instead of returning a value. The focused test reports
+  `2 passed in 0.61s`; Ruff and `git diff --check` pass.
+- This closes the tracked application-suite gate. The separate untracked
+  Doctrine gold verifier and fresh independent review remain open.
+
 ## Security conclusions
 
 - No new dependency, credential, cloud call, website mutation, or publication

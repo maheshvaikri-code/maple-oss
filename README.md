@@ -504,13 +504,15 @@ python -m pytest tests/security/ -v       # Security tests
 python -m pytest tests/broker/ -v         # Broker tests
 ```
 
-Current status: focused LLM/autonomy/CLI regression **240 passed**, including
-focused MCP/governance, artifact, retrieval evaluation, session, server, and
-execution-journal, and grounded-answer evaluation tests, and local compile/doctor/package
-preflight gates pass. The full repository regression remains open; the latest
-bounded attempt reported **1049 passed** before interruption in slow Doctrine
-gold cases. Coverage is not being treated as a release gate until the full
-suite and repository-wide lint debt are closed.
+Current status: the tracked repository suite reports **1,185 passed, 1 skipped
+in 210.07s**, with no warning output. Focused LLM/autonomy/CLI, MCP/governance,
+artifact, retrieval evaluation, session, server, execution-journal, and
+grounded-answer gates also pass, alongside local compile/doctor/package
+preflight checks. The separate workspace Doctrine gold verifier remains an
+open release gate because its fixture tests are not part of the tracked
+package suite and are extremely slow on this Windows host. Coverage is not
+treated as a release gate until the exact release matrix and fresh review are
+closed.
 
 ---
 

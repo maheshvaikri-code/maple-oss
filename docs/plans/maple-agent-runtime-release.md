@@ -89,6 +89,7 @@
 | 76 | Deadline and cooperative cancellation for async orchestration | Backend / QA / Security / Release | orchestrator, async orchestration regressions, ADR-028, README/API docs, changelog, review/QA artifacts | Request-wide timeout, native async task cancellation/drain, cancellation token, invalid timeout, consensus deadline, static/package/doctor gates | done: code commit `7630839`; orchestrator regression `24 passed in 0.43s`; core/autonomy regression `257 passed in 3.60s`; changed-file Ruff/Black/mypy pass; docs and release evidence filed; no dependency added |
 | 77 | Bounded agent-as-tool handoffs | Chief Architect / Backend / Security / QA / Release | autonomy tools/exports, handoff regressions, ADR-029, README/API docs, changelog, review/QA artifacts | Structured target result, approval default, bounded task input, raw-error redaction, target exception/invalid-result isolation, public import, static/package/doctor gates | done: code commit `62ebad8`; tool regression `18 passed in 0.25s`; autonomy regression `234 passed in 3.49s`; changed-file Ruff/Black/mypy/compile pass; no dependency added |
 | 78 | Explicit unsupported capability inventory | Chief Architect / Security / Release | release brief, README, changelog, state/authentication regressions, QA/review evidence | Cross-reference every remaining `NOT_IMPLEMENTED` runtime path; verify fail-closed tests and no unsupported claim in public feature list | done: Redis state boundary plus mutual-TLS/OAuth2 fail-closed regression coverage (`73 passed in 3.44s`); unsupported/deferred surfaces are explicit; no dependency change |
+| 79 | Tracked release-suite warning closure | QA / Release / Backend | `tests/test_fixes.py`, release plan, README, changelog, QA/review evidence | Tracked-test manifest execution, warning-free summary, focused test, Ruff, diff check | done: 100 tracked test files; `1185 passed, 1 skipped in 210.07s`; fixed a test returning a value to pytest; no runtime behavior or dependency change |
 
 ## Threat sketch
 
@@ -368,3 +369,9 @@ tests and completed `3 passed in 521.65s (0:08:41)` before bounded interruption.
 No assertion failure was reported. The slowest completed calls were 189.32s,
 118.43s, and 61.33s; this is diagnostic evidence only and does not close the
 exact repository gate.
+
+2026-08-25 tracked-suite revalidation after the test-warning fix: Git supplied
+100 tracked Python test files to pytest; the run reported `1185 passed, 1
+skipped in 210.07s` with no warnings. This closes the tracked application-suite
+gate while the workspace-only Doctrine gold verifier and fresh independent
+review remain open.
