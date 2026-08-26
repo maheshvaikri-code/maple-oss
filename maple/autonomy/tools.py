@@ -423,10 +423,13 @@ class Tool:
     async def execute_async(self, **kwargs: Any) -> Result[Any, Dict[str, Any]]:
         """Execute an async handler without blocking the event loop.
 
-        Tools without an async handler use the existing synchronous path in a
-        worker so legacy tools remain usable from async agent turns.
+        Tools without an async handler, or tools with an execution policy, use
+        the existing synchronous path in a worker so legacy and bounded tools
+        remain usable from async agent turns. An execution policy takes
+        precedence over an optional async handler because its sync executor is
+        the only contract that can enforce those bounds.
         """
-        if self.async_handler is None:
+        if self.async_handler is None or self.executor is not None:
             loop = asyncio.get_running_loop()
             return await loop.run_in_executor(None, lambda: self.execute(**kwargs))
         prepared = self._prepare_arguments(kwargs)

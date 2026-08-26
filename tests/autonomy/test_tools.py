@@ -57,6 +57,28 @@ class TestTool:
         assert result.is_err()
         assert "boom" in result.unwrap_err()["message"]
 
+    async def test_execute_async_preserves_executor_boundary(self):
+        from maple.autonomy.execution import ExecutionPolicy, TrustedLocalExecutor
+
+        calls = []
+
+        async def async_handler():
+            raise AssertionError("async handler must not bypass executor policy")
+
+        tool = Tool(
+            name="bounded_async",
+            description="Uses the trusted execution boundary",
+            parameters={"type": "object"},
+            handler=lambda: calls.append("sync") or Result.ok({"ok": True}),
+            async_handler=async_handler,
+            executor=TrustedLocalExecutor(ExecutionPolicy(timeout_seconds=1)),
+        )
+
+        result = await tool.execute_async()
+
+        assert result.is_ok()
+        assert calls == ["sync"]
+
     def test_to_llm_definition(self):
         tool = make_tool("calc")
         defn = tool.to_llm_definition()
