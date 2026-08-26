@@ -213,6 +213,16 @@ class TestTraceSpan:
         assert exported.is_ok()
         assert '"span_id":"' + span.span_id + '"' in exported.unwrap()
 
+    def test_trace_span_rejects_oversized_serialized_attributes(self):
+        with pytest.raises(ValueError, match="byte limit"):
+            TraceSpan(
+                trace_id="trace-1",
+                span_id="span-1",
+                name="model",
+                start_time=1.0,
+                attributes={f"key-{index}": "x" * 1024 for index in range(32)},
+            )
+
     def test_recorder_is_thread_safe_for_concurrent_starts(self):
         recorder = SpanRecorder(max_spans=32)
 

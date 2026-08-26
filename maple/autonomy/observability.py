@@ -147,6 +147,19 @@ class TraceSpan:
             normalized[key] = value
         if len(normalized) > _MAX_SPAN_ATTRIBUTES:
             raise ValueError("span attribute count exceeds the limit")
+        try:
+            attribute_bytes = len(
+                json.dumps(
+                    normalized,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                    allow_nan=False,
+                ).encode("utf-8")
+            )
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError("span attributes must be JSON serializable") from exc
+        if attribute_bytes > _MAX_ATTRIBUTE_BYTES:
+            raise ValueError("span attributes exceed the byte limit")
         object.__setattr__(self, "attributes", MappingProxyType(normalized))
 
     def to_dict(self) -> Dict[str, Any]:
