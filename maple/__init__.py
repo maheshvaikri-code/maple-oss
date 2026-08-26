@@ -146,6 +146,7 @@ from .autonomy.workflow import (
     WorkflowContext,
     WorkflowPause,
     WorkflowRun,
+    RetryPolicy,
 )
 from .broker.broker import MessageBroker
 from .communication.streaming import Stream, StreamOptions
@@ -252,6 +253,7 @@ __all__ = [
     "WorkflowContext",
     "WorkflowPause",
     "WorkflowRun",
+    "RetryPolicy",
     "Guardrail",
     "parse_structured_output",
     "parse_typed_output",

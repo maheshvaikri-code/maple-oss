@@ -3,10 +3,13 @@
 import json
 import threading
 
+import pytest
+
 from maple.autonomy import (
     FileCheckpointStore,
     HistoryCheckpointStore,
     InMemoryCheckpointStore,
+    RetryPolicy,
     Workflow,
     WorkflowPause,
 )
@@ -151,6 +154,69 @@ def test_node_result_error_is_checkpointed_as_failed():
     assert result.unwrap().error["errorType"] == "DEPENDENCY_DOWN"
     checkpoint = store.load(result.unwrap().run_id).unwrap()
     assert checkpoint.status == "failed"
+
+
+def test_node_retry_policy_retries_with_bounded_context_and_persists_count():
+    calls = []
+
+    def flaky(context):
+        calls.append(context.retry_count)
+        if len(calls) < 3:
+            raise RuntimeError("temporary dependency failure")
+        return {"recovered": True}
+
+    store = InMemoryCheckpointStore()
+    workflow = Workflow(
+        "retrying",
+        checkpoint_store=store,
+        retry_policies={"flaky": RetryPolicy(max_retries=2)},
+    )
+    assert workflow.add_node("flaky", flaky).is_ok()
+    assert workflow.set_entry_point("flaky").is_ok()
+
+    result = workflow.run({}, run_id="retry-run")
+
+    assert result.is_ok()
+    completed = result.unwrap()
+    assert completed.status == "completed"
+    assert completed.state == {"recovered": True}
+    assert calls == [0, 1, 2]
+    assert completed.retry_counts == {"flaky": 2}
+    checkpoint = store.load("retry-run").unwrap()
+    assert checkpoint is not None
+    assert checkpoint.retry_counts == {"flaky": 2}
+    assert checkpoint.retry_after is None
+
+
+def test_node_retry_policy_exhaustion_is_typed_and_bounded():
+    calls = []
+
+    def broken(context):
+        calls.append(context.retry_count)
+        return Result.err({"errorType": "DEPENDENCY_DOWN", "message": "retry"})
+
+    workflow = Workflow(
+        "retry-exhaustion",
+        retry_policies={"broken": RetryPolicy(max_retries=1)},
+    )
+    assert workflow.add_node("broken", broken).is_ok()
+    assert workflow.set_entry_point("broken").is_ok()
+
+    result = workflow.run({})
+
+    assert result.is_ok()
+    failed = result.unwrap()
+    assert failed.status == "failed"
+    assert failed.error["errorType"] == "NODE_RETRY_EXHAUSTED"
+    assert failed.error["details"]["retry_count"] == 1
+    assert calls == [0, 1]
+
+
+def test_retry_policy_rejects_unbounded_configuration():
+    with pytest.raises(ValueError, match="max_retries"):
+        RetryPolicy(max_retries=9)
+    with pytest.raises(ValueError, match="max_delay_seconds"):
+        RetryPolicy(base_delay_seconds=2, max_delay_seconds=1)
 
 
 def test_malformed_file_checkpoint_fails_closed(tmp_path):

@@ -46,6 +46,8 @@ END = "__end__"
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
 _STATUSES = {"running", "interrupted", "completed", "failed"}
 _MAX_PARALLEL_BRANCHES = 64
+_MAX_NODE_RETRIES = 8
+_MAX_RETRY_DELAY_SECONDS = 60.0
 
 Error = Dict[str, Any]
 NodeOutput = Union[Mapping[str, Any], Result[Optional[Mapping[str, Any]], Error], None]
@@ -182,6 +184,51 @@ class WorkflowContext:
     node_name: str
     resume_value: Any = None
     execution_key: Optional[str] = None
+    retry_count: int = 0
+
+
+@dataclass(frozen=True)
+class RetryPolicy:
+    """Bounded retry and exponential-backoff policy for one workflow node."""
+
+    max_retries: int = 0
+    base_delay_seconds: float = 0.0
+    max_delay_seconds: float = _MAX_RETRY_DELAY_SECONDS
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.max_retries, int)
+            or isinstance(self.max_retries, bool)
+            or not 0 <= self.max_retries <= _MAX_NODE_RETRIES
+        ):
+            raise ValueError(f"max_retries must be between 0 and {_MAX_NODE_RETRIES}")
+        for value, name in (
+            (self.base_delay_seconds, "base_delay_seconds"),
+            (self.max_delay_seconds, "max_delay_seconds"),
+        ):
+            if (
+                not isinstance(value, (int, float))
+                or isinstance(value, bool)
+                or not math.isfinite(float(value))
+                or value < 0
+                or value > _MAX_RETRY_DELAY_SECONDS
+            ):
+                raise ValueError(
+                    f"{name} must be between 0 and {_MAX_RETRY_DELAY_SECONDS}"
+                )
+        if self.max_delay_seconds < self.base_delay_seconds:
+            raise ValueError("max_delay_seconds must be >= base_delay_seconds")
+
+    def delay_for_retry(self, retry_number: int) -> float:
+        """Return the bounded delay before a one-based retry number."""
+        if (
+            not isinstance(retry_number, int)
+            or isinstance(retry_number, bool)
+            or retry_number <= 0
+        ):
+            raise ValueError("retry_number must be a positive integer")
+        delay = self.base_delay_seconds * (2 ** (retry_number - 1))
+        return min(float(self.max_delay_seconds), float(delay))
 
 
 class WorkflowPause(Exception):
@@ -208,6 +255,8 @@ class WorkflowCheckpoint:
     updated_at: float = field(default_factory=time.time)
     interrupt_payload: Any = None
     error: Optional[Error] = None
+    retry_counts: Dict[str, int] = field(default_factory=dict)
+    retry_after: Optional[float] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Return the persistence representation."""
@@ -224,6 +273,8 @@ class WorkflowCheckpoint:
             "updated_at": self.updated_at,
             "interrupt_payload": self.interrupt_payload,
             "error": self.error,
+            "retry_counts": dict(self.retry_counts),
+            "retry_after": self.retry_after,
         }
 
     @classmethod
@@ -269,6 +320,28 @@ class WorkflowCheckpoint:
         error_value_error = _validate_json_value(error)
         if error_value_error:
             raise ValueError(error_value_error["message"])
+        raw_retry_counts = data.get("retry_counts", {})
+        if not isinstance(raw_retry_counts, dict):
+            raise ValueError("checkpoint retry_counts must be an object")
+        retry_counts: Dict[str, int] = {}
+        for node_name, retry_count in raw_retry_counts.items():
+            if _valid_identifier(node_name, "retry_node"):
+                raise ValueError("invalid checkpoint retry node")
+            if (
+                not isinstance(retry_count, int)
+                or isinstance(retry_count, bool)
+                or not 0 <= retry_count <= _MAX_NODE_RETRIES
+            ):
+                raise ValueError("invalid checkpoint retry count")
+            retry_counts[node_name] = retry_count
+        retry_after = data.get("retry_after")
+        if retry_after is not None:
+            try:
+                retry_after = float(retry_after)
+            except (TypeError, ValueError):
+                raise ValueError("invalid checkpoint retry_after")
+            if not math.isfinite(retry_after):
+                raise ValueError("invalid checkpoint retry_after")
         return cls(
             run_id=data["run_id"],
             workflow_name=data["workflow_name"],
@@ -282,6 +355,8 @@ class WorkflowCheckpoint:
             updated_at=float(data.get("updated_at", time.time())),
             interrupt_payload=data.get("interrupt_payload"),
             error=error,
+            retry_counts=retry_counts,
+            retry_after=retry_after,
         )
 
 
@@ -299,6 +374,8 @@ class WorkflowRun:
     step_count: int
     interrupt_payload: Any = None
     error: Optional[Error] = None
+    retry_counts: Dict[str, int] = field(default_factory=dict)
+    retry_after: Optional[float] = None
 
     @classmethod
     def from_checkpoint(cls, checkpoint: WorkflowCheckpoint) -> "WorkflowRun":
@@ -313,6 +390,8 @@ class WorkflowRun:
             step_count=checkpoint.step_count,
             interrupt_payload=checkpoint.interrupt_payload,
             error=checkpoint.error,
+            retry_counts=dict(checkpoint.retry_counts),
+            retry_after=checkpoint.retry_after,
         )
 
 
@@ -587,6 +666,7 @@ class Workflow:
         max_parallel_branches: int = 8,
         checkpoint_store: Optional[CheckpointStore] = None,
         execution_journal: Optional[ExecutionJournal] = None,
+        retry_policies: Optional[Mapping[str, RetryPolicy]] = None,
     ) -> None:
         identifier_error = _valid_identifier(name, "workflow_name")
         if identifier_error:
@@ -613,6 +693,18 @@ class Workflow:
         self._routers: Dict[str, RouteSelector] = {}
         self._parallel_edges: Dict[str, Tuple[Tuple[str, ...], str]] = {}
         self._entry_point: Optional[str] = None
+        self._retry_policies: Dict[str, RetryPolicy] = {}
+        if retry_policies is not None:
+            if not isinstance(retry_policies, Mapping):
+                raise ValueError("retry_policies must be a mapping")
+            for node_name, policy in retry_policies.items():
+                if not isinstance(node_name, str) or _valid_identifier(
+                    node_name, "node_name"
+                ):
+                    raise ValueError("retry policy node names must be valid")
+                if not isinstance(policy, RetryPolicy):
+                    raise ValueError("retry policies must contain RetryPolicy values")
+                self._retry_policies[node_name] = policy
 
     def add_node(self, name: str, handler: NodeHandler) -> Result[None, Error]:
         """Register a node handler."""
@@ -640,6 +732,24 @@ class Workflow:
         if identifier_error:
             return Result.err(identifier_error)
         self._entry_point = name
+        return Result.ok(None)
+
+    def set_retry_policy(
+        self, node_name: str, policy: RetryPolicy
+    ) -> Result[None, Error]:
+        """Set a bounded retry policy for a registered or future node."""
+        identifier_error = _valid_identifier(node_name, "node_name")
+        if identifier_error:
+            return Result.err(identifier_error)
+        if not isinstance(policy, RetryPolicy):
+            return Result.err(
+                _error(
+                    "INVALID_RETRY_POLICY",
+                    "Workflow retry policy must be a RetryPolicy instance.",
+                    node=node_name,
+                )
+            )
+        self._retry_policies[node_name] = policy
         return Result.ok(None)
 
     def add_edge(
@@ -806,6 +916,19 @@ class Workflow:
         if self._entry_point not in self._nodes:
             return Result.err(
                 _error("INVALID_WORKFLOW", "Workflow entry point is not registered.")
+            )
+        unknown_retry_nodes = sorted(
+            node_name
+            for node_name in self._retry_policies
+            if node_name not in self._nodes
+        )
+        if unknown_retry_nodes:
+            return Result.err(
+                _error(
+                    "INVALID_RETRY_POLICY",
+                    "Retry policy references an unknown node.",
+                    nodes=unknown_retry_nodes,
+                )
             )
         for source, target in self._direct_edges.items():
             if source not in self._nodes:
@@ -1092,6 +1215,10 @@ class Workflow:
                     store,
                     _error("MAX_STEPS_REACHED", "Workflow step limit reached."),
                 )
+            if current.retry_after is not None:
+                remaining = current.retry_after - time.time()
+                if remaining > 0:
+                    time.sleep(remaining)
             node_name = current.next_node
             handler = self._nodes.get(node_name)
             if handler is None:
@@ -1117,6 +1244,7 @@ class Workflow:
                 node_name=node_name,
                 resume_value=node_resume_value,
                 execution_key=execution_key,
+                retry_count=current.retry_counts.get(node_name, 0),
             )
             first_node = False
             replay_result = self._load_replay(
@@ -1151,20 +1279,34 @@ class Workflow:
                         return Result.err(saved_result.unwrap_err())
                     return Result.ok(WorkflowRun.from_checkpoint(saved_result.unwrap()))
                 except Exception as exc:
-                    return self._fail(
-                        current,
-                        store,
-                        _error(
-                            "NODE_EXECUTION_ERROR",
-                            "Workflow node execution failed.",
-                            node=node_name,
-                            reason=str(exc)[:256],
-                        ),
+                    node_error = _error(
+                        "NODE_EXECUTION_ERROR",
+                        "Workflow node execution failed.",
+                        node=node_name,
+                        reason=str(exc)[:256],
                     )
+                    retry = self._schedule_node_retry(
+                        current, store, node_name, node_error
+                    )
+                    if retry.is_err():
+                        return self._fail(current, store, retry.unwrap_err())
+                    if retry.unwrap() is not None:
+                        current = retry.unwrap()
+                        continue
+                    return self._fail(current, store, node_error)
 
                 output_result = self._normalize_output(output)
                 if output_result.is_err():
-                    return self._fail(current, store, output_result.unwrap_err())
+                    node_error = output_result.unwrap_err()
+                    retry = self._schedule_node_retry(
+                        current, store, node_name, node_error
+                    )
+                    if retry.is_err():
+                        return self._fail(current, store, retry.unwrap_err())
+                    if retry.unwrap() is not None:
+                        current = retry.unwrap()
+                        continue
+                    return self._fail(current, store, node_error)
                 updates = output_result.unwrap()
                 journal_result = self._save_replay(
                     execution_key,
@@ -1200,6 +1342,7 @@ class Workflow:
                         status="interrupted",
                         interrupt_payload=pause.payload,
                         error=None,
+                        retry_after=None,
                         updated_at=time.time(),
                     )
                     saved_result = store.save(paused, expected_version=current.version)
@@ -1248,6 +1391,7 @@ class Workflow:
                 step_count=current.step_count + 1,
                 error=None,
                 interrupt_payload=None,
+                retry_after=None,
                 updated_at=time.time(),
             )
             saved_result = store.save(updated, expected_version=current.version)
@@ -1388,12 +1532,68 @@ class Workflow:
             )
         )
         failed = replace(
-            checkpoint, status="failed", error=persisted_error, updated_at=time.time()
+            checkpoint,
+            status="failed",
+            error=persisted_error,
+            retry_after=None,
+            updated_at=time.time(),
         )
         saved_result = store.save(failed, expected_version=checkpoint.version)
         if saved_result.is_err():
             return Result.err(saved_result.unwrap_err())
         return Result.ok(WorkflowRun.from_checkpoint(saved_result.unwrap()))
+
+    def _schedule_node_retry(
+        self,
+        checkpoint: WorkflowCheckpoint,
+        store: CheckpointStore,
+        node_name: str,
+        error: Error,
+    ) -> Result[Optional[WorkflowCheckpoint], Error]:
+        """Persist one bounded retry or return an exhaustion error."""
+        policy = self._retry_policies.get(node_name)
+        if policy is None:
+            return Result.ok(None)
+        retry_count = checkpoint.retry_counts.get(node_name, 0)
+        if retry_count >= policy.max_retries:
+            return Result.err(
+                _error(
+                    "NODE_RETRY_EXHAUSTED",
+                    "Workflow node retry policy is exhausted.",
+                    node=node_name,
+                    retry_count=retry_count,
+                    max_retries=policy.max_retries,
+                    last_error_type=error.get("errorType", "NODE_ERROR"),
+                )
+            )
+        next_retry_count = retry_count + 1
+        delay = policy.delay_for_retry(next_retry_count)
+        retry_counts = dict(checkpoint.retry_counts)
+        retry_counts[node_name] = next_retry_count
+        retry_error = _error(
+            "NODE_RETRY_SCHEDULED",
+            "Workflow node failed; a bounded retry is scheduled.",
+            node=node_name,
+            retry_count=next_retry_count,
+            max_retries=policy.max_retries,
+            delay_seconds=delay,
+            last_error_type=error.get("errorType", "NODE_ERROR"),
+        )
+        retry_after = time.time() + delay if delay > 0 else None
+        scheduled = replace(
+            checkpoint,
+            status="running",
+            error=retry_error,
+            retry_counts=retry_counts,
+            retry_after=retry_after,
+            updated_at=time.time(),
+        )
+        saved_result = store.save(scheduled, expected_version=checkpoint.version)
+        if saved_result.is_err():
+            return Result.err(saved_result.unwrap_err())
+        if delay > 0:
+            time.sleep(delay)
+        return Result.ok(saved_result.unwrap())
 
     def _normalize_output(self, output: NodeOutput) -> Result[Dict[str, Any], Error]:
         if isinstance(output, Result):

@@ -131,6 +131,7 @@ from .workflow import (
     WorkflowContext,
     WorkflowPause,
     WorkflowRun,
+    RetryPolicy,
 )
 
 __all__ = [
@@ -226,6 +227,7 @@ __all__ = [
     "WorkflowContext",
     "WorkflowPause",
     "WorkflowRun",
+    "RetryPolicy",
     "DEFAULT_MAX_MESSAGES",
     "DEFAULT_MAX_MESSAGE_BYTES",
     "DEFAULT_MAX_METADATA_BYTES",
