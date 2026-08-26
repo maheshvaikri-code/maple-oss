@@ -51,6 +51,8 @@ from .tools import Tool, ToolRegistry, create_builtin_tools
 
 logger = logging.getLogger(__name__)
 
+MAX_OUTPUT_RETRIES = 3
+
 
 @dataclass
 class ReasoningStep:
@@ -98,6 +100,8 @@ class AutonomousConfig:
     ``max_total_tokens`` is an optional hard per-goal budget. When set,
     provider usage data is required and tool execution stops before side
     effects if the budget is exceeded.
+    ``max_output_retries`` enables bounded correction attempts for invalid
+    structured output; the default ``0`` preserves fail-fast behavior.
     """
 
     llm: LLMConfig
@@ -112,6 +116,7 @@ class AutonomousConfig:
     input_guardrails: List[Guardrail] = field(default_factory=list)
     output_guardrails: List[Guardrail] = field(default_factory=list)
     max_total_tokens: Optional[int] = None
+    max_output_retries: int = 0
 
 
 class AutonomousAgent(Agent):
@@ -142,6 +147,15 @@ class AutonomousAgent(Agent):
             or autonomy_config.max_total_tokens <= 0
         ):
             raise ValueError("max_total_tokens must be a positive integer")
+        if (
+            isinstance(autonomy_config.max_output_retries, bool)
+            or not isinstance(autonomy_config.max_output_retries, int)
+            or not 0 <= autonomy_config.max_output_retries <= MAX_OUTPUT_RETRIES
+        ):
+            raise ValueError(
+                "max_output_retries must be an integer from 0 to "
+                f"{MAX_OUTPUT_RETRIES}"
+            )
         self._output_schema: Optional[Dict[str, Any]] = autonomy_config.response_schema
         if autonomy_config.output_model is not None:
             output_schema = structured_model_schema(autonomy_config.output_model)
@@ -525,6 +539,7 @@ class AutonomousAgent(Agent):
         3. REFLECT: Assess progress, update memory, decide if done
         """
         messages = self._build_initial_context(goal, session_messages=session_messages)
+        output_retries_used = 0
 
         for step_num in range(self.autonomy_config.max_reasoning_steps):
             start_time = time.time()
@@ -558,7 +573,18 @@ class AutonomousAgent(Agent):
 
             # Check if done (no tool calls and finish_reason == "stop")
             if not response.tool_calls and response.finish_reason == "stop":
-                return self._finalize_output(response.content)
+                final_result = self._finalize_output(response.content)
+                if final_result.is_ok():
+                    return final_result
+                if self._queue_output_retry(
+                    messages,
+                    response.content,
+                    final_result.unwrap_err(),
+                    output_retries_used,
+                ):
+                    output_retries_used += 1
+                    continue
+                return final_result
 
             # ACT: Execute tool calls
             if response.tool_calls:
@@ -604,9 +630,19 @@ class AutonomousAgent(Agent):
                 if "_maple_error" in reflection:
                     return Result.err(reflection["_maple_error"])
                 if reflection.get("should_stop"):
-                    return self._finalize_output(
-                        reflection.get("conclusion", response.content)
-                    )
+                    final_content = reflection.get("conclusion", response.content)
+                    final_result = self._finalize_output(final_content)
+                    if final_result.is_ok():
+                        return final_result
+                    if self._queue_output_retry(
+                        messages,
+                        final_content,
+                        final_result.unwrap_err(),
+                        output_retries_used,
+                    ):
+                        output_retries_used += 1
+                        continue
+                    return final_result
 
         return Result.err(
             {
@@ -872,6 +908,35 @@ Instructions:
             return Result.err(guardrails.unwrap_err())
         return Result.ok(parsed.unwrap())
 
+    def _queue_output_retry(
+        self,
+        messages: List[ChatMessage],
+        assistant_content: Optional[str],
+        error: Dict[str, Any],
+        retries_used: int,
+    ) -> bool:
+        """Append a bounded, non-sensitive correction request when allowed."""
+        if retries_used >= self.autonomy_config.max_output_retries:
+            return False
+        error_type = error.get("errorType", "STRUCTURED_OUTPUT_INVALID")
+        messages.extend(
+            [
+                ChatMessage(
+                    role=ChatRole.ASSISTANT,
+                    content=assistant_content or "",
+                ),
+                ChatMessage(
+                    role=ChatRole.USER,
+                    content=(
+                        "Your previous final response failed the output contract "
+                        f"({error_type}). Return only a corrected final response "
+                        "that satisfies the requested schema and guardrails."
+                    ),
+                ),
+            ]
+        )
+        return True
+
     def _reflect(
         self, goal: Goal, messages: List[ChatMessage], step_num: int
     ) -> Dict[str, Any]:
@@ -1081,6 +1146,7 @@ Instructions:
     ) -> Result[Any, Dict[str, Any]]:
         """Async ReAct loop — enables parallel tool execution and async LLM calls."""
         messages = self._build_initial_context(goal, session_messages=session_messages)
+        output_retries_used = 0
 
         for step_num in range(self.autonomy_config.max_reasoning_steps):
             start_time = time.time()
@@ -1110,7 +1176,18 @@ Instructions:
             self._log_decision(goal, step, response, duration_ms)
 
             if not response.tool_calls and response.finish_reason == "stop":
-                return self._finalize_output(response.content)
+                final_result = self._finalize_output(response.content)
+                if final_result.is_ok():
+                    return final_result
+                if self._queue_output_retry(
+                    messages,
+                    response.content,
+                    final_result.unwrap_err(),
+                    output_retries_used,
+                ):
+                    output_retries_used += 1
+                    continue
+                return final_result
 
             if response.tool_calls:
                 messages.append(
@@ -1178,9 +1255,19 @@ Instructions:
                 if "_maple_error" in reflection:
                     return Result.err(reflection["_maple_error"])
                 if reflection.get("should_stop"):
-                    return self._finalize_output(
-                        reflection.get("conclusion", response.content)
-                    )
+                    final_content = reflection.get("conclusion", response.content)
+                    final_result = self._finalize_output(final_content)
+                    if final_result.is_ok():
+                        return final_result
+                    if self._queue_output_retry(
+                        messages,
+                        final_content,
+                        final_result.unwrap_err(),
+                        output_retries_used,
+                    ):
+                        output_retries_used += 1
+                        continue
+                    return final_result
 
         return Result.err(
             {

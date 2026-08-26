@@ -116,6 +116,10 @@ class TestAutonomousAgent:
         with pytest.raises(ValueError, match="max_total_tokens"):
             AutonomousAgent(make_config(), make_auto_config(max_total_tokens=0))
 
+    def test_invalid_output_retry_limit_is_rejected(self):
+        with pytest.raises(ValueError, match="max_output_retries"):
+            AutonomousAgent(make_config(), make_auto_config(max_output_retries=4))
+
     def test_token_budget_tracks_usage_and_blocks_tool_side_effect(self):
         from maple.autonomy.tools import Tool
 
@@ -167,6 +171,41 @@ class TestAutonomousAgent:
 
         assert result.is_ok()
         assert result.unwrap().result["errorType"] == "TOKEN_USAGE_UNAVAILABLE"
+
+    def test_output_retries_consume_the_goal_token_budget(self):
+        auto_config = make_auto_config(
+            output_model=TypedAnswer,
+            max_output_retries=1,
+            max_total_tokens=10,
+        )
+        agent = AutonomousAgent(make_config(), auto_config)
+        agent.llm = MockLLMProvider(
+            auto_config.llm,
+            responses=[
+                LLMResponse(
+                    content='{"answer":"42"}',
+                    finish_reason="stop",
+                    usage=TokenUsage(
+                        prompt_tokens=3, completion_tokens=3, total_tokens=6
+                    ),
+                ),
+                LLMResponse(
+                    content='{"answer":"42","confidence":10}',
+                    finish_reason="stop",
+                    usage=TokenUsage(
+                        prompt_tokens=3, completion_tokens=3, total_tokens=6
+                    ),
+                ),
+            ],
+        )
+
+        result = agent.pursue_goal("Return a bounded typed answer")
+
+        assert result.is_ok()
+        goal = result.unwrap()
+        assert goal.status == "failed"
+        assert goal.result["errorType"] == "TOKEN_BUDGET_EXCEEDED"
+        assert goal.token_usage.total_tokens == 12
 
     def test_pursue_goal_simple(self):
         """Test that pursuing a simple goal works when LLM responds with stop."""
@@ -252,6 +291,75 @@ class TestAutonomousAgent:
         assert result.is_ok()
         assert result.unwrap().status == "failed"
         assert result.unwrap().result["errorType"] == "STRUCTURED_OUTPUT_MODEL_INVALID"
+
+    def test_output_model_retries_invalid_response_and_returns_validated_result(self):
+        config = make_config()
+        auto_config = make_auto_config(output_model=TypedAnswer, max_output_retries=1)
+        agent = AutonomousAgent(config, auto_config)
+        agent.llm = MockLLMProvider(
+            auto_config.llm,
+            responses=[
+                LLMResponse(content='{"answer":"42"}', finish_reason="stop"),
+                LLMResponse(
+                    content='{"answer":"42","confidence":10}',
+                    finish_reason="stop",
+                ),
+            ],
+        )
+
+        result = agent.pursue_goal("Return a corrected typed answer")
+
+        assert result.is_ok()
+        goal = result.unwrap()
+        assert goal.status == "completed"
+        assert isinstance(goal.result, TypedAnswer)
+        assert goal.result.confidence == 10
+        assert len(goal.reasoning_trace) == 2
+
+    def test_output_model_retry_exhaustion_remains_fail_closed(self):
+        config = make_config()
+        auto_config = make_auto_config(output_model=TypedAnswer, max_output_retries=1)
+        agent = AutonomousAgent(config, auto_config)
+        agent.llm = MockLLMProvider(
+            auto_config.llm,
+            responses=[
+                LLMResponse(content='{"answer":"42"}', finish_reason="stop"),
+                LLMResponse(
+                    content='{"answer":"still incomplete"}', finish_reason="stop"
+                ),
+            ],
+        )
+
+        result = agent.pursue_goal("Return a typed answer")
+
+        assert result.is_ok()
+        goal = result.unwrap()
+        assert goal.status == "failed"
+        assert goal.result["errorType"] == "STRUCTURED_OUTPUT_MODEL_INVALID"
+        assert len(goal.reasoning_trace) == 2
+
+    def test_async_output_model_retries_invalid_response(self):
+        config = make_config()
+        auto_config = make_auto_config(output_model=TypedAnswer, max_output_retries=1)
+        agent = AutonomousAgent(config, auto_config)
+        agent.llm = MockLLMProvider(
+            auto_config.llm,
+            responses=[
+                LLMResponse(content='{"answer":"42"}', finish_reason="stop"),
+                LLMResponse(
+                    content='{"answer":"42","confidence":8}',
+                    finish_reason="stop",
+                ),
+            ],
+        )
+
+        result = asyncio.run(agent.pursue_goal_async("Return a corrected typed answer"))
+
+        assert result.is_ok()
+        goal = result.unwrap()
+        assert goal.status == "completed"
+        assert isinstance(goal.result, TypedAnswer)
+        assert goal.result.confidence == 8
 
     def test_input_guardrail_rejects_before_goal_creation(self):
         config = make_config()
