@@ -47,8 +47,12 @@
   operations. Acquisition failures return `APPROVAL_LEASE_ERROR` without
   mutation; release failures return `APPROVAL_LEASE_RELEASE_ERROR` with
   uncertain-commit guidance. Focused approval/lease coverage reports `8 passed
-  in 0.31s`; input/run store integration and host notifications remain outside
-  this slice.
+  in 0.31s`; the exact tracked manifest reports `1209 passed, 1 skipped in
+  199.58s`; Ruff, Black, changed-boundary mypy, compile, diff, and doctor pass.
+  A clean archive rebuilt wheel/sdist `1.1.3`; Twine passed for both, the sdist
+  contains 477 entries including ADR-037, and the workspace-only audit found
+  zero preserved Doctrine files. Input/run store integration and host
+  notifications remain outside this slice.
 - **Agent-framework parity ledger**: added a source-backed functionality and
   runtime matrix for LangGraph, CrewAI, Microsoft Agent Framework, LlamaIndex,
   and OpenAI Agents SDK. It separates MAPLE's native infrastructure strengths

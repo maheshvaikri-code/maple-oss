@@ -471,9 +471,14 @@ slow Doctrine gold phase before interruption without a pytest summary.
   another holder owns the approval, no decision mutation on that failure,
   release after a decision, and preservation of the existing approval
   lifecycle.
-- Changed-file Ruff, Black, mypy, compile, complete tracked suite, clean
-  package, and doctor evidence remain pending. No publication, website, cloud,
-  registry, or user-owned untracked file change was made.
+- The exact tracked manifest reports `1209 passed, 1 skipped in 199.58s`.
+  Ruff, Black, compile, diff, network-free doctor, and changed-boundary mypy
+  pass.
+- A clean current archive rebuilt wheel/sdist `1.1.3`; Twine passed for both,
+  the sdist contains 477 entries including ADR-037 and the approval lease
+  regression, and the workspace-only audit found zero preserved Doctrine files.
+- No publication, website, cloud, registry, or user-owned untracked file
+  change was made.
 
 ## Security conclusions
 

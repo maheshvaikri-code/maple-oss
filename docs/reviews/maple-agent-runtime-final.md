@@ -453,8 +453,12 @@ remain explicit follow-on work.
   already be durable, so the API documents the result as an uncertain commit
   requiring inspection before retry. The store does not claim notifications,
   remote authentication, or exactly-once external effects.
-- Focused approval/lease coverage reports `8 passed in 0.32s`; remaining static,
-  full-suite, package, and doctor gates are pending.
+- Focused approval/lease coverage reports `8 passed in 0.31s`; the exact tracked
+  manifest reports `1209 passed, 1 skipped in 199.58s`. Ruff, Black, compile,
+  diff, doctor, and changed-boundary mypy pass. A clean archive rebuilt
+  wheel/sdist `1.1.3`; Twine passed for both, the sdist contains 477 entries
+  including ADR-037, and the workspace-only audit found zero preserved Doctrine
+  files.
 
 ## Verdict
 
