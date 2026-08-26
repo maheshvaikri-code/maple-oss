@@ -497,6 +497,30 @@ remain explicit follow-on work.
   exactly-once external effects, and multi-round human input remain explicit
   follow-on gaps; this slice does not overclaim them.
 
+## Slice 94 implementation review
+
+- `HumanInputNotifier` and `HumanInputAuthorizer` are dependency-free local
+  protocols attached to both supported stores. Notifications are bounded to
+  request metadata and optional actor identity; submitted response payloads are
+  excluded.
+- Respond/reject authorization is performed before mutation inside the
+  per-record lease. Missing actor identity, callback exceptions, malformed
+  results, and denial return typed fail-closed errors. Internal consume remains
+  an agent-owned transition rather than a host authorization surface.
+- Notification callbacks run after persistence and their failure returns
+  `HUMAN_INPUT_NOTIFICATION_ERROR`, making the durable record authoritative for
+  inspection before retry. The agent preserves legacy custom-store callers when
+  no actor is supplied.
+- Focused host/interaction/run coverage reports `49 passed in 2.80s`; the exact
+  tracked manifest reports `1215 passed, 1 skipped in 227.81s`. Ruff, Black,
+  compile, diff, doctor, and changed-boundary mypy pass. A clean archive rebuilt
+  wheel/sdist `1.1.3`; Twine passed for both, the sdist contains 484 entries
+  including ADR-040 and the host-hook regression, and the workspace-only audit
+  found zero preserved Doctrine files.
+- Remote credential verification, transport, distributed identity,
+  exactly-once external effects, and multi-round interaction remain explicit
+  gaps; this slice does not overclaim them.
+
 ## Verdict
 
 **Feature review:** PASS for the twenty-eight implemented capability slices.

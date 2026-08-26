@@ -1157,8 +1157,18 @@ per-record `FileLeaseManager` fencing lease by default under
 available for caller-owned coordination. Acquisition failure returns
 `HUMAN_INPUT_LEASE_ERROR` without mutation; release failure returns
 `HUMAN_INPUT_LEASE_RELEASE_ERROR` and requires record inspection before retry.
-Notifications, remote authentication, and multi-round conversations remain
-host or follow-on responsibilities.
+Pass `notifier=` to either human-input store for bounded `created`,
+`responded`, and `rejected` lifecycle callbacks. Notifications contain request
+metadata and optional `actor_id`, but never the submitted response payload;
+notification failure returns `HUMAN_INPUT_NOTIFICATION_ERROR` after persistence,
+so inspect the authoritative record before retrying. Pass `authorizer=` to
+either store to require an `actor_id` on `respond` and `reject`; the callback
+runs inside the record lease and missing, denied, exceptional, or malformed
+authorization returns a typed fail-closed error. `AutonomousAgent` forwards
+`actor_id=` through `respond_human_input` and `reject_human_input`. These are
+local caller-owned hooks, not credential verification or a remote transport;
+remote authentication and multi-round conversations remain follow-on
+responsibilities.
 
 ### Bounded conversation sessions
 

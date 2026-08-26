@@ -104,6 +104,7 @@
 | 91 | Cross-process durable approval-store ownership | Chief Architect / Backend / Security / QA / Release | `docs/adr/037-*`, `maple/autonomy/approval.py`, approval lease tests, API/README/parity docs, changelog, QA/review evidence | Per-record lease acquisition for file get/create/decide/consume/list, no mutation on acquisition failure, explicit uncertain-commit release error, existing atomic/thread-safe behavior retained; input/run store integration remains separate | done: focused approval + lease boundary `8 passed in 0.31s`; tracked manifest `1209 passed, 1 skipped in 199.58s`; Ruff/Black/compile/diff/doctor pass and changed-boundary mypy pass; clean archive wheel/sdist `1.1.3`, Twine passed, sdist `477` entries with ADR-037, workspace-only audit zero; no publication |
 | 92 | Cross-process durable human-input-store ownership | Chief Architect / Backend / Security / QA / Release | `docs/adr/038-*`, `maple/autonomy/durable_leases.py`, `maple/autonomy/interactions.py`, interaction lease tests, approval regressions, API/README/parity docs, changelog, QA/review evidence | Shared lease wrapper, per-record human-input get/create/respond/reject/consume/list ownership, no mutation on acquisition failure, explicit uncertain-commit release error, approval behavior preserved; run-store integration remains separate | done: focused approval/input/lease boundary `13 passed in 0.48s`; tracked manifest `1211 passed, 1 skipped in 219.68s`; Ruff/Black/compile/diff/doctor pass and changed-boundary mypy pass; clean archive wheel/sdist `1.1.3`, Twine passed, sdist `480` entries with ADR-038, workspace-only audit zero; no publication |
 | 93 | Cross-process durable run-store ownership | Chief Architect / Backend / Security / QA / Release | `docs/adr/039-*`, `maple/autonomy/runs.py`, run lease tests, API/README/parity docs, changelog, QA/review evidence | Per-run fencing lease across load and complete CAS save, no read/mutation on acquisition failure, explicit uncertain-commit release error, existing bounds/atomic replacement/CAS preserved; host side-effect policy and notifications remain separate | done: focused run-store suite `14 passed in 2.66s`; tracked manifest `1213 passed, 1 skipped in 228.60s`; Ruff/Black/compile/diff/doctor pass and changed-boundary mypy pass; clean archive wheel/sdist `1.1.3`, Twine passed, sdist `482` entries with ADR-039/run module/run test, workspace-only audit zero; no publication |
+| 94 | Bounded human-input host notification and authorization hooks | Chief Architect / Backend / Security / QA / Release | `docs/adr/040-*`, `maple/autonomy/interactions.py`, `maple/autonomy/agent.py`, host callback tests, public exports, API/README/parity docs, changelog, QA/review evidence | Bounded created/responded/rejected notifications without response payload, in-lease actor authorization for respond/reject, fail-closed errors, legacy no-actor compatibility, typed notification failure with persisted state authoritative; remote auth/transport/multi-round remain separate | done: focused host/interaction/run suite `49 passed in 2.80s`; tracked manifest `1215 passed, 1 skipped in 227.81s`; Ruff/Black/compile/diff/doctor pass and changed-boundary mypy pass; clean archive wheel/sdist `1.1.3`, Twine passed, sdist `484` entries with ADR-040/host module/test, workspace-only audit zero; no publication |
 
 ## Threat sketch
 
@@ -545,3 +546,19 @@ archive rebuilt wheel/sdist `1.1.3`; Twine passed for both, the sdist contains
 and the workspace-only audit found zero preserved Doctrine files. Host
 notifications, remote authentication, exactly-once external effects, and
 multi-round interaction remain separate follow-on boundaries.
+
+2026-08-26 bounded human-input host-hook closure: ADR-040 adds local
+`HumanInputNotifier` and `HumanInputAuthorizer` protocols to the in-memory and
+file-backed stores. Created/responded/rejected notifications carry bounded
+request metadata without the response payload; actor authorization runs inside
+the per-record lease and fails closed for missing, denied, exceptional, or
+malformed decisions. Legacy callers without an actor remain compatible, and a
+notification failure is reported after persistence so the durable record stays
+authoritative. The focused host/interaction/run suite reports `49 passed in
+2.80s`; the tracked manifest reports `1215 passed, 1 skipped in 227.81s`;
+Ruff, Black, compile, diff, doctor, and changed-boundary mypy pass. A clean
+archive rebuilt wheel/sdist `1.1.3`; Twine passed for both, the sdist contains
+484 entries including ADR-040, the host-hook module, and its regression, and
+the workspace-only audit found zero preserved Doctrine files. Remote
+authentication/transport, exactly-once external effects, and multi-round
+interaction remain separate follow-on boundaries.

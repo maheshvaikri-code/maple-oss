@@ -75,6 +75,20 @@
   ADR-039, and the workspace-only audit found zero preserved Doctrine files.
   Host notifications, authentication, exactly-once effects, and multi-round
   interaction remain outside this slice.
+- **Human-input host hooks**: added local `HumanInputNotifier` and
+  `HumanInputAuthorizer` protocols to both human-input stores. Lifecycle
+  notifications for created/responded/rejected omit response payloads;
+  actor authorization runs inside the record lease and fails closed. Legacy
+  no-actor callers remain compatible, while notification failures are typed
+  after persistence so the durable record remains authoritative. Focused
+  host/interaction/run coverage reports `49 passed in 2.80s`; the exact
+  tracked manifest reports `1215 passed, 1 skipped in 227.81s`; Ruff, Black,
+  changed-boundary mypy, compile, diff, and doctor pass. A clean archive
+  rebuilt wheel/sdist `1.1.3`; Twine passed for both, the sdist contains 484
+  entries including ADR-040 and the host-hook regression, and the
+  workspace-only audit found zero preserved Doctrine files. Remote
+  authentication/transport, exactly-once effects, and multi-round interaction
+  remain separate follow-on boundaries.
 - **Agent-framework parity ledger**: added a source-backed functionality and
   runtime matrix for LangGraph, CrewAI, Microsoft Agent Framework, LlamaIndex,
   and OpenAI Agents SDK. It separates MAPLE's native infrastructure strengths

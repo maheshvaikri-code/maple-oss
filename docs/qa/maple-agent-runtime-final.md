@@ -515,6 +515,26 @@ slow Doctrine gold phase before interruption without a pytest summary.
 - No publication, website, cloud, registry, or user-owned untracked file
   change was made.
 
+## Slice 94 QA — bounded human-input host notification and authorization hooks
+
+- `tests/autonomy/test_interaction_host.py` plus the interaction, lease, agent,
+  and run regression set reports `49 passed in 2.80s`.
+- Coverage proves created/responded/rejected notifications carry bounded request
+  metadata without the response payload; missing, denied, exceptional, and
+  malformed actor authorization fail closed; authorization runs before the
+  leased state transition; and notification failure is typed after the durable
+  record has been persisted.
+- The exact tracked manifest reports `1215 passed, 1 skipped in 227.81s`.
+  Ruff, Black, compile, diff, network-free doctor, and changed-boundary mypy
+  pass.
+- A clean current archive rebuilt wheel/sdist `1.1.3`; Twine passed for both,
+  the sdist contains 484 entries including ADR-040, the host-hook module, and
+  the host regression, and the workspace-only audit found zero preserved
+  Doctrine files.
+- Remote authentication/transport and multi-round human interaction remain
+  explicit follow-on boundaries. No publication, website, cloud, registry, or
+  user-owned untracked file change was made.
+
 ## Security conclusions
 
 - No new dependency, credential, cloud call, website mutation, or publication
