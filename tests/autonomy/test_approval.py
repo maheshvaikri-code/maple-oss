@@ -26,10 +26,18 @@ def test_in_memory_approval_lifecycle_is_single_use():
         "approval-1"
     ]
 
-    decided = store.decide("approval-1", approved=True)
+    decided = store.decide(
+        "approval-1",
+        approved=True,
+        edited_arguments={"key": "status", "value": "edited"},
+    )
     assert decided.is_ok()
     assert decided.unwrap().status == "approved"
     assert decided.unwrap().decision.approved is True
+    assert decided.unwrap().decision.edited_arguments == {
+        "key": "status",
+        "value": "edited",
+    }
 
     consumed = store.consume("approval-1")
     assert consumed.is_ok()
@@ -57,7 +65,9 @@ def test_decision_conflict_and_invalid_list_limit_fail_closed():
 def test_file_approval_survives_store_recreation(tmp_path):
     first_store = FileApprovalStore(tmp_path)
     assert first_store.create(_request()).is_ok()
-    assert first_store.decide("approval-1", approved=True).is_ok()
+    assert first_store.decide(
+        "approval-1", approved=True, edited_arguments={"value": "edited"}
+    ).is_ok()
 
     restarted_store = FileApprovalStore(tmp_path)
     loaded = restarted_store.get("approval-1")
@@ -65,6 +75,7 @@ def test_file_approval_survives_store_recreation(tmp_path):
     assert loaded.is_ok()
     assert loaded.unwrap().status == "approved"
     assert loaded.unwrap().decision.approved is True
+    assert loaded.unwrap().decision.edited_arguments == {"value": "edited"}
 
     consumed = restarted_store.consume("approval-1")
     assert consumed.is_ok()
@@ -85,3 +96,40 @@ def test_invalid_arguments_are_rejected_before_persistence():
     assert invalid.is_err()
     assert invalid.unwrap_err()["errorType"] == "APPROVAL_INVALID"
     assert store.get("approval-1").unwrap() is None
+
+
+def test_invalid_or_denied_edits_leave_in_memory_request_pending():
+    store = InMemoryApprovalStore()
+    assert store.create(_request()).is_ok()
+
+    invalid = store.decide(
+        "approval-1", approved=True, edited_arguments={"bad": object()}
+    )
+    denied_with_edit = store.decide(
+        "approval-1", approved=False, edited_arguments={"value": "blocked"}
+    )
+    pending = store.get("approval-1").unwrap()
+
+    assert invalid.is_err()
+    assert invalid.unwrap_err()["errorType"] == "APPROVAL_DECISION_INVALID"
+    assert denied_with_edit.is_err()
+    assert denied_with_edit.unwrap_err()["errorType"] == "APPROVAL_DECISION_INVALID"
+    assert pending is not None
+    assert pending.status == "pending"
+    assert pending.decision is None
+
+
+def test_oversized_file_edit_is_rejected_without_rewriting_record(tmp_path):
+    store = FileApprovalStore(tmp_path)
+    assert store.create(_request()).is_ok()
+
+    invalid = store.decide(
+        "approval-1", approved=True, edited_arguments={"value": "x" * 70_000}
+    )
+    loaded = FileApprovalStore(tmp_path).get("approval-1").unwrap()
+
+    assert invalid.is_err()
+    assert invalid.unwrap_err()["errorType"] == "APPROVAL_DECISION_INVALID"
+    assert loaded is not None
+    assert loaded.status == "pending"
+    assert loaded.decision is None

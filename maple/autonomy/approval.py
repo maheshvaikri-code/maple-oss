@@ -121,6 +121,31 @@ def _copy_arguments(arguments: Any) -> Result[Dict[str, Any], Error]:
         )
 
 
+def _validate_edited_arguments(
+    approved: bool, edited_arguments: Optional[Dict[str, Any]]
+) -> Result[Optional[Dict[str, Any]], Error]:
+    """Validate an optional operator replacement before a decision commits."""
+    if edited_arguments is None:
+        return Result.ok(None)
+    if not approved:
+        return Result.err(
+            _error(
+                "APPROVAL_DECISION_INVALID",
+                "Edited arguments can only accompany an approval decision.",
+            )
+        )
+    copied = _copy_arguments(edited_arguments)
+    if copied.is_err():
+        return Result.err(
+            _error(
+                "APPROVAL_DECISION_INVALID",
+                "Edited arguments are invalid.",
+                reason=copied.unwrap_err()["message"],
+            )
+        )
+    return Result.ok(copied.unwrap())
+
+
 def _valid_identifier(value: Any, field_name: str) -> Optional[Error]:
     if not isinstance(value, str) or not _IDENTIFIER.fullmatch(value):
         return _error(
@@ -148,12 +173,29 @@ class ApprovalDecision:
     approval_id: str
     approved: bool
     decided_at: float
+    edited_arguments: Optional[Dict[str, Any]] = None
+
+    def __post_init__(self) -> None:
+        if _valid_identifier(self.approval_id, "approval_id"):
+            raise ValueError("invalid approval_id")
+        if type(self.approved) is not bool:
+            raise ValueError("approval decision must contain a boolean")
+        if not math.isfinite(self.decided_at):
+            raise ValueError("approval decision timestamp must be finite")
+        if self.edited_arguments is not None:
+            if not self.approved:
+                raise ValueError("denying approval cannot contain edited arguments")
+            arguments = _copy_arguments(self.edited_arguments)
+            if arguments.is_err():
+                raise ValueError(arguments.unwrap_err()["message"])
+            object.__setattr__(self, "edited_arguments", arguments.unwrap())
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "approval_id": self.approval_id,
             "approved": self.approved,
             "decided_at": self.decided_at,
+            "edited_arguments": self.edited_arguments,
         }
 
 
@@ -220,10 +262,18 @@ class ApprovalRequest:
             decided_at = float(decision_data.get("decided_at", time.time()))
             if not math.isfinite(decided_at):
                 raise ValueError("approval decision timestamp must be finite")
+            edited_arguments_data = decision_data.get("edited_arguments")
+            edited_arguments: Optional[Dict[str, Any]] = None
+            if edited_arguments_data is not None:
+                edited_arguments_result = _copy_arguments(edited_arguments_data)
+                if edited_arguments_result.is_err():
+                    raise ValueError(edited_arguments_result.unwrap_err()["message"])
+                edited_arguments = edited_arguments_result.unwrap()
             decision = ApprovalDecision(
                 approval_id=data["approval_id"],
                 approved=decision_data["approved"],
                 decided_at=decided_at,
+                edited_arguments=edited_arguments,
             )
         if status == "pending" and decision is not None:
             raise ValueError("pending approval cannot contain a decision")
@@ -257,7 +307,11 @@ class ApprovalStore(Protocol):
     def create(self, request: ApprovalRequest) -> Result[ApprovalRequest, Error]: ...
 
     def decide(
-        self, approval_id: str, approved: bool
+        self,
+        approval_id: str,
+        approved: bool,
+        *,
+        edited_arguments: Optional[Dict[str, Any]] = None,
     ) -> Result[ApprovalRequest, Error]: ...
 
     def consume(self, approval_id: str) -> Result[ApprovalRequest, Error]: ...
@@ -322,9 +376,15 @@ class InMemoryApprovalStore:
             return Result.ok(_copy_request(candidate))
 
     def decide(
-        self, approval_id: str, approved: bool
+        self,
+        approval_id: str,
+        approved: bool,
+        *,
+        edited_arguments: Optional[Dict[str, Any]] = None,
     ) -> Result[ApprovalRequest, Error]:
-        return self._transition(approval_id, approved=approved)
+        return self._transition(
+            approval_id, approved=approved, edited_arguments=edited_arguments
+        )
 
     def consume(self, approval_id: str) -> Result[ApprovalRequest, Error]:
         identifier_error = _valid_identifier(approval_id, "approval_id")
@@ -371,7 +431,11 @@ class InMemoryApprovalStore:
             return Result.ok([_copy_request(request) for request in pending[:limit]])
 
     def _transition(
-        self, approval_id: str, *, approved: bool
+        self,
+        approval_id: str,
+        *,
+        approved: bool,
+        edited_arguments: Optional[Dict[str, Any]] = None,
     ) -> Result[ApprovalRequest, Error]:
         identifier_error = _valid_identifier(approval_id, "approval_id")
         if identifier_error:
@@ -380,6 +444,9 @@ class InMemoryApprovalStore:
             return Result.err(
                 _error("APPROVAL_DECISION_INVALID", "Decision must be boolean.")
             )
+        edited_arguments_result = _validate_edited_arguments(approved, edited_arguments)
+        if edited_arguments_result.is_err():
+            return Result.err(edited_arguments_result.unwrap_err())
         with self._lock:
             request = self._requests.get(approval_id)
             if request is None:
@@ -394,7 +461,12 @@ class InMemoryApprovalStore:
                         status=request.status,
                     )
                 )
-            decision = ApprovalDecision(approval_id, approved, time.time())
+            decision = ApprovalDecision(
+                approval_id,
+                approved,
+                time.time(),
+                edited_arguments_result.unwrap(),
+            )
             decided = replace(
                 request,
                 status="approved" if approved else "denied",
@@ -518,12 +590,19 @@ class FileApprovalStore:
             )
 
     def decide(
-        self, approval_id: str, approved: bool
+        self,
+        approval_id: str,
+        approved: bool,
+        *,
+        edited_arguments: Optional[Dict[str, Any]] = None,
     ) -> Result[ApprovalRequest, Error]:
         if type(approved) is not bool:
             return Result.err(
                 _error("APPROVAL_DECISION_INVALID", "Decision must be boolean.")
             )
+        edited_arguments_result = _validate_edited_arguments(approved, edited_arguments)
+        if edited_arguments_result.is_err():
+            return Result.err(edited_arguments_result.unwrap_err())
         try:
             with self._lock:
                 request = self._read_unlocked(approval_id)
@@ -539,7 +618,12 @@ class FileApprovalStore:
                             status=request.status,
                         )
                     )
-                decision = ApprovalDecision(approval_id, approved, time.time())
+                decision = ApprovalDecision(
+                    approval_id,
+                    approved,
+                    time.time(),
+                    edited_arguments_result.unwrap(),
+                )
                 decided = replace(
                     request,
                     status="approved" if approved else "denied",

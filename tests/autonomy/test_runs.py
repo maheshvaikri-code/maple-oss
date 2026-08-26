@@ -184,7 +184,9 @@ def test_sync_run_pauses_for_approval_and_resumes_after_restart():
         "RUN_WAITING_APPROVAL"
     )
 
-    assert first.decide_approval(approval_id, approved=True).is_ok()
+    assert first.decide_approval(
+        approval_id, approved=True, edited_arguments={"value": "edited"}
+    ).is_ok()
     restarted = make_agent(
         [LLMResponse(content="write complete", finish_reason="stop")]
     )
@@ -196,7 +198,7 @@ def test_sync_run_pauses_for_approval_and_resumes_after_restart():
 
     assert resumed.is_ok()
     assert resumed.unwrap().status == "completed"
-    assert calls == [{"value": "ready"}]
+    assert calls == [{"value": "edited"}]
     final_checkpoint = run_store.load("run-approval").unwrap()
     assert final_checkpoint is not None
     assert final_checkpoint.status == "completed"
@@ -335,7 +337,9 @@ def test_async_run_pauses_for_approval_and_resumes_after_restart():
     assert waiting.is_err()
     assert waiting.unwrap_err()["errorType"] == "RUN_WAITING_APPROVAL"
 
-    assert first.decide_approval(approval_id, approved=True).is_ok()
+    assert first.decide_approval(
+        approval_id, approved=True, edited_arguments={"value": "async-edited"}
+    ).is_ok()
     restarted = make_agent(
         [LLMResponse(content="write complete", finish_reason="stop")]
     )
@@ -348,7 +352,7 @@ def test_async_run_pauses_for_approval_and_resumes_after_restart():
 
     assert resumed.is_ok()
     assert resumed.unwrap().status == "completed"
-    assert calls == [{"value": "ready"}]
+    assert calls == [{"value": "async-edited"}]
     final_checkpoint = run_store.load("async-run-approval").unwrap()
     assert final_checkpoint is not None
     assert final_checkpoint.status == "completed"

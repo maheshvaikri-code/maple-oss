@@ -264,9 +264,18 @@ class AutonomousAgent(Agent):
         self._approval_store = store
 
     def decide_approval(
-        self, approval_id: str, approved: bool
+        self,
+        approval_id: str,
+        approved: bool,
+        *,
+        edited_arguments: Optional[Dict[str, Any]] = None,
     ) -> Result[ApprovalRequest, Dict[str, Any]]:
-        """Record an operator decision for a pending tool action."""
+        """Record an operator decision for a pending tool action.
+
+        An approved decision may include bounded JSON ``edited_arguments``;
+        durable resume executes that replacement instead of the original
+        arguments. Denied decisions cannot include replacements.
+        """
         if self._approval_store is None:
             return Result.err(
                 {
@@ -274,7 +283,9 @@ class AutonomousAgent(Agent):
                     "message": "No durable approval store is configured.",
                 }
             )
-        return self._approval_store.decide(approval_id, approved)
+        return self._approval_store.decide(
+            approval_id, approved, edited_arguments=edited_arguments
+        )
 
     def execute_approved_tool(self, approval_id: str) -> ToolResult:
         """Consume and execute one approved durable tool request.
@@ -325,11 +336,16 @@ class AutonomousAgent(Agent):
                 "APPROVAL_ERROR",
                 "Approval request could not be claimed.",
             )
+        effective_arguments = request.arguments
+        if request.decision is not None and (
+            request.decision.edited_arguments is not None
+        ):
+            effective_arguments = request.decision.edited_arguments
         return self._execute_tool_call(
             ToolCall(
                 id=request.tool_call_id,
                 name=request.tool_name,
-                arguments=request.arguments,
+                arguments=effective_arguments,
             ),
             skip_approval=True,
         )
@@ -1385,6 +1401,7 @@ class AutonomousAgent(Agent):
             )
 
         tool = tool_result.unwrap()
+        execution_arguments = tool_call.arguments
 
         # Human-in-the-loop check
         if not skip_approval and (
@@ -1435,6 +1452,10 @@ class AutonomousAgent(Agent):
                         "Approval request was already consumed.",
                         approval_id=request.approval_id,
                     )
+                if request.decision is not None and (
+                    request.decision.edited_arguments is not None
+                ):
+                    execution_arguments = request.decision.edited_arguments
                 consumed_result = self._approval_store.consume(request.approval_id)
                 if consumed_result.is_err():
                     return self._approval_error(
@@ -1491,7 +1512,7 @@ class AutonomousAgent(Agent):
                     is_error=True,
                 )
 
-        exec_result = tool.execute(**tool_call.arguments)
+        exec_result = tool.execute(**execution_arguments)
         if exec_result.is_ok():
             content = json.dumps(exec_result.unwrap(), default=str)
             return ToolResult(tool_call_id=tool_call.id, content=content)
