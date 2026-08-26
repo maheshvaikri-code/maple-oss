@@ -477,7 +477,9 @@ def create_builtin_tools(agent: "AutonomousAgent") -> List[Tool]:
     )
 
     def request_human_input_handler(
-        prompt: str, input_schema: Optional[dict] = None
+        prompt: str,
+        input_schema: Optional[dict] = None,
+        max_rounds: int = 1,
     ) -> Result[Any, Dict[str, Any]]:
         # Durable agent runs intercept this tool before a handler can execute.
         # Direct calls remain fail-closed instead of pretending to collect input.
@@ -507,6 +509,12 @@ def create_builtin_tools(agent: "AutonomousAgent") -> List[Tool]:
                     "input_schema": {
                         "type": "object",
                         "description": "The bounded JSON schema for the response.",
+                    },
+                    "max_rounds": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 8,
+                        "description": "Maximum number of host response rounds for this interaction.",
                     },
                 },
                 "required": ["prompt"],

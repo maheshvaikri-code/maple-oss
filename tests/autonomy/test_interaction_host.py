@@ -12,7 +12,9 @@ from maple.autonomy.interactions import (
 from maple.core.result import Result
 
 
-def _request(interaction_id: str = "host-input-1") -> HumanInputRequest:
+def _request(
+    interaction_id: str = "host-input-1", max_rounds: int = 1
+) -> HumanInputRequest:
     return HumanInputRequest(
         interaction_id=interaction_id,
         run_id="run-host-1",
@@ -23,6 +25,7 @@ def _request(interaction_id: str = "host-input-1") -> HumanInputRequest:
             "properties": {"confirmed": {"type": "boolean"}},
             "required": ["confirmed"],
         },
+        max_rounds=max_rounds,
     )
 
 
@@ -102,3 +105,33 @@ def test_notification_failure_is_typed_but_persisted_state_remains_authoritative
     persisted = store.get("host-input-2").unwrap()
     assert persisted is not None
     assert persisted.status == "pending"
+
+
+def test_multi_round_host_callback_is_authorized_and_notified():
+    host = RecordingHost(allowed=True)
+    store = InMemoryHumanInputStore(notifier=host, authorizer=host)
+    assert store.create(_request("host-input-3", max_rounds=2)).is_ok()
+    assert store.respond(
+        "host-input-3", {"confirmed": True}, actor_id="operator-1"
+    ).is_ok()
+
+    continued = store.continue_round(
+        "host-input-3",
+        "Confirm the second step.",
+        {"type": "object", "required": ["confirmed"]},
+        actor_id="operator-1",
+    )
+
+    assert continued.is_ok()
+    assert continued.unwrap().round_index == 1
+    assert [call["action"] for call in host.authorization_calls] == [
+        "respond",
+        "continue",
+    ]
+    assert [notification.event_type for notification in host.notifications] == [
+        "created",
+        "responded",
+        "continued",
+    ]
+    assert host.notifications[-1].round_index == 1
+    assert "response" not in host.notifications[-1].to_dict()

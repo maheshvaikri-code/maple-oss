@@ -457,7 +457,7 @@ def test_async_resume_does_not_repeat_completed_tool_after_model_interruption():
     assert calls == ["called"]
 
 
-def _human_input_call(call_id="ask-input"):
+def _human_input_call(call_id="ask-input", max_rounds=1):
     return ToolCall(
         id=call_id,
         name="request_human_input",
@@ -469,6 +469,7 @@ def _human_input_call(call_id="ask-input"):
                 "required": ["code"],
                 "additionalProperties": False,
             },
+            "max_rounds": max_rounds,
         },
     )
 
@@ -553,3 +554,56 @@ def test_async_durable_human_input_rejection_resumes_as_typed_tool_error():
     assert resumed.unwrap().status == "completed"
     assert resumed.unwrap().result == "do not deploy"
     assert input_store.get(interaction_id).unwrap().status == "consumed"
+
+
+def test_sync_durable_human_input_supports_bounded_follow_up_before_resume():
+    run_store = InMemoryAgentRunStore()
+    input_store = InMemoryHumanInputStore()
+    first = make_agent(
+        [
+            LLMResponse(
+                content="ask for code",
+                tool_calls=[_human_input_call("multi-round-input", max_rounds=2)],
+                finish_reason="tool_calls",
+            )
+        ]
+    )
+    first.set_run_store(run_store)
+    first.set_human_input_store(input_store)
+
+    started = first.pursue_goal("Deploy safely", run_id="run-multi-round")
+
+    assert started.is_ok()
+    assert started.unwrap().status == "paused"
+    interaction_id = started.unwrap().result["details"]["interaction_id"]
+    assert first.respond_human_input(interaction_id, {"code": "green"}).is_ok()
+    continued = first.continue_human_input(
+        interaction_id,
+        "Confirm the replacement code.",
+        {"type": "object", "required": ["code"]},
+    )
+    assert continued.is_ok()
+    assert continued.unwrap().status == "pending"
+    assert continued.unwrap().round_index == 1
+    assert first.resume_run("run-multi-round").unwrap_err()["errorType"] == (
+        "RUN_WAITING_INPUT"
+    )
+
+    assert first.respond_human_input(interaction_id, {"code": "blue"}).is_ok()
+    restarted = make_agent(
+        [LLMResponse(content="deployment approved", finish_reason="stop")]
+    )
+    restarted.set_run_store(run_store)
+    restarted.set_human_input_store(input_store)
+
+    resumed = restarted.resume_run("run-multi-round")
+
+    assert resumed.is_ok()
+    assert resumed.unwrap().status == "completed"
+    final_request = input_store.get(interaction_id).unwrap()
+    assert final_request is not None
+    assert final_request.status == "consumed"
+    assert final_request.round_index == 1
+    assert final_request.history[0].decision.response == {"code": "green"}
+    assert final_request.decision is not None
+    assert final_request.decision.response == {"code": "blue"}

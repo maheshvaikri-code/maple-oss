@@ -7,7 +7,7 @@ from maple.autonomy.interactions import (
 )
 
 
-def _request(interaction_id="input-1"):
+def _request(interaction_id="input-1", max_rounds=1):
     return HumanInputRequest(
         interaction_id=interaction_id,
         run_id="run-1",
@@ -19,6 +19,7 @@ def _request(interaction_id="input-1"):
             "required": ["code"],
             "additionalProperties": False,
         },
+        max_rounds=max_rounds,
     )
 
 
@@ -82,3 +83,52 @@ def test_invalid_request_and_oversized_response_do_not_mutate_store(tmp_path):
     assert pending is not None
     assert pending.status == "pending"
     assert pending.decision is None
+
+
+def test_in_memory_multi_round_preserves_history_and_enforces_bound():
+    store = InMemoryHumanInputStore()
+    assert store.create(_request(max_rounds=2)).is_ok()
+    assert store.respond("input-1", {"code": "green"}).is_ok()
+
+    continued = store.continue_round(
+        "input-1",
+        "Provide the replacement code.",
+        {"type": "object", "required": ["code"]},
+    )
+
+    assert continued.is_ok()
+    next_request = continued.unwrap()
+    assert next_request.status == "pending"
+    assert next_request.round_index == 1
+    assert len(next_request.history) == 1
+    assert next_request.history[0].decision.response == {"code": "green"}
+
+    assert store.respond("input-1", {"code": "blue"}).is_ok()
+    consumed = store.consume("input-1")
+    assert consumed.is_ok()
+    final_request = consumed.unwrap()
+    assert final_request.round_index == 1
+    assert final_request.decision is not None
+    assert final_request.decision.response == {"code": "blue"}
+    assert len(final_request.history) == 1
+
+    limited = store.continue_round("input-1", "One more", {"type": "object"})
+    assert limited.is_err()
+    assert limited.unwrap_err()["errorType"] == "HUMAN_INPUT_ROUND_LIMIT"
+
+
+def test_file_multi_round_history_survives_restart(tmp_path):
+    first = FileHumanInputStore(tmp_path)
+    assert first.create(_request(max_rounds=2)).is_ok()
+    assert first.respond("input-1", {"code": "green"}).is_ok()
+    assert first.continue_round(
+        "input-1", "Confirm the replacement.", {"type": "object"}
+    ).is_ok()
+
+    restarted = FileHumanInputStore(tmp_path)
+    pending = restarted.get("input-1").unwrap()
+
+    assert pending is not None
+    assert pending.status == "pending"
+    assert pending.round_index == 1
+    assert pending.history[0].decision.response == {"code": "green"}

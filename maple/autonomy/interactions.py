@@ -29,6 +29,7 @@ _MAX_JSON_DEPTH = 16
 _MAX_JSON_ITEMS = 10_000
 _MAX_LIST_LIMIT = 1_000
 _MAX_LIST_SCAN = 10_000
+_MAX_ROUNDS = 8
 _HUMAN_INPUT_LEASE_TTL_SECONDS = 30.0
 
 
@@ -168,6 +169,19 @@ def _valid_reason(value: Any) -> Optional[Error]:
     return None
 
 
+def _valid_max_rounds(value: Any) -> Optional[Error]:
+    if (
+        not isinstance(value, int)
+        or isinstance(value, bool)
+        or not 1 <= value <= _MAX_ROUNDS
+    ):
+        return _error(
+            "HUMAN_INPUT_ROUND_LIMIT_INVALID",
+            f"max_rounds must be an integer from 1 to {_MAX_ROUNDS}.",
+        )
+    return None
+
+
 @dataclass(frozen=True)
 class HumanInputDecision:
     """Immutable accepted or rejected response for one input request."""
@@ -187,6 +201,94 @@ class HumanInputDecision:
             "rejection_reason": self.rejection_reason,
         }
 
+    @classmethod
+    def from_dict(
+        cls, data: Mapping[str, Any], interaction_id: str
+    ) -> "HumanInputDecision":
+        if not isinstance(data, Mapping):
+            raise ValueError("human input decision must be an object")
+        if data.get("interaction_id") != interaction_id:
+            raise ValueError("human input decision ID does not match request")
+        if type(data.get("accepted")) is not bool:
+            raise ValueError("human input decision must contain a boolean")
+        decided_at = float(data.get("decided_at", time.time()))
+        if not math.isfinite(decided_at):
+            raise ValueError("human input decision timestamp must be finite")
+        rejection_reason = data.get("rejection_reason")
+        if rejection_reason is not None and _valid_reason(rejection_reason):
+            raise ValueError("invalid rejection reason")
+        response = _copy_bounded_json(data.get("response"))
+        if response.is_err():
+            raise ValueError(response.unwrap_err()["message"])
+        return cls(
+            interaction_id=interaction_id,
+            accepted=data["accepted"],
+            decided_at=decided_at,
+            response=response.unwrap(),
+            rejection_reason=rejection_reason,
+        )
+
+
+@dataclass(frozen=True)
+class HumanInputRound:
+    """Immutable completed round retained for a multi-round interaction."""
+
+    round_index: int
+    prompt: str
+    input_schema: Dict[str, Any]
+    status: str
+    decision: HumanInputDecision
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "round_index": self.round_index,
+            "prompt": self.prompt,
+            "input_schema": _copy_bounded_json(self.input_schema).unwrap(),
+            "status": self.status,
+            "decision": self.decision.to_dict(),
+        }
+
+    @classmethod
+    def from_dict(
+        cls, data: Mapping[str, Any], interaction_id: str
+    ) -> "HumanInputRound":
+        if not isinstance(data, Mapping):
+            raise ValueError("human input round must be an object")
+        round_index = data.get("round_index")
+        if (
+            not isinstance(round_index, int)
+            or isinstance(round_index, bool)
+            or round_index < 0
+            or round_index >= _MAX_ROUNDS
+        ):
+            raise ValueError("invalid human input round index")
+        if _valid_prompt(data.get("prompt")):
+            raise ValueError("invalid human input round prompt")
+        schema = _copy_bounded_json(data.get("input_schema"))
+        if schema.is_err() or not isinstance(schema.unwrap(), dict):
+            raise ValueError("human input round schema must be a bounded object")
+        status = data.get("status")
+        if status not in {"responded", "rejected", "consumed"}:
+            raise ValueError("invalid human input round status")
+        decision = cls._decision(data.get("decision"), interaction_id)
+        if status == "responded" and not decision.accepted:
+            raise ValueError("responded human input round must be accepted")
+        if status == "rejected" and decision.accepted:
+            raise ValueError("rejected human input round must be rejected")
+        return cls(
+            round_index=round_index,
+            prompt=data["prompt"],
+            input_schema=schema.unwrap(),
+            status=status,
+            decision=decision,
+        )
+
+    @staticmethod
+    def _decision(data: Any, interaction_id: str) -> HumanInputDecision:
+        if data is None:
+            raise ValueError("human input round must contain a decision")
+        return HumanInputDecision.from_dict(data, interaction_id)
+
 
 @dataclass(frozen=True)
 class HumanInputRequest:
@@ -201,6 +303,9 @@ class HumanInputRequest:
     created_at: float = 0.0
     updated_at: float = 0.0
     decision: Optional[HumanInputDecision] = None
+    max_rounds: int = 1
+    round_index: int = 0
+    history: tuple[HumanInputRound, ...] = ()
 
     def __post_init__(self) -> None:
         now = time.time()
@@ -220,6 +325,9 @@ class HumanInputRequest:
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "decision": self.decision.to_dict() if self.decision else None,
+            "max_rounds": self.max_rounds,
+            "round_index": self.round_index,
+            "history": [round_item.to_dict() for round_item in self.history],
         }
 
     @classmethod
@@ -246,30 +354,32 @@ class HumanInputRequest:
         status = data.get("status", "pending")
         if status not in _STATUSES:
             raise ValueError("invalid human input status")
+        max_rounds = data.get("max_rounds", 1)
+        if _valid_max_rounds(max_rounds):
+            raise ValueError("invalid max_rounds")
+        round_index = data.get("round_index", 0)
+        if (
+            not isinstance(round_index, int)
+            or isinstance(round_index, bool)
+            or not 0 <= round_index < max_rounds
+        ):
+            raise ValueError("invalid human input round index")
+        raw_history = data.get("history", [])
+        if not isinstance(raw_history, list) or len(raw_history) > _MAX_ROUNDS - 1:
+            raise ValueError("invalid human input history")
+        history = tuple(
+            HumanInputRound.from_dict(item, data["interaction_id"])
+            for item in raw_history
+        )
+        if len(history) != round_index:
+            raise ValueError("human input history does not match round index")
+        if any(item.round_index != index for index, item in enumerate(history)):
+            raise ValueError("human input history is not ordered")
         decision_data = data.get("decision")
         decision: Optional[HumanInputDecision] = None
         if decision_data is not None:
-            if not isinstance(decision_data, Mapping):
-                raise ValueError("human input decision must be an object or null")
-            if decision_data.get("interaction_id") != data["interaction_id"]:
-                raise ValueError("human input decision ID does not match request")
-            if type(decision_data.get("accepted")) is not bool:
-                raise ValueError("human input decision must contain a boolean")
-            decided_at = float(decision_data.get("decided_at", time.time()))
-            if not math.isfinite(decided_at):
-                raise ValueError("human input decision timestamp must be finite")
-            rejection_reason = decision_data.get("rejection_reason")
-            if rejection_reason is not None and _valid_reason(rejection_reason):
-                raise ValueError("invalid rejection reason")
-            response = _copy_bounded_json(decision_data.get("response"))
-            if response.is_err():
-                raise ValueError(response.unwrap_err()["message"])
-            decision = HumanInputDecision(
-                interaction_id=data["interaction_id"],
-                accepted=decision_data["accepted"],
-                decided_at=decided_at,
-                response=response.unwrap(),
-                rejection_reason=rejection_reason,
+            decision = HumanInputDecision.from_dict(
+                decision_data, data["interaction_id"]
             )
         if status == "pending" and decision is not None:
             raise ValueError("pending human input cannot contain a decision")
@@ -293,6 +403,9 @@ class HumanInputRequest:
             created_at=created_at,
             updated_at=updated_at,
             decision=decision,
+            max_rounds=max_rounds,
+            round_index=round_index,
+            history=history,
         )
 
 
@@ -309,6 +422,8 @@ class HumanInputNotification:
     status: str
     created_at: float
     updated_at: float
+    round_index: int
+    max_rounds: int
     actor_id: Optional[str] = None
 
     @classmethod
@@ -332,6 +447,8 @@ class HumanInputNotification:
             status=request.status,
             created_at=request.created_at,
             updated_at=request.updated_at,
+            round_index=request.round_index,
+            max_rounds=request.max_rounds,
             actor_id=actor_id,
         )
 
@@ -346,6 +463,8 @@ class HumanInputNotification:
             "status": self.status,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
+            "round_index": self.round_index,
+            "max_rounds": self.max_rounds,
             "actor_id": self.actor_id,
         }
 
@@ -486,6 +605,15 @@ class HumanInputStore(Protocol):
         actor_id: Optional[str] = None,
     ) -> Result[HumanInputRequest, Error]: ...
 
+    def continue_round(
+        self,
+        interaction_id: str,
+        prompt: str,
+        input_schema: Mapping[str, Any],
+        *,
+        actor_id: Optional[str] = None,
+    ) -> Result[HumanInputRequest, Error]: ...
+
     def consume(self, interaction_id: str) -> Result[HumanInputRequest, Error]: ...
 
     def list_pending(
@@ -533,6 +661,68 @@ def _validate_limit(limit: int) -> Optional[Error]:
             "HUMAN_INPUT_LIMIT_INVALID", "Human input list limit is out of bounds."
         )
     return None
+
+
+def _continue_request(
+    request: HumanInputRequest,
+    prompt: Any,
+    input_schema: Any,
+) -> Result[HumanInputRequest, Error]:
+    if request.status not in {"responded", "rejected", "consumed"}:
+        return Result.err(
+            _error(
+                "HUMAN_INPUT_ROUND_CONFLICT",
+                "Only a decided human input request can continue to another round.",
+                status=request.status,
+            )
+        )
+    next_round = request.round_index + 1
+    if next_round >= request.max_rounds:
+        return Result.err(
+            _error(
+                "HUMAN_INPUT_ROUND_LIMIT",
+                "The human input interaction has reached its maximum round count.",
+                max_rounds=request.max_rounds,
+            )
+        )
+    prompt_error = _valid_prompt(prompt)
+    if prompt_error:
+        return Result.err(prompt_error)
+    schema = _copy_bounded_json(input_schema)
+    if schema.is_err() or not isinstance(schema.unwrap(), dict):
+        return Result.err(
+            _error(
+                "HUMAN_INPUT_SCHEMA_INVALID",
+                "The next human input schema must be a bounded JSON object.",
+            )
+        )
+    if request.decision is None:
+        return Result.err(
+            _error(
+                "HUMAN_INPUT_ROUND_CONFLICT",
+                "A completed human input round must contain a decision.",
+            )
+        )
+    history_item = HumanInputRound(
+        round_index=request.round_index,
+        prompt=request.prompt,
+        input_schema=_copy_bounded_json(request.input_schema).unwrap(),
+        status=request.status,
+        decision=request.decision,
+    )
+    now = time.time()
+    return Result.ok(
+        replace(
+            request,
+            prompt=prompt,
+            input_schema=schema.unwrap(),
+            status="pending",
+            updated_at=now,
+            decision=None,
+            round_index=next_round,
+            history=request.history + (history_item,),
+        )
+    )
 
 
 class InMemoryHumanInputStore:
@@ -588,6 +778,7 @@ class InMemoryHumanInputStore:
                     and existing.tool_call_id == candidate.tool_call_id
                     and existing.prompt == candidate.prompt
                     and existing.input_schema == candidate.input_schema
+                    and existing.max_rounds == candidate.max_rounds
                 )
                 if not same_request:
                     return Result.err(
@@ -632,6 +823,42 @@ class InMemoryHumanInputStore:
             reason=reason,
             actor_id=actor_id,
         )
+
+    def continue_round(
+        self,
+        interaction_id: str,
+        prompt: str,
+        input_schema: Mapping[str, Any],
+        *,
+        actor_id: Optional[str] = None,
+    ) -> Result[HumanInputRequest, Error]:
+        identifier_error = _valid_identifier(interaction_id, "interaction_id")
+        if identifier_error:
+            return Result.err(identifier_error)
+        with self._lock:
+            request = self._requests.get(interaction_id)
+            if request is None:
+                return Result.err(
+                    _error(
+                        "HUMAN_INPUT_NOT_FOUND", "Human input request was not found."
+                    )
+                )
+            authorized = _authorize_host(
+                self._authorizer, actor_id, "continue", request
+            )
+            if authorized.is_err():
+                return Result.err(authorized.unwrap_err())
+            continued = _continue_request(request, prompt, input_schema)
+            if continued.is_err():
+                return Result.err(continued.unwrap_err())
+            next_request = continued.unwrap()
+            self._requests[interaction_id] = next_request
+            notified = _notify_host(
+                self._notifier, next_request, "continued", actor_id=actor_id
+            )
+            if notified.is_err():
+                return Result.err(notified.unwrap_err())
+            return Result.ok(_copy_request(next_request))
 
     def _decide(
         self,
@@ -885,6 +1112,7 @@ class FileHumanInputStore:
                         and existing.tool_call_id == candidate.tool_call_id
                         and existing.prompt == candidate.prompt
                         and existing.input_schema == candidate.input_schema
+                        and existing.max_rounds == candidate.max_rounds
                     )
                     if not same_request:
                         return Result.err(
@@ -937,6 +1165,64 @@ class FileHumanInputStore:
             reason=reason,
             actor_id=actor_id,
         )
+
+    def continue_round(
+        self,
+        interaction_id: str,
+        prompt: str,
+        input_schema: Mapping[str, Any],
+        *,
+        actor_id: Optional[str] = None,
+    ) -> Result[HumanInputRequest, Error]:
+        return self._with_record_lease(
+            interaction_id,
+            "continue",
+            lambda: self._continue_round_without_lease(
+                interaction_id, prompt, input_schema, actor_id=actor_id
+            ),
+        )
+
+    def _continue_round_without_lease(
+        self,
+        interaction_id: str,
+        prompt: str,
+        input_schema: Mapping[str, Any],
+        *,
+        actor_id: Optional[str] = None,
+    ) -> Result[HumanInputRequest, Error]:
+        try:
+            with self._lock:
+                request = self._read_unlocked(interaction_id)
+                if request is None:
+                    return Result.err(
+                        _error(
+                            "HUMAN_INPUT_NOT_FOUND",
+                            "Human input request was not found.",
+                        )
+                    )
+                authorized = _authorize_host(
+                    self._authorizer, actor_id, "continue", request
+                )
+                if authorized.is_err():
+                    return Result.err(authorized.unwrap_err())
+                continued = _continue_request(request, prompt, input_schema)
+                if continued.is_err():
+                    return Result.err(continued.unwrap_err())
+                next_request = self._write_unlocked(continued.unwrap())
+                notified = _notify_host(
+                    self._notifier, next_request, "continued", actor_id=actor_id
+                )
+                if notified.is_err():
+                    return Result.err(notified.unwrap_err())
+                return Result.ok(next_request)
+        except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            return Result.err(
+                _error(
+                    "HUMAN_INPUT_SAVE_ERROR",
+                    "Failed to save the next human input round.",
+                    reason=str(exc)[:256],
+                )
+            )
 
     def _decide(
         self,

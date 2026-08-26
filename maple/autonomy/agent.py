@@ -21,7 +21,7 @@ import time
 import uuid
 from dataclasses import dataclass, field, replace
 from functools import partial
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Type
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple, Type
 
 from ..agent.agent import Agent
 from ..agent.config import Config
@@ -324,6 +324,34 @@ class AutonomousAgent(Agent):
         if actor_id is None:
             return self._human_input_store.reject(interaction_id, reason)
         return self._human_input_store.reject(interaction_id, reason, actor_id=actor_id)
+
+    def continue_human_input(
+        self,
+        interaction_id: str,
+        prompt: str,
+        input_schema: Mapping[str, Any],
+        *,
+        actor_id: Optional[str] = None,
+    ) -> Result[HumanInputRequest, Dict[str, Any]]:
+        """Open the next bounded round for a completed human-input request."""
+        if self._human_input_store is None:
+            return Result.err(
+                {
+                    "errorType": "HUMAN_INPUT_STORE_UNAVAILABLE",
+                    "message": "No durable human input store is configured.",
+                }
+            )
+        continue_round = getattr(self._human_input_store, "continue_round", None)
+        if not callable(continue_round):
+            return Result.err(
+                {
+                    "errorType": "HUMAN_INPUT_MULTI_ROUND_UNSUPPORTED",
+                    "message": "The configured human input store does not support multi-round input.",
+                }
+            )
+        if actor_id is None:
+            return continue_round(interaction_id, prompt, input_schema)
+        return continue_round(interaction_id, prompt, input_schema, actor_id=actor_id)
 
     def decide_approval(
         self,
@@ -1277,8 +1305,23 @@ class AutonomousAgent(Agent):
                 "The operator rejected the human input request.",
                 reason=decision.rejection_reason,
             )
+        response: Any = decision.response
+        if request.history:
+            response = {
+                "response": decision.response,
+                "round_index": request.round_index,
+                "history": [
+                    {
+                        "round_index": item.round_index,
+                        "accepted": item.decision.accepted,
+                        "response": item.decision.response,
+                        "rejection_reason": item.decision.rejection_reason,
+                    }
+                    for item in request.history
+                ],
+            }
         try:
-            content = json.dumps(decision.response, ensure_ascii=False, allow_nan=False)
+            content = json.dumps(response, ensure_ascii=False, allow_nan=False)
         except (TypeError, ValueError):
             return AutonomousAgent._human_input_error(
                 request.tool_call_id,
@@ -1672,7 +1715,13 @@ class AutonomousAgent(Agent):
         arguments = tool_call.arguments
         prompt = arguments.get("prompt")
         input_schema = arguments.get("input_schema", {})
-        if not isinstance(prompt, str) or not isinstance(input_schema, dict):
+        max_rounds = arguments.get("max_rounds", 1)
+        if (
+            not isinstance(prompt, str)
+            or not isinstance(input_schema, dict)
+            or not isinstance(max_rounds, int)
+            or isinstance(max_rounds, bool)
+        ):
             return self._human_input_error(
                 tool_call.id,
                 "HUMAN_INPUT_INVALID",
@@ -1686,6 +1735,7 @@ class AutonomousAgent(Agent):
                 tool_call_id=tool_call.id,
                 prompt=prompt,
                 input_schema=input_schema,
+                max_rounds=max_rounds,
             )
             created = self._human_input_store.create(request)
         except (TypeError, ValueError):
