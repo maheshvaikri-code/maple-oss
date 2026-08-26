@@ -44,6 +44,9 @@ The feature program now includes:
 - optional bounded Protobuf serialization through a generic `Struct` envelope,
   with preserved MAPLE special-value handling and explicit unavailable,
   malformed, and size-limit failures.
+- opt-in per-goal token accounting and hard budgets across synchronous and
+  asynchronous ReAct reasoning/reflection, with fail-closed provider usage
+  validation before tool side effects (ADR-025).
 
 Slice-level review artifacts are filed in `docs/reviews/` and corresponding QA
 artifacts in `docs/qa/`. No website, cloud, external publication, license, or
@@ -179,9 +182,23 @@ Doctor:
   items, reached the Doctrine gold phase, and emitted six gold-test completions
   before bounded interruption without failure output or a pytest summary.
 
+## Slice 73 revalidation
+
+- The agent/session regression reports `30 passed in 0.31s`.
+- `Goal.token_usage` is additive and preserves existing positional `Goal` and
+  `AutonomousConfig` construction while aggregating provider usage across sync,
+  async, and reflection responses.
+- A configured `max_total_tokens` requires valid provider usage and returns
+  structured `TOKEN_USAGE_UNAVAILABLE`, `TOKEN_USAGE_INVALID`, or
+  `TOKEN_BUDGET_EXCEEDED` errors. Budget overflow is checked before tool
+  execution; sync and async regressions prove handler side effects are absent.
+- Changed-file Ruff, Black, isort, and mypy checks pass. No dependency or
+  external integration was introduced. Exact full-suite and fresh-context
+  verification remain open.
+
 ## Verdict
 
-**Feature review:** PASS for the twenty-one implemented capability slices.
+**Feature review:** PASS for the twenty-two implemented capability slices.
 **Publish readiness:** NOT YET APPROVED. A release manager should close the
 open full-suite and fresh-verifier gates before publishing. The remaining
 Bandit findings are documented low-severity legacy debt; external publication

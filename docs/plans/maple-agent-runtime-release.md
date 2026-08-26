@@ -83,6 +83,7 @@
 | 70 | Typed model output boundary | Backend / QA / Release | autonomy contracts, AutonomousConfig, public exports, contract/agent tests, changelog, review/QA artifacts | Focused contract/agent regression, full autonomy regression, Ruff, Black/isort, mypy, compile, package, doctor, diff check | done: code commit `bf2ca4a`; full autonomy regression `210 passed in 3.37s`; typed-output focused regression included in `28 passed in 0.35s`; wheel/sdist and Twine checks pass; all static/readiness gates pass |
 | 71 | Typed tool input/output contracts | Backend / QA / Release | autonomy contracts/tools, public exports, README/API docs, contract/tool/agent tests, changelog, review/QA artifacts | Typed schema publication, input/output validation, handler side-effect protection, focused/full autonomy regression, static/package/doctor gates | done: code commit `ded4477`; public docs commit `9236bc4`; focused contract/tool/agent regression `43 passed in 0.37s`; full autonomy regression `212 passed in 3.26s`; mypy/Ruff/Black/isort/compile, wheel/sdist, Twine, and doctor gates pass |
 | 72 | Optional bounded Protobuf serialization | Backend / Interop / QA / Release | core serializer, serialization tests, ADR-024, README/API docs, changelog, review/QA artifacts | Protobuf round trip, malformed/oversized input, oversized output, unavailable dependency, core/autonomy regression, static/package/doctor gates | done: code commit `2b8bb57`; core/autonomy regression `240 passed in 3.37s`; Protobuf tests `28 passed in 0.28s`; mypy/Ruff/Black/isort/compile, wheel/sdist, Twine, and doctor gates pass; no dependency added |
+| 73 | Bounded per-goal token accounting and hard budget | Backend / QA / Security / Release | autonomy agent, token-budget regressions, ADR-025, README/API docs, changelog, review/QA artifacts | Sync/async usage aggregation, reflection accounting, invalid/missing usage, budget-overrun side-effect protection, static/package/doctor gates | done: code commit `2328b92`; focused agent/session regression `30 passed in 0.31s`; changed-file Ruff/Black/isort/mypy pass; docs and release evidence filed; no dependency added |
 
 ## Threat sketch
 
@@ -299,3 +300,10 @@ failure traceback or pytest summary, so the full-suite gate remains open.
 `1278` tests, reached `90%`, and emitted six Doctrine gold-test completions
 before bounded interruption. No failure output or pytest summary was produced;
 the exact full-suite gate remains open.
+
+2026-08-25 bounded token-budget closure: commit `2328b92` adds opt-in
+`AutonomousConfig.max_total_tokens` enforcement and aggregate `Goal.token_usage`
+across synchronous/asynchronous ReAct reasoning and reflection. The focused
+agent/session regression reports `30 passed in 0.31s`; missing, malformed, and
+over-budget usage paths fail closed before tool side effects. Public docs and
+ADR-025 are filed; no new dependency, publication, or website change was made.

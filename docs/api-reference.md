@@ -614,6 +614,30 @@ typed_tool = Tool(
 typed = parse_typed_output('{"answer":"ready"}', LookupResult)
 ```
 
+### Per-goal token accounting and budgets
+
+`Goal.token_usage` aggregates provider-reported prompt, completion, and total
+tokens for the ReAct goal. Set `AutonomousConfig.max_total_tokens` to enforce
+an opt-in hard budget in both `pursue_goal` and `pursue_goal_async`:
+
+```python
+config = AutonomousConfig(
+    llm=llm_config,
+    max_total_tokens=12_000,
+)
+goal_result = agent.pursue_goal("Complete the bounded task")
+if goal_result.is_ok():
+    goal = goal_result.unwrap()
+    print(goal.token_usage.total_tokens)
+```
+
+When a budget is configured, every reasoning and reflection response must
+include valid provider usage data. Missing or malformed usage fails closed with
+`TOKEN_USAGE_UNAVAILABLE` or `TOKEN_USAGE_INVALID`; exceeding the budget
+returns `TOKEN_BUDGET_EXCEEDED` before the response's tools execute. With the
+default `None`, existing provider behavior is unchanged. Standalone
+`decompose_goal` calls are outside this per-goal ReAct budget.
+
 ## Retrieval and Source References (preview)
 
 The retrieval contract keeps document identity, source citations, chunk offsets,

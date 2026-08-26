@@ -58,7 +58,7 @@ Most agent frameworks give you either **infrastructure** (messaging, security, f
 - **Three-Tier Memory** — Working memory (context window), episodic memory (task history), semantic memory (learned facts). LLM-assisted summarization when context fills up.
 - **Multi-Agent Orchestration** — Form teams by capability, execute via supervisor delegation or consensus voting.
 - **MCP Tool Discovery** — Discover live `tools/list` descriptors over bounded Streamable HTTP and use approved external tools as native MAPLE tools; the legacy URL-only helper remains offline for compatibility.
-- **Observability** — Full decision traces, agent snapshots, token usage tracking.
+- **Observability** — Full decision traces, agent snapshots, and per-goal token usage tracking with optional hard budgets.
 - **Workflow Runtime (preview)** — Define validated workflows with stable run IDs, JSON-safe node-boundary checkpoints, bounded fan-out/fan-in, interruption, conditional routing, local file-backed resume, bounded in-process history inspection, and opt-in crash-window output recovery.
 
 ### Production Infrastructure
@@ -227,6 +227,7 @@ agent = AutonomousAgent(
     AutonomousConfig(
         llm=LLMConfig(provider="openai", model="gpt-4", api_key="sk-..."),
         max_reasoning_steps=10,
+        max_total_tokens=12000,  # optional hard budget for this goal
     ),
 )
 agent.register_tool(calc_tool)
@@ -446,6 +447,7 @@ maple/
 | Bounded workflow fan-out/fan-in | Preview | Built-in | Partial | Partial | No | No |
 | Tool framework | Built-in | Built-in | Built-in | Built-in | No | Built-in |
 | Typed I/O + guardrails | Preview | Built-in | Partial | Partial | No | No |
+| Per-goal token accounting/budget | Built-in | Partial | Partial | Partial | No | No |
 | Memory system | Built-in | Partial | Partial | No | No | No |
 | MCP tool discovery | Built-in | No | No | No | No | Native |
 | Protocol adapters | 10 adapters | No | No | No | No | No |

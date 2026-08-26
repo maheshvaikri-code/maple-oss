@@ -10,6 +10,11 @@
 
 ### Additions
 
+- **Per-goal token accounting and hard budgets**: autonomous goals now expose
+  aggregate provider token usage through `Goal.token_usage`, with optional
+  `AutonomousConfig.max_total_tokens` enforcement across sync/async reasoning
+  and reflection. Missing or malformed usage and budget overruns fail closed
+  before tool side effects; no new dependency was added.
 - **Optional bounded Protobuf serialization**: implemented both directions of
   `SerializationFormat.PROTOBUF` using an optional `google.protobuf.Struct`
   envelope. MAPLE preserves its existing JSON-compatible special-value handling,

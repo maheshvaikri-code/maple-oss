@@ -30,6 +30,7 @@
 | Repository-wide lint | PASS | Slice 69 closes the remaining E402 import-boundary debt; broad `ruff check maple` reports zero findings. |
 | Typed tool input/output boundary | PASS | 43 focused contract/tool/agent tests and 212 full-autonomy tests cover model-derived schemas, pre-handler input rejection, normalized handler arguments, validated outputs, and invalid-result failure. |
 | Optional Protobuf serialization boundary | PASS | 28 core serialization tests cover round-trip special values, malformed envelopes, inbound/outbound 1 MiB limits, and unavailable-dependency failure; core/autonomy regression reports 240 passed. |
+| Per-goal token accounting/budget boundary | PASS | 30 focused agent/session tests cover sync/async aggregation, reflection accounting, invalid/missing usage, positive-budget validation, and budget-overrun side-effect protection. |
 | Independent review | OPEN | Fresh verifier sessions are unavailable in this tool context. |
 | External publish / website | NOT RUN | Explicitly outside current authorization and scope. |
 
@@ -164,7 +165,22 @@
 - Exact-current post-Slice-72 run on `2b8bb57` collected `1278` items, reached
   the Doctrine gold phase, and emitted six gold-test completions before the
   bounded session was interrupted. No failure output or pytest summary was
-  produced; this is not a full-suite pass.
+produced; this is not a full-suite pass.
+
+## Slice 73 revalidation
+
+- Agent/session regression reports `30 passed in 0.31s`.
+- `Goal.token_usage` aggregates provider prompt, completion, and total tokens
+  across sync/async reasoning and reflection responses.
+- `AutonomousConfig.max_total_tokens` validates positive integer budgets and
+  fails closed for missing or malformed provider usage. Budget overruns return
+  `TOKEN_BUDGET_EXCEEDED` before the current response's tools execute; sync and
+  async tests verify no handler side effect occurs.
+- Changed-file Ruff, Black, isort, and mypy checks pass. No new dependency was
+  added; ADR-025, public docs, changelog, QA, and review evidence are filed.
+- The exact repository-wide suite was not rerun after Slice 73; the latest
+  bounded run remains the post-Slice-72 attempt recorded above. Full-suite and
+  fresh independent-verifier gates remain open.
 
 ## Security conclusions
 
@@ -181,7 +197,7 @@
 ## Release decision
 
 **QA status: CONDITIONAL / NOT PUBLISH-READY.** The implementation is
-feature-complete for the twenty-one implemented capability slices, the built wheel
+feature-complete for the twenty-two implemented capability slices, the built wheel
 passes a clean-venv doctor smoke test, and the isolated dependency audit is
 clean. The release gate must remain open for the exact full-suite and
 fresh-verifier checks. No external release action was taken.
