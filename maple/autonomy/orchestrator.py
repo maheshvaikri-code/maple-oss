@@ -17,15 +17,19 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 
 import asyncio
 import logging
+import math
+import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Awaitable, Dict, List, Optional, Tuple, TypeVar
 
+from .execution import CancellationToken
 from ..core.result import Result
 from ..discovery.registry import AgentRegistry
 
 logger = logging.getLogger(__name__)
+T = TypeVar("T")
 
 
 @dataclass
@@ -77,6 +81,96 @@ class AgentOrchestrator:
             }
         )
 
+    @staticmethod
+    def _orchestration_error(error_type: str, message: str) -> Dict[str, Any]:
+        """Build a stable public error for orchestration-level interruption."""
+        return {"errorType": error_type, "message": message}
+
+    @classmethod
+    def _resolve_async_bounds(
+        cls,
+        cancellation: Optional[CancellationToken],
+        timeout_seconds: Optional[float],
+    ) -> Result[Tuple[Optional[CancellationToken], Optional[float]], Dict[str, Any]]:
+        """Validate caller bounds and convert a relative timeout to a deadline."""
+        if timeout_seconds is not None and (
+            isinstance(timeout_seconds, bool)
+            or not isinstance(timeout_seconds, (int, float))
+            or not math.isfinite(timeout_seconds)
+            or timeout_seconds <= 0
+        ):
+            return Result.err(
+                cls._orchestration_error(
+                    "ORCHESTRATION_CONFIG_INVALID",
+                    "timeout_seconds must be finite and positive.",
+                )
+            )
+        if cancellation is not None and not isinstance(cancellation, CancellationToken):
+            return Result.err(
+                cls._orchestration_error(
+                    "ORCHESTRATION_CONFIG_INVALID",
+                    "cancellation must be a CancellationToken.",
+                )
+            )
+        deadline = (
+            None if timeout_seconds is None else time.monotonic() + timeout_seconds
+        )
+        return Result.ok((cancellation, deadline))
+
+    @staticmethod
+    def _bound_error(
+        cancellation: Optional[CancellationToken], deadline: Optional[float]
+    ) -> Optional[Dict[str, Any]]:
+        """Return the first active caller bound, if any."""
+        if cancellation is not None and cancellation.is_cancelled():
+            return AgentOrchestrator._orchestration_error(
+                "ORCHESTRATION_CANCELLED", "Orchestration was cancelled."
+            )
+        if deadline is not None and time.monotonic() >= deadline:
+            return AgentOrchestrator._orchestration_error(
+                "ORCHESTRATION_TIMEOUT", "Orchestration exceeded its timeout."
+            )
+        return None
+
+    @classmethod
+    async def _await_with_bounds(
+        cls,
+        awaitable: Awaitable[T],
+        cancellation: Optional[CancellationToken],
+        deadline: Optional[float],
+    ) -> Result[T, Dict[str, Any]]:
+        """Await one operation while observing cancellation and a deadline."""
+        task = asyncio.ensure_future(awaitable)
+        try:
+            while not task.done():
+                error = cls._bound_error(cancellation, deadline)
+                if error is not None:
+                    task.cancel()
+                    await asyncio.gather(task, return_exceptions=True)
+                    return Result.err(error)
+                remaining = (
+                    None if deadline is None else max(0.0, deadline - time.monotonic())
+                )
+                poll_interval = 0.05 if cancellation is not None else remaining
+                if poll_interval is not None:
+                    poll_interval = min(poll_interval, 0.05)
+                await asyncio.wait({task}, timeout=poll_interval)
+            return Result.ok(task.result())
+        except asyncio.CancelledError:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+            raise
+
+    @classmethod
+    async def _cancel_pending(
+        cls, pending: "set[asyncio.Task[Tuple[str, Result[Any, Dict[str, Any]]]]]"
+    ) -> None:
+        """Cancel and drain child tasks before returning to the caller."""
+        for task in pending:
+            task.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+
     def _pursue_agents(
         self, assignments: List[Tuple[str, TeamMember, str]]
     ) -> Dict[str, Result[Any, Dict[str, Any]]]:
@@ -105,9 +199,13 @@ class AgentOrchestrator:
         return results
 
     async def _pursue_agents_async(
-        self, assignments: List[Tuple[str, TeamMember, str]]
-    ) -> Dict[str, Result[Any, Dict[str, Any]]]:
-        """Run independent agent goals asynchronously with a concurrency cap."""
+        self,
+        assignments: List[Tuple[str, TeamMember, str]],
+        *,
+        cancellation: Optional[CancellationToken] = None,
+        deadline: Optional[float] = None,
+    ) -> Result[Dict[str, Result[Any, Dict[str, Any]]], Dict[str, Any]]:
+        """Run async goals with a cap and scoped cancellation/deadline handling."""
         semaphore = asyncio.Semaphore(self.max_parallel_agents)
         loop = asyncio.get_running_loop()
 
@@ -115,6 +213,9 @@ class AgentOrchestrator:
             key: str, member: TeamMember, description: str
         ) -> Tuple[str, Result[Any, Dict[str, Any]]]:
             async with semaphore:
+                bound_error = self._bound_error(cancellation, deadline)
+                if bound_error is not None:
+                    return key, Result.err(bound_error)
                 try:
                     pursue_async = getattr(member.agent, "pursue_goal_async", None)
                     if pursue_async is not None:
@@ -127,13 +228,38 @@ class AgentOrchestrator:
                 except Exception as error:
                     return key, self._agent_error(member, error)
 
-        pairs = await asyncio.gather(
-            *[
-                run_one(key, member, description)
-                for key, member, description in assignments
-            ]
-        )
-        return dict(pairs)
+        tasks = {
+            asyncio.create_task(run_one(key, member, description))
+            for key, member, description in assignments
+        }
+        pending = set(tasks)
+        results: Dict[str, Result[Any, Dict[str, Any]]] = {}
+        try:
+            while pending:
+                bound_error = self._bound_error(cancellation, deadline)
+                if bound_error is not None:
+                    await self._cancel_pending(pending)
+                    return Result.err(bound_error)
+                remaining = (
+                    None if deadline is None else max(0.0, deadline - time.monotonic())
+                )
+                poll_interval = 0.05 if cancellation is not None else remaining
+                if poll_interval is not None:
+                    poll_interval = min(poll_interval, 0.05)
+                done, pending = await asyncio.wait(
+                    pending,
+                    timeout=poll_interval,
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                if not done:
+                    continue
+                for task in done:
+                    key, result = task.result()
+                    results[key] = result
+            return Result.ok(results)
+        except asyncio.CancelledError:
+            await self._cancel_pending(pending)
+            raise
 
     def form_team(
         self,
@@ -412,8 +538,24 @@ class AgentOrchestrator:
         self,
         team_id: str,
         goal_description: str,
+        *,
+        cancellation: Optional[CancellationToken] = None,
+        timeout_seconds: Optional[float] = None,
     ) -> Result[Dict[str, Any], Dict[str, Any]]:
-        """Async supervised execution with bounded concurrent worker goals."""
+        """Async supervised execution with bounded, cancellable worker goals.
+
+        ``timeout_seconds`` is a total request budget covering decomposition,
+        worker fan-out, and result collection. Cancellation is cooperative:
+        native async agents are canceled as tasks, while sync-only agents
+        running in an executor may continue until their own call returns.
+        """
+        bounds = self._resolve_async_bounds(cancellation, timeout_seconds)
+        if bounds.is_err():
+            return Result.err(bounds.unwrap_err())
+        cancellation, deadline = bounds.unwrap()
+        bound_error = self._bound_error(cancellation, deadline)
+        if bound_error is not None:
+            return Result.err(bound_error)
         team = self._teams.get(team_id)
         if not team:
             return Result.err(
@@ -444,14 +586,23 @@ class AgentOrchestrator:
 
         goal = Goal(goal_id=str(uuid.uuid4()), description=goal_description)
         loop = asyncio.get_running_loop()
-        decompose_result = await loop.run_in_executor(
-            None, supervisor.agent.decompose_goal, goal
+        decompose_call = await self._await_with_bounds(
+            loop.run_in_executor(None, supervisor.agent.decompose_goal, goal),
+            cancellation,
+            deadline,
         )
+        if decompose_call.is_err():
+            return Result.err(decompose_call.unwrap_err())
+        decompose_result = decompose_call.unwrap()
         if decompose_result.is_err():
             fallback = await self._pursue_agents_async(
-                [("fallback", supervisor, goal_description)]
+                [("fallback", supervisor, goal_description)],
+                cancellation=cancellation,
+                deadline=deadline,
             )
-            result = fallback["fallback"]
+            if fallback.is_err():
+                return Result.err(fallback.unwrap_err())
+            result = fallback.unwrap()["fallback"]
             if result.is_ok():
                 goal_obj = result.unwrap()
                 return Result.ok(
@@ -475,13 +626,18 @@ class AgentOrchestrator:
             [
                 (sg_id, assignment["worker"], assignment["sub_goal"].description)
                 for sg_id, assignment in assignments.items()
-            ]
+            ],
+            cancellation=cancellation,
+            deadline=deadline,
         )
+        if worker_results.is_err():
+            return Result.err(worker_results.unwrap_err())
+        worker_result_map = worker_results.unwrap()
         results = {}
         for sg_id, assignment in assignments.items():
             worker_agent = assignment["worker"].agent
             sub_goal = assignment["sub_goal"]
-            worker_result = worker_results[sg_id]
+            worker_result = worker_result_map[sg_id]
             if worker_result.is_ok():
                 goal_obj = worker_result.unwrap()
                 results[sg_id] = {
@@ -517,8 +673,18 @@ class AgentOrchestrator:
         self,
         team_id: str,
         question: str,
+        *,
+        cancellation: Optional[CancellationToken] = None,
+        timeout_seconds: Optional[float] = None,
     ) -> Result[Dict[str, Any], Dict[str, Any]]:
-        """Async consensus execution with bounded concurrent member goals."""
+        """Async consensus execution with bounded, cancellable member goals."""
+        bounds = self._resolve_async_bounds(cancellation, timeout_seconds)
+        if bounds.is_err():
+            return Result.err(bounds.unwrap_err())
+        cancellation, deadline = bounds.unwrap()
+        bound_error = self._bound_error(cancellation, deadline)
+        if bound_error is not None:
+            return Result.err(bound_error)
         team = self._teams.get(team_id)
         if not team:
             return Result.err(
@@ -541,10 +707,17 @@ class AgentOrchestrator:
             (f"member-{index}", member, question)
             for index, member in enumerate(all_members)
         ]
-        member_results = await self._pursue_agents_async(member_assignments)
+        member_results = await self._pursue_agents_async(
+            member_assignments,
+            cancellation=cancellation,
+            deadline=deadline,
+        )
+        if member_results.is_err():
+            return Result.err(member_results.unwrap_err())
+        member_result_map = member_results.unwrap()
         responses = {}
         for index, member in enumerate(all_members):
-            result = member_results[f"member-{index}"]
+            result = member_result_map[f"member-{index}"]
             if result.is_ok():
                 goal_obj = result.unwrap()
                 responses[member.agent.agent_id] = {
@@ -571,11 +744,16 @@ class AgentOrchestrator:
             "Synthesize these into a single best answer."
         )
         synthesis_result = await self._pursue_agents_async(
-            [("synthesis", synthesizer, synthesis_goal)]
+            [("synthesis", synthesizer, synthesis_goal)],
+            cancellation=cancellation,
+            deadline=deadline,
         )
+        if synthesis_result.is_err():
+            return Result.err(synthesis_result.unwrap_err())
+        synthesis_result_map = synthesis_result.unwrap()
         synthesis = None
-        if synthesis_result["synthesis"].is_ok():
-            synthesis = synthesis_result["synthesis"].unwrap().result
+        if synthesis_result_map["synthesis"].is_ok():
+            synthesis = synthesis_result_map["synthesis"].unwrap().result
 
         return Result.ok(
             {

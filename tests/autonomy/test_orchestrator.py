@@ -6,6 +6,7 @@ import threading
 import pytest
 
 from maple.autonomy.agent import Goal
+from maple.autonomy.execution import CancellationToken
 from maple.autonomy.orchestrator import AgentOrchestrator, TeamMember
 from maple.core.result import Result
 
@@ -69,6 +70,23 @@ class AsyncGateAgent(FakeAgent):
             self.gate.set()
         await self.gate.wait()
         return super().pursue_goal(description)
+
+
+class BlockingAsyncAgent(FakeAgent):
+    """Native async worker that records task cancellation."""
+
+    def __init__(self, agent_id, started, cancelled):
+        super().__init__(agent_id)
+        self.started = started
+        self.cancelled = cancelled
+
+    async def pursue_goal_async(self, description):
+        self.started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            self.cancelled.append(self.agent_id)
+            raise
 
 
 class TestTeamFormation:
@@ -202,6 +220,68 @@ class TestSupervisedExecution:
         assert result.unwrap()["completed"] == 2
         assert ready == ["worker-1", "worker-2"]
 
+    def test_execute_supervised_async_cancellation_cancels_native_workers(self):
+        async def scenario():
+            started = asyncio.Event()
+            cancelled = []
+            token = CancellationToken()
+            orch = AgentOrchestrator(max_parallel_agents=1)
+            members = [
+                TeamMember(agent=FakeAgent("supervisor"), role="supervisor"),
+                TeamMember(
+                    agent=BlockingAsyncAgent("worker-1", started, cancelled),
+                    role="worker",
+                ),
+            ]
+            team_id = orch.form_team("cancel-team", members).unwrap()
+            execution = asyncio.create_task(
+                orch.execute_supervised_async(
+                    team_id, "Build a feature", cancellation=token
+                )
+            )
+            await started.wait()
+            token.cancel()
+            result = await execution
+            return result, cancelled
+
+        result, cancelled = asyncio.run(scenario())
+
+        assert result.is_err()
+        assert result.unwrap_err()["errorType"] == "ORCHESTRATION_CANCELLED"
+        assert cancelled == ["worker-1"]
+
+    def test_execute_supervised_async_deadline_cancels_native_workers(self):
+        async def scenario():
+            started = asyncio.Event()
+            cancelled = []
+            orch = AgentOrchestrator(max_parallel_agents=1)
+            members = [
+                TeamMember(agent=FakeAgent("supervisor"), role="supervisor"),
+                TeamMember(
+                    agent=BlockingAsyncAgent("worker-1", started, cancelled),
+                    role="worker",
+                ),
+            ]
+            team_id = orch.form_team("deadline-team", members).unwrap()
+            result = await orch.execute_supervised_async(
+                team_id, "Build a feature", timeout_seconds=0.05
+            )
+            return result, cancelled
+
+        result, cancelled = asyncio.run(scenario())
+
+        assert result.is_err()
+        assert result.unwrap_err()["errorType"] == "ORCHESTRATION_TIMEOUT"
+        assert cancelled == ["worker-1"]
+
+    def test_async_orchestration_rejects_invalid_timeout(self):
+        orch = AgentOrchestrator()
+        result = asyncio.run(
+            orch.execute_supervised_async("missing", "Goal", timeout_seconds=0)
+        )
+        assert result.is_err()
+        assert result.unwrap_err()["errorType"] == "ORCHESTRATION_CONFIG_INVALID"
+
 
 class TestConsensusExecution:
     def test_execute_consensus(self):
@@ -241,6 +321,33 @@ class TestConsensusExecution:
 
         assert result.is_ok()
         assert result.unwrap()["responding_agents"] == 2
+
+    def test_execute_consensus_async_deadline_is_request_wide(self):
+        async def scenario():
+            started = asyncio.Event()
+            cancelled = []
+            orch = AgentOrchestrator(max_parallel_agents=2)
+            members = [
+                TeamMember(
+                    agent=BlockingAsyncAgent("a1", started, cancelled),
+                    role="supervisor",
+                ),
+                TeamMember(
+                    agent=BlockingAsyncAgent("a2", started, cancelled),
+                    role="worker",
+                ),
+            ]
+            team_id = orch.form_team("deadline-consensus", members).unwrap()
+            result = await orch.execute_consensus_async(
+                team_id, "Question?", timeout_seconds=0.05
+            )
+            return result, cancelled
+
+        result, cancelled = asyncio.run(scenario())
+
+        assert result.is_err()
+        assert result.unwrap_err()["errorType"] == "ORCHESTRATION_TIMEOUT"
+        assert sorted(cancelled) == ["a1", "a2"]
 
 
 class TestSharedMemory:
