@@ -225,6 +225,7 @@ class TestBuiltinTools:
         assert "query_agents" in names
         assert "read_state" in names
         assert "write_state" in names
+        assert "request_human_input" in names
 
     def test_write_state_requires_approval(self):
         class FakeAgent:

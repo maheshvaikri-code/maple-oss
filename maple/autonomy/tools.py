@@ -476,4 +476,45 @@ def create_builtin_tools(agent: "AutonomousAgent") -> List[Tool]:
         )
     )
 
+    def request_human_input_handler(
+        prompt: str, input_schema: Optional[dict] = None
+    ) -> Result[Any, Dict[str, Any]]:
+        # Durable agent runs intercept this tool before a handler can execute.
+        # Direct calls remain fail-closed instead of pretending to collect input.
+        return Result.err(
+            {
+                "errorType": "HUMAN_INPUT_REQUIRES_DURABLE_RUN",
+                "message": "Human input requests require a durable agent run.",
+            }
+        )
+
+    tools.append(
+        Tool(
+            name="request_human_input",
+            description=(
+                "Pause the durable agent run and ask the host for a bounded "
+                "human response. The host resumes the run after responding."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "prompt": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 4096,
+                        "description": "The question shown to the human.",
+                    },
+                    "input_schema": {
+                        "type": "object",
+                        "description": "The bounded JSON schema for the response.",
+                    },
+                },
+                "required": ["prompt"],
+                "additionalProperties": False,
+            },
+            handler=request_human_input_handler,
+            tags=["human-input", "interaction"],
+        )
+    )
+
     return tools

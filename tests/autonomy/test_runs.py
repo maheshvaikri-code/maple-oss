@@ -9,6 +9,7 @@ from maple.agent.config import Config
 from maple.autonomy.agent import AutonomousAgent, AutonomousConfig
 from maple.autonomy.approval import InMemoryApprovalStore
 from maple.autonomy.events import EventStream
+from maple.autonomy.interactions import InMemoryHumanInputStore
 from maple.autonomy.runs import (
     AgentRunCheckpoint,
     FileAgentRunStore,
@@ -454,3 +455,101 @@ def test_async_resume_does_not_repeat_completed_tool_after_model_interruption():
     assert resumed.is_ok()
     assert resumed.unwrap().status == "completed"
     assert calls == ["called"]
+
+
+def _human_input_call(call_id="ask-input"):
+    return ToolCall(
+        id=call_id,
+        name="request_human_input",
+        arguments={
+            "prompt": "Provide the deployment code.",
+            "input_schema": {
+                "type": "object",
+                "properties": {"code": {"type": "string", "minLength": 1}},
+                "required": ["code"],
+                "additionalProperties": False,
+            },
+        },
+    )
+
+
+def test_sync_durable_human_input_pauses_and_resumes_after_restart():
+    run_store = InMemoryAgentRunStore()
+    input_store = InMemoryHumanInputStore()
+    first = make_agent(
+        [
+            LLMResponse(
+                content="ask for code",
+                tool_calls=[_human_input_call()],
+                finish_reason="tool_calls",
+            )
+        ]
+    )
+    first.set_run_store(run_store)
+    first.set_human_input_store(input_store)
+
+    started = first.pursue_goal("Deploy safely", run_id="run-human-input")
+
+    assert started.is_ok()
+    assert started.unwrap().status == "paused"
+    interaction_id = started.unwrap().result["details"]["interaction_id"]
+    checkpoint = run_store.load("run-human-input").unwrap()
+    assert checkpoint is not None
+    assert checkpoint.pending_input_id == interaction_id
+    waiting = first.resume_run("run-human-input")
+    assert waiting.is_err()
+    assert waiting.unwrap_err()["errorType"] == "RUN_WAITING_INPUT"
+
+    assert first.respond_human_input(interaction_id, {"code": "green"}).is_ok()
+    restarted = make_agent(
+        [LLMResponse(content="deployment approved", finish_reason="stop")]
+    )
+    restarted.set_run_store(run_store)
+    restarted.set_human_input_store(input_store)
+
+    resumed = restarted.resume_run("run-human-input")
+
+    assert resumed.is_ok()
+    assert resumed.unwrap().status == "completed"
+    assert resumed.unwrap().result == "deployment approved"
+    final_checkpoint = run_store.load("run-human-input").unwrap()
+    assert final_checkpoint is not None
+    assert final_checkpoint.pending_input_id is None
+    assert input_store.get(interaction_id).unwrap().status == "consumed"
+
+
+def test_async_durable_human_input_rejection_resumes_as_typed_tool_error():
+    run_store = InMemoryAgentRunStore()
+    input_store = InMemoryHumanInputStore()
+    first = make_agent(
+        [
+            LLMResponse(
+                content="ask for code",
+                tool_calls=[_human_input_call("async-ask-input")],
+                finish_reason="tool_calls",
+            )
+        ]
+    )
+    first.set_run_store(run_store)
+    first.set_human_input_store(input_store)
+
+    started = asyncio.run(
+        first.pursue_goal_async("Deploy safely", run_id="async-human-input")
+    )
+
+    assert started.is_ok()
+    assert started.unwrap().status == "paused"
+    interaction_id = started.unwrap().result["details"]["interaction_id"]
+    assert first.reject_human_input(interaction_id, "No change window.").is_ok()
+    restarted = make_agent(
+        [LLMResponse(content="do not deploy", finish_reason="stop")]
+    )
+    restarted.set_run_store(run_store)
+    restarted.set_human_input_store(input_store)
+
+    resumed = asyncio.run(restarted.resume_run_async("async-human-input"))
+
+    assert resumed.is_ok()
+    assert resumed.unwrap().status == "completed"
+    assert resumed.unwrap().result == "do not deploy"
+    assert input_store.get(interaction_id).unwrap().status == "consumed"

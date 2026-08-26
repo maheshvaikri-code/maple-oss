@@ -53,6 +53,13 @@ from .evaluation import (
     RetrievalEvalCase,
 )
 from .events import AgentEvent, EventStream, RedactionPolicy
+from .interactions import (
+    FileHumanInputStore,
+    HumanInputDecision,
+    HumanInputRequest,
+    HumanInputStore,
+    InMemoryHumanInputStore,
+)
 from .execution import (
     CancellationToken,
     ExecutionExecutor,
@@ -174,6 +181,11 @@ __all__ = [
     "AgentEvent",
     "EventStream",
     "RedactionPolicy",
+    "HumanInputDecision",
+    "HumanInputRequest",
+    "HumanInputStore",
+    "FileHumanInputStore",
+    "InMemoryHumanInputStore",
     "EvalCase",
     "EvalObservation",
     "EvalReport",

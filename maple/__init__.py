@@ -70,6 +70,13 @@ from .autonomy.evaluation import (
     RetrievalEvalCase,
 )
 from .autonomy.events import AgentEvent, EventStream, RedactionPolicy
+from .autonomy.interactions import (
+    FileHumanInputStore,
+    HumanInputDecision,
+    HumanInputRequest,
+    HumanInputStore,
+    InMemoryHumanInputStore,
+)
 from .autonomy.execution import (
     CancellationToken,
     ExecutionExecutor,
@@ -274,6 +281,11 @@ __all__ = [
     "AgentEvent",
     "EventStream",
     "RedactionPolicy",
+    "HumanInputDecision",
+    "HumanInputRequest",
+    "HumanInputStore",
+    "FileHumanInputStore",
+    "InMemoryHumanInputStore",
     "EvalCase",
     "EvalObservation",
     "EvalReport",

@@ -47,6 +47,7 @@ from .contracts import (
     structured_model_schema,
 )
 from .events import EventStream
+from .interactions import HumanInputRequest, HumanInputStore
 from .memory import MemoryManager
 from .runs import AgentRunCheckpoint, AgentRunStore
 from .sessions import SessionMessage, SessionSnapshot, SessionStore
@@ -199,6 +200,7 @@ class AutonomousAgent(Agent):
         self._approval_callback: Optional[Callable[[str, Dict], bool]] = None
         self._approval_store: Optional[ApprovalStore] = None
         self._approval_namespace = uuid.uuid4().hex
+        self._human_input_store: Optional[HumanInputStore] = None
         self._session_store: Optional[SessionStore] = None
         self._run_store: Optional[AgentRunStore] = None
         self._event_stream: Optional[EventStream] = None
@@ -262,6 +264,54 @@ class AutonomousAgent(Agent):
                     "approval store must implement get, create, decide, and consume"
                 )
         self._approval_store = store
+
+    def set_human_input_store(self, store: Optional[HumanInputStore]) -> None:
+        """Set the durable store used by the ``request_human_input`` tool."""
+        if store is not None:
+            required_methods = (
+                "get",
+                "create",
+                "respond",
+                "reject",
+                "consume",
+                "list_pending",
+            )
+            if any(
+                not callable(getattr(store, name, None)) for name in required_methods
+            ):
+                raise TypeError(
+                    "human input store must implement get, create, respond, "
+                    "reject, consume, and list_pending"
+                )
+        self._human_input_store = store
+
+    def respond_human_input(
+        self, interaction_id: str, response: Any
+    ) -> Result[HumanInputRequest, Dict[str, Any]]:
+        """Record a schema-validated response for a pending input request."""
+        if self._human_input_store is None:
+            return Result.err(
+                {
+                    "errorType": "HUMAN_INPUT_STORE_UNAVAILABLE",
+                    "message": "No durable human input store is configured.",
+                }
+            )
+        return self._human_input_store.respond(interaction_id, response)
+
+    def reject_human_input(
+        self,
+        interaction_id: str,
+        reason: str = "Operator rejected the request.",
+    ) -> Result[HumanInputRequest, Dict[str, Any]]:
+        """Reject a pending input request with a bounded host-visible reason."""
+        if self._human_input_store is None:
+            return Result.err(
+                {
+                    "errorType": "HUMAN_INPUT_STORE_UNAVAILABLE",
+                    "message": "No durable human input store is configured.",
+                }
+            )
+        return self._human_input_store.reject(interaction_id, reason)
 
     def decide_approval(
         self,
@@ -680,6 +730,7 @@ class AutonomousAgent(Agent):
         step_count: int,
         output_retries_used: int,
         pending_approval_id: Optional[str] = None,
+        pending_input_id: Optional[str] = None,
         result: Any = None,
         error: Optional[Dict[str, Any]] = None,
     ) -> Result[Optional[AgentRunCheckpoint], Dict[str, Any]]:
@@ -715,6 +766,7 @@ class AutonomousAgent(Agent):
             step_count=step_count,
             output_retries_used=output_retries_used,
             pending_approval_id=pending_approval_id,
+            pending_input_id=pending_input_id,
             session_id=goal.session_id,
             session_version=state.session_version,
             token_usage={
@@ -746,6 +798,7 @@ class AutonomousAgent(Agent):
         step_count: int,
         output_retries_used: int,
         pending_approval_id: Optional[str] = None,
+        pending_input_id: Optional[str] = None,
         result: Any = None,
         error: Optional[Dict[str, Any]] = None,
     ) -> Result[Optional[AgentRunCheckpoint], Dict[str, Any]]:
@@ -760,6 +813,7 @@ class AutonomousAgent(Agent):
             step_count=step_count,
             output_retries_used=output_retries_used,
             pending_approval_id=pending_approval_id,
+            pending_input_id=pending_input_id,
             result=result,
             error=error,
         )
@@ -943,6 +997,86 @@ class AutonomousAgent(Agent):
                 )
             checkpoint = saved.unwrap()
 
+        if checkpoint.pending_input_id is not None:
+            if self._human_input_store is None:
+                return Result.err(
+                    {
+                        "errorType": "HUMAN_INPUT_STORE_UNAVAILABLE",
+                        "message": "A human input store is required to resume this run.",
+                    }
+                )
+            input_result = self._human_input_store.get(checkpoint.pending_input_id)
+            if input_result.is_err():
+                return Result.err(
+                    self._run_store_failure("input_load", input_result.unwrap_err())
+                )
+            input_request = input_result.unwrap()
+            if input_request is None:
+                return Result.err(
+                    {
+                        "errorType": "HUMAN_INPUT_NOT_FOUND",
+                        "message": "The pending human input request was not found.",
+                    }
+                )
+            if input_request.status == "pending":
+                return Result.err(
+                    {
+                        "errorType": "RUN_WAITING_INPUT",
+                        "message": "The agent run is waiting for a human response.",
+                        "details": {"interaction_id": input_request.interaction_id},
+                    }
+                )
+            if input_request.status in {"responded", "rejected"}:
+                consumed_result = self._human_input_store.consume(
+                    input_request.interaction_id
+                )
+                if consumed_result.is_err():
+                    return Result.err(
+                        self._run_store_failure(
+                            "input_consume", consumed_result.unwrap_err()
+                        )
+                    )
+                input_request = consumed_result.unwrap()
+            elif input_request.status != "consumed":
+                return Result.err(
+                    {
+                        "errorType": "HUMAN_INPUT_CONFLICT",
+                        "message": "The human input request has an invalid state.",
+                        "details": {"status": input_request.status},
+                    }
+                )
+            tool_result = self._human_input_result(input_request)
+            replaced = self._replace_pending_tool_result(messages, tool_result)
+            if replaced.is_err():
+                return Result.err(replaced.unwrap_err())
+            messages = [
+                SessionMessage.from_chat_message(message)
+                for message in replaced.unwrap()
+            ]
+            checkpoint = replace(
+                checkpoint,
+                status="running",
+                pending_input_id=None,
+                messages=tuple(messages),
+                error=None,
+                result=None,
+            )
+            try:
+                saved = self._run_store.save(
+                    checkpoint, expected_version=checkpoint.version
+                )
+            except Exception as exc:
+                return Result.err(
+                    self._run_store_failure(
+                        "input_resume", {"errorType": type(exc).__name__}
+                    )
+                )
+            if saved.is_err():
+                return Result.err(
+                    self._run_store_failure("input_resume", saved.unwrap_err())
+                )
+            checkpoint = saved.unwrap()
+
         trace = self._restore_trace(checkpoint)
         if trace.is_err():
             return Result.err(trace.unwrap_err())
@@ -1062,6 +1196,88 @@ class AutonomousAgent(Agent):
                     "details": {"goal_id": goal.goal_id},
                 }
             )
+
+    def _human_input_id_for_tool_call(self, run_id: str, tool_call: ToolCall) -> str:
+        payload = json.dumps(
+            {
+                "run_id": run_id,
+                "tool_call_id": tool_call.id,
+                "tool": tool_call.name,
+                "arguments": tool_call.arguments,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        )
+        return f"input-{hashlib.sha256(payload.encode('utf-8')).hexdigest()}"
+
+    @staticmethod
+    def _human_input_error(
+        tool_call_id: str,
+        error_type: str,
+        message: str,
+        **details: Any,
+    ) -> ToolResult:
+        payload: Dict[str, Any] = {"errorType": error_type, "message": message}
+        if details:
+            payload["details"] = details
+        return ToolResult(
+            tool_call_id=tool_call_id,
+            content=json.dumps(payload),
+            is_error=True,
+        )
+
+    @staticmethod
+    def _human_input_id_from_tool_result(
+        tool_result: ToolResult,
+    ) -> Optional[str]:
+        if not tool_result.is_error:
+            return None
+        try:
+            payload = json.loads(tool_result.content)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return None
+        if (
+            not isinstance(payload, dict)
+            or payload.get("errorType") != "HUMAN_INPUT_PENDING"
+        ):
+            return None
+        details = payload.get("details")
+        interaction_id = (
+            details.get("interaction_id") if isinstance(details, dict) else None
+        )
+        return interaction_id if isinstance(interaction_id, str) else None
+
+    @staticmethod
+    def _human_input_result(request: HumanInputRequest) -> ToolResult:
+        decision = request.decision
+        if decision is None:
+            return AutonomousAgent._human_input_error(
+                request.tool_call_id,
+                "HUMAN_INPUT_NOT_DECIDED",
+                "Human input request has no persisted decision.",
+            )
+        if not decision.accepted:
+            return AutonomousAgent._human_input_error(
+                request.tool_call_id,
+                "HUMAN_INPUT_REJECTED",
+                "The operator rejected the human input request.",
+                reason=decision.rejection_reason,
+            )
+        try:
+            content = json.dumps(decision.response, ensure_ascii=False, allow_nan=False)
+        except (TypeError, ValueError):
+            return AutonomousAgent._human_input_error(
+                request.tool_call_id,
+                "HUMAN_INPUT_RESPONSE_INVALID",
+                "The persisted human input response is not JSON serializable.",
+            )
+        return ToolResult(
+            tool_call_id=request.tool_call_id,
+            content=content,
+            is_error=False,
+        )
 
     @staticmethod
     def _approval_id_from_tool_result(tool_result: ToolResult) -> Optional[str]:
@@ -1227,7 +1443,10 @@ class AutonomousAgent(Agent):
                 for tool_call in response.tool_calls[
                     : self.autonomy_config.max_tool_calls_per_step
                 ]:
-                    tool_result = self._execute_tool_call(tool_call)
+                    tool_result = self._execute_tool_call(
+                        tool_call,
+                        run_id=run_state.run_id if run_state is not None else None,
+                    )
                     step.tool_results.append(tool_result)
 
                     messages.append(
@@ -1249,6 +1468,41 @@ class AutonomousAgent(Agent):
                             "content_length": len(tool_result.content),
                         },
                     )
+
+                    pending_input_id = self._human_input_id_from_tool_result(
+                        tool_result
+                    )
+                    if pending_input_id is not None and run_state is not None:
+                        paused_error = {
+                            "errorType": "AGENT_RUN_PAUSED",
+                            "message": "Agent run is waiting for human input.",
+                            "details": {
+                                "run_id": run_state.run_id,
+                                "interaction_id": pending_input_id,
+                            },
+                        }
+                        paused_checkpoint = self._checkpoint_run(
+                            run_state,
+                            goal,
+                            messages,
+                            status="paused",
+                            step_count=step_num + 1,
+                            output_retries_used=output_retries_used,
+                            pending_input_id=pending_input_id,
+                            error=paused_error,
+                        )
+                        if paused_checkpoint.is_err():
+                            return Result.err(paused_checkpoint.unwrap_err())
+                        self._publish_run_event(
+                            goal,
+                            "run.paused",
+                            {
+                                "status": "paused",
+                                "step_count": step_num + 1,
+                                "interaction_id": pending_input_id,
+                            },
+                        )
+                        return Result.err(paused_error)
 
                     pending_approval_id = self._approval_id_from_tool_result(
                         tool_result
@@ -1388,8 +1642,75 @@ class AutonomousAgent(Agent):
             }
         )
 
+    def _request_human_input_tool_call(
+        self, tool_call: ToolCall, run_id: Optional[str]
+    ) -> ToolResult:
+        if self._human_input_store is None:
+            return self._human_input_error(
+                tool_call.id,
+                "HUMAN_INPUT_STORE_UNAVAILABLE",
+                "A durable human input store is required for this tool.",
+            )
+        if run_id is None:
+            return self._human_input_error(
+                tool_call.id,
+                "HUMAN_INPUT_REQUIRES_DURABLE_RUN",
+                "Human input requests require a durable run_id.",
+            )
+        arguments = tool_call.arguments
+        prompt = arguments.get("prompt")
+        input_schema = arguments.get("input_schema", {})
+        if not isinstance(prompt, str) or not isinstance(input_schema, dict):
+            return self._human_input_error(
+                tool_call.id,
+                "HUMAN_INPUT_INVALID",
+                "Human input request arguments are invalid.",
+            )
+        interaction_id = self._human_input_id_for_tool_call(run_id, tool_call)
+        try:
+            request = HumanInputRequest(
+                interaction_id=interaction_id,
+                run_id=run_id,
+                tool_call_id=tool_call.id,
+                prompt=prompt,
+                input_schema=input_schema,
+            )
+            created = self._human_input_store.create(request)
+        except (TypeError, ValueError):
+            return self._human_input_error(
+                tool_call.id,
+                "HUMAN_INPUT_INVALID",
+                "Human input request arguments are invalid.",
+            )
+        if created.is_err():
+            return self._human_input_error(
+                tool_call.id,
+                "HUMAN_INPUT_ERROR",
+                "Human input request could not be persisted.",
+            )
+        stored = created.unwrap()
+        if stored.status != "pending":
+            if stored.status in {"responded", "rejected", "consumed"}:
+                return self._human_input_result(stored)
+            return self._human_input_error(
+                tool_call.id,
+                "HUMAN_INPUT_CONFLICT",
+                "Human input request is not pending.",
+                interaction_id=stored.interaction_id,
+            )
+        return self._human_input_error(
+            tool_call.id,
+            "HUMAN_INPUT_PENDING",
+            "Tool execution is waiting for a human response.",
+            interaction_id=stored.interaction_id,
+        )
+
     def _execute_tool_call(
-        self, tool_call: ToolCall, *, skip_approval: bool = False
+        self,
+        tool_call: ToolCall,
+        *,
+        skip_approval: bool = False,
+        run_id: Optional[str] = None,
     ) -> ToolResult:
         """Execute a single tool call with approval check."""
         tool_result = self.tool_registry.get(tool_call.name)
@@ -1402,6 +1723,9 @@ class AutonomousAgent(Agent):
 
         tool = tool_result.unwrap()
         execution_arguments = tool_call.arguments
+
+        if tool_call.name == "request_human_input":
+            return self._request_human_input_tool_call(tool_call, run_id)
 
         # Human-in-the-loop check
         if not skip_approval and (
@@ -2061,6 +2385,96 @@ Instructions:
                 )
             checkpoint = saved.unwrap()
 
+        if checkpoint.pending_input_id is not None:
+            human_input_store = self._human_input_store
+            if human_input_store is None:
+                return Result.err(
+                    {
+                        "errorType": "HUMAN_INPUT_STORE_UNAVAILABLE",
+                        "message": "A human input store is required to resume this run.",
+                    }
+                )
+            input_result = await loop.run_in_executor(
+                None,
+                partial(human_input_store.get, checkpoint.pending_input_id),
+            )
+            if input_result.is_err():
+                return Result.err(
+                    self._run_store_failure("input_load", input_result.unwrap_err())
+                )
+            input_request = input_result.unwrap()
+            if input_request is None:
+                return Result.err(
+                    {
+                        "errorType": "HUMAN_INPUT_NOT_FOUND",
+                        "message": "The pending human input request was not found.",
+                    }
+                )
+            if input_request.status == "pending":
+                return Result.err(
+                    {
+                        "errorType": "RUN_WAITING_INPUT",
+                        "message": "The agent run is waiting for a human response.",
+                        "details": {"interaction_id": input_request.interaction_id},
+                    }
+                )
+            if input_request.status in {"responded", "rejected"}:
+                consumed_result = await loop.run_in_executor(
+                    None,
+                    partial(human_input_store.consume, input_request.interaction_id),
+                )
+                if consumed_result.is_err():
+                    return Result.err(
+                        self._run_store_failure(
+                            "input_consume", consumed_result.unwrap_err()
+                        )
+                    )
+                input_request = consumed_result.unwrap()
+            elif input_request.status != "consumed":
+                return Result.err(
+                    {
+                        "errorType": "HUMAN_INPUT_CONFLICT",
+                        "message": "The human input request has an invalid state.",
+                        "details": {"status": input_request.status},
+                    }
+                )
+            tool_result = self._human_input_result(input_request)
+            replaced = self._replace_pending_tool_result(messages, tool_result)
+            if replaced.is_err():
+                return Result.err(replaced.unwrap_err())
+            messages = [
+                SessionMessage.from_chat_message(message)
+                for message in replaced.unwrap()
+            ]
+            checkpoint = replace(
+                checkpoint,
+                status="running",
+                pending_input_id=None,
+                messages=tuple(messages),
+                error=None,
+                result=None,
+            )
+            try:
+                saved = await loop.run_in_executor(
+                    None,
+                    partial(
+                        run_store.save,
+                        checkpoint,
+                        expected_version=checkpoint.version,
+                    ),
+                )
+            except Exception as exc:
+                return Result.err(
+                    self._run_store_failure(
+                        "input_resume", {"errorType": type(exc).__name__}
+                    )
+                )
+            if saved.is_err():
+                return Result.err(
+                    self._run_store_failure("input_resume", saved.unwrap_err())
+                )
+            checkpoint = saved.unwrap()
+
         trace = self._restore_trace(checkpoint)
         if trace.is_err():
             return Result.err(trace.unwrap_err())
@@ -2276,7 +2690,14 @@ Instructions:
                 async def execute_tool(tool_call: ToolCall) -> ToolResult:
                     try:
                         return await loop.run_in_executor(
-                            None, partial(self._execute_tool_call, tool_call)
+                            None,
+                            partial(
+                                self._execute_tool_call,
+                                tool_call,
+                                run_id=(
+                                    run_state.run_id if run_state is not None else None
+                                ),
+                            ),
                         )
                     except Exception as exc:
                         return ToolResult(
@@ -2299,7 +2720,41 @@ Instructions:
                     for tool_call in tool_calls:
                         tool_result = await execute_tool(tool_call)
                         tool_results.append((tool_call, tool_result))
+                        pending_input_id = self._human_input_id_from_tool_result(
+                            tool_result
+                        )
                         pending_approval_id = append_tool_result(tool_call, tool_result)
+                        if pending_input_id is not None:
+                            paused_error = {
+                                "errorType": "AGENT_RUN_PAUSED",
+                                "message": "Agent run is waiting for human input.",
+                                "details": {
+                                    "run_id": run_state.run_id,
+                                    "interaction_id": pending_input_id,
+                                },
+                            }
+                            paused_checkpoint = await self._checkpoint_run_async(
+                                run_state,
+                                goal,
+                                messages,
+                                status="paused",
+                                step_count=step_num + 1,
+                                output_retries_used=output_retries_used,
+                                pending_input_id=pending_input_id,
+                                error=paused_error,
+                            )
+                            if paused_checkpoint.is_err():
+                                return Result.err(paused_checkpoint.unwrap_err())
+                            self._publish_run_event(
+                                goal,
+                                "run.paused",
+                                {
+                                    "status": "paused",
+                                    "step_count": step_num + 1,
+                                    "interaction_id": pending_input_id,
+                                },
+                            )
+                            return Result.err(paused_error)
                         if pending_approval_id is not None:
                             paused_error = {
                                 "errorType": "AGENT_RUN_PAUSED",

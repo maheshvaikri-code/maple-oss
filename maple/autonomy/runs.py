@@ -151,6 +151,7 @@ class AgentRunCheckpoint:
     step_count: int = 0
     output_retries_used: int = 0
     pending_approval_id: Optional[str] = None
+    pending_input_id: Optional[str] = None
     session_id: Optional[str] = None
     session_version: Optional[int] = None
     token_usage: Dict[str, int] = field(default_factory=dict)
@@ -173,6 +174,7 @@ class AgentRunCheckpoint:
             "step_count": self.step_count,
             "output_retries_used": self.output_retries_used,
             "pending_approval_id": self.pending_approval_id,
+            "pending_input_id": self.pending_input_id,
             "session_id": self.session_id,
             "session_version": self.session_version,
             "token_usage": dict(self.token_usage),
@@ -257,6 +259,11 @@ class AgentRunCheckpoint:
             pending_approval_id, "pending_approval_id"
         ):
             raise ValueError("invalid pending approval ID")
+        pending_input_id = data.get("pending_input_id")
+        if pending_input_id is not None and _valid_identifier(
+            pending_input_id, "pending_input_id"
+        ):
+            raise ValueError("invalid pending input ID")
         session_id = data["session_id"]
         if session_id is not None and _valid_identifier(session_id, "session_id"):
             raise ValueError("invalid session ID")
@@ -305,6 +312,7 @@ class AgentRunCheckpoint:
             step_count=data["step_count"],
             output_retries_used=data["output_retries_used"],
             pending_approval_id=pending_approval_id,
+            pending_input_id=pending_input_id,
             session_id=session_id,
             session_version=session_version,
             token_usage=token_usage,
