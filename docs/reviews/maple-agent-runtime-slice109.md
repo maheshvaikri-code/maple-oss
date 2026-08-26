@@ -36,6 +36,9 @@ implementation finding remains for this slice.
 - Dependency governance remains a separate release veto because the host
   environment reports `383` known vulnerabilities in `77` packages via
   `pip-audit`; `gitleaks` is unavailable.
+- Clean archive package candidate `afa57d0`: build and both Twine checks pass,
+  sdist contains `513` entries, required public files are `5/5`, Slice 109 ADR
+  and QA/review files are present, and the workspace-only audit is `0`.
 
-**Review verdict:** pass for the Slice 109 implementation; clean package
-evidence is pending and no publication was performed.
+**Review verdict:** pass for the Slice 109 implementation and package boundary;
+dependency governance remains open and no publication was performed.

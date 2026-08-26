@@ -15,7 +15,11 @@
   in checkpoints, retry only pending branches in bounded waves, and expose
   `retry_count` to branch handlers. Exhaustion remains typed as
   `NODE_RETRY_EXHAUSTED`; external effects remain at-least-once and require
-  idempotent handlers. Focused and release-gate evidence is pending.
+  idempotent handlers. Focused validation reports `24 passed in 0.32s`; the
+  tracked application regression reports `1267 passed, 1 skipped in 256.93s`.
+  Clean archive candidate `afa57d0` rebuilt wheel/sdist `1.1.3`, both Twine
+  checks passed, and the sdist contains `513` entries. No publication was
+  performed; dependency governance remains an open release veto.
 - **Local observability sampling and latency/backpressure metrics**: configure
   stable bounded span sampling with `SpanRecorder(sample_rate=...)`; local
   metrics now include completed span latency/status counters plus accepted event

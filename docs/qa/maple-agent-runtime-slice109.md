@@ -13,7 +13,7 @@
 | 4 | Preserve checkpoint version correctness on retry failure/pause paths | Focused workflow/replay regression and implementation review | Terminal failure and interruption refresh the checkpoint after an intermediate retry save; no stale expected-version conflict remains | Yes |
 | 5 | Preserve existing workflow/replay behavior | Exact tracked application regression | `1267 passed, 1 skipped in 256.93s` across 1268 collected items; five untracked Doctrine-only tests excluded | Yes |
 | 6 | Keep public surface truthful | ADR/API/README/parity/changelog review | ADR-055 documents bounded waves, durable cursor fields, at-least-once effects, and deferred distributed scheduling | Yes |
-| 7 | Produce a clean package candidate | Clean committed-HEAD archive audit | Pending immediately after this evidence commit; no dirty-workspace package claim is made | Pending |
+| 7 | Produce a clean package candidate | Clean committed-HEAD archive audit | Candidate `afa57d0`: build exit `0`, Twine exit `0`, sdist `513` entries, required Slice 109 files present, workspace-only audit `0` | Yes |
 
 ## Focused command evidence
 
@@ -88,5 +88,22 @@ checks. Branch handler effects are not represented as exactly-once.
 dependency findings are dispositioned; no new Slice 109 security defect found.
 Human override: n/a.  
 **QA verdict:** pass for Slice 109 behavior and local durability boundaries;
-clean committed-HEAD package evidence remains to be attached. No publication
-was performed.
+clean committed-HEAD package evidence is attached below. No publication was
+performed.
+
+## Package audit evidence
+
+```text
+source=git archive HEAD
+head=afa57d0
+build_exit=0
+twine_wheel=PASSED
+twine_sdist=PASSED
+sdist_entries=513
+required_public_files=5/5
+workspace_only_hits=0
+present=docs/adr/055-durable-parallel-branch-retries.md
+present=docs/qa/maple-agent-runtime-slice109.md
+present=docs/reviews/maple-agent-runtime-slice109.md
+absent=AGENTS.md, CLAUDE.md, COMMERCIAL_LICENSE.md
+```

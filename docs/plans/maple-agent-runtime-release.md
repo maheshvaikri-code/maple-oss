@@ -119,7 +119,7 @@
 | 106 | Bounded local tool spans under model-step parents | Chief Architect / Backend / Observability / Security / QA / Release | `docs/adr/052-*`, `maple/autonomy/agent.py`, tool/run observability regressions, API/README/parity docs, changelog, QA/review evidence | Record each normal sync/async tool execution as a bounded local child span of its open model span, with redacted tool identity and outcome metadata; preserve approval/HITL behavior and run outcomes; hosted exporters, remote routing, sampling/backpressure, and exactly-once effects remain separate | done: focused tool/run/trace suite `38 passed in 0.34s`; exact tracked manifest `1263 passed, 1 skipped in 263.89s` across 108 tracked test files; Black/Ruff/changed-boundary mypy/compile/diff/doctor pass; package candidate `ccdf03d` build/Twine exit 0, sdist `504` entries, required public files `5/5`, workspace-only audit `0`; security scan found no new defect, QA behavior/artifact and code review pass; dependency-governance veto remains; no publication |
 | 107 | Bounded local observability retention metrics | Chief Architect / Backend / Observability / Security / QA / Release | `docs/adr/053-*`, `maple/autonomy/events.py`, `maple/autonomy/observability.py`, event/span regressions, API/README/parity docs, changelog, QA/review evidence | Expose thread-safe snapshots of retained capacity, evictions, open spans, and subscriber counts for local buffers; keep metrics bounded, metadata-only, dependency-free, and separate from sampling/remote export | done: focused event/observability suite `30 passed in 0.25s`; exact tracked manifest `1263 passed, 1 skipped in 248.55s` across 108 tracked test files; Black/Ruff/changed-boundary mypy/compile/diff/doctor pass; security scan found no new defect, QA behavior and code review pass; package candidate `beba0f2` build/Twine exit 0, sdist `507` entries, required public files `5/5`, workspace-only audit `0`; dependency-governance veto remains; no publication |
 | 108 | Local observability sampling and latency/backpressure metrics | Chief Architect / Backend / Observability / Security / QA / Release | `docs/adr/054-*`, `maple/autonomy/events.py`, `maple/autonomy/observability.py`, event/span regressions, API/README/parity docs, changelog, QA/review evidence | Add stable bounded span sampling, integer local span latency/status counters, accepted publish latency, and subscriber/exporter failure metrics; preserve metadata-only, dependency-free, non-failing observability boundaries | done: focused `32 passed in 0.27s`; tracked regression `1265 passed, 1 skipped in 203.80s`; Black/Ruff/changed-boundary mypy/compile/doctor/security review pass; clean archive package candidate `025b6a7` build/Twine exit 0, sdist `510` entries, required public files `5/5`, workspace-only audit `0`; dependency-governance veto remains; no publication |
-| 109 | Durable bounded retry state for parallel workflow branches | Chief Architect / Backend / Security / QA / Release | `docs/adr/055-*`, `maple/autonomy/workflow.py`, workflow/replay regressions, API/README/parity docs, changelog, QA/review evidence | Persist per-branch retry counts and due times, retry failed branches in bounded waves with retry context, preserve deterministic merge and pause/recovery behavior, type exhaustion, keep at-least-once side-effect boundary explicit; static/package/doctor gates | in progress: focused regression is `24 passed`; full static, tracked regression, fresh QA/review, and clean archive package evidence pending; no publication |
+| 109 | Durable bounded retry state for parallel workflow branches | Chief Architect / Backend / Security / QA / Release | `docs/adr/055-*`, `maple/autonomy/workflow.py`, workflow/replay regressions, API/README/parity docs, changelog, QA/review evidence | Persist per-branch retry counts and due times, retry failed branches in bounded waves with retry context, preserve deterministic merge and pause/recovery behavior, type exhaustion, keep at-least-once side-effect boundary explicit; static/package/doctor gates | done: focused `24 passed in 0.32s`; tracked regression `1267 passed, 1 skipped in 256.93s`; Black/Ruff/changed-boundary mypy/compile/diff/doctor pass; clean archive candidate `afa57d0` build/Twine exit `0`, sdist `513` entries, required public files `5/5`, workspace-only audit `0`; QA behavior/artifact and code review pass; dependency-governance veto remains; no publication |
 
 ## Threat sketch
 
@@ -623,6 +623,21 @@ including ADR-042, the workflow module, and its regression, and the
 workspace-only audit found zero preserved Doctrine files. Parallel-branch retry
 and exactly-once external effects remain separate boundaries. No publication
 was performed.
+
+2026-08-26 durable parallel-branch retry closure: ADR-055 extends the same
+bounded `RetryPolicy` to named fan-out branches. Retry counts and finite due times
+are persisted in checkpoint metadata; failed branches retry in bounded waves with
+their `WorkflowContext.retry_count`, while successful branches are merged once in
+declaration order. Terminal failure refreshes the latest checkpoint before its
+CAS write, preserving version correctness after intermediate retry saves. The
+focused workflow/replay suite reports `24 passed in 0.32s`; the exact tracked
+manifest reports `1267 passed, 1 skipped in 256.93s`; Black, Ruff, changed-boundary
+mypy, compile, diff, and doctor pass. Clean archive candidate `afa57d0` rebuilt
+wheel/sdist `1.1.3`; Twine passed for both, the sdist contains `513` entries,
+required public files are `5/5`, and the workspace-only audit found zero preserved
+Doctrine files. Distributed scheduling and exactly-once external effects remain
+separate boundaries. Dependency governance remains open; no publication was
+performed.
 
 2026-08-26 durable event cursor closure: ADR-043 adds JSON-safe
 `EventCursor`/`EventBatch` values and bounded `EventStream.read` consumption.
