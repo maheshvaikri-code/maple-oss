@@ -460,6 +460,19 @@ remain explicit follow-on work.
   including ADR-037, and the workspace-only audit found zero preserved Doctrine
   files.
 
+## Slice 92 implementation review
+
+- The shared `DurableRecordLease` helper now owns lease acquisition, cleanup,
+  typed acquire/release failures, and uncertain-commit detail merging. Approval
+  behavior is preserved while `FileHumanInputStore` uses a distinct
+  `human-input:<interaction_id>` namespace.
+- Human-input validation remains inside the lease boundary, so invalid schema
+  responses do not mutate a pending request. Notifications, remote operator
+  authentication, multi-round interaction, and run-cursor ownership remain
+  explicit gaps.
+- Focused approval/input/lease coverage reports `13 passed in 0.48s`; remaining
+  static, full-suite, package, and doctor gates are pending.
+
 ## Verdict
 
 **Feature review:** PASS for the twenty-eight implemented capability slices.

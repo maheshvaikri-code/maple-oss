@@ -1151,8 +1151,14 @@ schema and leaves a pending request unchanged on failure. Use
 `HUMAN_INPUT_REJECTED` tool error. A request is one-shot: its consumed decision
 is retained for crash recovery, but a second response returns
 `HUMAN_INPUT_CONFLICT`. The built-in tool requires a durable `run_id`; it does
-not collect input in a non-durable run. Cross-process leases/notifications and
-multi-round conversations remain host or follow-on responsibilities.
+not collect input in a non-durable run. `FileHumanInputStore` acquires a
+per-record `FileLeaseManager` fencing lease by default under
+`<directory>/.maple-leases`; `lease_manager=` and `lease_ttl_seconds=` are
+available for caller-owned coordination. Acquisition failure returns
+`HUMAN_INPUT_LEASE_ERROR` without mutation; release failure returns
+`HUMAN_INPUT_LEASE_RELEASE_ERROR` and requires record inspection before retry.
+Notifications, remote authentication, and multi-round conversations remain
+host or follow-on responsibilities.
 
 ### Bounded conversation sessions
 

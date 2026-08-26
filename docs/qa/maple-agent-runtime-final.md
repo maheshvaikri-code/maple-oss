@@ -480,6 +480,19 @@ slow Doctrine gold phase before interruption without a pytest summary.
 - No publication, website, cloud, registry, or user-owned untracked file
   change was made.
 
+## Slice 92 QA — cross-process durable human-input-store ownership
+
+- `tests/autonomy/test_approval.py`,
+  `tests/autonomy/test_approval_leases.py`,
+  `tests/autonomy/test_interactions.py`, and
+  `tests/autonomy/test_interaction_leases.py` report `13 passed in 0.48s`.
+- Coverage proves the shared lease wrapper preserves approval behavior and
+  protects human-input create/respond/consume transitions, including no
+  mutation while an external holder owns the record.
+- Changed-file Ruff, Black, mypy, compile, complete tracked suite, clean
+  package, and doctor evidence remain pending. No publication, website, cloud,
+  registry, or user-owned untracked file change was made.
+
 ## Security conclusions
 
 - No new dependency, credential, cloud call, website mutation, or publication

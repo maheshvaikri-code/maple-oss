@@ -11,10 +11,12 @@ import threading
 import time
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Protocol, Union
+from typing import Any, Callable, Dict, List, Mapping, Optional, Protocol, Union
 
 from ..core.result import Result
+from ..resources.lease import FileLeaseManager
 from .contracts import validate_json_schema
+from .durable_leases import DurableRecordLease
 
 Error = Dict[str, Any]
 
@@ -27,6 +29,7 @@ _MAX_JSON_DEPTH = 16
 _MAX_JSON_ITEMS = 10_000
 _MAX_LIST_LIMIT = 1_000
 _MAX_LIST_SCAN = 10_000
+_HUMAN_INPUT_LEASE_TTL_SECONDS = 30.0
 
 
 def _error(error_type: str, message: str, **details: Any) -> Error:
@@ -515,10 +518,15 @@ class InMemoryHumanInputStore:
 
 
 class FileHumanInputStore:
-    """Atomic JSON-file human-input store for local process-restart handoff."""
+    """Atomic JSON-file human-input store with per-record fencing leases."""
 
     def __init__(
-        self, directory: Union[str, Path], max_record_bytes: int = _MAX_RECORD_BYTES
+        self,
+        directory: Union[str, Path],
+        max_record_bytes: int = _MAX_RECORD_BYTES,
+        *,
+        lease_manager: Optional[FileLeaseManager] = None,
+        lease_ttl_seconds: float = _HUMAN_INPUT_LEASE_TTL_SECONDS,
     ) -> None:
         if (
             not isinstance(max_record_bytes, int)
@@ -530,6 +538,29 @@ class FileHumanInputStore:
         self.directory.mkdir(parents=True, exist_ok=True)
         self.max_record_bytes = max_record_bytes
         self._lock = threading.RLock()
+        self._record_leases = DurableRecordLease(
+            self.directory,
+            namespace="human-input",
+            holder_label="human-input",
+            lease_manager=lease_manager,
+            lease_ttl_seconds=lease_ttl_seconds,
+        )
+
+    def _with_record_lease(
+        self,
+        interaction_id: str,
+        operation: str,
+        callback: Callable[[], Result[Any, Error]],
+    ) -> Result[Any, Error]:
+        return self._record_leases.run(
+            interaction_id,
+            operation,
+            callback,
+            acquire_error_type="HUMAN_INPUT_LEASE_ERROR",
+            acquire_error_message="Human input record lease is unavailable.",
+            release_error_type="HUMAN_INPUT_LEASE_RELEASE_ERROR",
+            release_error_message="Human input record lease could not be released safely.",
+        )
 
     def _path(self, interaction_id: str) -> Path:
         identifier_error = _valid_identifier(interaction_id, "interaction_id")
@@ -580,6 +611,15 @@ class FileHumanInputStore:
         return _copy_request(request)
 
     def get(self, interaction_id: str) -> Result[Optional[HumanInputRequest], Error]:
+        return self._with_record_lease(
+            interaction_id,
+            "get",
+            lambda: self._get_without_lease(interaction_id),
+        )
+
+    def _get_without_lease(
+        self, interaction_id: str
+    ) -> Result[Optional[HumanInputRequest], Error]:
         try:
             with self._lock:
                 request = self._read_unlocked(interaction_id)
@@ -594,6 +634,15 @@ class FileHumanInputStore:
             )
 
     def create(self, request: HumanInputRequest) -> Result[HumanInputRequest, Error]:
+        return self._with_record_lease(
+            request.interaction_id,
+            "create",
+            lambda: self._create_without_lease(request),
+        )
+
+    def _create_without_lease(
+        self, request: HumanInputRequest
+    ) -> Result[HumanInputRequest, Error]:
         try:
             candidate = _copy_request(request)
             if candidate.status != "pending" or candidate.decision is not None:
@@ -654,6 +703,25 @@ class FileHumanInputStore:
         response: Any,
         reason: Optional[str] = None,
     ) -> Result[HumanInputRequest, Error]:
+        return self._with_record_lease(
+            interaction_id,
+            "respond" if accepted else "reject",
+            lambda: self._decide_without_lease(
+                interaction_id,
+                accepted=accepted,
+                response=response,
+                reason=reason,
+            ),
+        )
+
+    def _decide_without_lease(
+        self,
+        interaction_id: str,
+        *,
+        accepted: bool,
+        response: Any,
+        reason: Optional[str] = None,
+    ) -> Result[HumanInputRequest, Error]:
         try:
             with self._lock:
                 request = self._read_unlocked(interaction_id)
@@ -701,6 +769,15 @@ class FileHumanInputStore:
             )
 
     def consume(self, interaction_id: str) -> Result[HumanInputRequest, Error]:
+        return self._with_record_lease(
+            interaction_id,
+            "consume",
+            lambda: self._consume_without_lease(interaction_id),
+        )
+
+    def _consume_without_lease(
+        self, interaction_id: str
+    ) -> Result[HumanInputRequest, Error]:
         try:
             with self._lock:
                 request = self._read_unlocked(interaction_id)
@@ -734,6 +811,15 @@ class FileHumanInputStore:
             )
 
     def list_pending(self, limit: int = 100) -> Result[List[HumanInputRequest], Error]:
+        return self._with_record_lease(
+            "__list__",
+            "list_pending",
+            lambda: self._list_pending_without_lease(limit),
+        )
+
+    def _list_pending_without_lease(
+        self, limit: int = 100
+    ) -> Result[List[HumanInputRequest], Error]:
         limit_error = _validate_limit(limit)
         if limit_error:
             return Result.err(limit_error)

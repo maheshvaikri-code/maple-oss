@@ -53,6 +53,13 @@
   contains 477 entries including ADR-037, and the workspace-only audit found
   zero preserved Doctrine files. Input/run store integration and host
   notifications remain outside this slice.
+- **Human-input store ownership**: extracted the shared `DurableRecordLease`
+  wrapper and applied it to `FileHumanInputStore` for per-record
+  get/create/respond/reject/consume/list fencing. Acquisition failures return
+  `HUMAN_INPUT_LEASE_ERROR` without mutation; release uncertainty is typed.
+  Focused approval/input/lease coverage reports `13 passed in 0.48s`; run-store
+  ownership, notifications, authentication, and multi-round interaction remain
+  outside this slice.
 - **Agent-framework parity ledger**: added a source-backed functionality and
   runtime matrix for LangGraph, CrewAI, Microsoft Agent Framework, LlamaIndex,
   and OpenAI Agents SDK. It separates MAPLE's native infrastructure strengths
