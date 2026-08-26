@@ -34,6 +34,11 @@
   and bounded failure metadata with usage trailers. Prompts, tool arguments,
   outputs, and final results are not emitted; ring eviction remains visible via
   `EventStream.dropped_count`.
+- **Lifecycle-event gate status**: the focused slice reports `10 passed in
+  0.27s`; static, doctor, clean-artifact, and Twine checks pass. The latest
+  exact tracked run remains conditional after one existing Windows loopback
+  oversized-body `ConnectionAbortedError` (`1194 passed, 1 failed, 1 skipped`);
+  the isolated test passes and no retry-until-lucky result is claimed.
 - **Post-slice release revalidation**: the 101 tracked Python test files now
   report `1,191 passed, 1 skipped in 217.81s` with no warning output. A clean
   archive rebuilt wheel/sdist `1.1.3`; both Twine checks passed, the 466-entry

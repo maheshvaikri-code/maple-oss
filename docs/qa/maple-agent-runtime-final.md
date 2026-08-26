@@ -372,6 +372,22 @@ slow Doctrine gold phase before interruption without a pytest summary.
   leases, exactly-once effects, sandboxing, and durable streaming remain out of
   scope.
 
+## Slice 85 revalidation — unified agent-run lifecycle events
+
+- `tests/autonomy/test_runs.py` reports `10 passed in 0.27s`, covering shared
+  sync/async lifecycle vocabulary, usage trailers, redaction-compatible
+  metadata-only payloads, approval pause events, and resumed-run events.
+- The existing agent/session/event compatibility set reports `40 passed in
+  0.35s`. Ruff, Black, mypy, compile, and network-free doctor checks pass;
+  doctor returned `ready: true`, all eight checks true, and `network: false`.
+- A clean `git archive HEAD` snapshot rebuilt wheel and sdist `1.1.3`; both
+  Twine checks passed. The sdist contained 468 entries, included ADR-032, and
+  contained zero preserved workspace-only Doctrine files.
+- The latest exact tracked run reported `1194 passed, 1 failed, 1 skipped in
+  218.95s`; the failure is the existing oversized-body loopback test receiving
+  Windows `ConnectionAbortedError`. Its isolated reproduction passed. This
+  intermittent suite gate remains open and is not being masked by retries.
+
 ## Security conclusions
 
 - No new dependency, credential, cloud call, website mutation, or publication
@@ -386,7 +402,8 @@ slow Doctrine gold phase before interruption without a pytest summary.
 
 ## Release decision
 
-**QA status: CONDITIONAL / NOT PUBLISH-READY.** The tracked application suite,
-current clean archive, Twine, and network-free doctor gates pass. The release
-gate must remain open for the workspace-only Doctrine gold verifier and fresh
-independent review. No external release action was taken.
+**QA status: CONDITIONAL / NOT PUBLISH-READY.** Focused runtime checks, static
+checks, current clean archive, Twine, and network-free doctor gates pass. The
+latest exact tracked suite has one intermittent Windows loopback-server failure,
+and the workspace-only Doctrine gold verifier and fresh independent review also
+remain open. No external release action was taken.

@@ -352,9 +352,27 @@ verification remain open.
   runtime claim was added. No external service, publication, or website action
   was taken.
 
+## Slice 85 revalidation
+
+- ADR-032 adds an opt-in `EventStream` attachment with shared sync/async
+  lifecycle metadata and usage trailers. Payloads omit prompts, tool
+  arguments, tool output, and final result data; ring eviction remains visible
+  through `dropped_count`.
+- The focused lifecycle/run slice reports `10 passed in 0.27s`; the existing
+  agent/session/event compatibility set reports `40 passed in 0.35s`.
+- Ruff, Black, mypy, compile, doctor, clean archive, and Twine checks pass. The
+  clean sdist contains 468 entries, includes ADR-032, and contains zero
+  preserved workspace-only Doctrine files.
+- The latest exact tracked run has one existing Windows loopback-server
+  oversized-body `ConnectionAbortedError` (`1194 passed, 1 failed, 1 skipped`);
+  the isolated test passes. The event slice remains conditionally reviewed and
+  the full tracked gate remains open.
+
 ## Verdict
 
-**Feature review:** PASS for the twenty-four implemented capability slices.
+**Feature review:** CONDITIONAL for the twenty-five implemented capability
+slices. Focused event/runtime checks pass, but the current exact tracked gate
+has one intermittent Windows loopback-server failure.
 **Publish readiness:** NOT YET APPROVED. A release manager should close the
 workspace-only Doctrine gold and fresh-verifier gates before publishing. The
 remaining Bandit findings are documented low-severity legacy debt; external

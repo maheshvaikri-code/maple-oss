@@ -95,7 +95,7 @@
 | 82 | Bounded durable synchronous agent-run checkpoints and approval resume | Chief Architect / Backend / Security / QA | `docs/adr/030-*`, `maple/autonomy/runs.py`, autonomy exports/agent, run tests, API docs, README, changelog, QA/review evidence | JSON-safe bounded snapshots, memory/file CAS, atomic restart recovery, per-step cursor, paused approval replacement, no duplicate completed tool call, synchronous resume, static/package/doctor gates | done: `45 passed in 0.36s` compatibility slice; autonomy suite `240 passed in 3.59s`; Ruff/Black/mypy/compile pass; async parity remains a follow-on slice |
 | 83 | Current tracked-suite and clean-artifact revalidation | QA / Release / DevOps | tracked test manifest, clean archive build, doctor output, README, changelog, QA/review evidence | Full tracked application suite, warning-free result, clean wheel/sdist, Twine, sdist boundary audit, network-free doctor | done: 101 tracked Python files; `1191 passed, 1 skipped in 217.81s`; clean `1.1.3` wheel/sdist; Twine passed; 466 sdist entries; doctor `ready: true`; workspace-only Doctrine and fresh-review gates remain open |
 | 84 | Async durable agent-run checkpoints and approval resume | Chief Architect / Backend / Security / QA | `docs/adr/031-*`, async agent loop, run tests, API/README/parity docs, changelog, QA/review evidence | Async `run_id`, executor-backed bounded persistence, async resume, approval pause before later tool side effects, no duplicate completed tool call, compatibility/static/package/doctor gates | done: `9 passed in 0.30s` async/store slice; tracked suite `1194 passed, 1 skipped in 205.06s`; Ruff/Black/mypy/compile/doctor pass; clean `1.1.3` wheel/sdist, Twine passed, 467 sdist entries; distributed leases/exactly-once/sandbox remain out of scope |
-| 85 | Unified bounded agent-run lifecycle event stream | Chief Architect / Backend / Observability / QA | `docs/adr/032-*`, EventStream attachment, sync/async agent lifecycle events, event/run tests, API/README/parity docs, changelog, QA/review evidence | Shared started/resumed/model/tool/paused/completed/failed vocabulary, usage trailers, metadata-only payloads, bounded ring/backpressure visibility, subscriber isolation, no telemetry-induced run failure | in progress: focused lifecycle/event regression passes; full tracked, static, package, doctor, and evidence update pending |
+| 85 | Unified bounded agent-run lifecycle event stream | Chief Architect / Backend / Observability / QA | `docs/adr/032-*`, EventStream attachment, sync/async agent lifecycle events, event/run tests, API/README/parity docs, changelog, QA/review evidence | Shared started/resumed/model/tool/paused/completed/failed vocabulary, usage trailers, metadata-only payloads, bounded ring/backpressure visibility, subscriber isolation, no telemetry-induced run failure | in progress: focused lifecycle slice `10 passed in 0.27s`; static/doctor/clean package gates pass; exact tracked run has 1 intermittent Windows loopback-server failure (`1194 passed, 1 failed, 1 skipped`); fresh evidence pending |
 
 ## Threat sketch
 
@@ -436,3 +436,14 @@ both Twine checks passed, the sdist contained 467 entries including
 `maple/autonomy/runs.py` and ADR-031, and the workspace-only audit found zero
 preserved Doctrine files. Async durable tool calls are serialized only when
 durability is enabled so approval pauses precede later side effects.
+
+2026-08-26 lifecycle-event validation: ADR-032 and the optional
+`set_event_stream()` attachment provide shared sync/async `run.started`,
+`run.resumed`, `model.response`, `tool.completed`, `run.paused`,
+`run.completed`, and bounded `run.failed` metadata with usage trailers. The
+focused lifecycle/run slice reports `10 passed in 0.27s`; Ruff, Black, mypy,
+compile, doctor, and clean archive/Twine checks pass. The exact tracked run
+reported `1194 passed, 1 failed, 1 skipped in 218.95s` because the existing
+oversized-body loopback test received Windows `ConnectionAbortedError`; its
+isolated reproduction passed, so the release gate remains open rather than
+being retried until lucky.
