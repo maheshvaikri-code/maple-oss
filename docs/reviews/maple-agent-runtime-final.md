@@ -376,6 +376,16 @@ verification remain open.
 - No dependency, route, status, payload, external-hosting, publication, or
   website action was introduced.
 
+## Slice 87 revalidation
+
+- The current tracked snapshot builds wheel/sdist `1.1.3` from `git archive
+  HEAD`; both Twine checks pass.
+- The 469-entry sdist includes ADR-031, ADR-032, ADR-033, and the durable/event
+  modules while excluding all preserved workspace-only Doctrine files.
+- Network-free doctor returns `ready: true`, all eight checks true, and
+  `network: false`. No publication, website, cloud, or registry action was
+  taken.
+
 ## Verdict
 
 **Feature review:** PASS for the twenty-six implemented capability slices.

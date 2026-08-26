@@ -97,6 +97,7 @@
 | 84 | Async durable agent-run checkpoints and approval resume | Chief Architect / Backend / Security / QA | `docs/adr/031-*`, async agent loop, run tests, API/README/parity docs, changelog, QA/review evidence | Async `run_id`, executor-backed bounded persistence, async resume, approval pause before later tool side effects, no duplicate completed tool call, compatibility/static/package/doctor gates | done: `9 passed in 0.30s` async/store slice; tracked suite `1194 passed, 1 skipped in 205.06s`; Ruff/Black/mypy/compile/doctor pass; clean `1.1.3` wheel/sdist, Twine passed, 467 sdist entries; distributed leases/exactly-once/sandbox remain out of scope |
 | 85 | Unified bounded agent-run lifecycle event stream | Chief Architect / Backend / Observability / QA | `docs/adr/032-*`, EventStream attachment, sync/async agent lifecycle events, event/run tests, API/README/parity docs, changelog, QA/review evidence | Shared started/resumed/model/tool/paused/completed/failed vocabulary, usage trailers, metadata-only payloads, bounded ring/backpressure visibility, subscriber isolation, no telemetry-induced run failure | done: focused lifecycle slice `10 passed in 0.27s`; tracked suite after response hardening `1195 passed, 1 skipped in 222.53s`; static/doctor/package/Twine gates pass; cancellation/exporter/durable cursors remain follow-on |
 | 86 | Deterministic loopback HTTP response closure | Backend / QA / Release | `docs/adr/033-*`, `maple/autonomy/server.py`, server tests, QA/review evidence | Flush bounded JSON responses, explicit connection closure, preserve routes/status/payloads, full tracked regression | done: server suite `4 passed in 2.34s`; exact tracked suite `1195 passed, 1 skipped in 222.53s`; no dependency or protocol surface change |
+| 87 | Final current-commit release artifact revalidation | Release / DevOps / QA | clean `git archive HEAD`, wheel/sdist, Twine output, doctor output, release plan, QA/review evidence | Current tracked snapshot only, package metadata, sdist workspace boundary, ADR/module presence, network-free doctor | done: clean `1.1.3` wheel/sdist; Twine passed; 469 sdist entries; ADR-031/032/033 and durable/event modules present; workspace-only audit zero; doctor `ready: true`; no publication performed |
 
 ## Threat sketch
 
@@ -455,3 +456,9 @@ reports `4 passed in 2.34s`, and the exact tracked application suite now reports
 `1195 passed, 1 skipped in 222.53s` with no warning output. This closes the
 intermittent Windows oversized-body response race without changing routes,
 status codes, payloads, dependencies, or external hosting behavior.
+
+2026-08-26 final current-commit artifact revalidation: `git archive HEAD`
+built wheel/sdist `1.1.3`; both Twine checks passed, the sdist contained 469
+entries including ADR-031, ADR-032, ADR-033, and the durable/event modules, and
+the workspace-only audit found zero preserved Doctrine files. The network-free
+doctor returned `ready: true`, all eight checks true, and `network: false`.

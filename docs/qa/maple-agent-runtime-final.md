@@ -397,6 +397,18 @@ slow Doctrine gold phase before interruption without a pytest summary.
   closed after sending the existing status/payload contract. No dependency,
   route, protocol, or external-hosting behavior changed.
 
+## Slice 87 revalidation — final current-commit artifact boundary
+
+- A clean `git archive HEAD` snapshot built wheel and sdist `1.1.3`; both Twine
+  checks passed.
+- The sdist contained 469 entries, included ADR-031, ADR-032, ADR-033,
+  `maple/autonomy/runs.py`, and the lifecycle-event implementation, and the
+  workspace-only audit found zero preserved Doctrine files.
+- `python -m maple.cli doctor --json` returned `ready: true`, `status:
+  SUCCESS`, version `1.1.3`, all eight checks true, and `network: false`.
+- No publication, registry upload, cloud call, website mutation, or user-owned
+  untracked-file change was made.
+
 ## Security conclusions
 
 - No new dependency, credential, cloud call, website mutation, or publication

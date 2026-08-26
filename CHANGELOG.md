@@ -44,6 +44,10 @@
   response race without changing routes or payloads. The server suite reports
   `4 passed in 2.34s`, and the exact tracked suite reports `1,195 passed, 1
   skipped in 222.53s` with no warning output.
+- **Final artifact boundary**: the current clean `git archive HEAD` snapshot
+  builds wheel/sdist `1.1.3`; both Twine checks pass, the 469-entry sdist
+  contains ADR-031/032/033 and the durable/event modules, and the workspace-only
+  audit is empty. Doctor reports `ready: true`; nothing was published.
 - **Post-slice release revalidation**: the 101 tracked Python test files now
   report `1,191 passed, 1 skipped in 217.81s` with no warning output. A clean
   archive rebuilt wheel/sdist `1.1.3`; both Twine checks passed, the 466-entry
