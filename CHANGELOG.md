@@ -42,6 +42,13 @@
   contains 475 entries including ADR-035 and ADR-036, and the workspace-only
   audit found zero preserved Doctrine files. Durable-store integration, remote
   authentication, and exactly-once effects remain outside this slice.
+- **Approval-store ownership**: `FileApprovalStore` now acquires a namespaced
+  per-record fencing lease before file-backed get/create/decide/consume/list
+  operations. Acquisition failures return `APPROVAL_LEASE_ERROR` without
+  mutation; release failures return `APPROVAL_LEASE_RELEASE_ERROR` with
+  uncertain-commit guidance. Focused approval/lease coverage reports `8 passed
+  in 0.31s`; input/run store integration and host notifications remain outside
+  this slice.
 - **Agent-framework parity ledger**: added a source-backed functionality and
   runtime matrix for LangGraph, CrewAI, Microsoft Agent Framework, LlamaIndex,
   and OpenAI Agents SDK. It separates MAPLE's native infrastructure strengths

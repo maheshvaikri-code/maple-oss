@@ -1106,9 +1106,14 @@ empty object. Invalid edits or edits attached to a denial return
 `APPROVAL_DECISION_INVALID` without changing the pending record.
 `execute_approved_tool` claims the request before executing it and a second
 attempt in the same process returns `APPROVAL_CONSUMED`. File persistence is
-atomic and thread-safe within one process; `FileLeaseManager` is available for
-host-owned cross-process fencing, but the approval store does not acquire a
-lease automatically. Approval arguments may contain application-sensitive data and
+atomic and thread-safe within one process, and `FileApprovalStore` acquires a
+per-record `FileLeaseManager` fencing lease by default under
+`<directory>/.maple-leases`. Pass `lease_manager=` to provide a caller-owned
+manager or `lease_ttl_seconds=` to change the bounded 30-second default.
+Failed acquisition returns `APPROVAL_LEASE_ERROR` without mutation; failed
+release returns `APPROVAL_LEASE_RELEASE_ERROR` and means the mutation may
+already be committed, so inspect the record before retrying. Approval arguments
+may contain application-sensitive data and
 should be protected with host filesystem access controls. The store does not
 persist the full ReAct conversation, does not implement arbitrary
 request/response HITL forms, and failed tool execution requires a new approval

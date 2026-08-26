@@ -463,6 +463,18 @@ slow Doctrine gold phase before interruption without a pytest summary.
 - No publication, website, cloud, registry, or user-owned untracked file
   change was made.
 
+## Slice 91 QA — cross-process durable approval-store ownership
+
+- `tests/autonomy/test_approval.py` plus
+  `tests/autonomy/test_approval_leases.py` report `8 passed in 0.32s`.
+- Coverage proves default per-record lease use, fail-closed acquisition while
+  another holder owns the approval, no decision mutation on that failure,
+  release after a decision, and preservation of the existing approval
+  lifecycle.
+- Changed-file Ruff, Black, mypy, compile, complete tracked suite, clean
+  package, and doctor evidence remain pending. No publication, website, cloud,
+  registry, or user-owned untracked file change was made.
+
 ## Security conclusions
 
 - No new dependency, credential, cloud call, website mutation, or publication

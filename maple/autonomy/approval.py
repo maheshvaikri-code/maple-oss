@@ -9,11 +9,13 @@ import re
 import tempfile
 import threading
 import time
+import uuid
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Protocol, Union
+from typing import Any, Callable, Dict, List, Optional, Protocol, Union
 
 from ..core.result import Result
+from ..resources.lease import FileLeaseManager
 
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
 _STATUSES = {"pending", "approved", "denied", "consumed"}
@@ -22,6 +24,7 @@ _MAX_ARGUMENT_DEPTH = 16
 _MAX_ARGUMENT_ITEMS = 1_000
 _MAX_LIST_LIMIT = 1_000
 _MAX_LIST_SCAN = 10_000
+_APPROVAL_LEASE_TTL_SECONDS = 30.0
 
 Error = Dict[str, Any]
 
@@ -480,19 +483,128 @@ class InMemoryApprovalStore:
 class FileApprovalStore:
     """Atomic JSON-file approval store for process-restart human handoff.
 
-    The store is thread-safe within one process. Cross-process leases and
-    notifications remain host responsibilities.
+    The store is thread-safe within one process and acquires a short-lived
+    per-record fencing lease from a caller-owned file lease directory before
+    each read/modify/write operation. Notifications remain a host
+    responsibility.
     """
 
     def __init__(
-        self, directory: Union[str, Path], max_record_bytes: int = 262_144
+        self,
+        directory: Union[str, Path],
+        max_record_bytes: int = 262_144,
+        *,
+        lease_manager: Optional[FileLeaseManager] = None,
+        lease_ttl_seconds: float = _APPROVAL_LEASE_TTL_SECONDS,
     ) -> None:
         if max_record_bytes <= 0:
             raise ValueError("max_record_bytes must be positive")
+        if (
+            not isinstance(lease_ttl_seconds, (int, float))
+            or isinstance(lease_ttl_seconds, bool)
+            or lease_ttl_seconds <= 0
+        ):
+            raise ValueError("lease_ttl_seconds must be positive")
         self.directory = Path(directory).expanduser().resolve()
         self.directory.mkdir(parents=True, exist_ok=True)
         self.max_record_bytes = max_record_bytes
         self._lock = threading.RLock()
+        self._lease_manager = lease_manager or FileLeaseManager(
+            self.directory / ".maple-leases"
+        )
+        self._lease_holder = f"approval-store-{os.getpid()}-{uuid.uuid4().hex}"
+        self._lease_ttl_seconds = float(lease_ttl_seconds)
+
+    def _lease_resource(self, approval_id: str) -> str:
+        return f"approval:{approval_id}"
+
+    def _lease_failure(self, operation: str, error: Any) -> Error:
+        reason = "unknown"
+        if isinstance(error, dict):
+            reason = str(error.get("errorType", "unknown"))[:64]
+        return _error(
+            "APPROVAL_LEASE_ERROR",
+            "Approval record lease is unavailable.",
+            operation=operation,
+            reason=reason,
+        )
+
+    def _lease_release_failure(self, operation: str, error: Any) -> Error:
+        reason = "unknown"
+        if isinstance(error, dict):
+            reason = str(error.get("errorType", "unknown"))[:64]
+        return _error(
+            "APPROVAL_LEASE_RELEASE_ERROR",
+            "Approval record lease could not be released safely.",
+            operation=operation,
+            reason=reason,
+        )
+
+    def _with_record_lease(
+        self,
+        approval_id: str,
+        operation: str,
+        callback: Callable[[], Result[Any, Error]],
+    ) -> Result[Any, Error]:
+        try:
+            acquired = self._lease_manager.acquire(
+                self._lease_resource(approval_id),
+                self._lease_holder,
+                self._lease_ttl_seconds,
+            )
+        except (OSError, TypeError, ValueError) as exc:
+            return Result.err(self._lease_failure(operation, type(exc).__name__))
+        if acquired.is_err():
+            return Result.err(self._lease_failure(operation, acquired.unwrap_err()))
+        lease = acquired.unwrap()
+        result: Optional[Result[Any, Error]] = None
+        operation_exception: Optional[Exception] = None
+        release_result: Optional[Result[Any, Any]] = None
+        release_exception: Optional[Exception] = None
+        try:
+            try:
+                result = callback()
+            except Exception as exc:
+                operation_exception = exc
+        finally:
+            try:
+                release_result = self._lease_manager.release(lease)
+            except Exception as exc:
+                release_exception = exc
+        if operation_exception is not None:
+            if release_exception is not None:
+                raise release_exception from operation_exception
+            if release_result is not None and (
+                release_result.is_err() or release_result.unwrap() is not True
+            ):
+                raise RuntimeError(
+                    "approval record lease release failed"
+                ) from operation_exception
+            raise operation_exception
+        if release_exception is not None:
+            raise release_exception
+        if result is None:
+            raise RuntimeError("approval lease callback returned no result")
+        if release_result is not None and (
+            release_result.is_err() or release_result.unwrap() is not True
+        ):
+            release_error = self._lease_release_failure(
+                operation,
+                (
+                    release_result.unwrap_err()
+                    if release_result.is_err()
+                    else {"errorType": "LEASE_NOT_HELD"}
+                ),
+            )
+            if result.is_err():
+                existing = dict(result.unwrap_err())
+                details = existing.get("details")
+                merged_details = dict(details) if isinstance(details, dict) else {}
+                merged_details["lease_release_error"] = release_error["errorType"]
+                existing["details"] = merged_details
+                return Result.err(existing)
+            return Result.err(release_error)
+        return result
 
     def _path(self, approval_id: str) -> Path:
         identifier_error = _valid_identifier(approval_id, "approval_id")
@@ -543,6 +655,15 @@ class FileApprovalStore:
         return _copy_request(request)
 
     def get(self, approval_id: str) -> Result[Optional[ApprovalRequest], Error]:
+        return self._with_record_lease(
+            approval_id,
+            "get",
+            lambda: self._get_without_lease(approval_id),
+        )
+
+    def _get_without_lease(
+        self, approval_id: str
+    ) -> Result[Optional[ApprovalRequest], Error]:
         try:
             with self._lock:
                 request = self._read_unlocked(approval_id)
@@ -557,6 +678,15 @@ class FileApprovalStore:
             )
 
     def create(self, request: ApprovalRequest) -> Result[ApprovalRequest, Error]:
+        return self._with_record_lease(
+            request.approval_id,
+            "create",
+            lambda: self._create_without_lease(request),
+        )
+
+    def _create_without_lease(
+        self, request: ApprovalRequest
+    ) -> Result[ApprovalRequest, Error]:
         try:
             candidate = _copy_request(request)
             if candidate.status != "pending":
@@ -590,6 +720,21 @@ class FileApprovalStore:
             )
 
     def decide(
+        self,
+        approval_id: str,
+        approved: bool,
+        *,
+        edited_arguments: Optional[Dict[str, Any]] = None,
+    ) -> Result[ApprovalRequest, Error]:
+        return self._with_record_lease(
+            approval_id,
+            "decide",
+            lambda: self._decide_without_lease(
+                approval_id, approved, edited_arguments=edited_arguments
+            ),
+        )
+
+    def _decide_without_lease(
         self,
         approval_id: str,
         approved: bool,
@@ -641,6 +786,15 @@ class FileApprovalStore:
             )
 
     def consume(self, approval_id: str) -> Result[ApprovalRequest, Error]:
+        return self._with_record_lease(
+            approval_id,
+            "consume",
+            lambda: self._consume_without_lease(approval_id),
+        )
+
+    def _consume_without_lease(
+        self, approval_id: str
+    ) -> Result[ApprovalRequest, Error]:
         try:
             with self._lock:
                 request = self._read_unlocked(approval_id)
@@ -668,6 +822,15 @@ class FileApprovalStore:
             )
 
     def list_pending(self, limit: int = 100) -> Result[List[ApprovalRequest], Error]:
+        return self._with_record_lease(
+            "__list__",
+            "list_pending",
+            lambda: self._list_pending_without_lease(limit),
+        )
+
+    def _list_pending_without_lease(
+        self, limit: int = 100
+    ) -> Result[List[ApprovalRequest], Error]:
         if (
             not isinstance(limit, int)
             or isinstance(limit, bool)

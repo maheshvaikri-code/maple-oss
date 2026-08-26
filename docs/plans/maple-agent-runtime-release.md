@@ -101,6 +101,7 @@
 | 88 | Bounded editable durable tool approvals | Chief Architect / Backend / Security / QA / Release | `docs/adr/034-*`, approval stores/agent boundary, sync/async run regressions, API/parity/README docs, changelog, QA/review evidence | Approved-only bounded JSON replacement, in-memory/file persistence, invalid-edit no-mutation, denied-edit rejection, one-time consume, sync/async resume, static/package/doctor gates; arbitrary multi-turn HITL remains explicit follow-on | done: focused approval/run/agent `44 passed in 0.46s`; tracked manifest `1197 passed, 1 skipped in 204.41s`; Ruff/Black/mypy/compile/diff/doctor pass; clean `1.1.3` wheel/sdist, Twine passed, 470 sdist entries, ADR-034 present, workspace-only audit zero; no publication |
 | 89 | Bounded durable human-input request/response | Chief Architect / Backend / Security / QA / Release | `docs/adr/035-*`, `maple/autonomy/interactions.py`, durable run cursor/agent/tool, interaction/run/tool tests, API/README/parity docs, changelog, QA/review evidence | Bounded prompt/schema/response records, memory/file persistence, schema-validated response, explicit rejection, sync/async `request_human_input` pause/resume, consumed-decision crash recovery, static/package/doctor gates; leases/notifications/multi-round remain explicit follow-on | done: focused interaction/run/tool/agent `61 passed in 0.51s`; tracked manifest `1202 passed, 1 skipped in 211.16s`; Ruff/Black/mypy/compile/diff/doctor pass; clean archive wheel/sdist `1.1.3`, Twine passed, sdist `473` entries with ADR-035, workspace-only audit zero; no publication |
 | 90 | Cross-process durable fencing leases | Chief Architect / Backend / Security / QA / Release | `docs/adr/036-*`, `maple/resources/lease.py`, resource exports/tests, API/README/parity docs, changelog, QA/review evidence | Bounded file-backed lease state, OS-level inter-process lock, atomic replacement, persisted fencing counter, expiry, renew/release, typed fail-closed storage behavior; durable-store integration and remote authentication remain explicit follow-ons | done: focused resource model + file lease `41 passed in 3.64s`; tracked manifest `1207 passed, 1 skipped in 214.53s`; Ruff/Black/compile/doctor pass and changed-boundary mypy pass; clean archive wheel/sdist `1.1.3`, Twine passed, sdist `475` entries with ADR-035/036, workspace-only audit zero; no publication |
+| 91 | Cross-process durable approval-store ownership | Chief Architect / Backend / Security / QA / Release | `docs/adr/037-*`, `maple/autonomy/approval.py`, approval lease tests, API/README/parity docs, changelog, QA/review evidence | Per-record lease acquisition for file get/create/decide/consume/list, no mutation on acquisition failure, explicit uncertain-commit release error, existing atomic/thread-safe behavior retained; input/run store integration remains separate | doing: focused approval + lease boundary `8 passed in 0.32s`; changed-file Ruff/Black/mypy/compile pending; package/doctor/full manifest pending; no publication |
 
 ## Threat sketch
 
@@ -501,3 +502,11 @@ including ADR-035 and ADR-036, and the workspace-only audit found zero
 preserved Doctrine files. Automatic ownership of approval/input/run stores,
 remote authentication, and exactly-once effects remain explicit follow-on
 boundaries.
+
+2026-08-26 approval-store ownership closure: ADR-037 integrates the durable
+fencing primitive into `FileApprovalStore`. Every file-backed approval operation
+acquires a namespaced per-record lease before reading or mutating state;
+acquisition failure returns `APPROVAL_LEASE_ERROR` without mutation, while a
+release failure is surfaced as `APPROVAL_LEASE_RELEASE_ERROR` with uncertain-
+commit guidance. Input/run store ownership and host notifications remain
+separate follow-on slices.

@@ -441,7 +441,20 @@ verification remain open.
   stores. A clean archive rebuilt wheel/sdist `1.1.3`; Twine passed for both,
   the sdist contains 475 entries including ADR-035 and ADR-036, and the
   workspace-only audit found zero preserved Doctrine files. Those integrations
-  remain explicit follow-on work.
+remain explicit follow-on work.
+
+## Slice 91 implementation review
+
+- `FileApprovalStore` now obtains a unique-holder, namespaced fencing lease
+  before each file-backed operation while retaining its thread lock and atomic
+  replacement boundary. Lease acquisition failure is fail-closed and cannot
+  mutate the approval record.
+- Lease release failure is surfaced explicitly; successful record mutation may
+  already be durable, so the API documents the result as an uncertain commit
+  requiring inspection before retry. The store does not claim notifications,
+  remote authentication, or exactly-once external effects.
+- Focused approval/lease coverage reports `8 passed in 0.32s`; remaining static,
+  full-suite, package, and doctor gates are pending.
 
 ## Verdict
 
