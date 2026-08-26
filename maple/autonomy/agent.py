@@ -1502,7 +1502,8 @@ class AutonomousAgent(Agent):
             if model_span is not None:
                 model_payload["trace_id"] = model_span.trace_id
                 model_payload["span_id"] = model_span.span_id
-            self._finish_model_span(model_span, "ok", response)
+            if not response.tool_calls:
+                self._finish_model_span(model_span, "ok", response)
             self._publish_run_event(
                 goal,
                 "model.response",
@@ -1591,6 +1592,9 @@ class AutonomousAgent(Agent):
                     tool_result = self._execute_tool_call(
                         tool_call,
                         run_id=run_state.run_id if run_state is not None else None,
+                        goal=goal,
+                        step_num=step_num,
+                        parent_span=model_span,
                     )
                     step.tool_results.append(tool_result)
 
@@ -1637,6 +1641,7 @@ class AutonomousAgent(Agent):
                             error=paused_error,
                         )
                         if paused_checkpoint.is_err():
+                            self._finish_model_span(model_span, "error", response)
                             return Result.err(paused_checkpoint.unwrap_err())
                         self._publish_run_event(
                             goal,
@@ -1647,6 +1652,7 @@ class AutonomousAgent(Agent):
                                 "interaction_id": pending_input_id,
                             },
                         )
+                        self._finish_model_span(model_span, "ok", response)
                         return Result.err(paused_error)
 
                     pending_approval_id = self._approval_id_from_tool_result(
@@ -1672,6 +1678,7 @@ class AutonomousAgent(Agent):
                             error=paused_error,
                         )
                         if paused_checkpoint.is_err():
+                            self._finish_model_span(model_span, "error", response)
                             return Result.err(paused_checkpoint.unwrap_err())
                         self._publish_run_event(
                             goal,
@@ -1682,6 +1689,7 @@ class AutonomousAgent(Agent):
                                 "approval_id": pending_approval_id,
                             },
                         )
+                        self._finish_model_span(model_span, "ok", response)
                         return Result.err(paused_error)
 
                     # Update working memory
@@ -1689,6 +1697,7 @@ class AutonomousAgent(Agent):
                         key=f"tool:{tool_call.name}:{step_num}",
                         content=tool_result.content[:500],
                     )
+                self._finish_model_span(model_span, "ok", response)
             else:
                 messages.append(
                     ChatMessage(
@@ -2020,27 +2029,46 @@ class AutonomousAgent(Agent):
         *,
         skip_approval: bool = False,
         run_id: Optional[str] = None,
+        goal: Optional[Goal] = None,
+        step_num: Optional[int] = None,
+        parent_span: Optional[TraceSpan] = None,
     ) -> ToolResult:
         """Execute a single tool call with approval check."""
-        tool_result = self.tool_registry.get(tool_call.name)
-        if tool_result.is_err():
-            return ToolResult(
-                tool_call_id=tool_call.id,
-                content=json.dumps(tool_result.unwrap_err()),
-                is_error=True,
-            )
-
-        tool = tool_result.unwrap()
-        if tool_call.name == "request_human_input":
-            return self._request_human_input_tool_call(tool_call, run_id)
-
-        authorized = self._authorize_tool_call(
-            tool_call, tool, skip_approval=skip_approval
+        tool_span = (
+            self._start_tool_span(goal, step_num, tool_call, parent_span)
+            if step_num is not None and goal is not None
+            else None
         )
-        if authorized.is_err():
-            return authorized.unwrap_err()
-        exec_result = tool.execute(**authorized.unwrap())
-        return self._tool_result_from_execution(tool_call, exec_result)
+
+        def complete(result: ToolResult) -> ToolResult:
+            self._finish_tool_span(tool_span, result)
+            return result
+
+        try:
+            tool_result = self.tool_registry.get(tool_call.name)
+            if tool_result.is_err():
+                return complete(
+                    ToolResult(
+                        tool_call_id=tool_call.id,
+                        content=json.dumps(tool_result.unwrap_err()),
+                        is_error=True,
+                    )
+                )
+
+            tool = tool_result.unwrap()
+            if tool_call.name == "request_human_input":
+                return complete(self._request_human_input_tool_call(tool_call, run_id))
+
+            authorized = self._authorize_tool_call(
+                tool_call, tool, skip_approval=skip_approval
+            )
+            if authorized.is_err():
+                return complete(authorized.unwrap_err())
+            exec_result = tool.execute(**authorized.unwrap())
+            return complete(self._tool_result_from_execution(tool_call, exec_result))
+        except Exception:
+            self._finish_tool_span(tool_span, None)
+            raise
 
     async def _execute_tool_call_async(
         self,
@@ -2048,53 +2076,76 @@ class AutonomousAgent(Agent):
         *,
         skip_approval: bool = False,
         run_id: Optional[str] = None,
+        goal: Optional[Goal] = None,
+        step_num: Optional[int] = None,
+        parent_span: Optional[TraceSpan] = None,
     ) -> ToolResult:
         """Execute a tool through its async handler without blocking the loop."""
-        tool_result = self.tool_registry.get(tool_call.name)
-        if tool_result.is_err():
-            return ToolResult(
-                tool_call_id=tool_call.id,
-                content=json.dumps(tool_result.unwrap_err()),
-                is_error=True,
-            )
-
-        tool = tool_result.unwrap()
-        loop = asyncio.get_running_loop()
-        if tool_call.name == "request_human_input":
-            return await loop.run_in_executor(
-                None,
-                partial(self._request_human_input_tool_call, tool_call, run_id),
-            )
-
-        authorized = await loop.run_in_executor(
-            None,
-            partial(
-                self._authorize_tool_call,
-                tool_call,
-                tool,
-                skip_approval=skip_approval,
-            ),
+        tool_span = (
+            self._start_tool_span(goal, step_num, tool_call, parent_span)
+            if step_num is not None and goal is not None
+            else None
         )
-        if authorized.is_err():
-            return authorized.unwrap_err()
+
+        def complete(result: ToolResult) -> ToolResult:
+            self._finish_tool_span(tool_span, result)
+            return result
+
         try:
-            exec_result = await tool.execute_async(**authorized.unwrap())
-        except Exception as exc:
-            return ToolResult(
-                tool_call_id=tool_call.id,
-                content=json.dumps(
-                    {
-                        "errorType": "TOOL_EXECUTION_ERROR",
-                        "message": "Tool execution failed.",
-                        "details": {
-                            "tool": tool_call.name,
-                            "exception": type(exc).__name__,
-                        },
-                    }
+            tool_result = self.tool_registry.get(tool_call.name)
+            if tool_result.is_err():
+                return complete(
+                    ToolResult(
+                        tool_call_id=tool_call.id,
+                        content=json.dumps(tool_result.unwrap_err()),
+                        is_error=True,
+                    )
+                )
+
+            tool = tool_result.unwrap()
+            loop = asyncio.get_running_loop()
+            if tool_call.name == "request_human_input":
+                return complete(
+                    await loop.run_in_executor(
+                        None,
+                        partial(self._request_human_input_tool_call, tool_call, run_id),
+                    )
+                )
+
+            authorized = await loop.run_in_executor(
+                None,
+                partial(
+                    self._authorize_tool_call,
+                    tool_call,
+                    tool,
+                    skip_approval=skip_approval,
                 ),
-                is_error=True,
             )
-        return self._tool_result_from_execution(tool_call, exec_result)
+            if authorized.is_err():
+                return complete(authorized.unwrap_err())
+            try:
+                exec_result = await tool.execute_async(**authorized.unwrap())
+            except Exception as exc:
+                return complete(
+                    ToolResult(
+                        tool_call_id=tool_call.id,
+                        content=json.dumps(
+                            {
+                                "errorType": "TOOL_EXECUTION_ERROR",
+                                "message": "Tool execution failed.",
+                                "details": {
+                                    "tool": tool_call.name,
+                                    "exception": type(exc).__name__,
+                                },
+                            }
+                        ),
+                        is_error=True,
+                    )
+                )
+            return complete(self._tool_result_from_execution(tool_call, exec_result))
+        except Exception:
+            self._finish_tool_span(tool_span, None)
+            raise
 
     def _approval_id_for_tool_call(self, tool_call: ToolCall) -> str:
         payload = json.dumps(
@@ -2510,6 +2561,59 @@ Instructions:
         if result.is_err():
             logger.debug(
                 "model span finish dropped: %s",
+                result.unwrap_err().get("errorType", "SPAN_ERROR"),
+            )
+
+    def _start_tool_span(
+        self,
+        goal: Goal,
+        step_num: int,
+        tool_call: ToolCall,
+        parent_span: Optional[TraceSpan],
+    ) -> Optional[TraceSpan]:
+        """Start a bounded local tool span under the model span when present."""
+        if self._span_recorder is None:
+            return None
+        result = self._span_recorder.start_span(
+            "agent.tool",
+            trace_id=(
+                parent_span.trace_id if parent_span else goal.run_id or goal.goal_id
+            ),
+            parent_span_id=parent_span.span_id if parent_span else None,
+            attributes={
+                "agent_id": self.agent_id,
+                "goal_id": goal.goal_id,
+                "step": step_num,
+                "tool": tool_call.name,
+            },
+        )
+        if result.is_err():
+            logger.debug(
+                "tool span start dropped: %s",
+                result.unwrap_err().get("errorType", "SPAN_ERROR"),
+            )
+            return None
+        return cast(TraceSpan, result.unwrap())
+
+    def _finish_tool_span(
+        self, span: Optional[TraceSpan], tool_result: Optional[ToolResult]
+    ) -> None:
+        """Finish a bounded local tool span without retaining its payload."""
+        if span is None or self._span_recorder is None:
+            return
+        attributes: Dict[str, Any] = {
+            "is_error": tool_result is None or tool_result.is_error
+        }
+        if tool_result is not None:
+            attributes["content_length"] = len(tool_result.content)
+        result = self._span_recorder.finish_span(
+            span.span_id,
+            status="error" if attributes["is_error"] else "ok",
+            attributes=attributes,
+        )
+        if result.is_err():
+            logger.debug(
+                "tool span finish dropped: %s",
                 result.unwrap_err().get("errorType", "SPAN_ERROR"),
             )
 
@@ -3037,7 +3141,8 @@ Instructions:
             if model_span is not None:
                 model_payload["trace_id"] = model_span.trace_id
                 model_payload["span_id"] = model_span.span_id
-            self._finish_model_span(model_span, "ok", response)
+            if not response.tool_calls:
+                self._finish_model_span(model_span, "ok", response)
             self._publish_run_event(
                 goal,
                 "model.response",
@@ -3153,6 +3258,9 @@ Instructions:
                             run_id=(
                                 run_state.run_id if run_state is not None else None
                             ),
+                            goal=goal,
+                            step_num=step_num,
+                            parent_span=model_span,
                         )
                     except Exception as exc:
                         return ToolResult(
@@ -3199,6 +3307,7 @@ Instructions:
                                 error=paused_error,
                             )
                             if paused_checkpoint.is_err():
+                                self._finish_model_span(model_span, "error", response)
                                 return Result.err(paused_checkpoint.unwrap_err())
                             self._publish_run_event(
                                 goal,
@@ -3209,6 +3318,7 @@ Instructions:
                                     "interaction_id": pending_input_id,
                                 },
                             )
+                            self._finish_model_span(model_span, "ok", response)
                             return Result.err(paused_error)
                         if pending_approval_id is not None:
                             paused_error = {
@@ -3230,6 +3340,7 @@ Instructions:
                                 error=paused_error,
                             )
                             if paused_checkpoint.is_err():
+                                self._finish_model_span(model_span, "error", response)
                                 return Result.err(paused_checkpoint.unwrap_err())
                             self._publish_run_event(
                                 goal,
@@ -3240,6 +3351,7 @@ Instructions:
                                     "approval_id": pending_approval_id,
                                 },
                             )
+                            self._finish_model_span(model_span, "ok", response)
                             return Result.err(paused_error)
                 else:
                     tool_results = list(
@@ -3252,6 +3364,7 @@ Instructions:
                     )
                     for tool_call, tool_result in tool_results:
                         append_tool_result(tool_call, tool_result)
+                self._finish_model_span(model_span, "ok", response)
             else:
                 messages.append(
                     ChatMessage(

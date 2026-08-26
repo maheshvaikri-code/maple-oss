@@ -10,6 +10,12 @@
 
 ### Additions
 
+- **Bounded local tool spans**: normal sync and async ReAct tool executions
+  now record optional `agent.tool` child spans under their open model-step
+  span. Only bounded tool identity, step, error status, and result length are
+  retained; approval replay and hosted/remote export remain separate
+  boundaries. Focused validation is in progress; no publication was
+  performed.
 - **Bounded local trace spans**: added thread-safe `TraceSpan` and
   `SpanRecorder` contracts with bounded retention, redacted flat attributes,
   parent/trace validation, terminal status transitions, and JSON inspection.

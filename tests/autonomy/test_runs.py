@@ -410,6 +410,100 @@ def test_async_agent_links_model_events_to_a_finished_span():
     assert spans.snapshot().unwrap()[0].status == "ok"
 
 
+def test_sync_tool_span_is_a_child_of_the_model_span():
+    spans = SpanRecorder(max_spans=10)
+    agent = make_agent(
+        [
+            LLMResponse(
+                content="use tool",
+                tool_calls=[
+                    ToolCall(
+                        id="trace-tool-call",
+                        name="write_value",
+                        arguments={"value": "secret-input"},
+                    )
+                ],
+                finish_reason="tool_calls",
+            ),
+            LLMResponse(content="done", finish_reason="stop"),
+        ]
+    )
+    agent.set_span_recorder(spans)
+    assert agent.register_tool(
+        Tool(
+            name="write_value",
+            description="Write one value",
+            parameters={"type": "object"},
+            handler=lambda **kwargs: Result.ok({"written": True}),
+        )
+    ).is_ok()
+
+    result = agent.pursue_goal("Trace a tool step")
+
+    assert result.is_ok()
+    retained = spans.snapshot().unwrap()
+    assert [span.name for span in retained] == [
+        "agent.model",
+        "agent.tool",
+        "agent.model",
+    ]
+    model_span, tool_span, _ = retained
+    assert model_span.status == "ok"
+    assert tool_span.status == "ok"
+    assert tool_span.parent_span_id == model_span.span_id
+    assert tool_span.trace_id == model_span.trace_id
+    assert tool_span.attributes["tool"] == "write_value"
+    assert tool_span.attributes["is_error"] is False
+    assert "secret-input" not in tool_span.to_dict()
+
+
+def test_async_tool_span_is_a_child_of_the_model_span():
+    spans = SpanRecorder(max_spans=10)
+    agent = make_agent(
+        [
+            LLMResponse(
+                content="use async tool",
+                tool_calls=[
+                    ToolCall(
+                        id="async-trace-tool-call",
+                        name="write_value",
+                        arguments={"value": "secret-input"},
+                    )
+                ],
+                finish_reason="tool_calls",
+            ),
+            LLMResponse(content="done", finish_reason="stop"),
+        ]
+    )
+    agent.set_span_recorder(spans)
+    assert agent.register_tool(
+        Tool(
+            name="write_value",
+            description="Write one value",
+            parameters={"type": "object"},
+            handler=lambda **kwargs: Result.ok({"written": True}),
+        )
+    ).is_ok()
+
+    result = asyncio.run(agent.pursue_goal_async("Trace an async tool step"))
+
+    assert result.is_ok()
+    retained = spans.snapshot().unwrap()
+    assert [span.name for span in retained] == [
+        "agent.model",
+        "agent.tool",
+        "agent.model",
+    ]
+    model_span, tool_span, _ = retained
+    assert model_span.status == "ok"
+    assert tool_span.status == "ok"
+    assert tool_span.parent_span_id == model_span.span_id
+    assert tool_span.trace_id == model_span.trace_id
+    assert tool_span.attributes["tool"] == "write_value"
+    assert tool_span.attributes["is_error"] is False
+    assert "secret-input" not in tool_span.to_dict()
+
+
 def test_async_run_pauses_for_approval_and_resumes_after_restart():
     run_store = InMemoryAgentRunStore()
     approval_store = InMemoryApprovalStore()

@@ -47,6 +47,11 @@ with that capability, nor that an adapter makes MAPLE equivalent to it.
 | Language SDK breadth | **Deferred** — Python runtime | Microsoft Agent Framework and LlamaIndex document multiple language surfaces; others have additional SDK/community surfaces | P2: define a language-neutral protocol contract before another SDK |
 | Infrastructure and protocol security | **Native differentiator** — broker, resource negotiation, leases, circuit breakers, cryptographic link/security layers, discovery/health, and protocol adapters | This is not the primary center of gravity of the five agent runtimes | Keep as MAPLE's distinct strength; do not use it to hide the runtime gaps above |
 
+The local observability contract now includes bounded `agent.tool` child spans
+for normal sync and async tool execution under the active model span. Hosted
+export, sampling/backpressure metrics, approval-replay correlation, and remote
+trace search remain separate boundaries.
+
 ## Highest-value gaps before a publish claim
 
 The next implementation work should be ordered by runtime correctness, not by
