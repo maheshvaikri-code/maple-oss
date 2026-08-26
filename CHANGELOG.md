@@ -114,6 +114,15 @@
   Twine passed for both, the sdist contains 486 entries including ADR-042, the
   workflow module, and its regression, and the workspace-only audit found zero
   preserved Doctrine files. No publication was performed.
+- **Durable event cursors and cancellation**: added JSON-safe `EventCursor` and
+  `EventBatch` values, bounded cursor reads, explicit `EVENT_CURSOR_EXPIRED`
+  errors when ring retention has evicted a cursor, and cooperative cancellation
+  support for event waiters using MAPLE's existing token contract. Remote
+  transport, provider-native token linkage, and hosted exporters remain
+  separate boundaries. Focused event/lifecycle coverage reports `37 passed in
+  2.28s`; the exact tracked manifest reports `1226 passed, 1 skipped in
+  216.99s`; Ruff, Black, compile, diff, doctor, and changed-boundary mypy
+  pass. No publication was performed.
 - **Agent-framework parity ledger**: added a source-backed functionality and
   runtime matrix for LangGraph, CrewAI, Microsoft Agent Framework, LlamaIndex,
   and OpenAI Agents SDK. It separates MAPLE's native infrastructure strengths

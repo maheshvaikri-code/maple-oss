@@ -572,6 +572,19 @@ slow Doctrine gold phase before interruption without a pytest summary.
   remain explicit follow-on boundaries. No publication, website, cloud,
   registry, or user-owned untracked file change was made.
 
+## Slice 97 QA — durable event cursors and cooperative stream cancellation
+
+- `tests/autonomy/test_events.py` and the agent lifecycle regression report
+  `37 passed in 2.28s`.
+- Coverage proves JSON-safe cursor round trips, bounded reads, deterministic
+  cursor advancement, explicit retention-gap failure, query bounds, and
+  cooperative cancellation through `CancellationToken`.
+- Ruff, Black, and changed-boundary mypy pass for the edited event and export
+  boundaries; compile and diff checks also pass. The exact tracked manifest
+  reports `1226 passed, 1 skipped in 216.99s` across 107 tracked test files.
+- This slice remains local and in-process: no durable broker, remote transport,
+  provider token stream, or exporter is claimed.
+
 ## Security conclusions
 
 - No new dependency, credential, cloud call, website mutation, or publication

@@ -7,12 +7,55 @@ import threading
 import time
 from collections import deque
 from dataclasses import dataclass
-from typing import Any, Callable, Deque, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Callable, Deque, Dict, List, Mapping, Optional, Protocol, Tuple
 
 from ..core.result import Result
 
 Error = Dict[str, Any]
 EventCallback = Callable[["AgentEvent"], None]
+
+
+class CancellationSignal(Protocol):
+    """Minimal cooperative cancellation contract for event waiters."""
+
+    def is_cancelled(self) -> bool:
+        """Return whether cancellation has been requested."""
+
+
+@dataclass(frozen=True)
+class EventCursor:
+    """Serializable position used to consume a bounded event stream."""
+
+    sequence: int = 0
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.sequence, int)
+            or isinstance(self.sequence, bool)
+            or self.sequence < 0
+        ):
+            raise ValueError("sequence must be a non-negative integer")
+
+    def to_dict(self) -> Dict[str, int]:
+        """Return the JSON-safe cursor representation."""
+        return {"sequence": self.sequence}
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> Result["EventCursor", Error]:
+        """Parse a persisted cursor without accepting ambiguous state."""
+        if not isinstance(value, Mapping):
+            return Result.err(
+                _error("EVENT_CURSOR_INVALID", "cursor must be an object.")
+            )
+        sequence = value.get("sequence")
+        if not isinstance(sequence, int) or isinstance(sequence, bool) or sequence < 0:
+            return Result.err(
+                _error(
+                    "EVENT_CURSOR_INVALID",
+                    "cursor sequence must be a non-negative integer.",
+                )
+            )
+        return Result.ok(cls(sequence=sequence))
 
 
 def _error(error_type: str, message: str, **details: Any) -> Error:
@@ -173,6 +216,25 @@ class AgentEvent:
         }
 
 
+@dataclass(frozen=True)
+class EventBatch:
+    """A bounded read result with a cursor safe to persist and resume."""
+
+    events: Tuple[AgentEvent, ...]
+    next_cursor: EventCursor
+    oldest_sequence: Optional[int]
+    latest_sequence: Optional[int]
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Return the JSON-safe batch representation."""
+        return {
+            "events": [event.as_dict() for event in self.events],
+            "next_cursor": self.next_cursor.to_dict(),
+            "oldest_sequence": self.oldest_sequence,
+            "latest_sequence": self.latest_sequence,
+        }
+
+
 class EventStream:
     """Thread-safe bounded event stream with redacted callbacks."""
 
@@ -320,8 +382,68 @@ class EventStream:
             events = events[:limit]
         return Result.ok(events)
 
+    def read(
+        self,
+        cursor: Optional[EventCursor] = None,
+        *,
+        limit: Optional[int] = None,
+    ) -> Result[EventBatch, Error]:
+        """Read retained events from a cursor with explicit eviction detection.
+
+        A cursor that points before the retained ring is rejected instead of
+        silently skipping events. Callers may explicitly recover by starting
+        from the returned ``oldest_sequence - 1`` position.
+        """
+        if cursor is None:
+            cursor = EventCursor()
+        if not isinstance(cursor, EventCursor):
+            return Result.err(_error("EVENT_CURSOR_INVALID", "cursor is invalid."))
+        effective_limit = self.max_events if limit is None else limit
+        if (
+            not isinstance(effective_limit, int)
+            or isinstance(effective_limit, bool)
+            or effective_limit <= 0
+            or effective_limit > self.max_events
+        ):
+            return Result.err(
+                _error(
+                    "EVENT_QUERY_INVALID",
+                    "limit must be positive and no greater than max_events.",
+                )
+            )
+        with self._condition:
+            retained = list(self._events)
+            oldest = retained[0].sequence if retained else None
+            latest = retained[-1].sequence if retained else None
+            if oldest is not None and cursor.sequence < oldest - 1:
+                return Result.err(
+                    _error(
+                        "EVENT_CURSOR_EXPIRED",
+                        "cursor precedes the retained event window.",
+                        cursor_sequence=cursor.sequence,
+                        oldest_sequence=oldest,
+                        latest_sequence=latest,
+                    )
+                )
+            events = tuple(
+                event for event in retained if event.sequence > cursor.sequence
+            )[:effective_limit]
+        next_sequence = events[-1].sequence if events else cursor.sequence
+        return Result.ok(
+            EventBatch(
+                events=events,
+                next_cursor=EventCursor(sequence=next_sequence),
+                oldest_sequence=oldest,
+                latest_sequence=latest,
+            )
+        )
+
     def wait_for(
-        self, after_sequence: int, timeout: Optional[float] = None
+        self,
+        after_sequence: int,
+        timeout: Optional[float] = None,
+        *,
+        cancellation: Optional[CancellationSignal] = None,
     ) -> Result[List[AgentEvent], Error]:
         """Wait until an event after ``after_sequence`` is retained."""
         if (
@@ -340,15 +462,58 @@ class EventStream:
             return Result.err(
                 _error("EVENT_QUERY_INVALID", "timeout must be non-negative.")
             )
+        if cancellation is not None and not callable(
+            getattr(cancellation, "is_cancelled", None)
+        ):
+            return Result.err(
+                _error(
+                    "EVENT_CANCELLATION_INVALID",
+                    "cancellation must expose is_cancelled().",
+                )
+            )
+
+        def is_cancelled() -> Result[bool, Error]:
+            if cancellation is None:
+                return Result.ok(False)
+            try:
+                value = cancellation.is_cancelled()
+            except Exception:
+                return Result.err(
+                    _error(
+                        "EVENT_CANCELLATION_ERROR",
+                        "cancellation state could not be read.",
+                    )
+                )
+            if not isinstance(value, bool):
+                return Result.err(
+                    _error(
+                        "EVENT_CANCELLATION_INVALID",
+                        "is_cancelled() must return a boolean.",
+                    )
+                )
+            return Result.ok(value)
+
+        cancelled = is_cancelled()
+        if cancelled.is_err():
+            return Result.err(cancelled.unwrap_err())
+        if cancelled.unwrap():
+            return Result.err(_error("EVENT_CANCELLED", "event wait was cancelled."))
         deadline = None if timeout is None else time.monotonic() + timeout
         with self._condition:
             while not any(event.sequence > after_sequence for event in self._events):
+                cancelled = is_cancelled()
+                if cancelled.is_err():
+                    return Result.err(cancelled.unwrap_err())
+                if cancelled.unwrap():
+                    return Result.err(
+                        _error("EVENT_CANCELLED", "event wait was cancelled.")
+                    )
                 remaining = None if deadline is None else deadline - time.monotonic()
                 if remaining is not None and remaining <= 0:
                     return Result.err(
                         _error("EVENT_WAIT_TIMEOUT", "no event arrived before timeout.")
                     )
-                self._condition.wait(remaining)
+                self._condition.wait(0.05 if cancellation is not None else remaining)
             return Result.ok(
                 [event for event in self._events if event.sequence > after_sequence]
             )

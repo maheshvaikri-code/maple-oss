@@ -1,6 +1,7 @@
 """Tests for bounded event streaming and payload redaction."""
 
-from maple.autonomy.events import EventStream, RedactionPolicy
+from maple.autonomy.events import EventCursor, EventStream, RedactionPolicy
+from maple.autonomy.execution import CancellationToken
 
 
 def test_publish_redacts_nested_secrets_and_preserves_sequence():
@@ -70,6 +71,65 @@ def test_wait_for_and_query_validation():
     assert invalid.unwrap_err()["errorType"] == "EVENT_QUERY_INVALID"
     assert received.is_ok()
     assert received.unwrap()[0].event_type == "ready"
+
+
+def test_cursor_read_is_bounded_serializable_and_advances():
+    stream = EventStream(max_events=3)
+    stream.publish("one", {"value": 1})
+    stream.publish("two", {"value": 2})
+
+    first = stream.read(limit=1)
+    assert first.is_ok()
+    first_batch = first.unwrap()
+    assert [event.event_type for event in first_batch.events] == ["one"]
+    assert first_batch.next_cursor.to_dict() == {"sequence": 1}
+
+    restored = EventCursor.from_dict(first_batch.next_cursor.to_dict())
+    assert restored.is_ok()
+    second = stream.read(restored.unwrap(), limit=2)
+    assert second.is_ok()
+    second_batch = second.unwrap()
+    assert [event.event_type for event in second_batch.events] == ["two"]
+    assert second_batch.latest_sequence == 2
+    assert second_batch.to_dict()["next_cursor"] == {"sequence": 2}
+
+
+def test_cursor_read_rejects_evicted_window_instead_of_silent_loss():
+    stream = EventStream(max_events=2)
+    stream.publish("one", {})
+    stream.publish("two", {})
+    stream.publish("three", {})
+
+    result = stream.read(EventCursor(sequence=0))
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "EVENT_CURSOR_EXPIRED"
+    assert result.unwrap_err()["details"] == {
+        "cursor_sequence": 0,
+        "oldest_sequence": 2,
+        "latest_sequence": 3,
+    }
+
+
+def test_cursor_and_read_bounds_fail_closed():
+    stream = EventStream(max_events=2)
+    invalid_cursor = EventCursor.from_dict({"sequence": -1})
+    invalid_limit = stream.read(limit=3)
+
+    assert invalid_cursor.is_err()
+    assert invalid_cursor.unwrap_err()["errorType"] == "EVENT_CURSOR_INVALID"
+    assert invalid_limit.is_err()
+    assert invalid_limit.unwrap_err()["errorType"] == "EVENT_QUERY_INVALID"
+
+
+def test_wait_for_supports_cooperative_cancellation():
+    token = CancellationToken()
+    token.cancel()
+
+    result = EventStream().wait_for(0, timeout=1, cancellation=token)
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "EVENT_CANCELLED"
 
 
 def test_subscriber_failures_do_not_break_publish_and_unsubscribe_works():

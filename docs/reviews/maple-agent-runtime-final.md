@@ -563,6 +563,23 @@ remain explicit follow-on work.
   including ADR-042 and the workflow regression, and the workspace-only audit
   found zero preserved Doctrine files. No publication was performed.
 
+## Slice 97 implementation review
+
+- `EventCursor` validates non-negative sequence state and round-trips through a
+  JSON-safe mapping. `EventBatch` returns bounded events plus the next cursor
+  and retained-window metadata.
+- `EventStream.read` caps explicit limits at the configured ring capacity and
+  returns `EVENT_CURSOR_EXPIRED` with sequence metadata when retention has
+  evicted the requested position. It does not silently invent replay data.
+- `wait_for` checks a cooperative cancellation signal before waiting and at a
+  bounded polling interval; malformed or exceptional signals fail closed with
+  typed errors. Existing event redaction and subscriber isolation are retained.
+- Focused event/lifecycle coverage reports `37 passed in 2.28s`; the exact
+  tracked manifest reports `1226 passed, 1 skipped in 216.99s` across 107 tracked
+  test files. Ruff, Black, compile, diff, doctor, and changed-boundary mypy
+  pass. Remote transport, provider token linkage, durable broker storage, and
+  exporter behavior remain unimplemented by design.
+
 ## Verdict
 
 **Feature review:** PASS for the twenty-eight implemented capability slices.

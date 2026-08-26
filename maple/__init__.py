@@ -69,7 +69,13 @@ from .autonomy.evaluation import (
     GroundingSource,
     RetrievalEvalCase,
 )
-from .autonomy.events import AgentEvent, EventStream, RedactionPolicy
+from .autonomy.events import (
+    AgentEvent,
+    EventBatch,
+    EventCursor,
+    EventStream,
+    RedactionPolicy,
+)
 from .autonomy.interactions import (
     FileHumanInputStore,
     HumanInputAuthorizer,
@@ -285,6 +291,8 @@ __all__ = [
     "FileAgentRunStore",
     "InMemoryAgentRunStore",
     "AgentEvent",
+    "EventBatch",
+    "EventCursor",
     "EventStream",
     "RedactionPolicy",
     "HumanInputDecision",

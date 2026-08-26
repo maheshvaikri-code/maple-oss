@@ -52,7 +52,7 @@ from .evaluation import (
     GroundingSource,
     RetrievalEvalCase,
 )
-from .events import AgentEvent, EventStream, RedactionPolicy
+from .events import AgentEvent, EventBatch, EventCursor, EventStream, RedactionPolicy
 from .interactions import (
     FileHumanInputStore,
     HumanInputAuthorizer,
@@ -184,6 +184,8 @@ __all__ = [
     "FileAgentRunStore",
     "InMemoryAgentRunStore",
     "AgentEvent",
+    "EventBatch",
+    "EventCursor",
     "EventStream",
     "RedactionPolicy",
     "HumanInputDecision",

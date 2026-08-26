@@ -823,13 +823,30 @@ for event in events.snapshot().unwrap():
     print(event.sequence, event.event_type, event.payload)
 ```
 
-This is a local event contract, not a durable broker or hosted telemetry
-service. Subscribers are synchronous and should hand off to a host-owned queue
-when callback work may block. The agent lifecycle uses metadata-only events and
-usage trailers; prompts, tool arguments, tool output, and final result data are
-not emitted. `dropped_count` exposes bounded-ring eviction. Cancellation,
-provider-native token streams, and durable event cursors remain separate
-capabilities.
+For incremental consumers, persist an `EventCursor` and use bounded reads. A
+cursor older than the retained ring fails with `EVENT_CURSOR_EXPIRED` rather
+than silently skipping events:
+
+```python
+from maple import EventCursor, EventStream
+
+events = EventStream(max_events=100)
+cursor = EventCursor()
+batch = events.read(cursor, limit=25).unwrap()
+cursor = batch.next_cursor
+saved_cursor = cursor.to_dict()
+restored = EventCursor.from_dict(saved_cursor).unwrap()
+next_batch = events.read(restored, limit=25)
+```
+
+`EventStream.wait_for(..., cancellation=token)` accepts MAPLE's cooperative
+`CancellationToken` contract and returns `EVENT_CANCELLED` when signalled. This
+is a local event contract, not a durable broker, remote transport, provider
+token stream, or hosted telemetry service. Subscribers are synchronous and
+should hand off to a host-owned queue when callback work may block. The agent
+lifecycle uses metadata-only events and usage trailers; prompts, tool
+arguments, tool output, and final result data are not emitted. `dropped_count`
+exposes bounded-ring eviction, while cursor reads make that gap explicit.
 
 ## Evaluation and Provider Capabilities (preview)
 

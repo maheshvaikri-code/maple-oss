@@ -107,6 +107,7 @@
 | 94 | Bounded human-input host notification and authorization hooks | Chief Architect / Backend / Security / QA / Release | `docs/adr/040-*`, `maple/autonomy/interactions.py`, `maple/autonomy/agent.py`, host callback tests, public exports, API/README/parity docs, changelog, QA/review evidence | Bounded created/responded/rejected notifications without response payload, in-lease actor authorization for respond/reject, fail-closed errors, legacy no-actor compatibility, typed notification failure with persisted state authoritative; remote auth/transport/multi-round remain separate | done: focused host/interaction/run suite `49 passed in 2.80s`; tracked manifest `1215 passed, 1 skipped in 227.81s`; Ruff/Black/compile/diff/doctor pass and changed-boundary mypy pass; clean archive wheel/sdist `1.1.3`, Twine passed, sdist `484` entries with ADR-040/host module/test, workspace-only audit zero; no publication |
 | 95 | Bounded same-record multi-round human input and durable resume | Chief Architect / Backend / Security / QA / Release | `docs/adr/041-*`, `maple/autonomy/interactions.py`, `maple/autonomy/agent.py`, built-in tool schema, round/history tests, public exports, API/README/parity docs, changelog, QA/review evidence | Bounded `max_rounds` quota, immutable completed-round history, durable in-memory/file `continue_round`, in-lease authorization and metadata-only continuation notification, sync durable checkpoint waits on the same interaction, multi-round tool result preserves prior responses, legacy one-shot behavior and custom-store compatibility; remote auth/transport remains separate | done: focused slice `23 passed in 2.74s`; tracked manifest `1219 passed, 1 skipped in 215.53s`; Ruff/Black/compile/diff/doctor and changed-boundary mypy pass; clean archive wheel/sdist `1.1.3`, Twine passed, sdist `485` entries with ADR-041/interactions module/run test, workspace-only audit zero; no publication |
 | 96 | Bounded per-node workflow retry and durable backoff state | Chief Architect / Backend / Security / QA / Release | `docs/adr/042-*`, `maple/autonomy/workflow.py`, workflow exports/tests, API/README/parity docs, changelog, QA/review evidence | Capped `RetryPolicy`, ordinary node retry on exceptions/invalid outputs, persisted retry counts and `retry_after`, retry context metadata, typed exhaustion, existing no-policy failure behavior, parallel-branch boundary explicit; static/package/doctor gates | done: focused workflow/replay suite `22 passed in 4.20s`; tracked manifest `1222 passed, 1 skipped in 222.42s`; Ruff/Black/compile/diff/doctor and changed-boundary mypy pass; clean archive wheel/sdist `1.1.3`, Twine passed, sdist `486` entries with ADR-042/workflow module/test, workspace-only audit zero; no publication |
+| 97 | Durable event cursors and cooperative stream cancellation | Chief Architect / Backend / Security / QA / Release | `docs/adr/043-*`, `maple/autonomy/events.py`, autonomy/top-level exports, event regression, API/README/parity docs, changelog, QA/review evidence | JSON-safe `EventCursor`/`EventBatch`, bounded cursor reads, explicit `EVENT_CURSOR_EXPIRED` retention gaps, existing cancellation-token wait support, public import, static/package/doctor gates; remote transport/provider token linkage/exporter remain separate | code complete: focused event/lifecycle suite `37 passed in 2.28s`; exact tracked manifest `1226 passed, 1 skipped in 216.99s`; Ruff/Black/compile/diff/doctor and changed-boundary mypy pass; clean archive gate pending |
 
 ## Threat sketch
 
@@ -594,3 +595,15 @@ including ADR-042, the workflow module, and its regression, and the
 workspace-only audit found zero preserved Doctrine files. Parallel-branch retry
 and exactly-once external effects remain separate boundaries. No publication
 was performed.
+
+2026-08-26 durable event cursor closure: ADR-043 adds JSON-safe
+`EventCursor`/`EventBatch` values and bounded `EventStream.read` consumption.
+Consumers can persist and advance cursors, while a cursor older than the
+retained ring fails with `EVENT_CURSOR_EXPIRED` instead of silently skipping
+events. `wait_for` accepts MAPLE's cooperative cancellation contract and
+returns typed cancellation or malformed-signal errors. Existing redaction,
+snapshot, subscriber, and lifecycle behavior is unchanged; remote transport,
+provider token linkage, and hosted exporter behavior remain separate. No
+publication was performed. The focused event/lifecycle suite reports `37 passed
+in 2.28s`; the exact tracked manifest reports `1226 passed, 1 skipped in
+216.99s`; Ruff, Black, compile, diff, doctor, and changed-boundary mypy pass.
