@@ -57,9 +57,13 @@
   wrapper and applied it to `FileHumanInputStore` for per-record
   get/create/respond/reject/consume/list fencing. Acquisition failures return
   `HUMAN_INPUT_LEASE_ERROR` without mutation; release uncertainty is typed.
-  Focused approval/input/lease coverage reports `13 passed in 0.48s`; run-store
-  ownership, notifications, authentication, and multi-round interaction remain
-  outside this slice.
+  Focused approval/input/lease coverage reports `13 passed in 0.48s`; the exact
+  tracked manifest reports `1211 passed, 1 skipped in 219.68s`; Ruff, Black,
+  changed-boundary mypy, compile, diff, and doctor pass. A clean archive
+  rebuilt wheel/sdist `1.1.3`; Twine passed for both, the sdist contains 480
+  entries including ADR-038, and the workspace-only audit found zero preserved
+  Doctrine files. Run-store ownership, notifications, authentication, and
+  multi-round interaction remain outside this slice.
 - **Agent-framework parity ledger**: added a source-backed functionality and
   runtime matrix for LangGraph, CrewAI, Microsoft Agent Framework, LlamaIndex,
   and OpenAI Agents SDK. It separates MAPLE's native infrastructure strengths

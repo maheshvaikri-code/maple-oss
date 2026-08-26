@@ -489,9 +489,14 @@ slow Doctrine gold phase before interruption without a pytest summary.
 - Coverage proves the shared lease wrapper preserves approval behavior and
   protects human-input create/respond/consume transitions, including no
   mutation while an external holder owns the record.
-- Changed-file Ruff, Black, mypy, compile, complete tracked suite, clean
-  package, and doctor evidence remain pending. No publication, website, cloud,
-  registry, or user-owned untracked file change was made.
+- The exact tracked manifest reports `1211 passed, 1 skipped in 219.68s`.
+  Ruff, Black, compile, diff, network-free doctor, and changed-boundary mypy
+  pass.
+- A clean current archive rebuilt wheel/sdist `1.1.3`; Twine passed for both,
+  the sdist contains 480 entries including ADR-038 and the shared durable
+  lease helper, and the workspace-only audit found zero preserved Doctrine files.
+- No publication, website, cloud, registry, or user-owned untracked file
+  change was made.
 
 ## Security conclusions
 

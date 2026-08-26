@@ -470,8 +470,12 @@ remain explicit follow-on work.
   responses do not mutate a pending request. Notifications, remote operator
   authentication, multi-round interaction, and run-cursor ownership remain
   explicit gaps.
-- Focused approval/input/lease coverage reports `13 passed in 0.48s`; remaining
-  static, full-suite, package, and doctor gates are pending.
+- Focused approval/input/lease coverage reports `13 passed in 0.48s`; the exact
+  tracked manifest reports `1211 passed, 1 skipped in 219.68s`. Ruff, Black,
+  compile, diff, doctor, and changed-boundary mypy pass. A clean archive
+  rebuilt wheel/sdist `1.1.3`; Twine passed for both, the sdist contains 480
+  entries including ADR-038, and the workspace-only audit found zero preserved
+  Doctrine files.
 
 ## Verdict
 
