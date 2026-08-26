@@ -249,6 +249,9 @@ verification remain open.
   passed the application suites through `90%` before entering the slow Doctrine
   gold phase. It was interrupted without failure output or a pytest summary;
   this remains an open release gate.
+- A newer exact-current attempt on `2b7ea84` collected `1300` items and again
+  passed the application suites through `90%` before the slow Doctrine gold
+  phase. It was interrupted without failure output or a pytest summary.
 
 ## Slice 77 revalidation
 

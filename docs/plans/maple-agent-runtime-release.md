@@ -355,3 +355,9 @@ specialist's bounded synchronous `pursue_goal` call. Tool coverage reports
 errors are normalized without raw payload forwarding; ADR-029, public docs,
 changelog, QA, and review evidence are filed. No dependency, publication, or
 website change was made.
+
+2026-08-25 exact-current full-suite attempt on `2b7ea84`: pytest collected
+`1300` items, passed the application suites through `90%`, and entered
+`tests/test_doctrine_gold.py`. After sparse gold-phase progress, the bounded
+session was interrupted without failure output or a pytest summary. This is not
+a full-suite pass; the exact gate remains open.

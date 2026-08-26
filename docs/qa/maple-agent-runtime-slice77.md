@@ -19,6 +19,10 @@ and fail-closed target errors.
 - Black reports all changed files unchanged after formatting.
 - Mypy reports `Success: no issues found in 93 source files`.
 - `python -m compileall -q maple` passed.
+- Exact-current wheel and sdist built as `maple_oss-1.1.3`; Twine reports
+  `PASSED` for both artifacts.
+- Network-free doctor reports all eight checks true with `ready: true`,
+  `network: false`, version `1.1.3`.
 
 ## Boundary review
 
@@ -33,6 +37,9 @@ and fail-closed target errors.
   this slice does not claim durable routing, conversation transfer, distributed
   execution, or hard target cancellation.
 - No dependency, provider, cloud, publication, or website change was made.
+- The exact-current repository attempt on `2b7ea84` collected `1300` items,
+  reached `90%`, entered the slow Doctrine-gold phase, and was interrupted
+  without failure output or a pytest summary; the full-suite gate remains open.
 
 ## Decision
 
