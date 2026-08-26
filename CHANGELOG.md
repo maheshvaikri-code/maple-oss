@@ -36,8 +36,12 @@
   caller-owned JSON state, OS-level inter-process locking, atomic replacement,
   restart-safe fencing counters, expiry, renew/release, and fail-closed typed
   storage errors. The focused resource/lease slice reports `41 passed in
-  3.64s`; durable-store integration, remote authentication, and exactly-once
-  effects remain outside this slice.
+  3.64s`; the exact tracked manifest reports `1207 passed, 1 skipped in
+  214.53s`; Ruff, Black, changed-boundary mypy, compile, and doctor pass. A
+  clean archive rebuilt wheel/sdist `1.1.3`; Twine passed for both, the sdist
+  contains 475 entries including ADR-035 and ADR-036, and the workspace-only
+  audit found zero preserved Doctrine files. Durable-store integration, remote
+  authentication, and exactly-once effects remain outside this slice.
 - **Agent-framework parity ledger**: added a source-backed functionality and
   runtime matrix for LangGraph, CrewAI, Microsoft Agent Framework, LlamaIndex,
   and OpenAI Agents SDK. It separates MAPLE's native infrastructure strengths

@@ -432,10 +432,16 @@ verification remain open.
   plus fsync protects the durable state boundary.
 - Persisted fencing counters survive manager restart; exact holder/token checks
   prevent stale renewal or release, and corrupt/unavailable storage fails
-  closed. The focused resource/lease slice reports `41 passed in 3.64s`.
+  closed. The focused resource/lease slice reports `41 passed in 3.64s`; the
+  exact tracked manifest reports `1207 passed, 1 skipped in 214.53s`. Ruff,
+  Black, compile, doctor, and changed-boundary mypy pass. Repository-wide
+  mypy retains 11 pre-existing optional-adapter stub findings.
 - The primitive is intentionally not marketed as remote distributed locking,
   exactly-once external effects, or automatic ownership of durable agent
-  stores. Those integrations remain explicit follow-on work.
+  stores. A clean archive rebuilt wheel/sdist `1.1.3`; Twine passed for both,
+  the sdist contains 475 entries including ADR-035 and ADR-036, and the
+  workspace-only audit found zero preserved Doctrine files. Those integrations
+  remain explicit follow-on work.
 
 ## Verdict
 

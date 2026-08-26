@@ -453,8 +453,13 @@ slow Doctrine gold phase before interruption without a pytest summary.
 - Coverage includes restart persistence, fencing-token monotonicity, stale
   release rejection, expiry reacquisition, child-process state sharing,
   corrupt-state fail-closed behavior, and bounded input rejection.
-- The changed lease boundary passes Ruff, Black, and mypy. Complete tracked
-  suite, clean package, and doctor evidence for this slice remain pending.
+- The exact tracked manifest reports `1207 passed, 1 skipped in 214.53s`.
+  Ruff, Black, compile, network-free doctor, and changed-boundary mypy pass;
+  repository-wide mypy still reports the pre-existing optional-adapter stub
+  findings documented by the release review.
+- A clean current archive rebuilt wheel/sdist `1.1.3`; Twine passed for both,
+  the sdist contains 475 entries including ADR-035 and ADR-036, and the
+  workspace-only audit found zero preserved Doctrine files.
 - No publication, website, cloud, registry, or user-owned untracked file
   change was made.
 
