@@ -27,6 +27,35 @@ external publication.
   managed vector databases, hosted dashboards, and multi-language SDKs until
   the local runtime contracts are stable.
 
+## Explicit unsupported capability boundaries
+
+The following public compatibility surfaces are intentionally fail-closed and
+must not be read as completed feature claims:
+
+- **Redis state backend:** `StorageBackend.REDIS` is retained for compatibility,
+  but `get`, `set`, `delete`, and `list_keys` return `NOT_IMPLEMENTED` until a
+  real Redis dependency, connection/configuration contract, optimistic-version
+  semantics, and offline integration test matrix are separately approved.
+  Memory, atomic file, and SQLite state backends are the supported local
+  implementations.
+- **Mutual TLS authentication:** `AuthMethod.MUTUAL_TLS` returns
+  `NOT_IMPLEMENTED`. MAPLE does not inspect sockets or certificate chains in
+  the in-process authentication manager; transport TLS and peer verification
+  require a separately reviewed integration boundary.
+- **OAuth2 authentication:** `AuthMethod.OAUTH2` returns `NOT_IMPLEMENTED`.
+  Token acquisition, issuer/JWKS validation, audience checks, refresh, and
+  revocation semantics require an explicit provider-neutral contract and are
+  not represented by a placeholder implementation.
+- **Untrusted code execution:** Markdown code blocks are extractable as data,
+  while `TrustedLocalExecutor` is only for explicitly trusted local Python
+  handlers. MAPLE does not claim an in-process sandbox, subprocess isolation,
+  browser/computer-use runtime, or hosted code interpreter.
+
+These boundaries are release documentation, not roadmap promises. A future
+implementation requires a new scoped brief, dependency/security review, and
+failure-path tests before the corresponding claim can move into the supported
+feature list.
+
 ## Acceptance criteria
 
 1. Every capability promised by the program has either a documented native

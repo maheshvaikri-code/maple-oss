@@ -266,6 +266,18 @@ verification remain open.
   docs, changelog, plan, and QA evidence are filed. No dependency or external
   action was introduced.
 
+## Slice 78 revalidation
+
+- The public release brief and README now record the remaining intentional
+  `NOT_IMPLEMENTED` boundaries: Redis state operations, mutual-TLS, and
+  OAuth2. They also distinguish non-executing code-block extraction from the
+  trusted-local handler executor.
+- The documentation does not claim provider, transport, or sandbox behavior
+  that the repository does not implement. A future implementation requires a
+  scoped contract, dependency/security review, and failure-path coverage.
+- No user-owned untracked files were changed or staged; no external action was
+  taken.
+
 ## Verdict
 
 **Feature review:** PASS for the twenty-three implemented capability slices.

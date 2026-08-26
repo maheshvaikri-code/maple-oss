@@ -75,6 +75,16 @@ Most agent frameworks give you either **infrastructure** (messaging, security, f
 - **Agent Discovery** — Auto-registration, capability matching, health monitoring, failure detection.
 - **11 Protocol Adapters** — Native interop with A2A, MCP, FIPA ACL, AutoGen, CrewAI, LangGraph, OpenAI SDK, IBM ACP, S2.dev, n8n, plus a native doctrine profile.
 
+### Explicit release boundaries
+
+MAPLE fails closed for compatibility surfaces that are not implemented as
+native runtime features: Redis state operations, mutual-TLS authentication,
+and OAuth2 authentication currently return typed `NOT_IMPLEMENTED` results.
+Local memory/file/SQLite state and the implemented JWT/API-key/certificate
+trust-list paths remain distinct from those deferred integrations. Markdown
+code blocks are extracted as data; `TrustedLocalExecutor` is for explicitly
+trusted handlers and is not an untrusted-code sandbox.
+
 ### Doctrine Workforce (v1.1.2)
 
 Primitives for running a governed multi-agent workforce (builders + fresh-context verifiers) as a runtime guarantee rather than a convention:

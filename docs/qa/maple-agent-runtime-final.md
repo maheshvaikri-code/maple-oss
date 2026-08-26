@@ -254,6 +254,18 @@ slow Doctrine gold phase before interruption without a pytest summary.
   was bounded/interrupted after sparse gold-phase progress. No failure output or
   pytest summary was produced; this is not a full-suite pass.
 
+## Slice 78 revalidation
+
+- The release brief and README now explicitly distinguish supported local
+  state/authentication/execution surfaces from Redis, mutual-TLS, OAuth2, and
+  untrusted-code paths that fail closed or remain deferred.
+- `rg -n "NOT_IMPLEMENTED" maple` was used as the inventory cross-check; no
+  runtime files or tests changed, and no unsupported feature was implemented by
+  documentation alone.
+- No dependency, credential, cloud call, publication, or website mutation was
+  performed. The exact full-suite and fresh independent-verifier gates remain
+  open.
+
 ## Security conclusions
 
 - No new dependency, credential, cloud call, website mutation, or publication
@@ -269,7 +281,7 @@ slow Doctrine gold phase before interruption without a pytest summary.
 ## Release decision
 
 **QA status: CONDITIONAL / NOT PUBLISH-READY.** The implementation is
-feature-complete for the twenty-two implemented capability slices, the built wheel
+feature-complete for the tracked implemented capability slices, the built wheel
 passes a clean-venv doctor smoke test, and the isolated dependency audit is
 clean. The release gate must remain open for the exact full-suite and
 fresh-verifier checks. No external release action was taken.

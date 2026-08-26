@@ -10,6 +10,9 @@
 
 ### Additions
 
+- **Explicit release boundaries**: documented the fail-closed status of the
+  Redis, mutual-TLS, OAuth2, and untrusted-code execution compatibility
+  surfaces so unsupported functionality is not presented as implemented.
 - **Bounded agent handoff tools**: `create_handoff_tool` exposes a specialist's
   synchronous `pursue_goal` boundary as an approval-by-default model tool with
   an 8,192-character task limit, structured goal results, and redacted target
