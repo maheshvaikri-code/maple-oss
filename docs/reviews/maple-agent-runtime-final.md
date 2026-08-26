@@ -296,6 +296,19 @@ verification remain open.
 - This is the correct artifact boundary for future publication; no publication
   or external registry action occurred.
 
+## Slice 81 revalidation
+
+- The parity ledger is explicit about the comparison set, observation date,
+  status vocabulary, and official framework references.
+- The matrix does not make unsupported “built-in” claims for Redis,
+  mutual-TLS, OAuth2, untrusted execution, hosted deployment, or language
+  breadth. It also states that adapters are interoperability surfaces rather
+  than native feature parity.
+- The README now links to the ledger and narrows its summary comparison to
+  evidence-backed MAPLE boundaries.
+- No code, dependency, user-owned untracked file, external service, website,
+  or publication target was changed.
+
 ## Verdict
 
 **Feature review:** PASS for the twenty-three implemented capability slices.

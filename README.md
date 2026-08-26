@@ -443,30 +443,19 @@ maple/
 
 ## How MAPLE Compares
 
-| Feature | MAPLE | LangGraph | CrewAI | AutoGen | Google A2A | MCP |
-| ------- | ----- | --------- | ------ | ------- | ---------- | --- |
-| Autonomous agents (ReAct) | Built-in | Built-in | Built-in | Built-in | No | No |
-| Resource specification in protocol | Built-in | No | No | No | Via payload | No |
-| Result\<T,E\> error handling | Built-in | No | No | No | No | No |
-| Circuit breakers & fault tolerance | Built-in | No | No | No | No | No |
-| Cryptographic link security (LIM) | Built-in | No | No | No | OAuth | Platform |
-| Distributed state management | Built-in | Checkpointer | No | No | No | No |
-| Agent discovery & health monitoring | Built-in | No | No | No | Agent Cards | No |
-| Priority message queuing | Built-in | No | No | No | No | No |
-| Task scheduling & load balancing | Built-in | No | No | No | No | No |
-| Multi-agent orchestration | Built-in | Built-in | Built-in | Built-in | No | No |
-| Workflow graph + checkpoint/resume | Preview | Built-in | Partial | Partial | No | No |
-| Bounded workflow fan-out/fan-in | Preview | Built-in | Partial | Partial | No | No |
-| Tool framework | Built-in | Built-in | Built-in | Built-in | No | Built-in |
-| Typed I/O + guardrails | Preview | Built-in | Partial | Partial | No | No |
-| Per-goal token accounting/budget | Built-in | Partial | Partial | Partial | No | No |
-| Memory system | Built-in | Partial | Partial | No | No | No |
-| MCP tool discovery | Built-in | No | No | No | No | Native |
-| Protocol adapters | 10 adapters | No | No | No | No | No |
+MAPLE's comparison has two distinct dimensions: its native protocol and
+infrastructure layer, and its still-maturing autonomous agent runtime. The
+full functionality/code-block/runtime matrix is maintained in the
+[Agent-Framework Parity Ledger](docs/agent-framework-parity.md) for LangGraph,
+CrewAI, Microsoft Agent Framework, LlamaIndex, and OpenAI Agents SDK.
 
-**Where MAPLE excels:** Production infrastructure + autonomous reasoning in one framework. If your agents need resource awareness, security, fault tolerance, AND autonomous decision-making — MAPLE provides all of these as first-class features.
-
-**Where others are stronger:** LangGraph, CrewAI, and current Microsoft Agent Framework releases still provide deeper workflow, session, and human-in-the-loop runtime surfaces. MAPLE's native workflow runtime is currently preview-level while its protocol and infrastructure features remain the differentiator.
+| MAPLE capability | Current release boundary |
+|---|---|
+| Resource negotiation, leases, broker routing, discovery, health, and priority queues | Native infrastructure |
+| Result\<T,E\> errors, retries, circuit breakers, and cryptographic link security | Native infrastructure |
+| ReAct agents, tools, typed contracts, retrieval, events, sessions, and local workflows | Native or preview; see the ledger for exact limits |
+| Protocol interoperability | 11 adapters; adapters do not substitute for native runtime parity |
+| Durable agent runs, broad HITL, full-context handoffs, sandboxing, hosted runtime, and multi-language SDKs | Partial, unsupported, or deferred; no parity claim is made |
 
 ---
 
@@ -623,6 +612,7 @@ not run Python, shell, browser, or computer-use code.
 - [Type System](docs/type-system.md) — MAPLE's rich type system
 - [Protocol Specification](docs/Protocol_Language_Specification.txt) — Formal protocol definition
 - [Protocol Comparison](docs/protocol-comparison.md) — Detailed comparison with A2A, MCP, FIPA ACL
+- [Agent-Framework Parity Ledger](docs/agent-framework-parity.md) — Functionality and runtime gap analysis against five current agent frameworks
 - [Result\<T,E\> Details](docs/details_Result_Type.md) — Deep dive into type-safe error handling
 - [Best Practices](docs/best-practices.md) — Production deployment guidelines
 - [Industry Applications](docs/industry-applications.md) — Real-world use cases

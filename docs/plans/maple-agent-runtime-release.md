@@ -91,6 +91,7 @@
 | 78 | Explicit unsupported capability inventory | Chief Architect / Security / Release | release brief, README, changelog, state/authentication regressions, QA/review evidence | Cross-reference every remaining `NOT_IMPLEMENTED` runtime path; verify fail-closed tests and no unsupported claim in public feature list | done: Redis state boundary plus mutual-TLS/OAuth2 fail-closed regression coverage (`73 passed in 3.44s`); unsupported/deferred surfaces are explicit; no dependency change |
 | 79 | Tracked release-suite warning closure | QA / Release / Backend | `tests/test_fixes.py`, release plan, README, changelog, QA/review evidence | Tracked-test manifest execution, warning-free summary, focused test, Ruff, diff check | done: 100 tracked test files; `1185 passed, 1 skipped in 210.07s`; fixed a test returning a value to pytest; no runtime behavior or dependency change |
 | 80 | Clean tracked release artifact boundary | Release / DevOps / QA | clean archive build evidence, release plan, QA/review evidence | Build wheel/sdist from `git archive HEAD`, Twine checks, sdist content audit, no workspace-only files | done: clean snapshot built wheel/sdist `1.1.3`; both Twine checks `PASSED`; 460 sdist files; preserved workspace-only files absent; dirty-workspace artifact not treated as publishable |
+| 81 | Agent-framework parity ledger | Release / Chief Architect / QA | `docs/agent-framework-parity.md`, README, changelog, QA/review evidence | Source-backed five-framework matrix, explicit status vocabulary, code-block/sandbox boundary, prioritized gap list | done: functionality-only ledger filed; no adapter-as-parity claim; no runtime/dependency change |
 
 ## Threat sketch
 
@@ -381,3 +382,11 @@ review remain open.
 snapshot built wheel/sdist `1.1.3`; both Twine checks passed. The sdist contained
 460 files and the explicit audit found zero preserved workspace-only files. The
 dirty shared-workspace artifact remains diagnostic only.
+
+2026-08-25 parity-ledger closure: added a source-backed functionality matrix
+for LangGraph, CrewAI, Microsoft Agent Framework, LlamaIndex, and OpenAI Agents
+SDK. The ledger explicitly separates MAPLE native/preview/partial/adapter/
+deferred/unsupported surfaces, treats code-block extraction as non-executing
+artifact data, and orders the next gaps around durable agent runs, HITL,
+context-aware handoffs, unified streaming/observability, deeper evaluations,
+and separately reviewed execution integrations.

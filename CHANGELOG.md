@@ -10,6 +10,11 @@
 
 ### Additions
 
+- **Agent-framework parity ledger**: added a source-backed functionality and
+  runtime matrix for LangGraph, CrewAI, Microsoft Agent Framework, LlamaIndex,
+  and OpenAI Agents SDK. It separates MAPLE's native infrastructure strengths
+  from partial/deferred runtime surfaces and records the next highest-value
+  gaps without counting adapters as parity.
 - **Tracked release-suite revalidation**: the 100 tracked test files now report
   `1,185 passed, 1 skipped in 210.07s` with no warning output; the slow
   workspace-only Doctrine gold verifier remains separately documented as open.

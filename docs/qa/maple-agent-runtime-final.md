@@ -303,6 +303,21 @@ slow Doctrine gold phase before interruption without a pytest summary.
 - The earlier dirty-workspace artifact was not treated as a release candidate.
   The build boundary is now documented as clean-checkout/archive only.
 
+## Slice 81 revalidation — agent-framework parity ledger
+
+- `docs/agent-framework-parity.md` records the five-framework comparison set
+  selected by the release brief: LangGraph, CrewAI, Microsoft Agent Framework,
+  LlamaIndex, and OpenAI Agents SDK.
+- The ledger is functionality-focused and source-backed. It excludes adoption
+  and licensing, does not treat protocol adapters as native parity, and
+  distinguishes code-block/artifact extraction from executable code.
+- MAPLE's remaining gaps are explicitly ordered: durable agent-run state and
+  arbitrary request/response HITL; context-aware async/durable handoffs;
+  composable workflows with retry policy; unified streaming/trace export;
+  deeper trajectory/judge evaluation; and separately reviewed sandbox,
+  browser, hosting, managed data, and language surfaces.
+- Documentation-only change; no runtime behavior or dependency changed.
+
 ## Security conclusions
 
 - No new dependency, credential, cloud call, website mutation, or publication
