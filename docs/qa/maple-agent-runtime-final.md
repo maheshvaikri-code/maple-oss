@@ -599,8 +599,11 @@ slow Doctrine gold phase before interruption without a pytest summary.
   initial context message.
 - Ruff, Black, changed-boundary mypy, compile, and diff checks pass for the
   edited handoff and agent boundaries. The exact tracked manifest reports
-  `1230 passed, 1 skipped in 227.55s` across 107 tracked test files. The clean
-  package archive is still required before release closure.
+  `1230 passed, 1 skipped in 227.55s` across 107 tracked test files.
+- A clean committed-HEAD archive rebuilt wheel/sdist `1.1.3`; build and Twine
+  both exited 0, the sdist contains 488 entries including ADR-044, the handoff
+  and agent modules, and their regressions, and the workspace-only audit found
+  zero preserved Doctrine files.
 - Async target execution, durable handoff identity/leases, explicit ownership
   transfer, remote routing, and exactly-once effects remain unclaimed.
 

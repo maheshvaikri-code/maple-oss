@@ -599,9 +599,12 @@ remain explicit follow-on work.
 - Focused handoff/agent coverage reports `50 passed in 4.40s`; Ruff, Black,
   changed-boundary mypy, compile, and diff checks pass. The exact tracked
   manifest reports `1230 passed, 1 skipped in 227.55s` across 107 tracked test
-  files. Async target transport, durable handoff identity/leases, ownership
-  transfer, remote routing, and the clean package archive remain explicit
-  follow-on gates or work.
+  files. A clean committed-HEAD archive rebuilt wheel/sdist `1.1.3`; build and
+  Twine both exited 0, the sdist contains 488 entries including ADR-044, the
+  handoff and agent modules, and their regressions, and the workspace-only audit
+  found zero preserved Doctrine files. Async target transport, durable handoff
+  identity/leases, ownership transfer, and remote routing remain explicit
+  follow-on work.
 
 ## Verdict
 

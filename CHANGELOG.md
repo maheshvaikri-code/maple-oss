@@ -134,7 +134,10 @@
   handoff identity, ownership transfer, and remote routing remain separate.
   Focused handoff/agent coverage reports `50 passed in 4.40s`; the exact tracked
   manifest reports `1230 passed, 1 skipped in 227.55s`; Ruff, Black, compile,
-  diff, doctor, and changed-boundary mypy pass. No publication was performed.
+  diff, doctor, and changed-boundary mypy pass. A clean committed-HEAD archive
+  rebuilt wheel/sdist `1.1.3`; build and Twine exited 0, the sdist contains 488
+  entries including all three slice files, and the workspace-only audit found
+  zero preserved Doctrine files. No publication was performed.
 - **Agent-framework parity ledger**: added a source-backed functionality and
   runtime matrix for LangGraph, CrewAI, Microsoft Agent Framework, LlamaIndex,
   and OpenAI Agents SDK. It separates MAPLE's native infrastructure strengths
