@@ -10,6 +10,17 @@
 
 ### Additions
 
+- **Bounded provider stream aggregation and agent chunk events**: added
+  `LLMProvider.complete_from_stream` to reconstruct streamed text, fragmented
+  JSON tool calls, usage trailers, finish reasons, and safe request IDs into a
+  normal `LLMResponse`, including ID-safe multi-tool assembly. Opt-in
+  `AutonomousConfig(stream_model_events=True)` now emits metadata-only
+  `model.chunk` events for sync and async ReAct steps; default completion
+  behavior is unchanged. Raw content, arguments, provider SDK objects, remote
+  transport, trace/span export, backpressure, and hard cancellation remain
+  outside this bounded local contract. Focused validation currently reports
+  `19 passed`; full release-gate evidence will be added after the exact
+  tracked-suite and package audit. No publication was performed.
 - **Durable local handoff identity and ownership**: added bounded
   `HandoffRecord`/`HandoffStore` contracts with thread-safe in-memory and
   atomic file-backed stores, SHA-256 task/context digests instead of raw task

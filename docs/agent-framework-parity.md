@@ -34,7 +34,7 @@ with that capability, nor that an adapter makes MAPLE equivalent to it.
 | Workflow graph, branching, and parallelism | **Preview** — typed nodes, conditional routing, bounded fan-out/fan-in, deterministic joins, and persisted per-node retry/backoff for ordinary node handlers | LangGraph, Microsoft Agent Framework, and LlamaIndex document graph/event workflow composition; CrewAI documents event-driven flows and branching/loops | Add composable sub-workflows and durable retry state for parallel branches |
 | Durable checkpoints and recovery | **Partial** — JSON-safe memory/file checkpoints, bounded history, normalized-output journal, local run server, sync/async ReAct run resume, per-run file-backed fencing, and approval/input record ownership | LangGraph persistence/time-travel, Microsoft checkpoints/resume, LlamaIndex durable workflows, and CrewAI persisted flows establish a larger durability surface | P0: restore broader pending requests and document side-effect policy; add hosted/distributed coordination only with an explicit contract |
 | Conversation sessions and memory | **Partial** — bounded memory/file session stores plus working, episodic, and semantic memory | CrewAI, Microsoft Agent Framework, LlamaIndex, and OpenAI Agents SDK document session or memory primitives; richer managed context and compaction are common follow-ons | Add trace/tool-result replay and bounded compaction; keep encryption/leases host-owned until specified |
-| Streaming | **Preview** — provider-native OpenAI/Anthropic streams plus bounded sync/async agent lifecycle events with usage trailers, request correlation IDs, serializable cursors, explicit retention-gap errors, and cooperative waiter cancellation | LangGraph, CrewAI, Microsoft Agent Framework, LlamaIndex, and OpenAI Agents SDK expose run/event streaming | P1: aggregate incremental provider chunks into agent-run events and a trace/span model; remote transport remains separate |
+| Streaming | **Preview** — provider-native OpenAI/Anthropic streams plus bounded sync/async agent lifecycle events with opt-in metadata-only `model.chunk` events, response reconstruction, usage trailers, request correlation IDs, serializable cursors, explicit retention-gap errors, and cooperative waiter cancellation | LangGraph, CrewAI, Microsoft Agent Framework, LlamaIndex, and OpenAI Agents SDK expose run/event streaming | P1: add a trace/span model, backpressure metrics, and remote transport; local chunk aggregation remains deliberately bounded |
 | Retrieval, RAG, and citations | **Preview** — deterministic chunking, local lexical/vector retrieval, source references, retrieval/groundedness evaluation | LlamaIndex is the strongest reference surface for data connectors, RAG workflows, structured output, and citations; other frameworks expose retrieval integrations | P1: connector/reranker seams and managed-store adapters; do not call lexical overlap semantic faithfulness |
 | MCP and external tool ecosystem | **Native + Adapter** — live MCP discovery/call and protocol adapters | MCP is documented across the comparison set as an integration boundary rather than a complete agent runtime | Keep transport bounded; add auth/tenant policy only with a scoped contract |
 | Code blocks and artifacts | **Native data surface** — bounded Markdown code-block extraction and content-addressed artifact stores | Frameworks commonly expose code-generation or code-agent examples; that does not imply safe execution | Keep extraction non-executing; document artifact lifecycle and provenance |
@@ -60,9 +60,10 @@ the number of framework checkmarks:
    composable sub-workflows with per-step retry policy, and separately review
    remote routing/authentication and exactly-once side-effect policy around the
    local durable handoff identity.
-3. **Unified streaming and observability:** link provider chunk correlation and
-   usage metadata into the bounded agent-run event contract, then add a
-   trace/span model while retaining cancellation, backpressure visibility, and
+3. **Unified streaming and observability:** local provider chunk aggregation
+   and metadata-only `model.chunk` lifecycle events now link bounded usage and
+   provider correlation into agent runs. Add a trace/span model, explicit
+   backpressure metrics, and remote transport while retaining cancellation and
    the host-owned exporter seam.
 4. **Evaluation depth:** retain deterministic retrieval/grounding metrics and
    add versioned trajectory fixtures plus an optional model-judge contract.

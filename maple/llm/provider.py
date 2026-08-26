@@ -16,7 +16,18 @@
 """Abstract LLM provider base class."""
 
 from abc import ABC, abstractmethod
-from typing import Any, AsyncIterator, Dict, Iterator, List, Mapping, Optional, Tuple
+import json
+from typing import (
+    Any,
+    AsyncIterator,
+    Callable,
+    Dict,
+    Iterator,
+    List,
+    Mapping,
+    Optional,
+    Tuple,
+)
 
 from ..core.result import Result
 from .types import (
@@ -24,9 +35,16 @@ from .types import (
     LLMChunk,
     LLMConfig,
     LLMResponse,
+    ToolCall,
     TokenUsage,
     ToolDefinition,
 )
+
+_MAX_STREAM_CONTENT_BYTES = 1_048_576
+_MAX_STREAM_CHUNK_BYTES = 65_536
+_MAX_STREAM_TOOL_CALLS = 64
+_MAX_STREAM_ARGUMENT_BYTES = 262_144
+_MAX_STREAM_FINISH_REASON_LENGTH = 128
 
 
 class LLMProvider(ABC):
@@ -108,6 +126,294 @@ class LLMProvider(ABC):
             )
 
         return Result.ok(_chunks())
+
+    async def complete_from_stream(
+        self,
+        messages: List[ChatMessage],
+        tools: Optional[List[ToolDefinition]] = None,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+        on_chunk: Optional[Callable[[LLMChunk], None]] = None,
+    ) -> Result[LLMResponse, Dict[str, Any]]:
+        """Aggregate bounded stream chunks into one agent-compatible response.
+
+        The optional callback observes validated chunks before the final
+        response is returned. Callback failures are isolated because callers
+        commonly use it for telemetry. Provider selection, retry policy, and
+        persistence remain outside this collector.
+        """
+        if on_chunk is not None and not callable(on_chunk):
+            return Result.err(
+                {
+                    "errorType": "LLM_STREAM_INPUT_INVALID",
+                    "message": "on_chunk must be callable when provided.",
+                }
+            )
+        try:
+            stream_result = await self.stream(
+                messages,
+                tools=tools,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+        except Exception as exc:
+            return Result.err(
+                {
+                    "errorType": "LLM_STREAM_ERROR",
+                    "message": "provider stream could not be opened.",
+                    "details": {"exception": type(exc).__name__},
+                }
+            )
+        if stream_result.is_err():
+            return Result.err(stream_result.unwrap_err())
+
+        content_parts: List[str] = []
+        content_bytes = 0
+        tool_buffers: List[Dict[str, Any]] = []
+        active_tool_index: Optional[int] = None
+        finish_reason = ""
+        usage: Optional[TokenUsage] = None
+        request_id: Optional[str] = None
+
+        def stream_error(error_type: str, message: str) -> Result[Any, Dict[str, Any]]:
+            return Result.err({"errorType": error_type, "message": message})
+
+        try:
+            async for chunk in stream_result.unwrap():
+                if not isinstance(chunk, LLMChunk):
+                    return stream_error(
+                        "LLM_STREAM_CHUNK_INVALID",
+                        "provider stream yielded an invalid chunk.",
+                    )
+                if not isinstance(chunk.content, str):
+                    return stream_error(
+                        "LLM_STREAM_CHUNK_INVALID",
+                        "provider chunk content must be text.",
+                    )
+                chunk_bytes = len(chunk.content.encode("utf-8"))
+                if chunk_bytes > _MAX_STREAM_CHUNK_BYTES:
+                    return stream_error(
+                        "LLM_STREAM_CHUNK_TOO_LARGE",
+                        "provider chunk content exceeds the byte limit.",
+                    )
+                content_bytes += chunk_bytes
+                if content_bytes > _MAX_STREAM_CONTENT_BYTES:
+                    return stream_error(
+                        "LLM_STREAM_CONTENT_TOO_LARGE",
+                        "provider stream content exceeds the byte limit.",
+                    )
+                if chunk.content:
+                    content_parts.append(chunk.content)
+
+                if chunk.finish_reason is not None:
+                    if (
+                        not isinstance(chunk.finish_reason, str)
+                        or not chunk.finish_reason
+                        or len(chunk.finish_reason) > _MAX_STREAM_FINISH_REASON_LENGTH
+                        or any(ord(char) < 32 for char in chunk.finish_reason)
+                    ):
+                        return stream_error(
+                            "LLM_STREAM_CHUNK_INVALID",
+                            "provider finish reason is invalid.",
+                        )
+                    finish_reason = chunk.finish_reason
+
+                usage = self._merge_stream_usage(usage, chunk.usage)
+                if chunk.request_id is not None:
+                    bounded_request_id = self._bounded_request_id(chunk.request_id)
+                    if bounded_request_id is not None:
+                        request_id = bounded_request_id
+
+                delta = chunk.tool_call_delta
+                if delta is not None:
+                    if not isinstance(delta, Mapping):
+                        return stream_error(
+                            "LLM_STREAM_TOOL_CALL_INVALID",
+                            "provider tool-call delta must be an object.",
+                        )
+                    raw_index = delta.get("index")
+                    if raw_index is not None and (
+                        not isinstance(raw_index, int)
+                        or isinstance(raw_index, bool)
+                        or raw_index < 0
+                        or raw_index >= _MAX_STREAM_TOOL_CALLS
+                    ):
+                        return stream_error(
+                            "LLM_STREAM_TOOL_CALL_INVALID",
+                            "provider tool-call index is invalid.",
+                        )
+                    raw_id = delta.get("id")
+                    if raw_id is not None and (
+                        not isinstance(raw_id, str)
+                        or not raw_id
+                        or len(raw_id) > 256
+                        or any(ord(char) < 32 for char in raw_id)
+                    ):
+                        return stream_error(
+                            "LLM_STREAM_TOOL_CALL_INVALID",
+                            "provider tool-call ID is invalid.",
+                        )
+                    raw_name = delta.get("name")
+                    if raw_name is not None and (
+                        not isinstance(raw_name, str)
+                        or not raw_name
+                        or len(raw_name) > 256
+                        or any(ord(char) < 32 for char in raw_name)
+                    ):
+                        return stream_error(
+                            "LLM_STREAM_TOOL_CALL_INVALID",
+                            "provider tool name is invalid.",
+                        )
+
+                    selected_index: Optional[int] = raw_index
+                    if selected_index is None and isinstance(raw_id, str):
+                        selected_index = next(
+                            (
+                                index
+                                for index, candidate in enumerate(tool_buffers)
+                                if candidate.get("id") == raw_id
+                            ),
+                            None,
+                        )
+                    if selected_index is None and raw_id is None:
+                        selected_index = active_tool_index
+                    if selected_index is None:
+                        selected_index = len(tool_buffers)
+                    if selected_index > len(tool_buffers):
+                        return stream_error(
+                            "LLM_STREAM_TOOL_CALL_INVALID",
+                            "provider tool-call index skipped a call.",
+                        )
+                    if selected_index == len(tool_buffers):
+                        if len(tool_buffers) >= _MAX_STREAM_TOOL_CALLS:
+                            return stream_error(
+                                "LLM_STREAM_TOOL_CALL_LIMIT",
+                                "provider stream exceeded the tool-call limit.",
+                            )
+                        tool_buffers.append(
+                            {
+                                "id": None,
+                                "name": None,
+                                "argument_text": None,
+                                "argument_value": {},
+                            }
+                        )
+                    active_tool_index = selected_index
+                    buffer = tool_buffers[selected_index]
+                    if raw_id is not None:
+                        if buffer["id"] is not None and buffer["id"] != raw_id:
+                            return stream_error(
+                                "LLM_STREAM_TOOL_CALL_INVALID",
+                                "provider changed a tool-call ID mid-stream.",
+                            )
+                        buffer["id"] = raw_id
+                    if raw_name is not None:
+                        if buffer["name"] is not None and buffer["name"] != raw_name:
+                            return stream_error(
+                                "LLM_STREAM_TOOL_CALL_INVALID",
+                                "provider changed a tool name mid-stream.",
+                            )
+                        buffer["name"] = raw_name
+                    raw_arguments = delta.get("arguments")
+                    if raw_arguments is not None:
+                        if isinstance(raw_arguments, str):
+                            argument_bytes = len(raw_arguments.encode("utf-8"))
+                            existing_text = buffer["argument_text"] or ""
+                            if (
+                                buffer["argument_value"]
+                                or len(existing_text.encode("utf-8")) + argument_bytes
+                                > _MAX_STREAM_ARGUMENT_BYTES
+                            ):
+                                return stream_error(
+                                    "LLM_STREAM_TOOL_ARGUMENTS_TOO_LARGE",
+                                    "provider tool arguments exceed the byte limit.",
+                                )
+                            buffer["argument_text"] = existing_text + raw_arguments
+                        elif isinstance(raw_arguments, Mapping):
+                            if buffer["argument_text"] is not None:
+                                return stream_error(
+                                    "LLM_STREAM_TOOL_CALL_INVALID",
+                                    "provider mixed tool argument formats.",
+                                )
+                            buffer["argument_value"].update(dict(raw_arguments))
+                            try:
+                                if (
+                                    len(
+                                        json.dumps(
+                                            buffer["argument_value"],
+                                            allow_nan=False,
+                                        ).encode("utf-8")
+                                    )
+                                    > _MAX_STREAM_ARGUMENT_BYTES
+                                ):
+                                    return stream_error(
+                                        "LLM_STREAM_TOOL_ARGUMENTS_TOO_LARGE",
+                                        "provider tool arguments exceed the byte limit.",
+                                    )
+                            except (TypeError, ValueError, OverflowError):
+                                return stream_error(
+                                    "LLM_STREAM_TOOL_CALL_INVALID",
+                                    "provider tool arguments must be JSON-compatible.",
+                                )
+                        else:
+                            return stream_error(
+                                "LLM_STREAM_TOOL_CALL_INVALID",
+                                "provider tool arguments must be text or an object.",
+                            )
+
+                if on_chunk is not None:
+                    try:
+                        on_chunk(chunk)
+                    except Exception:
+                        pass
+        except Exception as exc:
+            return Result.err(
+                {
+                    "errorType": "LLM_STREAM_ERROR",
+                    "message": "provider stream iteration failed.",
+                    "details": {"exception": type(exc).__name__},
+                }
+            )
+
+        tool_calls: List[ToolCall] = []
+        for buffer in tool_buffers:
+            if not isinstance(buffer["id"], str) or not isinstance(buffer["name"], str):
+                return stream_error(
+                    "LLM_STREAM_TOOL_CALL_INVALID",
+                    "provider tool call is missing an ID or name.",
+                )
+            if buffer["argument_text"] is not None:
+                try:
+                    parsed_arguments = json.loads(buffer["argument_text"] or "{}")
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    return stream_error(
+                        "LLM_STREAM_TOOL_ARGUMENTS_INVALID",
+                        "provider tool arguments are not valid JSON.",
+                    )
+                if not isinstance(parsed_arguments, dict):
+                    return stream_error(
+                        "LLM_STREAM_TOOL_ARGUMENTS_INVALID",
+                        "provider tool arguments must decode to an object.",
+                    )
+                arguments = parsed_arguments
+            else:
+                arguments = buffer["argument_value"]
+            tool_calls.append(
+                ToolCall(
+                    id=buffer["id"],
+                    name=buffer["name"],
+                    arguments=arguments,
+                )
+            )
+        response = LLMResponse(
+            content="".join(content_parts) or None,
+            tool_calls=tool_calls,
+            usage=usage,
+            model=self.config.model,
+            finish_reason=finish_reason,
+            request_id=request_id,
+        )
+        return Result.ok(response)
 
     @staticmethod
     def _bounded_text_chunks(content: str) -> Iterator[str]:

@@ -904,11 +904,30 @@ them; OpenAI-compatible providers opt into the usage request with
 `LLMConfig.extra["include_stream_usage"] = True`. Subscribers and exporters are
 synchronous and
 should hand off to a host-owned queue when callback work may block. The agent
-lifecycle uses metadata-only events and usage trailers; bounded provider request
-IDs are copied into `model.response` events and `DecisionTrace` records for
-local joins. Prompts, tool arguments, tool output, and final result data are
-not emitted. `dropped_count`
-exposes bounded-ring eviction, while cursor reads make that gap explicit.
+lifecycle uses metadata-only events and usage trailers; set
+`AutonomousConfig.stream_model_events=True` to aggregate provider chunks for a
+ReAct step and emit one `model.chunk` event per bounded chunk before the final
+`model.response`. Chunk events contain byte counts, tool-call presence,
+finish/usage metadata, and safe provider request IDs; prompts, chunk content,
+tool arguments, tool output, and final result data are not emitted. The
+collector reconstructs text and JSON tool arguments into the normal
+`LLMResponse` contract and fails closed on malformed or over-quota streams.
+Bounded provider request IDs are copied into `model.response` events and
+`DecisionTrace` records for local joins. `dropped_count` exposes bounded-ring
+eviction, while cursor reads make that gap explicit.
+
+```python
+from maple import AutonomousAgent, AutonomousConfig, Config, EventStream, LLMConfig
+
+agent = AutonomousAgent(
+    Config(agent_id="demo", broker_url="memory://demo"),
+    AutonomousConfig(
+        llm=LLMConfig(provider="openai", model="gpt-4o-mini"),
+        stream_model_events=True,
+    ),
+)
+agent.set_event_stream(EventStream())
+```
 
 ## Evaluation and Provider Capabilities (preview)
 

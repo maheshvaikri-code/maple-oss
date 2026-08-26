@@ -173,13 +173,15 @@ class OpenAIProvider(LLMProvider):
                             yield LLMChunk(content=text)
                         for tool_call in getattr(delta, "tool_calls", None) or []:
                             function = getattr(tool_call, "function", None)
-                            yield LLMChunk(
-                                tool_call_delta={
-                                    "id": getattr(tool_call, "id", None),
-                                    "name": getattr(function, "name", None),
-                                    "arguments": getattr(function, "arguments", None),
-                                }
-                            )
+                            tool_call_delta = {
+                                "id": getattr(tool_call, "id", None),
+                                "name": getattr(function, "name", None),
+                                "arguments": getattr(function, "arguments", None),
+                            }
+                            tool_call_index = getattr(tool_call, "index", None)
+                            if tool_call_index is not None:
+                                tool_call_delta["index"] = tool_call_index
+                            yield LLMChunk(tool_call_delta=tool_call_delta)
                     reason = getattr(choice, "finish_reason", None)
                     if reason:
                         finish_reason = reason

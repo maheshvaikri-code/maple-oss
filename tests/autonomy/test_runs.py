@@ -126,12 +126,13 @@ def register_run_provider():
     LLMProviderRegistry._providers = original
 
 
-def make_agent(responses):
+def make_agent(responses, *, stream_model_events=False):
     config = Config(agent_id="run-agent", broker_url="memory://test")
     autonomy_config = AutonomousConfig(
         llm=LLMConfig(provider="run-test", model="run-v1"),
         max_reasoning_steps=4,
         reflection_frequency=10,
+        stream_model_events=stream_model_events,
     )
     agent = AutonomousAgent(config, autonomy_config)
     agent.llm = ScriptedProvider(autonomy_config.llm, responses)
@@ -299,6 +300,59 @@ def test_agent_publishes_bounded_lifecycle_events_with_usage_trailer():
         "provider-run-1",
         "provider-run-2",
     ]
+
+
+def test_agent_can_publish_metadata_only_model_chunk_events():
+    events = EventStream(max_events=20)
+    agent = make_agent(
+        [LLMResponse(content="streamed", finish_reason="stop")],
+        stream_model_events=True,
+    )
+    agent.set_event_stream(events)
+
+    result = agent.pursue_goal("Emit model chunks")
+
+    assert result.is_ok()
+    assert result.unwrap().status == "completed"
+    retained = events.snapshot().unwrap()
+    assert [event.event_type for event in retained] == [
+        "run.started",
+        "model.chunk",
+        "model.chunk",
+        "model.response",
+        "run.completed",
+    ]
+    chunk_events = [event for event in retained if event.event_type == "model.chunk"]
+    assert chunk_events[0].payload["content_bytes"] == len("streamed".encode("utf-8"))
+    assert chunk_events[1].payload["content_bytes"] == 0
+    assert all("content" not in event.payload for event in chunk_events)
+
+
+def test_async_agent_can_publish_metadata_only_model_chunk_events():
+    events = EventStream(max_events=20)
+    agent = make_agent(
+        [LLMResponse(content="async-streamed", finish_reason="stop")],
+        stream_model_events=True,
+    )
+    agent.set_event_stream(events)
+
+    result = asyncio.run(agent.pursue_goal_async("Emit async model chunks"))
+
+    assert result.is_ok()
+    assert result.unwrap().status == "completed"
+    retained = events.snapshot().unwrap()
+    assert [event.event_type for event in retained] == [
+        "run.started",
+        "model.chunk",
+        "model.chunk",
+        "model.response",
+        "run.completed",
+    ]
+    chunk_events = [event for event in retained if event.event_type == "model.chunk"]
+    assert chunk_events[0].payload["content_bytes"] == len(
+        "async-streamed".encode("utf-8")
+    )
+    assert chunk_events[1].payload["content_bytes"] == 0
 
 
 def test_async_run_pauses_for_approval_and_resumes_after_restart():

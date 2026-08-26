@@ -17,6 +17,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import threading
 import time
 import uuid
 from dataclasses import dataclass, field, replace
@@ -32,6 +33,7 @@ from ..llm.registry import LLMProviderRegistry
 from ..llm.types import (
     ChatMessage,
     ChatRole,
+    LLMChunk,
     LLMConfig,
     LLMResponse,
     TokenUsage,
@@ -136,6 +138,7 @@ class AutonomousConfig:
     output_guardrails: List[Guardrail] = field(default_factory=list)
     max_total_tokens: Optional[int] = None
     max_output_retries: int = 0
+    stream_model_events: bool = False
 
 
 class AutonomousAgent(Agent):
@@ -175,6 +178,8 @@ class AutonomousAgent(Agent):
                 "max_output_retries must be an integer from 0 to "
                 f"{MAX_OUTPUT_RETRIES}"
             )
+        if not isinstance(autonomy_config.stream_model_events, bool):
+            raise ValueError("stream_model_events must be a boolean")
         self._output_schema: Optional[Dict[str, Any]] = autonomy_config.response_schema
         if autonomy_config.output_model is not None:
             output_schema = structured_model_schema(autonomy_config.output_model)
@@ -1443,8 +1448,11 @@ class AutonomousAgent(Agent):
 
             # THINK: Get LLM response
             tool_defs = self.tool_registry.get_llm_definitions()
-            response_result = self.llm.complete(
-                messages, tools=tool_defs if tool_defs else None
+            response_result = self._complete_model(
+                messages,
+                tools=tool_defs if tool_defs else None,
+                goal=goal,
+                step_num=step_num,
             )
 
             if response_result.is_err():
@@ -2390,6 +2398,92 @@ Instructions:
                 result.unwrap_err().get("errorType", "EVENT_ERROR"),
             )
 
+    def _publish_model_chunk(self, goal: Goal, step_num: int, chunk: LLMChunk) -> None:
+        """Publish metadata for one model chunk without exposing its payload."""
+        event_payload: Dict[str, Any] = {
+            "step": step_num,
+            "content_bytes": len(chunk.content.encode("utf-8")),
+            "has_tool_call": chunk.tool_call_delta is not None,
+        }
+        if chunk.finish_reason is not None:
+            event_payload["finish_reason"] = chunk.finish_reason
+        if isinstance(chunk.usage, TokenUsage):
+            event_payload["usage"] = {
+                "prompt_tokens": chunk.usage.prompt_tokens,
+                "completion_tokens": chunk.usage.completion_tokens,
+                "total_tokens": chunk.usage.total_tokens,
+            }
+        provider_request_id = self._bounded_provider_request_id(chunk.request_id)
+        if provider_request_id is not None:
+            event_payload["provider_request_id"] = provider_request_id
+        self._publish_run_event(goal, "model.chunk", event_payload)
+
+    def _complete_model(
+        self,
+        messages: List[ChatMessage],
+        *,
+        tools: Optional[List[Any]],
+        goal: Goal,
+        step_num: int,
+    ) -> Result[LLMResponse, Dict[str, Any]]:
+        """Complete one sync ReAct step, optionally through the stream collector."""
+        if not self.autonomy_config.stream_model_events:
+            return self.llm.complete(messages, tools=tools)
+
+        coroutine = self.llm.complete_from_stream(
+            messages,
+            tools=tools,
+            on_chunk=lambda chunk: self._publish_model_chunk(goal, step_num, chunk),
+        )
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(coroutine)
+
+        result_holder: Dict[str, Any] = {}
+
+        def run_collector() -> None:
+            try:
+                result_holder["result"] = asyncio.run(coroutine)
+            except Exception as exc:
+                result_holder["error"] = {
+                    "errorType": "LLM_STREAM_ERROR",
+                    "message": "stream collector failed.",
+                    "details": {"exception": type(exc).__name__},
+                }
+
+        worker = threading.Thread(target=run_collector, daemon=True)
+        worker.start()
+        worker.join()
+        if "error" in result_holder:
+            return Result.err(result_holder["error"])
+        result = result_holder.get("result")
+        if isinstance(result, Result):
+            return result
+        return Result.err(
+            {
+                "errorType": "LLM_STREAM_ERROR",
+                "message": "stream collector returned no result.",
+            }
+        )
+
+    async def _complete_model_async(
+        self,
+        messages: List[ChatMessage],
+        *,
+        tools: Optional[List[Any]],
+        goal: Goal,
+        step_num: int,
+    ) -> Result[LLMResponse, Dict[str, Any]]:
+        """Complete one async ReAct step, optionally through the stream collector."""
+        if not self.autonomy_config.stream_model_events:
+            return await self.llm.complete_async(messages, tools=tools)
+        return await self.llm.complete_from_stream(
+            messages,
+            tools=tools,
+            on_chunk=lambda chunk: self._publish_model_chunk(goal, step_num, chunk),
+        )
+
     @staticmethod
     def _run_event_usage(goal: Goal) -> Dict[str, int]:
         """Return the bounded usage trailer attached to lifecycle events."""
@@ -2811,8 +2905,11 @@ Instructions:
             start_time = time.time()
 
             tool_defs = self.tool_registry.get_llm_definitions()
-            response_result = await self.llm.complete_async(
-                messages, tools=tool_defs if tool_defs else None
+            response_result = await self._complete_model_async(
+                messages,
+                tools=tool_defs if tool_defs else None,
+                goal=goal,
+                step_num=step_num,
             )
             if response_result.is_err():
                 return response_result
