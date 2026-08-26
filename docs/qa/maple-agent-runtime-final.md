@@ -607,6 +607,31 @@ slow Doctrine gold phase before interruption without a pytest summary.
 - Async target execution, durable handoff identity/leases, explicit ownership
   transfer, remote routing, and exactly-once effects remain unclaimed.
 
+## Slice 99 QA — async-capable tool and handoff execution
+
+- `tests/autonomy/test_tools.py`, `tests/autonomy/test_agent.py`, and
+  `tests/autonomy/test_runs.py` report `68 passed in 0.46s` with coverage for
+  declared async handlers, async registry execution, async agent dispatch,
+  async handoff targets, approval ordering, and executor-policy precedence.
+- The async agent path offloads durable approval and human-input store work,
+  awaits declared async handlers, and falls back to the existing synchronous
+  tool path for legacy tools. A configured trusted executor takes precedence
+  over an async handler so timeout, input/output, concurrency, and approval
+  policy cannot be bypassed.
+- The exact tracked manifest contains 107 tracked Python test files and reports
+  `1235 passed, 1 skipped in 215.23s` with no warning output. Black, Ruff,
+  changed-boundary mypy, compile, and diff checks pass. Network-free doctor
+  returns `ready: true`, `status: SUCCESS`, version `1.1.3`, all eight checks
+  true, and `network: false`.
+- A clean committed-HEAD archive rebuilt wheel/sdist `1.1.3`; build and Twine
+  both exited 0, the sdist contains 489 entries including ADR-045, the async
+  agent/tool modules, and both regressions, and the workspace-only audit found
+  zero preserved Doctrine files.
+- Durable handoff identity/leases, explicit ownership transfer, remote
+  routing/authentication, hard cancellation, and exactly-once external effects
+  remain outside this local contract. No publication, website, cloud,
+  registry, or user-owned untracked file change was made.
+
 ## Security conclusions
 
 - No new dependency, credential, cloud call, website mutation, or publication

@@ -606,6 +606,27 @@ remain explicit follow-on work.
   identity/leases, ownership transfer, and remote routing remain explicit
   follow-on work.
 
+## Slice 99 implementation review
+
+- `Tool.execute_async` and `ToolRegistry.execute_async` preserve the existing
+  schema, guardrail, result, and error contracts. Declared async handlers are
+  awaited; legacy sync handlers use an executor fallback.
+- The async `AutonomousAgent` loop resolves approval and durable interaction
+  work off-loop, then dispatches through the async tool contract. A configured
+  `TrustedLocalExecutor` takes precedence over an async handler, preventing
+  policy bypass.
+- Async handoffs require explicit target methods, reuse bounded context
+  filtering and target-result redaction, and preserve the approval-by-default
+  agent boundary. No raw target exception or error payload is forwarded.
+- Focused coverage reports `68 passed in 0.46s`; Black, Ruff, changed-boundary
+  mypy, compile, and diff checks pass. The exact tracked manifest reports
+  `1235 passed, 1 skipped in 215.23s` across 107 tracked test files. A clean
+  committed-HEAD archive rebuilt wheel/sdist `1.1.3`; build and Twine exited 0,
+  the sdist contains 489 entries including the five Slice 99 files, and the
+  workspace-only audit found zero preserved Doctrine files. Durable
+  handoff identity, ownership transfer, remote routing, hard cancellation, and
+  exactly-once external effects remain unclaimed.
+
 ## Verdict
 
 **Feature review:** PASS for the twenty-eight implemented capability slices.

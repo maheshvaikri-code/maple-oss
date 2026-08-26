@@ -109,7 +109,7 @@
 | 96 | Bounded per-node workflow retry and durable backoff state | Chief Architect / Backend / Security / QA / Release | `docs/adr/042-*`, `maple/autonomy/workflow.py`, workflow exports/tests, API/README/parity docs, changelog, QA/review evidence | Capped `RetryPolicy`, ordinary node retry on exceptions/invalid outputs, persisted retry counts and `retry_after`, retry context metadata, typed exhaustion, existing no-policy failure behavior, parallel-branch boundary explicit; static/package/doctor gates | done: focused workflow/replay suite `22 passed in 4.20s`; tracked manifest `1222 passed, 1 skipped in 222.42s`; Ruff/Black/compile/diff/doctor and changed-boundary mypy pass; clean archive wheel/sdist `1.1.3`, Twine passed, sdist `486` entries with ADR-042/workflow module/test, workspace-only audit zero; no publication |
 | 97 | Durable event cursors and cooperative stream cancellation | Chief Architect / Backend / Security / QA / Release | `docs/adr/043-*`, `maple/autonomy/events.py`, autonomy/top-level exports, event regression, API/README/parity docs, changelog, QA/review evidence | JSON-safe `EventCursor`/`EventBatch`, bounded cursor reads, explicit `EVENT_CURSOR_EXPIRED` retention gaps, existing cancellation-token wait support, public import, static/package/doctor gates; remote transport/provider token linkage/exporter remain separate | done: focused event/lifecycle suite `37 passed in 2.28s`; exact tracked manifest `1226 passed, 1 skipped in 216.99s`; Ruff/Black/compile/diff/doctor and changed-boundary mypy pass; clean archive build/Twine exit 0, sdist `487` entries with all 3 slice files, workspace-only audit zero; no publication |
 | 98 | Bounded context-aware handoff filtering | Chief Architect / Backend / Security / QA / Release | `docs/adr/044-*`, `maple/autonomy/tools.py`, `maple/autonomy/agent.py`, handoff/context regressions, API/README/parity docs, changelog, QA/review evidence | Explicit `allowed_context_keys`, recursively bounded/copy-on-boundary JSON context, denied-key and unsupported-target errors, `AutonomousAgent.pursue_goal_with_context`, durable initial context message, legacy no-context compatibility, static/package/doctor gates; async target execution/durable handoff identity/ownership transfer remain separate | done: focused handoff/agent suite `50 passed in 4.40s`; exact tracked manifest `1230 passed, 1 skipped in 227.55s`; Ruff/Black/compile/diff/doctor and changed-boundary mypy pass; clean archive build/Twine exit 0, sdist `488` entries with all 3 slice files, workspace-only audit zero; no publication |
-| 99 | Async-capable tool and handoff execution | Chief Architect / Backend / Security / QA / Release | `docs/adr/045-*`, `maple/autonomy/tools.py`, `maple/autonomy/agent.py`, async tool/handoff/agent regressions, API/README/parity docs, changelog, QA/review evidence | Optional awaitable tool handlers, async registry execution, async agent-loop dispatch, executor-backed sync fallback, shared approval/validation/error boundaries, explicit async handoff target/context contracts, static/package/doctor gates; durable handoff identity/ownership transfer and hard cancellation remain separate | in progress: code and focused regressions are green; full tracked manifest and clean archive evidence pending |
+| 99 | Async-capable tool and handoff execution | Chief Architect / Backend / Security / QA / Release | `docs/adr/045-*`, `maple/autonomy/tools.py`, `maple/autonomy/agent.py`, async tool/handoff/agent regressions, API/README/parity docs, changelog, QA/review evidence | Optional awaitable tool handlers, async registry execution, async agent-loop dispatch, executor-backed sync fallback, shared approval/validation/error boundaries, explicit async handoff target/context contracts, static/package/doctor gates; durable handoff identity/ownership transfer and hard cancellation remain separate | done: focused coverage `68 passed in 0.46s`; exact tracked manifest `1235 passed, 1 skipped in 215.23s` across 107 tracked test files; Black/Ruff/changed-boundary mypy/compile/diff/doctor pass; clean archive build/Twine exit 0, sdist `489` entries with all 5 slice files, workspace-only audit zero; no publication |
 
 ## Threat sketch
 
@@ -628,3 +628,19 @@ diff, doctor, and changed-boundary mypy pass. The committed-HEAD archive gate
 then rebuilt wheel/sdist `1.1.3` with build and Twine exit 0; the sdist
 contains 488 entries including all three slice files, and the workspace-only
 audit found zero preserved Doctrine files. No publication was performed.
+
+2026-08-26 async tool/handoff closure: ADR-045 adds optional awaitable tool
+handlers, async registry execution, and async agent-loop dispatch. Legacy sync
+tools remain compatible through executor-backed fallback, while a configured
+trusted executor takes precedence over an async handler so policy bounds cannot
+be bypassed. Handoffs await explicitly declared async target/context methods;
+approval, bounded validation, guardrails, and target-error redaction remain
+shared with sync execution. Durable handoff identity, ownership transfer,
+remote routing, and hard cancellation remain separate boundaries. Focused
+coverage reports `68 passed in 0.46s`; the exact tracked manifest reports
+`1235 passed, 1 skipped in 215.23s` across 107 tracked test files. Black, Ruff,
+changed-boundary mypy, compile, diff, and network-free doctor pass. A clean
+committed-HEAD archive rebuilt wheel/sdist `1.1.3`; build and Twine exited 0,
+the sdist contains 489 entries including all five slice files, and the
+workspace-only audit found zero preserved Doctrine files. No publication was
+performed.

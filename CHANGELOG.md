@@ -12,11 +12,18 @@
 
 - **Async-capable tools and handoffs**: added optional awaitable tool handlers,
   async registry execution, and async agent-loop dispatch. Existing synchronous
-  tools remain compatible through executor-backed fallback; approval, bounded
-  validation, guardrails, and structured error handling remain shared. Handoffs
-  use explicitly declared async target/context methods when available, while
-  durable handoff identity, ownership transfer, remote routing, and hard
-  cancellation remain separate boundaries.
+  tools remain compatible through executor-backed fallback; configured trusted
+  execution policies take precedence so async dispatch cannot bypass their
+  bounds. Approval, bounded validation, guardrails, and structured error
+  handling remain shared. Handoffs use explicitly declared async target/context
+  methods when available, while durable handoff identity, ownership transfer,
+  remote routing, and hard cancellation remain separate boundaries. Focused
+  coverage reports `68 passed in 0.46s`; the exact tracked manifest reports
+  `1235 passed, 1 skipped in 215.23s` across 107 tracked test files. Black,
+  Ruff, changed-boundary mypy, compile, diff, and network-free doctor pass. A
+  clean committed-HEAD archive rebuilt wheel/sdist `1.1.3`; build and Twine
+  exited 0, the sdist contains 489 entries with all five slice files, and the
+  workspace-only audit is empty. No publication was performed.
 - **Editable durable tool approvals**: approved decisions may persist one
   bounded JSON `edited_arguments` object through the in-memory or atomic file
   approval store. Sync and async durable resume execute the persisted edit after
