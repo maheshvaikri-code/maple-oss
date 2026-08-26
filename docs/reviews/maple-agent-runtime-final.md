@@ -181,6 +181,9 @@ Doctor:
 - The post-Slice-72 exact repository attempt on `2b8bb57` collected `1278`
   items, reached the Doctrine gold phase, and emitted six gold-test completions
   before bounded interruption without failure output or a pytest summary.
+- The exact-current run on `a51e043` collected `1282` items, reached `90%`, and
+  entered the slow Doctrine gold phase before bounded interruption. No failure
+  output or pytest summary was produced.
 
 ## Slice 73 revalidation
 

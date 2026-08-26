@@ -25,7 +25,7 @@
 | Installed artifact smoke | PASS | Clean venv installed the wheel with `--no-deps`; `maple doctor --json` returned `ready:true`, `network:false`. |
 | Isolated dependency audit | PASS | Fresh `.[dev,security]` environment: `pip check` returned `No broken requirements found.` |
 | Local readiness | PASS | `maple --json doctor` returned all eight checks true and `network:false`. |
-| Full repository regression | OPEN | Exact-current bounded run on `2b8bb57` collected `1278` items, reached `90%`, emitted six Doctrine gold-test completions, and was interrupted without failure output or a pytest summary. |
+| Full repository regression | OPEN | Exact-current bounded run on `a51e043` collected `1282` items, reached `90%`, entered the slow Doctrine gold phase, and was interrupted without failure output or a pytest summary. |
 | Dependency consistency | PASS | Isolated MAPLE environment is consistent; shared-interpreter conflicts are unrelated and non-authoritative. |
 | Repository-wide lint | PASS | Slice 69 closes the remaining E402 import-boundary debt; broad `ruff check maple` reports zero findings. |
 | Typed tool input/output boundary | PASS | 43 focused contract/tool/agent tests and 212 full-autonomy tests cover model-derived schemas, pre-handler input rejection, normalized handler arguments, validated outputs, and invalid-result failure. |
@@ -178,9 +178,10 @@ produced; this is not a full-suite pass.
   async tests verify no handler side effect occurs.
 - Changed-file Ruff, Black, isort, and mypy checks pass. No new dependency was
   added; ADR-025, public docs, changelog, QA, and review evidence are filed.
-- The exact repository-wide suite was not rerun after Slice 73; the latest
-  bounded run remains the post-Slice-72 attempt recorded above. Full-suite and
-  fresh independent-verifier gates remain open.
+- Exact-current run on `a51e043` collected `1282` items, reached `90%`, and
+  entered the slow Doctrine gold phase before bounded interruption. No failure
+  output or pytest summary was produced; this is not a full-suite pass. Full
+  suite and fresh independent-verifier gates remain open.
 
 ## Security conclusions
 

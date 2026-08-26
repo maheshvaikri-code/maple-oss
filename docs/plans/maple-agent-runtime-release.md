@@ -307,3 +307,8 @@ across synchronous/asynchronous ReAct reasoning and reflection. The focused
 agent/session regression reports `30 passed in 0.31s`; missing, malformed, and
 over-budget usage paths fail closed before tool side effects. Public docs and
 ADR-025 are filed; no new dependency, publication, or website change was made.
+
+2026-08-25 exact-current full-suite attempt on `a51e043`: pytest collected
+`1282` items, passed the application suites through `90%`, and entered the slow
+Doctrine gold phase before bounded interruption. No failure output or pytest
+summary was produced, so the exact full-suite gate remains open.
