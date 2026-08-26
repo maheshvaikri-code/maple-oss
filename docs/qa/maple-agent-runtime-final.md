@@ -535,6 +535,25 @@ slow Doctrine gold phase before interruption without a pytest summary.
   explicit follow-on boundaries. No publication, website, cloud, registry, or
   user-owned untracked file change was made.
 
+## Slice 95 QA — bounded same-record multi-round human input
+
+- The interaction, host, lease, and durable run regression set reports
+  `23 passed in 2.74s`.
+- Coverage proves a `max_rounds` quota, ordered immutable round history,
+  restart-safe file persistence, same-interaction checkpoint waiting, and
+  preservation of prior responses in the multi-round tool result. Continuation
+  authorization and metadata-only notification are also covered.
+- Ruff, Black, compile, diff, and changed-boundary mypy pass for the edited
+  runtime boundary. The exact tracked manifest reports `1219 passed, 1 skipped
+  in 215.53s`.
+- A clean current archive rebuilt wheel/sdist `1.1.3`; Twine passed for both,
+  the sdist contains 485 entries including ADR-041, the interactions module,
+  and the run regression, and the workspace-only audit found zero preserved
+  Doctrine files.
+- No publication, website, cloud, registry, or user-owned untracked file
+  change was made. Remote authentication/transport and exactly-once external
+  effects remain outside the local contract.
+
 ## Security conclusions
 
 - No new dependency, credential, cloud call, website mutation, or publication

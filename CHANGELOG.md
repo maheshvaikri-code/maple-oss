@@ -89,6 +89,20 @@
   workspace-only audit found zero preserved Doctrine files. Remote
   authentication/transport, exactly-once effects, and multi-round interaction
   remain separate follow-on boundaries.
+- **Bounded multi-round human input**: durable human-input requests now support
+  an explicit `max_rounds` quota, same-record `continue_round`, and immutable
+  completed-round history in memory and atomic file stores. Continuation stays
+  behind the per-record lease, authorization covers the `continue` action,
+  notifications remain metadata-only, and durable runs can wait on the same
+  interaction before resume. The agent preserves prior responses for the
+  multi-round tool result while keeping the one-shot result shape compatible.
+  Focused coverage reports `23 passed in 2.74s`; the exact tracked manifest
+  reports `1219 passed, 1 skipped in 215.53s`; Ruff, Black, compile, diff,
+  doctor, and changed-boundary mypy pass. A clean archive rebuilt wheel/sdist
+  `1.1.3`; Twine passed for both, the sdist contains 485 entries including
+  ADR-041, the interactions module, and the run regression, and the
+  workspace-only audit found zero preserved Doctrine files. No publication was
+  performed.
 - **Agent-framework parity ledger**: added a source-backed functionality and
   runtime matrix for LangGraph, CrewAI, Microsoft Agent Framework, LlamaIndex,
   and OpenAI Agents SDK. It separates MAPLE's native infrastructure strengths

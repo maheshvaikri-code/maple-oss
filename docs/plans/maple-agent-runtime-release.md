@@ -105,6 +105,7 @@
 | 92 | Cross-process durable human-input-store ownership | Chief Architect / Backend / Security / QA / Release | `docs/adr/038-*`, `maple/autonomy/durable_leases.py`, `maple/autonomy/interactions.py`, interaction lease tests, approval regressions, API/README/parity docs, changelog, QA/review evidence | Shared lease wrapper, per-record human-input get/create/respond/reject/consume/list ownership, no mutation on acquisition failure, explicit uncertain-commit release error, approval behavior preserved; run-store integration remains separate | done: focused approval/input/lease boundary `13 passed in 0.48s`; tracked manifest `1211 passed, 1 skipped in 219.68s`; Ruff/Black/compile/diff/doctor pass and changed-boundary mypy pass; clean archive wheel/sdist `1.1.3`, Twine passed, sdist `480` entries with ADR-038, workspace-only audit zero; no publication |
 | 93 | Cross-process durable run-store ownership | Chief Architect / Backend / Security / QA / Release | `docs/adr/039-*`, `maple/autonomy/runs.py`, run lease tests, API/README/parity docs, changelog, QA/review evidence | Per-run fencing lease across load and complete CAS save, no read/mutation on acquisition failure, explicit uncertain-commit release error, existing bounds/atomic replacement/CAS preserved; host side-effect policy and notifications remain separate | done: focused run-store suite `14 passed in 2.66s`; tracked manifest `1213 passed, 1 skipped in 228.60s`; Ruff/Black/compile/diff/doctor pass and changed-boundary mypy pass; clean archive wheel/sdist `1.1.3`, Twine passed, sdist `482` entries with ADR-039/run module/run test, workspace-only audit zero; no publication |
 | 94 | Bounded human-input host notification and authorization hooks | Chief Architect / Backend / Security / QA / Release | `docs/adr/040-*`, `maple/autonomy/interactions.py`, `maple/autonomy/agent.py`, host callback tests, public exports, API/README/parity docs, changelog, QA/review evidence | Bounded created/responded/rejected notifications without response payload, in-lease actor authorization for respond/reject, fail-closed errors, legacy no-actor compatibility, typed notification failure with persisted state authoritative; remote auth/transport/multi-round remain separate | done: focused host/interaction/run suite `49 passed in 2.80s`; tracked manifest `1215 passed, 1 skipped in 227.81s`; Ruff/Black/compile/diff/doctor pass and changed-boundary mypy pass; clean archive wheel/sdist `1.1.3`, Twine passed, sdist `484` entries with ADR-040/host module/test, workspace-only audit zero; no publication |
+| 95 | Bounded same-record multi-round human input and durable resume | Chief Architect / Backend / Security / QA / Release | `docs/adr/041-*`, `maple/autonomy/interactions.py`, `maple/autonomy/agent.py`, built-in tool schema, round/history tests, public exports, API/README/parity docs, changelog, QA/review evidence | Bounded `max_rounds` quota, immutable completed-round history, durable in-memory/file `continue_round`, in-lease authorization and metadata-only continuation notification, sync durable checkpoint waits on the same interaction, multi-round tool result preserves prior responses, legacy one-shot behavior and custom-store compatibility; remote auth/transport remains separate | done: focused slice `23 passed in 2.74s`; tracked manifest `1219 passed, 1 skipped in 215.53s`; Ruff/Black/compile/diff/doctor and changed-boundary mypy pass; clean archive wheel/sdist `1.1.3`, Twine passed, sdist `485` entries with ADR-041/interactions module/run test, workspace-only audit zero; no publication |
 
 ## Threat sketch
 
@@ -562,3 +563,19 @@ archive rebuilt wheel/sdist `1.1.3`; Twine passed for both, the sdist contains
 the workspace-only audit found zero preserved Doctrine files. Remote
 authentication/transport, exactly-once external effects, and multi-round
 interaction remain separate follow-on boundaries.
+
+2026-08-26 bounded same-record multi-round closure: ADR-041 extends durable
+human-input records with an explicit `max_rounds` quota, current round index,
+and immutable completed-round history. In-memory and file-backed stores expose
+`continue_round`; the file path remains protected by the per-record fencing
+lease, host authorization covers the continuation action, and a metadata-only
+`continued` notification is emitted after persistence. `AutonomousAgent`
+forwards the host operation, the built-in tool accepts the bounded quota, and a
+multi-round result preserves prior responses while the original one-shot result
+shape remains unchanged. The focused slice reports `23 passed in 2.74s`;
+Ruff, Black, compile, diff, doctor, and changed-boundary mypy pass. The exact
+tracked manifest reports `1219 passed, 1 skipped in 215.53s`. A clean archive
+rebuilt wheel/sdist `1.1.3`; Twine passed for both, the sdist contains 485
+entries including ADR-041, the interactions module, and the run regression,
+and the workspace-only audit found zero preserved Doctrine files. No
+publication was performed.

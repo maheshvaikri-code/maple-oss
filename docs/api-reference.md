@@ -1148,9 +1148,14 @@ resumed = agent.resume_run("deploy-1")
 `respond_human_input` validates the response against the request's bounded
 schema and leaves a pending request unchanged on failure. Use
 `reject_human_input(interaction_id, reason)` to resume with a typed
-`HUMAN_INPUT_REJECTED` tool error. A request is one-shot: its consumed decision
-is retained for crash recovery, but a second response returns
-`HUMAN_INPUT_CONFLICT`. The built-in tool requires a durable `run_id`; it does
+`HUMAN_INPUT_REJECTED` tool error. Requests default to one round; pass
+`max_rounds` to the built-in tool, then call
+`continue_human_input(interaction_id, prompt, input_schema)` after a decided
+round to reopen the same interaction with bounded persisted history. Continue
+before resuming a durable run when the checkpoint should wait for the next
+round. A round's consumed decision is retained for crash recovery, and a
+response after the configured round limit returns `HUMAN_INPUT_ROUND_LIMIT`.
+The built-in tool requires a durable `run_id`; it does
 not collect input in a non-durable run. `FileHumanInputStore` acquires a
 per-record `FileLeaseManager` fencing lease by default under
 `<directory>/.maple-leases`; `lease_manager=` and `lease_ttl_seconds=` are
@@ -1167,8 +1172,7 @@ runs inside the record lease and missing, denied, exceptional, or malformed
 authorization returns a typed fail-closed error. `AutonomousAgent` forwards
 `actor_id=` through `respond_human_input` and `reject_human_input`. These are
 local caller-owned hooks, not credential verification or a remote transport;
-remote authentication and multi-round conversations remain follow-on
-responsibilities.
+remote authentication and transport remain follow-on responsibilities.
 
 ### Bounded conversation sessions
 

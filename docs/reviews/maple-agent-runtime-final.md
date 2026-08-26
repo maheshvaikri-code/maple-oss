@@ -521,6 +521,28 @@ remain explicit follow-on work.
   exactly-once external effects, and multi-round interaction remain explicit
   gaps; this slice does not overclaim them.
 
+## Slice 95 implementation review
+
+- `HumanInputRequest` now persists a maximum-round quota, current round index,
+  and ordered completed-round values. Legacy records default to one round, and
+  the existing JSON depth, item, record-byte, and file-lease boundaries remain
+  active.
+- `continue_round` validates the next prompt/schema, authorizes the `continue`
+  action before mutation, appends the completed decision, and reopens the same
+  interaction ID as pending. File-backed continuation is fenced and its
+  `continued` notification excludes response payloads.
+- `AutonomousAgent` exposes the continuation helper and preserves the existing
+  one-shot response shape. Multi-round tool results include bounded prior
+  responses so the resumed model receives the interaction context. Stores that
+  do not implement continuation fail with a typed unsupported error.
+- Focused interaction/host/run coverage reports `23 passed in 2.74s`; the exact
+  tracked manifest reports `1219 passed, 1 skipped in 215.53s`. Ruff, Black,
+  compile, diff, doctor, and changed-boundary mypy pass. A clean archive rebuilt
+  wheel/sdist `1.1.3`; Twine passed for both, the sdist contains 485 entries
+  including ADR-041 and the host regression, and the workspace-only audit found
+  zero preserved Doctrine files. No remote authentication, transport,
+  distributed ownership, or exactly-once side-effect claim is made.
+
 ## Verdict
 
 **Feature review:** PASS for the twenty-eight implemented capability slices.
