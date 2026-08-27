@@ -27,6 +27,7 @@ _MAX_PATH_BYTES = 4_096
 _MAX_WORKFLOWS = 64
 _DEFAULT_MAX_BODY_BYTES = 1 * 1024 * 1024
 _DEFAULT_MAX_RESPONSE_BYTES = 2 * 1024 * 1024
+_MAX_EARLY_BODY_DISCARD_BYTES = 64 * 1024
 _DEFAULT_CLIENT_TIMEOUT_SECONDS = 10.0
 _MAX_HUMAN_INPUT_LIMIT = 1_000
 _MAX_HANDOFF_LIMIT = 100
@@ -1013,8 +1014,8 @@ class _RequestHandler(BaseHTTPRequestHandler):
             return False
         return True
 
-    def _discard_bounded_request_body(self) -> None:
-        """Drain a bounded rejected body so the 401 response is not reset."""
+    def _discard_bounded_request_body(self, *, allow_oversized: bool = False) -> None:
+        """Drain a bounded rejected body before closing the connection."""
         raw_length = self.headers.get("Content-Length")
         if raw_length is None:
             return
@@ -1022,7 +1023,10 @@ class _RequestHandler(BaseHTTPRequestHandler):
             length = int(raw_length)
         except (TypeError, ValueError):
             return
-        if length < 0 or length > self.server.application.max_body_bytes:
+        max_length = self.server.application.max_body_bytes
+        if allow_oversized:
+            max_length = max(max_length, _MAX_EARLY_BODY_DISCARD_BYTES)
+        if length < 0 or length > max_length:
             return
         try:
             self.rfile.read(length)
@@ -1055,6 +1059,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             raise ValueError("content length is required")
         length = int(raw_length)
         if length < 0 or length > self.server.application.max_body_bytes:
+            self._discard_bounded_request_body(allow_oversized=True)
             self._write_error(
                 413,
                 _error(
