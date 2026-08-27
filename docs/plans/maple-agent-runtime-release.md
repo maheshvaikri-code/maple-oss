@@ -151,6 +151,7 @@
 | 129 | Bounded authenticated event batch transport | Chief Architect / Backend / Interoperability / Security / Observability / QA / Release | `docs/adr/075-*`, `maple/autonomy/server.py`, server/client event regressions, API/README/parity docs, changelog, QA/review evidence | Authenticated `POST /v1/events/batch` and `RunClient.publish_events(...)` accept 1–100 existing event envelopes, preserve request order and stream-owned redaction/sequence semantics, and return bounded per-item published/failed results; malformed batch structure fails before attempts; partial success, no retry/deduplication, and no durable remote queue or exactly-once claim are explicit | done: feature commit `c542828`; focused server/event suite `50 passed in 21.58s`; exact tracked manifest `1333 passed, 1 skipped in 284.61s` across `108` tracked Python test files; Black/isort/Ruff/changed-boundary mypy/compile/diff/secret/dangerous-construct gates passed; clean feature archive `c542828` built `1.1.3` wheel/sdist with exit `0`, Twine checks `PASSED`, wheel `104` entries, sdist `571` entries, and isolated no-dependency event-journal smoke passed; final closure archive `ab9d2e6` built with exit `0`, Twine checks `PASSED`, wheel `104` entries, sdist `573` entries, and no-dependency event batch/journal smoke passed; QA and code review filed; declared-project pip-audit reported no known vulnerabilities; environment-wide dependency-governance veto remains; durable remote replay, aggregation, backpressure, hosted tracing, and exactly-once effects remain separate |
 | 130 | Bounded durable event forwarding and remote aggregation | Chief Architect / Backend / Interoperability / Security / Observability / QA / Release | `docs/adr/076-*`, `maple/autonomy/events.py`, autonomy/root exports, event regressions, API/README/parity docs, changelog, QA/review evidence | Opt-in `EventForwarder` reads at most 100 retained events, sends them through an authenticated `HttpEventBatchSender`, and persists only the contiguous acknowledged prefix through an in-memory or atomic fenced `FileEventCursorStore`; cursor expiry, malformed acknowledgements, transport errors, and cursor-save failures fail closed; duplicate sends remain possible and no implicit retry, remote queue, ordering across forwarders, or exactly-once effect claim is made | done: feature commit `9e74115`; focused event suite `31 passed in 2.70s`; event/server suite `61 passed in 15.24s`; exact tracked manifest `1344 passed, 1 skipped in 245.95s` across `108` tracked Python test files; Black/isort/Ruff/changed-boundary mypy/compile/diff/secret/dangerous-construct gates passed; clean feature archive built with exit `0`, Twine checks `PASSED`, wheel `104` entries, sdist `574` entries, and isolated no-dependency forwarder smoke passed; final closure commit `3384c0d` archive rebuilt with exit `0`, Twine checks `PASSED`, wheel `104` entries, sdist `576` entries; QA and code review filed; declared-project pip-audit reported no known vulnerabilities; environment-wide dependency-governance veto remains; hosted scheduling, backpressure, remote deduplication, hosted aggregation/tracing, tenancy, sandboxing, and exactly-once effects remain separate |
 | 131 | Bounded structured evaluation trajectories | Chief Architect / Backend / Security / QA / Release | `docs/adr/077-*`, `maple/autonomy/evaluation.py`, autonomy/root exports, evaluation regressions, API/README/parity docs, changelog, QA/review evidence | Additive `EvalTrajectoryStep` records bounded tool arguments, results, status, and duration; `EvalCase.expected_trajectory` performs exact fixture matching; reports and optional judges receive re-redacted bounded observations; name-only observations remain compatible; no generated-code execution, semantic faithfulness, trace scoring, or hosted judge orchestration claim | done: feature commit `ba2a268`; ADR normalization commit `3194c1e`; focused evaluation suite `24 passed in 0.26s`; evaluation/observability suite `44 passed in 0.40s`; exact tracked manifest `1348 passed, 1 skipped in 274.74s` across `108` tracked Python test files; Black/isort/Ruff/changed-boundary mypy/compile/diff/secret/dangerous-construct gates passed; clean archive build `build_exit=0`, Twine checks `PASSED`, wheel `104` entries, sdist `579` entries, isolated no-dependency structured-trajectory smoke passed; QA and code review filed; declared-project pip-audit reported no known vulnerabilities; environment-wide dependency-governance veto remains; async/provider-owned judges, calibration, trace scoring, semantic faithfulness, generated-code execution, and hosted evaluation remain separate |
+| 132 | Bounded event-forwarder scheduling | Chief Architect / Backend / Security / QA / Release | `docs/adr/078-*`, `EventForwarderScheduler`, autonomy/root exports, event regressions, API/README/parity docs, changelog, QA/review evidence | Add an explicit opt-in local polling worker over `EventForwarder`; enforce one active tick, finite intervals, a 1–100 batch budget per tick, cooperative shutdown, typed stop timeout, and sanitized local metrics; preserve durable cursor and at-least-once semantics; no persistent queue, remote deduplication, cross-process ownership, hosted scheduling, or exactly-once claim | in progress: implementation and focused scheduler suite are ready; full regression, package, QA, and review gates remain |
 
 ## Slice 127 closure
 
@@ -361,6 +362,33 @@ The environment-wide audit still reports `384` known vulnerabilities across
 deployment, cloud action, or website update was performed. Hosted identity,
 notifications, scheduling, tenancy, sandboxing, distributed transactions, and
 exactly-once effects remain separate parity gaps.
+
+## Slice 132 design
+
+The next bounded implementation slice adds a local scheduling seam for the
+durable event forwarder. The objective is to make periodic forwarding safe and
+observable without silently turning `EventForwarder` into a background service.
+
+### Scope
+
+- Add `EventForwarderScheduler` with explicit `start()`, `stop()`, and
+  deterministic `run_once()` lifecycle operations.
+- Keep one non-daemon worker, one active tick, finite interval validation, and a
+  hard 1–100 `max_batches_per_tick` budget.
+- Stop a tick early when the forwarder reports no attempted events, while
+  preserving the forwarder's existing cursor and at-least-once contract.
+- Expose bounded integer counters and sanitized error metrics without retaining
+  transport payloads, credentials, or raw exception messages.
+- Add regression coverage, public exports, ADR/API/README/parity/changelog
+  updates, and release QA/review artifacts.
+
+### Explicit non-goals
+
+This slice does not add a persistent queue, implicit retry, remote
+deduplication, cross-process scheduler ownership, hosted aggregation, hosted
+telemetry, forceful thread interruption, or exactly-once side effects. A
+blocking sender remains governed by its own timeout and can produce a typed
+cooperative stop timeout.
 
 ## Slice 127
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import logging
 import math
 import os
 import tempfile
@@ -42,10 +43,14 @@ _MAX_EXPORT_PATH_BYTES = 4_096
 DEFAULT_MAX_JOURNAL_BYTES = 16 * 1024 * 1024
 DEFAULT_MAX_FORWARD_BATCH_ITEMS = 100
 DEFAULT_MAX_CURSOR_BYTES = 4 * 1024
+DEFAULT_FORWARD_INTERVAL_SECONDS = 1.0
+DEFAULT_MAX_FORWARD_BATCHES_PER_TICK = 1
 _EVENT_JOURNAL_VERSION = 1
 _EVENT_CURSOR_VERSION = 1
 _MAX_EVENT_PAYLOAD_ITEMS = 10_000
 _MAX_EVENT_PAYLOAD_DEPTH = 32
+
+logger = logging.getLogger(__name__)
 
 
 def _percentile(values: List[int], percentile: int) -> int:
@@ -477,6 +482,33 @@ class EventForwardReport:
         }
 
 
+@dataclass(frozen=True)
+class EventForwarderSchedulerStats:
+    """Bounded counters for an opt-in event-forwarder scheduler."""
+
+    ticks: int = 0
+    batches: int = 0
+    events_attempted: int = 0
+    events_published: int = 0
+    events_failed: int = 0
+    forward_errors: int = 0
+    running: bool = False
+    last_error: Optional[Error] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Return a JSON-safe metrics snapshot without remote error text."""
+        return {
+            "ticks": self.ticks,
+            "batches": self.batches,
+            "events_attempted": self.events_attempted,
+            "events_published": self.events_published,
+            "events_failed": self.events_failed,
+            "forward_errors": self.forward_errors,
+            "running": self.running,
+            "last_error": dict(self.last_error) if self.last_error else None,
+        }
+
+
 class EventBatchSender(Protocol):
     """Host-owned destination for one bounded group of redacted events."""
 
@@ -898,6 +930,275 @@ class EventForwarder:
                     published=delivery.published,
                     failed=delivery.failed,
                 )
+            )
+
+
+class EventForwarderScheduler:
+    """Run an :class:`EventForwarder` on an explicit bounded schedule.
+
+    The scheduler owns one non-daemon worker after ``start()`` and never
+    creates a queue. At most one forward operation is in flight, and each tick
+    drains at most ``max_batches_per_tick`` source windows. ``stop()`` is
+    cooperative and reports a timeout if a host sender ignores its own
+    deadline; the worker remains owned by this scheduler until it exits.
+    """
+
+    def __init__(
+        self,
+        forwarder: EventForwarder,
+        *,
+        interval_seconds: float = DEFAULT_FORWARD_INTERVAL_SECONDS,
+        max_batches_per_tick: int = DEFAULT_MAX_FORWARD_BATCHES_PER_TICK,
+    ) -> None:
+        if not callable(getattr(forwarder, "forward", None)):
+            raise TypeError("forwarder must implement forward")
+        try:
+            interval_is_finite = math.isfinite(float(interval_seconds))
+        except (OverflowError, TypeError, ValueError):
+            interval_is_finite = False
+        if (
+            not isinstance(interval_seconds, (int, float))
+            or isinstance(interval_seconds, bool)
+            or not interval_is_finite
+            or interval_seconds < 0.01
+            or interval_seconds > 86_400.0
+        ):
+            raise ValueError("interval_seconds must be between 0.01 and 86400")
+        if (
+            not isinstance(max_batches_per_tick, int)
+            or isinstance(max_batches_per_tick, bool)
+            or not 1 <= max_batches_per_tick <= DEFAULT_MAX_FORWARD_BATCH_ITEMS
+        ):
+            raise ValueError(
+                "max_batches_per_tick must be between 1 and "
+                f"{DEFAULT_MAX_FORWARD_BATCH_ITEMS}"
+            )
+        self.forwarder = forwarder
+        self.interval_seconds = float(interval_seconds)
+        self.max_batches_per_tick = max_batches_per_tick
+        self._state_lock = threading.RLock()
+        self._stop_event = threading.Event()
+        self._active_tick = False
+        self._thread: Optional[threading.Thread] = None
+        self._stats = EventForwarderSchedulerStats()
+
+    def _is_running_unlocked(self) -> bool:
+        return self._thread is not None and self._thread.is_alive()
+
+    @staticmethod
+    def _safe_error(error: Any) -> Error:
+        cause = error.get("errorType") if isinstance(error, Mapping) else None
+        if (
+            not isinstance(cause, str)
+            or not cause
+            or len(cause) > 128
+            or any(ord(char) < 32 or ord(char) == 127 for char in cause)
+        ):
+            cause = "FORWARD_ERROR"
+        return _error(
+            "EVENT_SCHEDULER_FORWARD_ERROR",
+            "scheduled event forwarding failed.",
+            cause=cause,
+        )
+
+    def _record_error(self, error: Any) -> Error:
+        safe_error = self._safe_error(error)
+        with self._state_lock:
+            self._stats = replace(
+                self._stats,
+                forward_errors=self._stats.forward_errors + 1,
+                last_error=safe_error,
+            )
+        details = safe_error.get("details")
+        cause = (
+            details.get("cause") if isinstance(details, Mapping) else "FORWARD_ERROR"
+        )
+        logger.warning("event forwarder scheduler tick failed: cause=%s", cause)
+        return safe_error
+
+    def _record_report(self, report: EventForwardReport) -> None:
+        with self._state_lock:
+            self._stats = replace(
+                self._stats,
+                batches=self._stats.batches + (1 if report.attempted else 0),
+                events_attempted=self._stats.events_attempted + report.attempted,
+                events_published=self._stats.events_published + len(report.published),
+                events_failed=self._stats.events_failed + len(report.failed),
+            )
+
+    def _claim_tick(self) -> bool:
+        with self._state_lock:
+            if self._active_tick:
+                return False
+            self._active_tick = True
+            self._stats = replace(self._stats, ticks=self._stats.ticks + 1)
+            return True
+
+    def _release_tick(self) -> None:
+        with self._state_lock:
+            self._active_tick = False
+
+    def _run_tick(
+        self,
+    ) -> Result[Tuple[EventForwardReport, ...], Error]:
+        if not self._claim_tick():
+            return Result.err(
+                _error(
+                    "EVENT_SCHEDULER_BUSY",
+                    "another event-forwarder tick is already in flight.",
+                )
+            )
+        reports: List[EventForwardReport] = []
+        try:
+            for _ in range(self.max_batches_per_tick):
+                try:
+                    result = self.forwarder.forward()
+                except Exception as exc:
+                    return Result.err(
+                        self._record_error(
+                            _error(
+                                "EVENT_FORWARD_TRANSPORT_ERROR",
+                                "event forwarding raised an exception.",
+                                reason=type(exc).__name__,
+                            )
+                        )
+                    )
+                if not isinstance(result, Result):
+                    return Result.err(
+                        self._record_error(
+                            _error(
+                                "EVENT_SCHEDULER_FORWARD_ERROR",
+                                "event forwarder returned an invalid result.",
+                            )
+                        )
+                    )
+                if result.is_err():
+                    return Result.err(self._record_error(result.unwrap_err()))
+                report = result.unwrap()
+                if not isinstance(report, EventForwardReport):
+                    return Result.err(
+                        self._record_error(
+                            _error(
+                                "EVENT_SCHEDULER_FORWARD_ERROR",
+                                "event forwarder returned an invalid report.",
+                            )
+                        )
+                    )
+                self._record_report(report)
+                reports.append(report)
+                if report.attempted == 0:
+                    break
+            return Result.ok(tuple(reports))
+        finally:
+            self._release_tick()
+
+    def _run(self) -> None:
+        while not self._stop_event.is_set():
+            started = time.monotonic()
+            self._run_tick()
+            elapsed = time.monotonic() - started
+            wait_seconds = max(0.0, self.interval_seconds - elapsed)
+            if self._stop_event.wait(wait_seconds):
+                break
+
+    def start(self) -> Result[None, Error]:
+        """Start the owned worker; startup is never implicit."""
+        with self._state_lock:
+            if self._is_running_unlocked():
+                return Result.err(
+                    _error(
+                        "EVENT_SCHEDULER_RUNNING",
+                        "event-forwarder scheduler is already running.",
+                    )
+                )
+            self._stop_event.clear()
+            worker = threading.Thread(
+                target=self._run,
+                name="maple-event-forwarder",
+                daemon=False,
+            )
+            self._thread = worker
+        try:
+            worker.start()
+        except RuntimeError as exc:
+            with self._state_lock:
+                if self._thread is worker:
+                    self._thread = None
+            return Result.err(
+                _error(
+                    "EVENT_SCHEDULER_START_ERROR",
+                    "event-forwarder scheduler could not start.",
+                    reason=type(exc).__name__,
+                )
+            )
+        return Result.ok(None)
+
+    def run_once(self) -> Result[Tuple[EventForwardReport, ...], Error]:
+        """Run one bounded tick synchronously when the scheduler is stopped."""
+        with self._state_lock:
+            if self._is_running_unlocked():
+                return Result.err(
+                    _error(
+                        "EVENT_SCHEDULER_RUNNING",
+                        "run_once is unavailable while the scheduler is running.",
+                    )
+                )
+        return self._run_tick()
+
+    def stop(self, *, timeout_seconds: float = 10.0) -> Result[None, Error]:
+        """Request cooperative shutdown and wait for the owned worker."""
+        try:
+            timeout_is_finite = math.isfinite(float(timeout_seconds))
+        except (OverflowError, TypeError, ValueError):
+            timeout_is_finite = False
+        if (
+            not isinstance(timeout_seconds, (int, float))
+            or isinstance(timeout_seconds, bool)
+            or not timeout_is_finite
+            or timeout_seconds < 0.0
+            or timeout_seconds > 86_400.0
+        ):
+            return Result.err(
+                _error(
+                    "EVENT_SCHEDULER_TIMEOUT_INVALID",
+                    "timeout_seconds must be between 0 and 86400.",
+                )
+            )
+        with self._state_lock:
+            worker = self._thread
+            if worker is None:
+                return Result.ok(None)
+            if worker is threading.current_thread():
+                return Result.err(
+                    _error(
+                        "EVENT_SCHEDULER_STOP_INVALID",
+                        "scheduler cannot stop itself from its worker.",
+                    )
+                )
+            self._stop_event.set()
+        worker.join(timeout=float(timeout_seconds))
+        if worker.is_alive():
+            return Result.err(
+                _error(
+                    "EVENT_SCHEDULER_STOP_TIMEOUT",
+                    "event-forwarder scheduler did not stop before the deadline.",
+                )
+            )
+        with self._state_lock:
+            if self._thread is worker:
+                self._thread = None
+        return Result.ok(None)
+
+    def metrics(self) -> EventForwarderSchedulerStats:
+        """Return a thread-safe bounded metrics snapshot."""
+        with self._state_lock:
+            last_error = (
+                dict(self._stats.last_error) if self._stats.last_error else None
+            )
+            return replace(
+                self._stats,
+                running=self._is_running_unlocked(),
+                last_error=last_error,
             )
 
 

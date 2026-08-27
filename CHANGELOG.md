@@ -10,6 +10,14 @@
 
 ### Additions
 
+- **Bounded event-forwarder scheduling**: `EventForwarderScheduler` adds an
+  explicit opt-in local polling worker over `EventForwarder` with one owned
+  non-daemon worker, one active tick, finite intervals, and a bounded batch
+  budget per tick. `run_once()` supports deterministic host polling;
+  cooperative stop timeouts and sanitized lifecycle metrics are surfaced.
+  There is no implicit retry, persistent queue, remote deduplication,
+  cross-process scheduling, hosted aggregation, or exactly-once claim.
+
 - **Bounded structured evaluation trajectories**: `EvalTrajectoryStep` and
   `EvalCase.expected_trajectory` can assert JSON-safe tool arguments, results,
   status, and duration in versioned local fixtures. Observed trajectories are

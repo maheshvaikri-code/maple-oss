@@ -950,7 +950,10 @@ redacts credential-like keys before retention or delivery. A host-owned
 `EventExporter` may receive each already-redacted event; the optional
 `HttpEventExporter` provides bounded best-effort HTTP delivery and exporter exceptions
 are isolated from the run. `EventForwarder` and `HttpEventBatchSender` provide
-an explicit, bounded remote aggregation pump with a host-owned cursor. Payload shape,
+an explicit, bounded remote aggregation pump with a host-owned cursor.
+`EventForwarderScheduler` adds an opt-in local polling worker with one active
+tick, a finite interval, a bounded batch budget, cooperative shutdown, and
+local integer metrics. Payload shape,
 string, item, depth, and byte limits fail closed with structured errors. The
 autonomous agent can publish a shared sync/async run lifecycle through
 `set_event_stream()`.
@@ -1039,6 +1042,31 @@ forwarder = EventForwarder(
 )
 report = forwarder.forward()
 ```
+
+For a host-owned local polling loop, wrap the forwarder explicitly. Construction
+does not start a thread; `start()` owns one non-daemon worker and `stop()` uses
+a bounded cooperative join. `run_once()` is available when the host owns the
+polling lifecycle:
+
+```python
+from maple import EventForwarderScheduler
+
+scheduler = EventForwarderScheduler(
+    forwarder,
+    interval_seconds=1.0,
+    max_batches_per_tick=2,
+)
+started = scheduler.start()
+if started.is_ok():
+    stopped = scheduler.stop(timeout_seconds=10.0)
+stats = scheduler.metrics()
+```
+
+Each tick performs at most `max_batches_per_tick` synchronous forward calls and
+stops early when a report attempted no events. The scheduler does not retry,
+persist a queue, deduplicate remote effects, coordinate multiple processes, or
+claim hosted aggregation/exactly-once delivery. A blocked sender can cause a
+typed stop-timeout result; the worker remains owned until it returns.
 
 For incremental consumers, persist an `EventCursor` and use bounded reads. A
 cursor older than the retained ring fails with `EVENT_CURSOR_EXPIRED` rather

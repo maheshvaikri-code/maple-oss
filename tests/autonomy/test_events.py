@@ -13,6 +13,8 @@ from maple.autonomy.events import (
     EventDelivery,
     EventDeliveryFailure,
     EventForwarder,
+    EventForwarderScheduler,
+    EventForwardReport,
     EventStream,
     FileEventCursorStore,
     FileEventJournal,
@@ -710,6 +712,120 @@ def test_http_event_batch_sender_rejects_oversized_request_before_network():
 
     assert result.is_err()
     assert result.unwrap_err()["errorType"] == "EVENT_FORWARD_REQUEST_TOO_LARGE"
+
+
+def test_event_forwarder_scheduler_run_once_drains_only_the_configured_bound():
+    class Sender:
+        def send(self, events):
+            return Result.ok(
+                EventDelivery(
+                    published=tuple(range(len(events))),
+                    failed=(),
+                )
+            )
+
+    source = EventStream(max_events=10)
+    for index in range(3):
+        assert source.publish(f"event-{index}", {"index": index}).is_ok()
+    forwarder = EventForwarder(
+        source,
+        Sender(),
+        InMemoryEventCursorStore(),
+        max_batch_size=1,
+    )
+    scheduler = EventForwarderScheduler(
+        forwarder,
+        interval_seconds=1.0,
+        max_batches_per_tick=2,
+    )
+
+    tick = scheduler.run_once()
+
+    assert tick.is_ok()
+    assert len(tick.unwrap()) == 2
+    assert tick.unwrap()[-1].next_cursor.sequence == 2
+    stats = scheduler.metrics()
+    assert stats.ticks == 1
+    assert stats.batches == 2
+    assert stats.events_attempted == 2
+    assert stats.events_published == 2
+
+
+def test_event_forwarder_scheduler_background_lifecycle_is_explicit_and_owned():
+    delivered = threading.Event()
+
+    class Sender:
+        def send(self, events):
+            delivered.set()
+            return Result.ok(
+                EventDelivery(
+                    published=tuple(range(len(events))),
+                    failed=(),
+                )
+            )
+
+    source = EventStream(max_events=4)
+    assert source.publish("scheduled", {}).is_ok()
+    forwarder = EventForwarder(
+        source,
+        Sender(),
+        InMemoryEventCursorStore(),
+        max_batch_size=1,
+    )
+    scheduler = EventForwarderScheduler(forwarder, interval_seconds=0.02)
+
+    assert scheduler.start().is_ok()
+    assert delivered.wait(2.0)
+    assert scheduler.stop(timeout_seconds=2.0).is_ok()
+    assert not scheduler.metrics().running
+    assert scheduler.metrics().batches == 1
+
+
+def test_event_forwarder_scheduler_stop_timeout_keeps_worker_owned():
+    started = threading.Event()
+    release = threading.Event()
+
+    class BlockingForwarder:
+        def forward(self):
+            started.set()
+            release.wait(2.0)
+            return Result.ok(EventForwardReport(EventCursor(), EventCursor(), (), ()))
+
+    scheduler = EventForwarderScheduler(
+        BlockingForwarder(),
+        interval_seconds=0.02,
+    )
+    assert scheduler.start().is_ok()
+    assert started.wait(2.0)
+
+    timed_out = scheduler.stop(timeout_seconds=0.01)
+    release.set()
+    stopped = scheduler.stop(timeout_seconds=2.0)
+
+    assert timed_out.is_err()
+    assert timed_out.unwrap_err()["errorType"] == "EVENT_SCHEDULER_STOP_TIMEOUT"
+    assert stopped.is_ok()
+    assert not scheduler.metrics().running
+
+
+def test_event_forwarder_scheduler_sanitizes_forward_errors():
+    class FailingForwarder:
+        def forward(self):
+            return Result.err(
+                {"errorType": "REMOTE_FAILURE", "message": "secret-token"}
+            )
+
+    scheduler = EventForwarderScheduler(FailingForwarder())
+
+    result = scheduler.run_once()
+    stats = scheduler.metrics()
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "EVENT_SCHEDULER_FORWARD_ERROR"
+    assert stats.forward_errors == 1
+    assert stats.last_error is not None
+    assert stats.last_error["details"]["cause"] == "REMOTE_FAILURE"
+    assert "secret-token" not in str(stats.last_error)
 
 
 def test_file_event_forwarder_replays_authenticated_batches_after_restart(tmp_path):

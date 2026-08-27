@@ -44,7 +44,7 @@ Most agent frameworks give you either **infrastructure** (messaging, security, f
 - **Trusted Local Execution (preview)** — Opt tools into bounded input/output, timeout, cooperative cancellation, approval, and concurrency controls; this is not an untrusted-code sandbox.
 - **Retrieval/Data Primitives (preview)** — Ingest bounded documents through host-owned cursor connectors, split deterministic chunks, run local lexical or caller-supplied-vector retrieval, apply an optional provider-neutral reranker, and retain source references for grounded answers.
 - **Durable Agent Runs (preview)** — Opt synchronous or asynchronous ReAct goals into bounded in-memory or atomic file checkpoints with stable `run_id` recovery; file-backed run cursors use per-run cross-process fencing leases, pending durable approvals pause before further tool side effects, built-in approval stores replay bounded recorded terminal outcomes after a checkpoint crash window, and explicitly opted-in `Tool(replay_policy="reuse_success")` tools can reuse successful journaled results. Exactly-once external effects, host notifications, and sandboxing remain host-owned or unsupported.
-- **Event Streaming and Redaction (preview)** — Publish bounded sequenced events with ring retention, cursor-based reads with explicit eviction errors, cooperative cancellation for waiters, wait/snapshot consumers, subscriber isolation, recursive credential redaction, provider request correlation in agent metadata, opt-in metadata-only `model.chunk` events from sync/async provider stream aggregation, optional atomic `FileEventJournal` restart replay of already-redacted events, optional `HttpEventExporter` delivery, and authenticated `RunServer`/`RunClient` single-event or bounded batch ingestion into a host-owned stream; `EventForwarder` adds explicit bounded remote aggregation with a durable cursor and at-least-once semantics, while remote delivery remains bounded and cannot fail a run.
+- **Event Streaming and Redaction (preview)** — Publish bounded sequenced events with ring retention, cursor-based reads with explicit eviction errors, cooperative cancellation for waiters, wait/snapshot consumers, subscriber isolation, recursive credential redaction, provider request correlation in agent metadata, opt-in metadata-only `model.chunk` events from sync/async provider stream aggregation, optional atomic `FileEventJournal` restart replay of already-redacted events, optional `HttpEventExporter` delivery, and authenticated `RunServer`/`RunClient` single-event or bounded batch ingestion into a host-owned stream; `EventForwarder` adds explicit bounded remote aggregation with a durable cursor and at-least-once semantics, and `EventForwarderScheduler` adds opt-in bounded local polling with cooperative shutdown and metrics, while remote delivery remains bounded and cannot fail a run.
 - **Evaluation Harness (preview)** — Run versioned deterministic golden cases with output-schema checks, exact outputs, structured bounded tool trajectories, bounded reports, and redacted actual values; optionally add a host-supplied bounded judge result without selecting a provider or claiming semantic faithfulness.
 - **Retrieval/Citation Evaluation (preview)** — Score lexical or vector retrieval against bounded golden source URIs with deterministic source-level precision, recall, and F1; generated-answer faithfulness remains a separate calibrated evaluation.
 - **Grounded-Answer Evaluation (preview)** — Score bounded answer claims against supplied source text with deterministic lexical overlap and typed threshold failures; this is an explicit proxy, not semantic entailment or an LLM judge.
@@ -627,7 +627,12 @@ report = forwarder.forward()
 Each call sends at most 100 events and returns indexed published/failed
 outcomes. Cursor expiry, malformed acknowledgements, transport failure, and
 cursor persistence failure are surfaced rather than silently dropping events;
-the forwarder performs no implicit retry or background scheduling.
+the forwarder performs no implicit retry or background scheduling. Hosts that
+want a local polling loop can wrap it in `EventForwarderScheduler`, which uses
+one owned non-daemon worker, one active tick, a finite interval, and a bounded
+number of batches per tick. `run_once()` remains available for deterministic
+host-controlled polling; a stop timeout is surfaced when a sender is still
+blocking rather than pretending the worker was interrupted.
 
 ### Artifacts and code blocks
 
