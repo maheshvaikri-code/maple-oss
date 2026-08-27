@@ -10,6 +10,13 @@
 
 ### Additions
 
+- **Composable bounded sub-workflows**: workflows can register another
+  `Workflow` as a node with explicit parent-to-child and child-to-parent state
+  maps. Child checkpoint stores remain authoritative; deterministic child run
+  IDs support pause/resume and reuse of completed child work after parent
+  journal recovery. Mapping and state boundaries are bounded and typed;
+  distributed scheduling and exactly-once external effects remain outside the
+  contract. Focused validation reports `29 passed`.
 - **Bounded authenticated human-input transport**: the existing dependency-free
   loopback `RunServer`/`RunClient` contract can now list, inspect, respond to,
   reject, continue, and consume durable human-input requests when a

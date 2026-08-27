@@ -520,3 +520,136 @@ def test_fan_out_rejects_branch_count_above_configured_bound():
 
     assert result.is_err()
     assert result.unwrap_err()["errorType"] == "PARALLELISM_EXCEEDED"
+
+
+def test_subworkflow_maps_state_without_leaking_child_context():
+    child = Workflow("child_mapping")
+    child.add_node(
+        "transform",
+        lambda context: {
+            "child_result": context.state["child_input"] * 2,
+            "child_secret": "not-exported",
+        },
+    )
+    child.set_entry_point("transform")
+    child.add_edge("transform")
+
+    parent = Workflow("parent_mapping")
+    assert parent.add_subworkflow(
+        "child_step",
+        child,
+        input_map={"request": "child_input"},
+        output_map={"child_result": "answer"},
+    ).is_ok()
+    parent.set_entry_point("child_step")
+    parent.add_edge("child_step")
+
+    result = parent.run({"request": 21, "parent_only": "kept"}, run_id="mapping-run")
+
+    assert result.is_ok()
+    completed = result.unwrap()
+    assert completed.status == "completed"
+    assert completed.state == {
+        "request": 21,
+        "parent_only": "kept",
+        "answer": 42,
+    }
+
+
+def test_subworkflow_missing_input_fails_before_child_execution():
+    calls = []
+    child = Workflow("child_missing_input")
+    child.add_node("only", lambda context: calls.append("child"))
+    child.set_entry_point("only")
+    child.add_edge("only")
+
+    parent = Workflow("parent_missing_input")
+    parent.add_subworkflow(
+        "child_step", child, input_map={"required": "child_required"}
+    )
+    parent.set_entry_point("child_step")
+    parent.add_edge("child_step")
+
+    result = parent.run({}, run_id="missing-input-run")
+
+    assert result.is_ok()
+    failed = result.unwrap()
+    assert failed.status == "failed"
+    assert failed.error["errorType"] == "SUBWORKFLOW_INPUT_MISSING"
+    assert calls == []
+
+
+def test_subworkflow_pause_resumes_child_run_without_restarting_parent_nodes():
+    calls = []
+    child = Workflow("child_pause")
+
+    def ask(context):
+        calls.append("ask")
+        if context.resume_value is None:
+            raise WorkflowPause({"question": "choose"})
+        return {"choice": context.resume_value}
+
+    child.add_node("ask", ask)
+    child.set_entry_point("ask")
+    child.add_edge("ask")
+
+    parent = Workflow("parent_pause")
+    parent.add_subworkflow("child_step", child)
+    parent.set_entry_point("child_step")
+    parent.add_edge("child_step")
+
+    first = parent.run({"request": "demo"}, run_id="nested-pause-run")
+
+    assert first.is_ok()
+    paused = first.unwrap()
+    assert paused.status == "interrupted"
+    assert paused.completed_nodes == []
+    assert paused.interrupt_payload["subworkflow"] == "child_pause"
+    assert paused.interrupt_payload["payload"] == {"question": "choose"}
+    assert calls == ["ask"]
+
+    resumed = parent.resume("nested-pause-run", resume_value="yes")
+
+    assert resumed.is_ok()
+    completed = resumed.unwrap()
+    assert completed.status == "completed"
+    assert completed.state["choice"] == "yes"
+    assert calls == ["ask", "ask"]
+
+
+def test_subworkflow_rejects_self_reference_and_duplicate_mapping_targets():
+    workflow = Workflow("subworkflow_validation")
+
+    self_result = workflow.add_subworkflow("self", workflow)
+    duplicate_result = workflow.add_subworkflow(
+        "duplicate",
+        Workflow("child_validation"),
+        input_map={"one": "same", "two": "same"},
+    )
+
+    assert self_result.is_err()
+    assert self_result.unwrap_err()["errorType"] == "INVALID_SUBWORKFLOW"
+    assert duplicate_result.is_err()
+    assert duplicate_result.unwrap_err()["errorType"] == "DUPLICATE_SUBWORKFLOW_TARGET"
+
+
+def test_subworkflow_malformed_child_checkpoint_fails_closed():
+    class MalformedStore(InMemoryCheckpointStore):
+        def load(self, run_id):
+            return Result.ok({"not": "a checkpoint"})
+
+    child = Workflow("child_malformed", checkpoint_store=MalformedStore())
+    child.add_node("only", lambda context: None)
+    child.set_entry_point("only")
+    child.add_edge("only")
+
+    parent = Workflow("parent_malformed")
+    parent.add_subworkflow("child_step", child)
+    parent.set_entry_point("child_step")
+    parent.add_edge("child_step")
+
+    result = parent.run({}, run_id="malformed-child-run")
+
+    assert result.is_ok()
+    assert result.unwrap().status == "failed"
+    assert result.unwrap().error["errorType"] == "SUBWORKFLOW_CHECKPOINT_INVALID"

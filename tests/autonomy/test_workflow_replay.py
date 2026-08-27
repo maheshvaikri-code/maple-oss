@@ -23,7 +23,10 @@ class _FailSecondSaveStore:
         self.save_count += 1
         if self.save_count == 2:
             return Result.err(
-                {"errorType": "CHECKPOINT_SAVE_ERROR", "message": "simulated crash window"}
+                {
+                    "errorType": "CHECKPOINT_SAVE_ERROR",
+                    "message": "simulated crash window",
+                }
             )
         return self.base.save(checkpoint, expected_version=expected_version)
 
@@ -99,3 +102,32 @@ def test_replay_record_metadata_mismatch_fails_closed():
     assert result.is_ok()
     assert result.unwrap().status == "failed"
     assert result.unwrap().error["errorType"] == "REPLAY_RECORD_INVALID"
+
+
+def test_subworkflow_recovery_reuses_completed_child_after_parent_commit_failure():
+    store = _FailSecondSaveStore()
+    journal = InMemoryExecutionJournal()
+    child_calls = []
+    child = Workflow("child_recovery")
+    child.add_node("only", lambda context: child_calls.append("child") or {"ok": True})
+    child.set_entry_point("only")
+    child.add_edge("only")
+
+    parent = Workflow(
+        "parent_recovery",
+        checkpoint_store=store,
+        execution_journal=journal,
+    )
+    parent.add_subworkflow("child_step", child)
+    parent.set_entry_point("child_step")
+    parent.add_edge("child_step")
+
+    first = parent.run({}, run_id="nested-recovery-run")
+    recovered = parent.recover("nested-recovery-run")
+
+    assert first.is_err()
+    assert first.unwrap_err()["errorType"] == "CHECKPOINT_SAVE_ERROR"
+    assert recovered.is_ok()
+    assert recovered.unwrap().status == "completed"
+    assert recovered.unwrap().state["ok"] is True
+    assert child_calls == ["child"]

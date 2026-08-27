@@ -48,6 +48,8 @@ _STATUSES = {"running", "interrupted", "completed", "failed"}
 _MAX_PARALLEL_BRANCHES = 64
 _MAX_NODE_RETRIES = 8
 _MAX_RETRY_DELAY_SECONDS = 60.0
+_MAX_SUBWORKFLOW_MAP_ENTRIES = 256
+_MAX_STATE_KEY_LENGTH = 256
 
 Error = Dict[str, Any]
 NodeOutput = Union[Mapping[str, Any], Result[Optional[Mapping[str, Any]], Error], None]
@@ -173,6 +175,60 @@ def _copy_json(value: Any, *, max_state_bytes: int) -> Result[Any, Error]:
                 reason=str(exc)[:256],
             )
         )
+
+
+def _normalize_state_map(
+    mapping: Optional[Mapping[str, str]], field_name: str
+) -> Result[Optional[Dict[str, str]], Error]:
+    """Validate one bounded parent/child state mapping at registration time."""
+    if mapping is None:
+        return Result.ok(None)
+    if not isinstance(mapping, Mapping):
+        return Result.err(
+            _error("INVALID_SUBWORKFLOW_MAP", f"{field_name} must be a mapping.")
+        )
+
+    normalized: Dict[str, str] = {}
+    targets: set[str] = set()
+    try:
+        items = mapping.items()
+        for source, target in items:
+            if len(normalized) >= _MAX_SUBWORKFLOW_MAP_ENTRIES:
+                return Result.err(
+                    _error(
+                        "SUBWORKFLOW_MAP_TOO_LARGE",
+                        "Sub-workflow state mapping exceeds the entry limit.",
+                        max_entries=_MAX_SUBWORKFLOW_MAP_ENTRIES,
+                        field=field_name,
+                    )
+                )
+            for value, value_name in ((source, "source"), (target, "target")):
+                if not isinstance(value, str) or len(value) > _MAX_STATE_KEY_LENGTH:
+                    return Result.err(
+                        _error(
+                            "INVALID_SUBWORKFLOW_MAP",
+                            "Sub-workflow state map keys must be strings of at most "
+                            f"{_MAX_STATE_KEY_LENGTH} characters.",
+                            field=field_name,
+                            key=value_name,
+                        )
+                    )
+            if target in targets:
+                return Result.err(
+                    _error(
+                        "DUPLICATE_SUBWORKFLOW_TARGET",
+                        "Sub-workflow state map targets must be unique.",
+                        field=field_name,
+                        target=target,
+                    )
+                )
+            normalized[source] = target
+            targets.add(target)
+    except (AttributeError, TypeError, ValueError):
+        return Result.err(
+            _error("INVALID_SUBWORKFLOW_MAP", f"{field_name} must be a mapping.")
+        )
+    return Result.ok(normalized)
 
 
 @dataclass
@@ -763,6 +819,59 @@ class Workflow:
             )
         self._nodes[name] = handler
         return Result.ok(None)
+
+    def add_subworkflow(
+        self,
+        name: str,
+        workflow: "Workflow",
+        *,
+        input_map: Optional[Mapping[str, str]] = None,
+        output_map: Optional[Mapping[str, str]] = None,
+    ) -> Result[None, Error]:
+        """Register a bounded child workflow as one parent node.
+
+        ``input_map`` maps parent state keys to child state keys and
+        ``output_map`` maps child state keys back to parent state keys.  When
+        either map is omitted, the corresponding state object is copied with
+        unchanged keys.  The child workflow owns its configured checkpoint
+        store; a deterministic child run ID allows an interrupted child to be
+        resumed and a completed child to be reused after parent recovery.
+        """
+        if not isinstance(workflow, Workflow):
+            return Result.err(
+                _error(
+                    "INVALID_SUBWORKFLOW",
+                    "Sub-workflow must be a Workflow instance.",
+                    node=name,
+                )
+            )
+        if workflow is self:
+            return Result.err(
+                _error(
+                    "INVALID_SUBWORKFLOW",
+                    "A workflow cannot contain itself as a sub-workflow.",
+                    node=name,
+                )
+            )
+        input_result = _normalize_state_map(input_map, "input_map")
+        if input_result.is_err():
+            return Result.err(input_result.unwrap_err())
+        output_result = _normalize_state_map(output_map, "output_map")
+        if output_result.is_err():
+            return Result.err(output_result.unwrap_err())
+
+        input_mapping = input_result.unwrap()
+        output_mapping = output_result.unwrap()
+
+        def execute_subworkflow(context: WorkflowContext) -> NodeOutput:
+            return self._execute_subworkflow(
+                workflow,
+                input_mapping,
+                output_mapping,
+                context,
+            )
+
+        return self.add_node(name, execute_subworkflow)
 
     def set_entry_point(self, name: str) -> Result[None, Error]:
         """Set the first node executed by the workflow."""
@@ -1682,6 +1791,172 @@ class Workflow:
         if saved_result.is_err():
             return Result.err(saved_result.unwrap_err())
         return Result.ok(WorkflowRun.from_checkpoint(saved_result.unwrap()))
+
+    def _execute_subworkflow(
+        self,
+        workflow: "Workflow",
+        input_map: Optional[Mapping[str, str]],
+        output_map: Optional[Mapping[str, str]],
+        context: WorkflowContext,
+    ) -> NodeOutput:
+        """Run or resume one child workflow without leaking its full state."""
+        if input_map is None:
+            child_state = dict(context.state)
+        else:
+            missing = [key for key in input_map if key not in context.state]
+            if missing:
+                return Result.err(
+                    _error(
+                        "SUBWORKFLOW_INPUT_MISSING",
+                        "A mapped parent state key is missing.",
+                        workflow=workflow.name,
+                        keys=missing,
+                    )
+                )
+            child_state = {
+                child_key: context.state[parent_key]
+                for parent_key, child_key in input_map.items()
+            }
+
+        child_run_id = self._subworkflow_run_id(workflow, context)
+        try:
+            loaded_result = workflow.checkpoint_store.load(child_run_id)
+        except Exception as exc:
+            return Result.err(
+                _error(
+                    "SUBWORKFLOW_STORE_ERROR",
+                    "Sub-workflow checkpoint loading failed.",
+                    workflow=workflow.name,
+                    reason=str(exc)[:256],
+                )
+            )
+        if loaded_result.is_err():
+            return Result.err(
+                _error(
+                    "SUBWORKFLOW_STORE_ERROR",
+                    "Sub-workflow checkpoint loading failed.",
+                    workflow=workflow.name,
+                    cause=self._safe_subworkflow_error(loaded_result.unwrap_err()),
+                )
+            )
+
+        checkpoint = loaded_result.unwrap()
+        if checkpoint is not None and not isinstance(checkpoint, WorkflowCheckpoint):
+            return Result.err(
+                _error(
+                    "SUBWORKFLOW_CHECKPOINT_INVALID",
+                    "Sub-workflow checkpoint is not a WorkflowCheckpoint.",
+                    workflow=workflow.name,
+                )
+            )
+        if checkpoint is None:
+            child_result = workflow.run(child_state, run_id=child_run_id)
+        else:
+            if checkpoint.workflow_name != workflow.name:
+                return Result.err(
+                    _error(
+                        "SUBWORKFLOW_CHECKPOINT_MISMATCH",
+                        "Sub-workflow checkpoint identity does not match.",
+                        workflow=workflow.name,
+                    )
+                )
+            if checkpoint.status == "interrupted":
+                child_result = workflow.resume(
+                    child_run_id, resume_value=context.resume_value
+                )
+            elif checkpoint.status == "running":
+                child_result = workflow.recover(child_run_id)
+            elif checkpoint.status in {"completed", "failed"}:
+                child_result = Result.ok(WorkflowRun.from_checkpoint(checkpoint))
+            else:
+                return Result.err(
+                    _error(
+                        "SUBWORKFLOW_CHECKPOINT_INVALID",
+                        "Sub-workflow checkpoint has an unsupported status.",
+                        workflow=workflow.name,
+                    )
+                )
+
+        if child_result.is_err():
+            return Result.err(
+                _error(
+                    "SUBWORKFLOW_ERROR",
+                    "Sub-workflow execution could not complete.",
+                    workflow=workflow.name,
+                    cause=self._safe_subworkflow_error(child_result.unwrap_err()),
+                )
+            )
+        child_run = child_result.unwrap()
+        if child_run.status == "interrupted":
+            raise WorkflowPause(
+                {
+                    "subworkflow": workflow.name,
+                    "run_id": child_run_id,
+                    "payload": child_run.interrupt_payload,
+                }
+            )
+        if child_run.status == "failed":
+            return Result.err(
+                _error(
+                    "SUBWORKFLOW_FAILED",
+                    "Sub-workflow execution failed.",
+                    workflow=workflow.name,
+                    run_id=child_run_id,
+                    cause=self._safe_subworkflow_error(child_run.error),
+                )
+            )
+        if child_run.status != "completed":
+            return Result.err(
+                _error(
+                    "SUBWORKFLOW_INVALID_RESULT",
+                    "Sub-workflow returned an unsupported run status.",
+                    workflow=workflow.name,
+                    status=child_run.status,
+                )
+            )
+
+        if output_map is None:
+            return dict(child_run.state)
+        missing = [key for key in output_map if key not in child_run.state]
+        if missing:
+            return Result.err(
+                _error(
+                    "SUBWORKFLOW_OUTPUT_MISSING",
+                    "A mapped child state key is missing.",
+                    workflow=workflow.name,
+                    keys=missing,
+                )
+            )
+        return {
+            parent_key: child_run.state[child_key]
+            for child_key, parent_key in output_map.items()
+        }
+
+    @staticmethod
+    def _safe_subworkflow_error(error: Any) -> Error:
+        if isinstance(error, dict):
+            return dict(error)
+        return _error(
+            "SUBWORKFLOW_UNKNOWN_ERROR",
+            "Sub-workflow returned a non-structured error.",
+        )
+
+    def _subworkflow_run_id(
+        self, workflow: "Workflow", context: WorkflowContext
+    ) -> str:
+        fingerprint = json.dumps(
+            {
+                "parent_workflow": self.name,
+                "parent_run": context.run_id,
+                "execution_key": context.execution_key,
+                "child_workflow": workflow.name,
+                "retry_count": context.retry_count,
+            },
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        return "sw-" + hashlib.sha256(fingerprint).hexdigest()
 
     def _schedule_node_retry(
         self,

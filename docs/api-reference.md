@@ -1209,6 +1209,43 @@ if run.is_ok() and run.unwrap().status == "interrupted":
     run = workflow.resume("example-1", resume_value=True)
 ```
 
+### Composable sub-workflows
+
+Register another `Workflow` as one bounded parent node with
+`add_subworkflow(name, workflow, input_map=..., output_map=...)`. The optional
+`input_map` maps parent state keys to child state keys, and `output_map` maps
+child state keys back to parent state keys. Omitting a map copies the relevant
+state with unchanged keys. Mapping keys must be strings of at most 256
+characters, map destinations must be unique, and each map is capped at 256
+entries.
+
+```python
+child = Workflow("summarize")
+child.add_node("make", lambda ctx: {"summary": ctx.state["child_text"][:80]})
+child.set_entry_point("make")
+child.add_edge("make")
+
+parent = Workflow("pipeline")
+parent.add_subworkflow(
+    "summary_step",
+    child,
+    input_map={"text": "child_text"},
+    output_map={"summary": "summary"},
+)
+parent.set_entry_point("summary_step")
+parent.add_edge("summary_step")
+run = parent.run({"text": "A bounded workflow example."}, run_id="pipeline-1")
+```
+
+The child owns its configured checkpoint store. A deterministic child run ID
+lets a parent resume an interrupted child and reuse a completed child after a
+parent checkpoint or execution-journal recovery. A child pause is propagated
+as a parent interruption with the child run ID and bounded payload. Missing
+mapped keys and child execution/store failures are typed parent-node failures.
+The local contract does not provide remote scheduling, distributed routing,
+or exactly-once external effects; child handlers with external effects remain
+at-least-once and must be idempotent.
+
 Independent branches can run concurrently and join at a durable checkpoint.
 Branch outputs must use distinct state keys; the declaration order controls the
 deterministic merge and checkpoint history. The branch limit defaults to eight
