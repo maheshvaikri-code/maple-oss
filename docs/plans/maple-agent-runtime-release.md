@@ -140,6 +140,36 @@
 | 121 | Bounded authenticated event ingestion into a host-owned stream | Chief Architect / Backend / Security / Observability / QA / Release | `docs/adr/067-*`, `maple/autonomy/server.py`, server/client regressions, API/README/parity docs, changelog, QA/review evidence | Optional authenticated `RunServer(event_stream=...)` route accepts one bounded event at a time; `RunClient.publish_event(...)` and existing `HttpEventExporter` round-trip through host-assigned local sequence/timestamp values and the stream's redaction/size boundary; absent stream, malformed fields, unauthorized calls, and invalid payloads fail closed; no batching, durable replay, fleet aggregation, or remote trace search | done: combined event/server suite `36 passed in 10.07s`; autonomy `345 passed in 11.94s`; exact tracked manifest `1307 passed, 1 skipped in 213.45s` across 108 tracked Python test files; Black/Ruff/changed-boundary mypy/compile/diff/doctor pass; clean archive candidate `0ca0924` build/Twine exit `0`, sdist `547` entries, required public files `6/6`, wheel `104` entries, no-dependency event transport smoke pass; QA and code review pass; environment-wide dependency-governance veto remains; batching, durable replay, fleet aggregation, remote trace search, principal scopes, and exactly-once delivery remain separate |
 | 122 | Bounded authenticated event inspection by cursor | Chief Architect / Backend / Security / Observability / QA / Release | `docs/adr/068-*`, `maple/autonomy/server.py`, server/client regressions, API/README/parity docs, changelog, QA/review evidence | Authenticated `GET /v1/events?after=<sequence>&limit=<limit>` reads the existing redacted host-owned ring through serializable cursor batches; strict query validation, a `1,000` remote batch cap, explicit retention-gap errors, and bounded response behavior remain authoritative; no durable replay, batching, remote search, fleet aggregation, or exactly-once delivery | done: combined event/server suite `37 passed in 10.68s`; autonomy `346 passed in 12.57s`; exact tracked manifest `1308 passed, 1 skipped in 226.26s` across 108 tracked Python files; Black/Ruff/changed-boundary mypy/compile/diff pass; clean archive candidate `3642805` build/Twine exit `0`, sdist `550` entries, required files `6/6`, wheel `104` entries, no-dependency event inspection smoke pass; QA and code review pass; environment-wide dependency-governance veto remains; durable replay, batching, remote search, fleet aggregation, principal scopes, and exactly-once delivery remain separate |
 
+| 123 | Bounded authenticated host-owned agent-run cancellation | Chief Architect / Backend / Security / QA / Release | `docs/adr/069-*`, `maple/autonomy/server.py`, autonomy/root exports, server regressions, API/README/parity docs, changelog, QA/review evidence | Optional `cancel_handler` callback and authenticated `POST /v1/agents/<agent_id>/runs/<run_id>/cancel`; validated IDs, typed `cancelled` `AgentRun` envelope, redacted callback errors, missing-capability `501`, and existing loopback/auth/body bounds; cooperative request only, with token propagation, checkpoint mutation, hard termination, scheduling, retries, principal scopes, and exactly-once effects remaining host-owned | done: feature commit `8ec56bb`; focused server suite `23 passed in 9.78s`; full autonomy `347 passed in 16.99s`; exact tracked manifest `1309 passed, 1 skipped in 236.70s` across 108 tracked Python test files; isort/Black/Ruff/changed-boundary mypy/compile/diff pass; wheel/sdist build and Twine checks pass, wheel `104` entries, sdist `562` entries, isolated no-dependency export smoke pass; QA and code/security review pass; declared-project audit reports no known vulnerabilities; environment-wide dependency-governance veto remains; hard termination, durable cancellation state, scheduling, retries, principal scopes, and exactly-once effects remain separate |
+
+## Slice 123 closure
+
+2026-08-27: Slice 123 is behaviorally and package-gate complete. The explicit
+host-owned `cancel_handler` is an additive callback on `AgentRegistry`; the
+authenticated `RunServer`/`RunClient` route requires a normalized `cancelled`
+`AgentRun` envelope and redacts callback failures. The focused server suite
+reports `23 passed in 9.78s`; the full autonomy suite reports `347 passed in
+16.99s`; the exact tracked manifest reports `1309 passed, 1 skipped in 236.70s`
+across 108 tracked Python files. isort, Black, Ruff, changed-boundary mypy,
+compile, and diff checks pass. The `8ec56bb` candidate builds wheel and sdist,
+both Twine checks pass, the wheel has `104` entries, the sdist has `562`
+entries in the release workspace, and an isolated `-I -S` import smoke test
+loads the new root/autonomy export. The declared-project dependency audit
+reports no known vulnerabilities; the separate environment-wide audit remains
+a release veto with `384` findings across `77` installed packages. No
+publication, deployment, cloud action, or website change was performed.
+Cancellation remains cooperative and host-owned: token propagation, durable
+state mutation, cleanup, hard termination, scheduling, retries, principal
+scopes, and exactly-once side-effect policy are not claimed by this slice.
+
+## Slice 123
+
+Implementation is intentionally limited to the remote control seam. A host
+must opt in with `cancel_handler`; MAPLE validates the callback output and
+requires the explicit `cancelled` status before returning it over the
+authenticated bounded transport. The endpoint does not mutate a durable run
+store automatically or infer cancellation authority from a remote caller.
+
 ## Slice 122 closure
 
 2026-08-27: Slice 122 is behaviorally and package-gate complete. The combined
