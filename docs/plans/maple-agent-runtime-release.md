@@ -148,6 +148,7 @@
 | 126 | Bounded durable approval-outcome replay | Chief Architect / Backend / Security / QA / Release | `docs/adr/072-*`, `maple/autonomy/approval.py`, `maple/autonomy/agent.py`, approval/run regressions, API/README/parity docs, changelog, QA/review evidence | Built-in approval stores persist one bounded terminal tool outcome after a consumed approval; repeated execution and durable sync/async run resume replay the stored outcome without invoking the handler again; malformed/oversized outcomes, record conflicts, missing optional recorder capability, and consumed-without-outcome crash windows fail closed; external side effects remain at-least-once and no exactly-once claim is made | done: feature commit `8ea5b6d`; focused approval/run/agent suite `66 passed in 0.43s`; autonomy suite `359 passed in 15.24s`; exact tracked manifest `1321 passed, 1 skipped in 231.38s` across 108 tracked Python test files; isort/Black/Ruff/changed-boundary mypy/compile/diff pass; clean `git archive HEAD` `1.1.3` wheel/sdist build and Twine checks exit `0`, wheel `104` entries, sdist `564` entries with zero workspace-only files, isolated clean-archive no-dependency approval replay export smoke pass; QA and code/security review pass; declared-project pip-audit reports no known vulnerabilities; environment-wide dependency-governance veto remains; distributed transactions, remote approval transport, sandboxing, scheduling, and exactly-once effects remain separate |
 | 127 | Authenticated bounded remote approval control transport | Chief Architect / Backend / Security / QA / Release | `docs/adr/073-*`, `maple/autonomy/server.py`, approval/server regressions, API/README/parity docs, changelog, QA/review evidence | Optional authenticated `RunServer`/`RunClient` routes list and inspect bounded approvals and record approve/deny decisions with optional bounded edited arguments; the existing `ApprovalStore` remains authoritative; transport never consumes or executes an approval and makes no hosted identity, scheduling, notification, tenancy, or exactly-once claim | done: feature commit `3b0121c`; focused server suite `26 passed in 11.38s`; autonomy suite `362 passed in 14.29s`; exact tracked manifest `1324 passed, 1 skipped in 253.70s` across 108 tracked Python test files; isort/Black/Ruff/changed-boundary mypy/compile/diff pass; clean `git archive HEAD` `1.1.3` wheel/sdist build and Twine checks exit `0`, wheel `104` entries, sdist `567` entries with zero workspace-only files, isolated clean-archive no-dependency approval transport export smoke pass; QA and code/security review pass; declared-project pip-audit reports no known vulnerabilities; environment-wide dependency-governance veto remains; hosted identity, notifications, scheduling, tenancy, sandboxing, and exactly-once effects remain separate |
 | 128 | Bounded durable event journal and restart replay | Chief Architect / Backend / Observability / Security / QA / Release | `docs/adr/074-*`, `maple/autonomy/events.py`, event/server regressions, API/README/parity docs, changelog, QA/review evidence | Optional host-owned `FileEventJournal` persists redacted bounded events through atomic JSON replacement and fencing leases; `EventStream` rehydrates the retained window and cursor sequence after restart; malformed/oversized/non-monotonic records fail closed; no unbounded log, multi-writer allocator, remote aggregation, or exactly-once delivery claim | done: feature commit `f30ae25`; fail-closed timestamp fix `032429f`; evidence normalization `2ae4a9c`; QA/review normalization `3409f39`; focused event suite `20 passed in 0.78s`; exact tracked manifest `1329 passed, 1 skipped in 270.82s` across 108 tracked Python test files; isort/Black/Ruff/changed-boundary mypy/compile/diff pass; clean `git archive HEAD` `1.1.3` wheel/sdist build and Twine checks exit `0`, wheel `104` entries, sdist `570` entries with zero workspace-only files, isolated no-dependency event-journal export smoke pass; declared-project pip-audit reports no known vulnerabilities; QA and code/security review pass; remote aggregation, batching, hosted tracing, and exactly-once delivery remain separate |
+| 129 | Bounded authenticated event batch transport | Chief Architect / Backend / Interoperability / Security / Observability / QA / Release | `docs/adr/075-*`, `maple/autonomy/server.py`, server/client event regressions, API/README/parity docs, changelog, QA/review evidence | Authenticated `POST /v1/events/batch` and `RunClient.publish_events(...)` accept 1–100 existing event envelopes, preserve request order and stream-owned redaction/sequence semantics, and return bounded per-item published/failed results; malformed batch structure fails before attempts; partial success, no retry/deduplication, and no durable remote queue or exactly-once claim are explicit | in progress: architecture recorded; implementation, regression, full-suite, static, package, QA, and review gates pending |
 
 ## Slice 127 closure
 
@@ -183,6 +184,23 @@ entry wheel, `570`-entry sdist, Twine exit `0`, and an isolated no-dependency
 event-journal export smoke. QA/security sign-off and code review are filed.
 The environment remains intentionally local-first: remote event aggregation,
 batching, hosted trace search, and exactly-once delivery are not claimed.
+
+## Slice 129
+
+Add a bounded authenticated event-batch route over the existing host-owned
+`EventStream`. The server must reject malformed batch structure before any
+attempt, preserve request order, return bounded per-item outcomes, and retain
+the stream's redaction, local sequence, subscriber/exporter, journal, and
+failure semantics. Partial success is explicit; remote retry, deduplication,
+durability, aggregation, and exactly-once delivery remain outside the slice.
+
+Threat sketch: the assets are event payloads, local sequence history, and
+collector capacity; entry points are authenticated batch HTTP input, client
+serialization, and per-item stream publication. The worst plausible abuse is
+request amplification, response amplification, or misleading partial-delivery
+claims. Authentication, 100-item/request bounds, existing body/response caps,
+per-item validation, structured errors, and explicit partial-success semantics
+contain the blast radius.
 
 **Date:** 2026-08-27
 

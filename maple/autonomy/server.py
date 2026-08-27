@@ -10,7 +10,7 @@ import threading
 import uuid
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any, Dict, Mapping, Optional, Protocol, Tuple, cast
+from typing import Any, Dict, Mapping, Optional, Protocol, Sequence, Tuple, cast
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qsl, quote, unquote, urlencode, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
@@ -31,6 +31,7 @@ _DEFAULT_MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 _MAX_EARLY_BODY_DISCARD_BYTES = 64 * 1024
 _DEFAULT_CLIENT_TIMEOUT_SECONDS = 10.0
 _MAX_EVENT_READ_LIMIT = 1_000
+_MAX_EVENT_BATCH_ITEMS = 100
 _MAX_HUMAN_INPUT_LIMIT = 1_000
 _MAX_APPROVAL_LIMIT = 100
 _MAX_HANDOFF_LIMIT = 100
@@ -59,6 +60,27 @@ def _validate_auth_token(auth_token: Optional[str]) -> None:
         raise ValueError("auth_token must be a non-empty string when provided")
     if any(ord(character) < 0x20 or ord(character) == 0x7F for character in auth_token):
         raise ValueError("auth_token must not contain control characters")
+
+
+def _validate_event_input(event_type: Any, run_id: Optional[Any]) -> Optional[Error]:
+    if (
+        not isinstance(event_type, str)
+        or not event_type
+        or len(event_type) > 128
+        or any(ord(char) < 32 or ord(char) == 127 for char in event_type)
+    ):
+        return _error(
+            "EVENT_INPUT_INVALID",
+            "event_type must be bounded and non-empty.",
+        )
+    if run_id is not None and (
+        not isinstance(run_id, str)
+        or not run_id
+        or len(run_id) > 256
+        or any(ord(char) < 32 or ord(char) == 127 for char in run_id)
+    ):
+        return _error("EVENT_INPUT_INVALID", "run_id must be bounded when provided.")
+    return None
 
 
 def _validate_agent_identifier(value: Any, field: str) -> Optional[Error]:
@@ -707,6 +729,7 @@ def _status_for_error(error: Error) -> int:
         "EVENT_NON_JSON_PAYLOAD",
         "EVENT_PAYLOAD_TOO_DEEP",
         "EVENT_PAYLOAD_TOO_LARGE",
+        "EVENT_BATCH_INVALID",
     }:
         return 400
     if error_type == "AGENT_REGISTRY_UNAVAILABLE":
@@ -868,6 +891,9 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 return
             if method == "POST" and path == ("v1", "events"):
                 self._publish_event()
+                return
+            if method == "POST" and path == ("v1", "events", "batch"):
+                self._publish_event_batch()
                 return
             if method == "GET" and path == ("v1", "events"):
                 self._read_events()
@@ -1349,6 +1375,71 @@ class _RequestHandler(BaseHTTPRequestHandler):
             )
             return
         self._write_json(201, {"event": result.unwrap().as_dict()})
+
+    def _publish_event_batch(self) -> None:
+        stream = self.server.application.event_stream
+        if stream is None:
+            self._discard_bounded_request_body()
+            self._write_error(
+                503,
+                _error(
+                    "EVENT_STREAM_UNAVAILABLE",
+                    "No event stream is configured.",
+                ),
+            )
+            return
+        body = self._read_body()
+        raw_events = body.get("events")
+        if (
+            not isinstance(raw_events, list)
+            or not raw_events
+            or len(raw_events) > _MAX_EVENT_BATCH_ITEMS
+        ):
+            self._write_error(
+                400,
+                _error(
+                    "EVENT_BATCH_INVALID",
+                    "events must contain between 1 and 100 items.",
+                    max_items=_MAX_EVENT_BATCH_ITEMS,
+                ),
+            )
+            return
+
+        published = []
+        failed = []
+        for index, item in enumerate(raw_events):
+            if not isinstance(item, Mapping):
+                failed.append(
+                    {
+                        "index": index,
+                        "error": _error(
+                            "EVENT_INPUT_INVALID",
+                            "event must be an object.",
+                        ),
+                    }
+                )
+                continue
+            if "event_type" not in item or "payload" not in item:
+                failed.append(
+                    {
+                        "index": index,
+                        "error": _error(
+                            "EVENT_INPUT_INVALID",
+                            "event_type and payload are required.",
+                        ),
+                    }
+                )
+                continue
+            result = stream.publish(
+                item["event_type"],
+                item["payload"],
+                run_id=item.get("run_id"),
+            )
+            if result.is_err():
+                failed.append({"index": index, "error": result.unwrap_err()})
+                continue
+            published.append({"index": index, "event": result.unwrap().as_dict()})
+        self._write_json(200, {"published": published, "failed": failed})
 
     def _read_events(self) -> None:
         stream = self.server.application.event_stream
@@ -1985,31 +2076,63 @@ class RunClient:
         run_id: Optional[str] = None,
     ) -> Result[Dict[str, Any], Error]:
         """Publish one bounded event to a remote host-owned event stream."""
-        if (
-            not isinstance(event_type, str)
-            or not event_type
-            or len(event_type) > 128
-            or any(ord(char) < 32 for char in event_type)
-        ):
-            return Result.err(
-                _error(
-                    "EVENT_INPUT_INVALID",
-                    "event_type must be bounded and non-empty.",
-                )
-            )
-        if run_id is not None and (
-            not isinstance(run_id, str)
-            or not run_id
-            or len(run_id) > 256
-            or any(ord(char) < 32 for char in run_id)
-        ):
-            return Result.err(
-                _error("EVENT_INPUT_INVALID", "run_id must be bounded when provided.")
-            )
+        input_error = _validate_event_input(event_type, run_id)
+        if input_error is not None:
+            return Result.err(input_error)
         body: Dict[str, Any] = {"event_type": event_type, "payload": payload}
         if run_id is not None:
             body["run_id"] = run_id
         return self._request("POST", ("v1", "events"), body)
+
+    def publish_events(
+        self, events: Sequence[Mapping[str, Any]]
+    ) -> Result[Dict[str, Any], Error]:
+        """Publish up to 100 events and return indexed per-item outcomes."""
+        if (
+            not isinstance(events, (list, tuple))
+            or not events
+            or len(events) > _MAX_EVENT_BATCH_ITEMS
+        ):
+            return Result.err(
+                _error(
+                    "EVENT_BATCH_INVALID",
+                    "events must contain between 1 and 100 items.",
+                    max_items=_MAX_EVENT_BATCH_ITEMS,
+                )
+            )
+        normalized = []
+        for index, item in enumerate(events):
+            if not isinstance(item, Mapping):
+                return Result.err(
+                    _error(
+                        "EVENT_BATCH_INVALID",
+                        "each event must be an object.",
+                        index=index,
+                    )
+                )
+            if "event_type" not in item or "payload" not in item:
+                return Result.err(
+                    _error(
+                        "EVENT_BATCH_INVALID",
+                        "event_type and payload are required for each event.",
+                        index=index,
+                    )
+                )
+            input_error = _validate_event_input(item["event_type"], item.get("run_id"))
+            if input_error is not None:
+                input_error["details"] = {
+                    **input_error.get("details", {}),
+                    "index": index,
+                }
+                return Result.err(input_error)
+            normalized_item: Dict[str, Any] = {
+                "event_type": item["event_type"],
+                "payload": item["payload"],
+            }
+            if item.get("run_id") is not None:
+                normalized_item["run_id"] = item["run_id"]
+            normalized.append(normalized_item)
+        return self._request("POST", ("v1", "events", "batch"), {"events": normalized})
 
     def read_events(
         self,

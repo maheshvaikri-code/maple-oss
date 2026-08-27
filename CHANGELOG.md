@@ -10,6 +10,13 @@
 
 ### Additions
 
+- **Bounded authenticated event batching**: `RunServer` and `RunClient` now
+  support authenticated `POST /v1/events/batch` and `publish_events(...)` for
+  1–100 event envelopes with request-order submission, stream-owned redaction
+  and sequence assignment, and indexed per-item published/failed outcomes.
+  Malformed batch structure fails before attempts; partial success is explicit,
+  with no implicit retry, deduplication, remote queue, or exactly-once claim.
+
 - **Bounded durable event journal**: `EventStream` can now attach a host-owned
   `FileEventJournal` that atomically persists already-redacted events under a
   bounded JSON window and fencing lease, then rehydrates retained events and

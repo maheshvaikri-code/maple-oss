@@ -756,6 +756,156 @@ def test_authenticated_event_transport_ingests_redacted_events_and_preserves_loc
     assert unauthorized.unwrap_err()["errorType"] == "UNAUTHORIZED"
 
 
+def test_authenticated_event_batch_transport_preserves_order_and_redaction():
+    stream = EventStream(max_events=4)
+    server = RunServer(
+        WorkflowRegistry(),
+        event_stream=stream,
+        auth_token="event-token",
+    )
+    base_url = server.start()
+    try:
+        client = RunClient(base_url, auth_token="event-token")
+        batch = client.publish_events(
+            [
+                {
+                    "event_type": "remote.batch.first",
+                    "payload": {"status": "ok", "secret": "not-retained"},
+                    "run_id": "batch-run",
+                },
+                {
+                    "event_type": "remote.batch.second",
+                    "payload": {"status": "ok"},
+                },
+            ]
+        )
+        unauthorized = RunClient(base_url).publish_events(
+            [{"event_type": "blocked", "payload": {}}]
+        )
+    finally:
+        server.close()
+
+    assert batch.is_ok()
+    response = batch.unwrap()
+    assert [item["index"] for item in response["published"]] == [0, 1]
+    assert response["failed"] == []
+    assert response["published"][0]["event"]["sequence"] == 1
+    assert response["published"][1]["event"]["sequence"] == 2
+    assert response["published"][0]["event"]["payload"]["secret"] == "[REDACTED]"
+    retained = stream.snapshot().unwrap()
+    assert [event.sequence for event in retained] == [1, 2]
+    assert [event.event_type for event in retained] == [
+        "remote.batch.first",
+        "remote.batch.second",
+    ]
+    assert unauthorized.is_err()
+    assert unauthorized.unwrap_err()["errorType"] == "UNAUTHORIZED"
+
+
+def test_event_batch_transport_returns_partial_item_failures_without_retry():
+    stream = EventStream(max_events=4)
+    server = RunServer(
+        WorkflowRegistry(),
+        event_stream=stream,
+        auth_token="event-token",
+    )
+    base_url = server.start()
+    try:
+        status, response = _request(
+            f"{base_url}/v1/events/batch",
+            method="POST",
+            payload={
+                "events": [
+                    {"event_type": "remote.before", "payload": {}},
+                    {"payload": {}},
+                    {"event_type": "remote.after", "payload": {}},
+                ]
+            },
+            headers={"Authorization": "Bearer event-token"},
+        )
+    finally:
+        server.close()
+
+    assert status == 200
+    assert [item["index"] for item in response["published"]] == [0, 2]
+    assert [item["index"] for item in response["failed"]] == [1]
+    assert response["failed"][0]["error"]["errorType"] == "EVENT_INPUT_INVALID"
+    retained = stream.snapshot().unwrap()
+    assert [event.sequence for event in retained] == [1, 2]
+    assert [event.event_type for event in retained] == [
+        "remote.before",
+        "remote.after",
+    ]
+
+
+def test_event_batch_transport_enforces_structural_bounds_before_attempts():
+    stream = EventStream(max_events=128)
+    server = RunServer(
+        WorkflowRegistry(),
+        event_stream=stream,
+        auth_token="event-token",
+    )
+    base_url = server.start()
+    try:
+        valid_status, valid_response = _request(
+            f"{base_url}/v1/events/batch",
+            method="POST",
+            payload={
+                "events": [
+                    {"event_type": f"remote.{index}", "payload": {}}
+                    for index in range(100)
+                ]
+            },
+            headers={"Authorization": "Bearer event-token"},
+        )
+        oversized_status, oversized_response = _request(
+            f"{base_url}/v1/events/batch",
+            method="POST",
+            payload={
+                "events": [
+                    {"event_type": "remote.oversized", "payload": {}}
+                    for _ in range(101)
+                ]
+            },
+            headers={"Authorization": "Bearer event-token"},
+        )
+    finally:
+        server.close()
+
+    assert valid_status == 200
+    assert len(valid_response["published"]) == 100
+    assert oversized_status == 400
+    assert oversized_response["error"]["errorType"] == "EVENT_BATCH_INVALID"
+    retained = stream.snapshot().unwrap()
+    assert len(retained) == 100
+    assert retained[-1].sequence == 100
+
+
+def test_run_client_publish_events_validates_batch_shape_and_items():
+    client = RunClient("http://127.0.0.1:1")
+
+    empty = client.publish_events([])
+    oversized = client.publish_events(
+        [{"event_type": "remote.event", "payload": {}} for _ in range(101)]
+    )
+    invalid_item = client.publish_events(["not-an-event"])
+    missing_payload = client.publish_events([{"event_type": "remote.event"}])
+    invalid_run = client.publish_events(
+        [{"event_type": "remote.event", "payload": {}, "run_id": "bad\nrun"}]
+    )
+
+    assert empty.is_err()
+    assert empty.unwrap_err()["errorType"] == "EVENT_BATCH_INVALID"
+    assert oversized.is_err()
+    assert oversized.unwrap_err()["errorType"] == "EVENT_BATCH_INVALID"
+    assert invalid_item.is_err()
+    assert invalid_item.unwrap_err()["errorType"] == "EVENT_BATCH_INVALID"
+    assert missing_payload.is_err()
+    assert missing_payload.unwrap_err()["errorType"] == "EVENT_BATCH_INVALID"
+    assert invalid_run.is_err()
+    assert invalid_run.unwrap_err()["errorType"] == "EVENT_INPUT_INVALID"
+
+
 def test_event_transport_round_trips_the_existing_http_exporter_and_fails_closed():
     destination = EventStream()
     server = RunServer(

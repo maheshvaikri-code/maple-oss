@@ -1920,8 +1920,30 @@ receiving stream's sequence and timestamp, then applies the stream's redaction
 and payload limits before retention, subscriber delivery, or exporter delivery.
 Missing fields, malformed payloads, oversized bodies, and invalid event values
 return typed `400` errors; an absent stream returns `503`. This is a bounded
-authenticated ingestion seam for a host-owned stream, not batching, durable
-remote replay, fleet aggregation, or remote trace search.
+authenticated ingestion seam for a host-owned stream, not durable remote
+replay, fleet aggregation, or remote trace search.
+
+For transport-efficient ingestion, `RunClient.publish_events(...)` and
+`POST /v1/events/batch` accept 1–100 event envelopes. Events are submitted in
+request order to the receiving stream. The response separates successful and
+failed items while retaining each original zero-based index:
+
+```python
+batch = client.publish_events(
+    [
+        {"event_type": "agent.started", "payload": {"run_id": "run-1"}},
+        {"event_type": "agent.completed", "payload": {"status": "ok"}},
+    ]
+)
+if batch.is_ok():
+    result = batch.unwrap()
+    # {"published": [{"index": 0, "event": {...}}, ...], "failed": [...]}
+```
+
+Malformed batch structure, including an empty or over-100 item list, is
+rejected before any event is attempted. Valid batches may partially succeed;
+there is no implicit retry, deduplication, transaction, or exactly-once effect
+guarantee, so callers own retry and idempotency policy.
 
 For bounded remote inspection, use the same authenticated server with a
 cursor-based read. `after` is the last sequence already processed and `limit`
