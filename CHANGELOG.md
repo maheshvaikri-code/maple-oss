@@ -16,8 +16,9 @@
   values and re-applies the stream's redaction and payload limits; the existing
   `HttpEventExporter` can target the route for a local round trip. Batching,
   durable replay, fleet aggregation, and remote trace search remain outside
-  the contract. Focused server validation reports `20 passed`; full release
-  evidence is pending and no publication was performed.
+  the contract. Combined event/server validation reports `36 passed in
+  10.07s`, the autonomy suite reports `345 passed`, and the clean package
+  candidate builds and passes Twine checks. No publication was performed.
 - **Bounded authenticated handoff transport**: the dependency-free
   `RunServer`/`RunClient` contract can expose a host-owned `HandoffStore` for
   digest-only create, inspect, list, accept, complete, and fail transitions.

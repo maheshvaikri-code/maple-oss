@@ -137,7 +137,26 @@
 | 119 | Bounded authenticated handoff transport | Chief Architect / Backend / Security / QA / Release | `docs/adr/065-*`, `maple/autonomy/server.py`, autonomy exports, server/client regressions, API/README/parity docs, changelog, QA/review evidence | Optional host-owned `HandoffStore` and dependency-free authenticated routes for digest-only create/inspect/list/accept/complete/fail transitions; existing store validation, ownership, terminal state, and file fencing remain authoritative; no raw payload delivery, principal scopes, retries, scheduling, or exactly-once effects | done: focused `16 passed in 6.24s`; autonomy `340 passed in 9.27s`; tracked `1302 passed, 1 skipped in 214.52s`; Black/Ruff/changed-boundary mypy/compile/diff/doctor pass; clean archive candidate `cafff3c` build/Twine exit `0`, sdist `541` entries, required files `6/6`, wheel `104` entries, no-dependency export smoke pass; QA and code review pass; environment-wide dependency-governance veto remains; remote payload delivery and principal scopes remain separate |
 | 120 | Bounded authenticated durable agent-run inspection and resume | Chief Architect / Backend / Security / QA / Release | `docs/adr/066-*`, `maple/autonomy/server.py`, autonomy exports, server/client regressions, API/README/parity docs, changelog, QA/review evidence | Optional `AgentRunStore` checkpoint summaries omit messages/reasoning trace; explicit `AgentRunResumeHandler` callback enables authenticated resume; agent identity is checked, callback results use the existing JSON-safe envelope, and missing store/callback/cross-agent run fail closed; no scheduler, cancellation, retries, principal scopes, remote aggregation, or exactly-once effects | done: focused `18 passed in 10.19s`; autonomy `342 passed in 14.06s`; tracked `1304 passed, 1 skipped in 224.03s`; Black/Ruff/changed-boundary mypy/compile/diff/doctor pass; clean archive candidate `9d1d7aa` build/Twine exit `0`, sdist `505` entries, required files `6/6`, wheel `104` entries, no-dependency export smoke pass; QA and code review pass; environment-wide dependency-governance veto remains; scheduling, cancellation, retries, principal scopes, remote aggregation, and exactly-once effects remain separate |
 
-| 121 | Bounded authenticated event ingestion into a host-owned stream | Chief Architect / Backend / Security / Observability / QA / Release | `docs/adr/067-*`, `maple/autonomy/server.py`, server/client regressions, API/README/parity docs, changelog, QA/review evidence | Optional authenticated `RunServer(event_stream=...)` route accepts one bounded event at a time; `RunClient.publish_event(...)` and existing `HttpEventExporter` round-trip through host-assigned local sequence/timestamp values and the stream's redaction/size boundary; absent stream, malformed fields, unauthorized calls, and invalid payloads fail closed; no batching, durable replay, fleet aggregation, or remote trace search | in progress |
+| 121 | Bounded authenticated event ingestion into a host-owned stream | Chief Architect / Backend / Security / Observability / QA / Release | `docs/adr/067-*`, `maple/autonomy/server.py`, server/client regressions, API/README/parity docs, changelog, QA/review evidence | Optional authenticated `RunServer(event_stream=...)` route accepts one bounded event at a time; `RunClient.publish_event(...)` and existing `HttpEventExporter` round-trip through host-assigned local sequence/timestamp values and the stream's redaction/size boundary; absent stream, malformed fields, unauthorized calls, and invalid payloads fail closed; no batching, durable replay, fleet aggregation, or remote trace search | done: combined event/server suite `36 passed in 10.07s`; autonomy `345 passed in 11.94s`; exact tracked manifest `1307 passed, 1 skipped in 213.45s` across 108 tracked Python test files; Black/Ruff/changed-boundary mypy/compile/diff/doctor pass; clean archive candidate `0ca0924` build/Twine exit `0`, sdist `547` entries, required public files `6/6`, wheel `104` entries, no-dependency event transport smoke pass; QA and code review pass; environment-wide dependency-governance veto remains; batching, durable replay, fleet aggregation, remote trace search, principal scopes, and exactly-once delivery remain separate |
+
+## Slice 121 closure
+
+2026-08-27: Slice 121 is behaviorally and package-gate complete. The combined
+event/server suite reports `36 passed in 10.07s`; the full autonomy suite reports
+`345 passed in 11.94s`; the exact tracked manifest reports `1307 passed, 1
+skipped in 213.45s` across 108 tracked Python files. Black, Ruff,
+changed-boundary mypy, compile, diff, and network-free doctor checks pass. A
+clean archive candidate from `0ca0924` builds wheel and sdist successfully,
+both Twine checks pass, the sdist has `547` entries, the wheel has `104`
+members, required public files are `6/6`, and a fresh no-dependency install
+imports the event transport exports. The declared-project dependency audit
+reports no known vulnerabilities; the separate environment-wide audit remains
+a release veto with `383` findings across `77` packages. No publication or
+website change was performed. Early authenticated, missing-stream, resume, and
+oversized-body POST responses drain only bounded request bodies to preserve
+typed fail-closed responses on Windows. Batching, durable replay, fleet
+aggregation, remote trace search, principal scopes, and exactly-once delivery
+remain separate reviewed boundaries.
 
 ## Slice 121
 
