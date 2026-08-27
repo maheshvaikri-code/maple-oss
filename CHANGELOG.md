@@ -10,6 +10,13 @@
 
 ### Additions
 
+- **Bounded durable approval-outcome replay**: built-in in-memory and atomic
+  file approval stores can record one bounded terminal tool outcome after a
+  consumed approval. Direct calls and sync/async durable run resume replay a
+  recorded result without invoking the handler again; consumed approvals with
+  no recorded outcome fail closed as effect-uncertain, and no exactly-once
+  external side-effect guarantee is claimed.
+
 - **Bounded document connector ingestion**: hosts can provide cursor-based
   document pages to `ingest_documents(...)` and an explicit retrieval sink.
   Page, document, batch-count, cursor-progress, duplicate-ID, and source

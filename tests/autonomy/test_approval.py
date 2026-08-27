@@ -48,6 +48,37 @@ def test_in_memory_approval_lifecycle_is_single_use():
     assert replay.unwrap_err()["errorType"] == "APPROVAL_NOT_APPROVED"
 
 
+def test_in_memory_approval_execution_outcome_is_bounded_and_idempotent():
+    store = InMemoryApprovalStore()
+    assert store.create(_request()).is_ok()
+    assert store.decide("approval-1", approved=True).is_ok()
+    assert store.consume("approval-1").is_ok()
+
+    recorded = store.record_execution(
+        "approval-1", {"content": '{"ok": true}', "is_error": False}
+    )
+    replayed = store.record_execution(
+        "approval-1", {"content": '{"ok": true}', "is_error": False}
+    )
+    conflict = store.record_execution(
+        "approval-1", {"content": '{"ok": false}', "is_error": False}
+    )
+    oversized = store.record_execution(
+        "approval-1", {"content": "x" * 131_073, "is_error": False}
+    )
+
+    assert recorded.is_ok()
+    assert recorded.unwrap().execution_result == {
+        "content": '{"ok": true}',
+        "is_error": False,
+    }
+    assert replayed.is_ok()
+    assert conflict.is_err()
+    assert conflict.unwrap_err()["errorType"] == "APPROVAL_EXECUTION_CONFLICT"
+    assert oversized.is_err()
+    assert oversized.unwrap_err()["errorType"] == "APPROVAL_EXECUTION_TOO_LARGE"
+
+
 def test_decision_conflict_and_invalid_list_limit_fail_closed():
     store = InMemoryApprovalStore()
     assert store.create(_request()).is_ok()
@@ -80,6 +111,17 @@ def test_file_approval_survives_store_recreation(tmp_path):
     consumed = restarted_store.consume("approval-1")
     assert consumed.is_ok()
     assert consumed.unwrap().status == "consumed"
+    assert restarted_store.record_execution(
+        "approval-1", {"content": '{"ok": true}', "is_error": False}
+    ).is_ok()
+
+    replayed_store = FileApprovalStore(tmp_path)
+    replayed = replayed_store.get("approval-1")
+    assert replayed.is_ok()
+    assert replayed.unwrap().execution_result == {
+        "content": '{"ok": true}',
+        "is_error": False,
+    }
 
 
 def test_invalid_arguments_are_rejected_before_persistence():

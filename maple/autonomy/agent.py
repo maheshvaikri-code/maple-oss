@@ -68,9 +68,9 @@ from .replay import ExecutionJournal, ExecutionRecord
 from .runs import AgentRunCheckpoint, AgentRunStore
 from .sessions import SessionMessage, SessionSnapshot, SessionStore
 from .tools import (
+    TOOL_REPLAY_REUSE_SUCCESS,
     Tool,
     ToolRegistry,
-    TOOL_REPLAY_REUSE_SUCCESS,
     _normalize_handoff_context,
     create_builtin_tools,
 )
@@ -428,12 +428,44 @@ class AutonomousAgent(Agent):
             approval_id, approved, edited_arguments=edited_arguments
         )
 
-    def execute_approved_tool(self, approval_id: str) -> ToolResult:
-        """Consume and execute one approved durable tool request.
+    def _replay_approval_outcome(self, request: ApprovalRequest) -> ToolResult:
+        """Return a recorded terminal outcome without invoking its handler."""
+        outcome = request.execution_result
+        if outcome is None:
+            return self._approval_error(
+                request.tool_call_id,
+                "APPROVAL_OUTCOME_UNAVAILABLE",
+                "The consumed approval has no recorded tool outcome.",
+                approval_id=request.approval_id,
+                effect_uncertain=True,
+            )
+        return ToolResult(
+            tool_call_id=request.tool_call_id,
+            content=outcome["content"],
+            is_error=outcome["is_error"],
+        )
 
-        Consuming happens before the handler runs, so a request cannot be
-        replayed accidentally. A handler failure is returned as a tool error;
-        callers must create a new approval request before retrying the action.
+    @staticmethod
+    def _approval_outcome_unavailable_error(
+        request: ApprovalRequest,
+    ) -> Dict[str, Any]:
+        """Build a run-level error for a consumed approval without an outcome."""
+        return {
+            "errorType": "APPROVAL_OUTCOME_UNAVAILABLE",
+            "message": "The consumed approval has no recorded tool outcome.",
+            "details": {
+                "approval_id": request.approval_id,
+                "effect_uncertain": True,
+            },
+        }
+
+    def execute_approved_tool(self, approval_id: str) -> ToolResult:
+        """Consume and execute, or replay, one approved durable tool request.
+
+        Built-in approval stores record the bounded terminal tool outcome after
+        the handler returns. A later call replays that outcome without invoking
+        the handler again. If an optional custom store does not implement
+        ``record_execution``, its existing single-use behavior is retained.
         """
         if self._approval_store is None:
             return self._approval_error(
@@ -455,6 +487,8 @@ class AutonomousAgent(Agent):
                 "APPROVAL_NOT_FOUND",
                 "Approval request was not found.",
             )
+        if request.status == "consumed":
+            return self._replay_approval_outcome(request)
         if request.status != "approved":
             error_type = (
                 "APPROVAL_PENDING"
@@ -462,7 +496,7 @@ class AutonomousAgent(Agent):
                 else (
                     "APPROVAL_DENIED"
                     if request.status == "denied"
-                    else "APPROVAL_CONSUMED"
+                    else "APPROVAL_INVALID"
                 )
             )
             return self._approval_error(
@@ -482,7 +516,7 @@ class AutonomousAgent(Agent):
             request.decision.edited_arguments is not None
         ):
             effective_arguments = request.decision.edited_arguments
-        return self._execute_tool_call(
+        result = self._execute_tool_call(
             ToolCall(
                 id=request.tool_call_id,
                 name=request.tool_name,
@@ -490,6 +524,30 @@ class AutonomousAgent(Agent):
             ),
             skip_approval=True,
         )
+        recorder = getattr(self._approval_store, "record_execution", None)
+        if not callable(recorder):
+            return result
+        try:
+            recorded = recorder(
+                approval_id,
+                {"content": result.content, "is_error": result.is_error},
+            )
+        except Exception as exc:
+            return self._approval_error(
+                request.tool_call_id,
+                "APPROVAL_OUTCOME_SAVE_ERROR",
+                "The tool ran but its approval outcome could not be recorded.",
+                exception=type(exc).__name__,
+                effect_uncertain=True,
+            )
+        if not isinstance(recorded, Result) or recorded.is_err():
+            return self._approval_error(
+                request.tool_call_id,
+                "APPROVAL_OUTCOME_SAVE_ERROR",
+                "The tool ran but its approval outcome could not be recorded.",
+                effect_uncertain=True,
+            )
+        return result
 
     @staticmethod
     def _session_store_failure(
@@ -1050,11 +1108,15 @@ class AutonomousAgent(Agent):
                     "APPROVAL_DENIED",
                     "Action was not approved by the operator.",
                 )
+            elif request.status == "consumed":
+                if request.execution_result is None:
+                    return Result.err(self._approval_outcome_unavailable_error(request))
+                tool_result = self._replay_approval_outcome(request)
             else:
                 return Result.err(
                     {
-                        "errorType": "APPROVAL_CONSUMED",
-                        "message": "The pending approval request was already consumed.",
+                        "errorType": "APPROVAL_INVALID",
+                        "message": "The pending approval request has an invalid state.",
                     }
                 )
             replaced = self._replace_pending_tool_result(messages, tool_result)
@@ -3338,11 +3400,15 @@ Instructions:
                     "APPROVAL_DENIED",
                     "Action was not approved by the operator.",
                 )
+            elif request.status == "consumed":
+                if request.execution_result is None:
+                    return Result.err(self._approval_outcome_unavailable_error(request))
+                tool_result = self._replay_approval_outcome(request)
             else:
                 return Result.err(
                     {
-                        "errorType": "APPROVAL_CONSUMED",
-                        "message": "The pending approval request was already consumed.",
+                        "errorType": "APPROVAL_INVALID",
+                        "message": "The pending approval request has an invalid state.",
                     }
                 )
             replaced = self._replace_pending_tool_result(messages, tool_result)

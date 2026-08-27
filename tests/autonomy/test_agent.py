@@ -939,8 +939,42 @@ class TestAutonomousAgent:
 
         assert executed.is_error is False
         assert json.loads(executed.content) == {"ok": True}
-        assert json.loads(replay.content)["errorType"] == "APPROVAL_CONSUMED"
+        assert replay.is_error is False
+        assert json.loads(replay.content) == {"ok": True}
         assert calls == ["executed"]
+
+    def test_consumed_approval_without_outcome_fails_closed(self):
+        config = make_config()
+        auto_config = make_auto_config()
+        agent = AutonomousAgent(config, auto_config)
+        store = InMemoryApprovalStore()
+        agent.set_approval_store(store)
+        calls = []
+
+        from maple.autonomy.tools import Tool
+
+        agent.register_tool(
+            Tool(
+                name="dangerous",
+                description="A tool that needs approval",
+                parameters={"type": "object"},
+                handler=lambda: calls.append("executed") or Result.ok({"ok": True}),
+                requires_approval=True,
+            )
+        )
+
+        pending = agent._execute_tool_call(ToolCall("call-no-outcome", "dangerous", {}))
+        approval_id = json.loads(pending.content)["details"]["approval_id"]
+        assert agent.decide_approval(approval_id, approved=True).is_ok()
+        assert store.consume(approval_id).is_ok()
+
+        replay = agent.execute_approved_tool(approval_id)
+
+        assert replay.is_error is True
+        assert json.loads(replay.content)["errorType"] == (
+            "APPROVAL_OUTCOME_UNAVAILABLE"
+        )
+        assert calls == []
 
     def test_get_active_goals(self):
         config = make_config()

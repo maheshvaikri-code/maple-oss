@@ -1494,10 +1494,15 @@ an approved decision may include a bounded JSON `edited_arguments` replacement.
 `None` keeps the original model arguments, while `{}` intentionally supplies an
 empty object. Invalid edits or edits attached to a denial return
 `APPROVAL_DECISION_INVALID` without changing the pending record.
-`execute_approved_tool` claims the request before executing it and a second
-attempt in the same process returns `APPROVAL_CONSUMED`. File persistence is
-atomic and thread-safe within one process, and `FileApprovalStore` acquires a
-per-record `FileLeaseManager` fencing lease by default under
+`execute_approved_tool` claims the request before executing it. The built-in
+in-memory and file stores then record one bounded terminal tool outcome, so a
+second attempt or a durable run resume replays that outcome without invoking
+the handler again. If the outcome cannot be recorded, the tool result is not
+silently retried; a consumed request without a recorded outcome returns
+`APPROVAL_OUTCOME_UNAVAILABLE` with an effect-uncertain signal. A custom store
+without the optional `record_execution(...)` capability retains single-use
+behavior. File persistence is atomic and thread-safe within one process, and
+`FileApprovalStore` acquires a per-record `FileLeaseManager` fencing lease by default under
 `<directory>/.maple-leases`. Pass `lease_manager=` to provide a caller-owned
 manager or `lease_ttl_seconds=` to change the bounded 30-second default.
 Failed acquisition returns `APPROVAL_LEASE_ERROR` without mutation; failed
@@ -1505,9 +1510,11 @@ release returns `APPROVAL_LEASE_RELEASE_ERROR` and means the mutation may
 already be committed, so inspect the record before retrying. Approval arguments
 may contain application-sensitive data and
 should be protected with host filesystem access controls. The store does not
-persist the full ReAct conversation, does not implement arbitrary
-request/response HITL forms, and failed tool execution requires a new approval
-request.
+persist the full ReAct conversation or implement arbitrary request/response
+HITL forms. Outcome recording is an at-least-once crash-window guard, not an
+exactly-once side-effect protocol; a failure after the handler returns and
+before the outcome write may leave the external effect uncertain and requires
+host investigation or a new explicitly approved action.
 
 ### Durable human input
 

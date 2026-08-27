@@ -18,8 +18,7 @@ from maple.autonomy.runs import (
     InMemoryAgentRunStore,
 )
 from maple.autonomy.sessions import SessionMessage
-from maple.autonomy.tools import Tool
-from maple.autonomy.tools import TOOL_REPLAY_REUSE_SUCCESS
+from maple.autonomy.tools import TOOL_REPLAY_REUSE_SUCCESS, Tool
 from maple.core.result import Result
 from maple.llm.provider import LLMProvider
 from maple.llm.registry import LLMProviderRegistry
@@ -208,6 +207,69 @@ def test_sync_run_pauses_for_approval_and_resumes_after_restart():
     assert final_checkpoint is not None
     assert final_checkpoint.status == "completed"
     assert final_checkpoint.pending_approval_id is None
+
+
+def test_sync_approval_outcome_replays_after_checkpoint_save_failure():
+    class FailThirdSaveStore(InMemoryAgentRunStore):
+        def __init__(self):
+            super().__init__()
+            self.save_count = 0
+
+        def save(self, checkpoint, expected_version=None):
+            self.save_count += 1
+            if self.save_count == 3:
+                return Result.err(
+                    {
+                        "errorType": "TEST_CHECKPOINT_FAILURE",
+                        "message": "checkpoint failed after approval execution",
+                    }
+                )
+            return super().save(checkpoint, expected_version=expected_version)
+
+    run_store = FailThirdSaveStore()
+    approval_store = InMemoryApprovalStore()
+    calls = []
+    first = make_agent(
+        [
+            LLMResponse(
+                content="request write",
+                tool_calls=[ToolCall("approval-replay-call", "write_value", {})],
+                finish_reason="tool_calls",
+            )
+        ]
+    )
+    first.set_run_store(run_store)
+    first.set_approval_store(approval_store)
+    assert first.register_tool(approval_tool(calls)).is_ok()
+
+    started = first.pursue_goal("Write once", run_id="run-approval-replay")
+    assert started.is_ok()
+    assert started.unwrap().status == "paused"
+    approval_id = started.unwrap().result["details"]["approval_id"]
+    assert first.decide_approval(approval_id, approved=True).is_ok()
+
+    failed = first.resume_run("run-approval-replay")
+    assert failed.is_err()
+    assert failed.unwrap_err()["errorType"] == "RUN_STORE_ERROR"
+    assert calls == [{}]
+    consumed = approval_store.get(approval_id).unwrap()
+    assert consumed is not None
+    assert consumed.status == "consumed"
+    assert consumed.execution_result == {
+        "content": '{"written": true}',
+        "is_error": False,
+    }
+
+    restarted = make_agent([LLMResponse(content="done", finish_reason="stop")])
+    restarted.set_run_store(run_store)
+    restarted.set_approval_store(approval_store)
+    assert restarted.register_tool(approval_tool(calls)).is_ok()
+
+    resumed = restarted.resume_run("run-approval-replay")
+
+    assert resumed.is_ok()
+    assert resumed.unwrap().status == "completed"
+    assert calls == [{}]
 
 
 def test_sync_resume_does_not_repeat_completed_tool_after_model_interruption():
@@ -725,6 +787,64 @@ def test_async_run_pauses_for_approval_and_resumes_after_restart():
         "model.response",
         "run.completed",
     ]
+
+
+def test_async_approval_outcome_replays_after_checkpoint_save_failure():
+    class FailThirdSaveStore(InMemoryAgentRunStore):
+        def __init__(self):
+            super().__init__()
+            self.save_count = 0
+
+        def save(self, checkpoint, expected_version=None):
+            self.save_count += 1
+            if self.save_count == 3:
+                return Result.err(
+                    {
+                        "errorType": "TEST_CHECKPOINT_FAILURE",
+                        "message": "checkpoint failed after approval execution",
+                    }
+                )
+            return super().save(checkpoint, expected_version=expected_version)
+
+    run_store = FailThirdSaveStore()
+    approval_store = InMemoryApprovalStore()
+    calls = []
+    first = make_agent(
+        [
+            LLMResponse(
+                content="request write",
+                tool_calls=[ToolCall("async-approval-replay", "write_value", {})],
+                finish_reason="tool_calls",
+            )
+        ]
+    )
+    first.set_run_store(run_store)
+    first.set_approval_store(approval_store)
+    assert first.register_tool(approval_tool(calls)).is_ok()
+
+    started = asyncio.run(
+        first.pursue_goal_async("Write once", run_id="async-approval-replay")
+    )
+    assert started.is_ok()
+    assert started.unwrap().status == "paused"
+    approval_id = started.unwrap().result["details"]["approval_id"]
+    assert first.decide_approval(approval_id, approved=True).is_ok()
+
+    failed = asyncio.run(first.resume_run_async("async-approval-replay"))
+    assert failed.is_err()
+    assert failed.unwrap_err()["errorType"] == "RUN_STORE_ERROR"
+    assert calls == [{}]
+
+    restarted = make_agent([LLMResponse(content="done", finish_reason="stop")])
+    restarted.set_run_store(run_store)
+    restarted.set_approval_store(approval_store)
+    assert restarted.register_tool(approval_tool(calls)).is_ok()
+
+    resumed = asyncio.run(restarted.resume_run_async("async-approval-replay"))
+
+    assert resumed.is_ok()
+    assert resumed.unwrap().status == "completed"
+    assert calls == [{}]
 
 
 def test_async_durable_approval_pauses_before_later_tool_side_effects():

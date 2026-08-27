@@ -11,7 +11,7 @@ import threading
 import time
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Protocol, Union
+from typing import Any, Callable, Dict, List, Mapping, Optional, Protocol, Union
 
 from ..core.result import Result
 from ..resources.lease import FileLeaseManager
@@ -24,6 +24,7 @@ _MAX_ARGUMENT_DEPTH = 16
 _MAX_ARGUMENT_ITEMS = 1_000
 _MAX_LIST_LIMIT = 1_000
 _MAX_LIST_SCAN = 10_000
+_MAX_EXECUTION_RESULT_BYTES = 131_072
 _APPROVAL_LEASE_TTL_SECONDS = 30.0
 
 Error = Dict[str, Any]
@@ -149,6 +150,49 @@ def _validate_edited_arguments(
     return Result.ok(copied.unwrap())
 
 
+def _copy_execution_result(value: Any) -> Result[Optional[Dict[str, Any]], Error]:
+    """Validate one bounded terminal tool outcome for durable replay."""
+    if value is None:
+        return Result.ok(None)
+    if not isinstance(value, Mapping):
+        return Result.err(
+            _error(
+                "APPROVAL_EXECUTION_INVALID",
+                "Approval execution outcome must be an object.",
+            )
+        )
+    content = value.get("content")
+    is_error = value.get("is_error")
+    if not isinstance(content, str) or type(is_error) is not bool:
+        return Result.err(
+            _error(
+                "APPROVAL_EXECUTION_INVALID",
+                "Approval execution outcome has invalid fields.",
+            )
+        )
+    if len(content.encode("utf-8")) > _MAX_EXECUTION_RESULT_BYTES:
+        return Result.err(
+            _error(
+                "APPROVAL_EXECUTION_TOO_LARGE",
+                "Approval execution outcome exceeds the configured byte limit.",
+                max_bytes=_MAX_EXECUTION_RESULT_BYTES,
+            )
+        )
+    normalized = {"content": content, "is_error": is_error}
+    try:
+        encoded = json.dumps(normalized, ensure_ascii=False, allow_nan=False)
+        json.loads(encoded)
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        return Result.err(
+            _error(
+                "APPROVAL_EXECUTION_INVALID",
+                "Approval execution outcome is not JSON serializable.",
+                reason=str(exc)[:256],
+            )
+        )
+    return Result.ok(normalized)
+
+
 def _valid_identifier(value: Any, field_name: str) -> Optional[Error]:
     if not isinstance(value, str) or not _IDENTIFIER.fullmatch(value):
         return _error(
@@ -214,6 +258,7 @@ class ApprovalRequest:
     created_at: float = 0.0
     updated_at: float = 0.0
     decision: Optional[ApprovalDecision] = None
+    execution_result: Optional[Dict[str, Any]] = None
 
     def __post_init__(self) -> None:
         now = time.time()
@@ -221,6 +266,12 @@ class ApprovalRequest:
             object.__setattr__(self, "created_at", now)
         if self.updated_at == 0.0:
             object.__setattr__(self, "updated_at", now)
+        normalized = _copy_execution_result(self.execution_result)
+        if normalized.is_err():
+            raise ValueError(normalized.unwrap_err()["message"])
+        if self.execution_result is not None and self.status != "consumed":
+            raise ValueError("only consumed approvals can contain an execution result")
+        object.__setattr__(self, "execution_result", normalized.unwrap())
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -232,6 +283,11 @@ class ApprovalRequest:
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "decision": self.decision.to_dict() if self.decision else None,
+            "execution_result": (
+                dict(self.execution_result)
+                if self.execution_result is not None
+                else None
+            ),
         }
 
     @classmethod
@@ -278,6 +334,9 @@ class ApprovalRequest:
                 decided_at=decided_at,
                 edited_arguments=edited_arguments,
             )
+        execution_result = _copy_execution_result(data.get("execution_result"))
+        if execution_result.is_err():
+            raise ValueError(execution_result.unwrap_err()["message"])
         if status == "pending" and decision is not None:
             raise ValueError("pending approval cannot contain a decision")
         if status in {"approved", "consumed"} and (
@@ -286,6 +345,8 @@ class ApprovalRequest:
             raise ValueError("approved approval must contain an approving decision")
         if status == "denied" and (decision is None or decision.approved):
             raise ValueError("denied approval must contain a denying decision")
+        if execution_result.unwrap() is not None and status != "consumed":
+            raise ValueError("only consumed approvals can contain an execution result")
         created_at = float(data.get("created_at", time.time()))
         updated_at = float(data.get("updated_at", time.time()))
         if not math.isfinite(created_at) or not math.isfinite(updated_at):
@@ -299,6 +360,7 @@ class ApprovalRequest:
             created_at=created_at,
             updated_at=updated_at,
             decision=decision,
+            execution_result=execution_result.unwrap(),
         )
 
 
@@ -318,6 +380,10 @@ class ApprovalStore(Protocol):
     ) -> Result[ApprovalRequest, Error]: ...
 
     def consume(self, approval_id: str) -> Result[ApprovalRequest, Error]: ...
+
+    def record_execution(
+        self, approval_id: str, execution_result: Mapping[str, Any]
+    ) -> Result[ApprovalRequest, Error]: ...
 
     def list_pending(
         self, limit: int = 100
@@ -410,6 +476,53 @@ class InMemoryApprovalStore:
             consumed = replace(request, status="consumed", updated_at=time.time())
             self._requests[approval_id] = consumed
             return Result.ok(_copy_request(consumed))
+
+    def record_execution(
+        self, approval_id: str, execution_result: Mapping[str, Any]
+    ) -> Result[ApprovalRequest, Error]:
+        identifier_error = _valid_identifier(approval_id, "approval_id")
+        if identifier_error:
+            return Result.err(identifier_error)
+        normalized = _copy_execution_result(execution_result)
+        if normalized.is_err() or normalized.unwrap() is None:
+            return Result.err(
+                normalized.unwrap_err()
+                if normalized.is_err()
+                else _error(
+                    "APPROVAL_EXECUTION_INVALID",
+                    "Approval execution outcome is required.",
+                )
+            )
+        with self._lock:
+            request = self._requests.get(approval_id)
+            if request is None:
+                return Result.err(
+                    _error("APPROVAL_NOT_FOUND", "Approval request was not found.")
+                )
+            if request.status != "consumed":
+                return Result.err(
+                    _error(
+                        "APPROVAL_EXECUTION_CONFLICT",
+                        "Only a consumed approval can record an execution outcome.",
+                        status=request.status,
+                    )
+                )
+            if request.execution_result is not None:
+                if request.execution_result != normalized.unwrap():
+                    return Result.err(
+                        _error(
+                            "APPROVAL_EXECUTION_CONFLICT",
+                            "Approval execution outcome is already recorded.",
+                        )
+                    )
+                return Result.ok(_copy_request(request))
+            recorded = replace(
+                request,
+                execution_result=normalized.unwrap(),
+                updated_at=time.time(),
+            )
+            self._requests[approval_id] = recorded
+            return Result.ok(_copy_request(recorded))
 
     def list_pending(self, limit: int = 100) -> Result[List[ApprovalRequest], Error]:
         if (
@@ -744,6 +857,70 @@ class FileApprovalStore:
                 _error(
                     "APPROVAL_SAVE_ERROR",
                     "Failed to consume approval request.",
+                    reason=str(exc)[:256],
+                )
+            )
+
+    def record_execution(
+        self, approval_id: str, execution_result: Mapping[str, Any]
+    ) -> Result[ApprovalRequest, Error]:
+        return self._with_record_lease(
+            approval_id,
+            "record_execution",
+            lambda: self._record_execution_without_lease(approval_id, execution_result),
+        )
+
+    def _record_execution_without_lease(
+        self, approval_id: str, execution_result: Mapping[str, Any]
+    ) -> Result[ApprovalRequest, Error]:
+        normalized = _copy_execution_result(execution_result)
+        if normalized.is_err() or normalized.unwrap() is None:
+            return Result.err(
+                normalized.unwrap_err()
+                if normalized.is_err()
+                else _error(
+                    "APPROVAL_EXECUTION_INVALID",
+                    "Approval execution outcome is required.",
+                )
+            )
+        try:
+            with self._lock:
+                request = self._read_unlocked(approval_id)
+                if request is None:
+                    return Result.err(
+                        _error("APPROVAL_NOT_FOUND", "Approval request was not found.")
+                    )
+                if request.status != "consumed":
+                    return Result.err(
+                        _error(
+                            "APPROVAL_EXECUTION_CONFLICT",
+                            "Only a consumed approval can record an execution outcome.",
+                            status=request.status,
+                        )
+                    )
+                if request.execution_result is not None:
+                    if request.execution_result != normalized.unwrap():
+                        return Result.err(
+                            _error(
+                                "APPROVAL_EXECUTION_CONFLICT",
+                                "Approval execution outcome is already recorded.",
+                            )
+                        )
+                    return Result.ok(_copy_request(request))
+                return Result.ok(
+                    self._write_unlocked(
+                        replace(
+                            request,
+                            execution_result=normalized.unwrap(),
+                            updated_at=time.time(),
+                        )
+                    )
+                )
+        except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            return Result.err(
+                _error(
+                    "APPROVAL_SAVE_ERROR",
+                    "Failed to record approval execution outcome.",
                     reason=str(exc)[:256],
                 )
             )
