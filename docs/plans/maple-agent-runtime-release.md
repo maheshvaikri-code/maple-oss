@@ -149,7 +149,7 @@
 | 127 | Authenticated bounded remote approval control transport | Chief Architect / Backend / Security / QA / Release | `docs/adr/073-*`, `maple/autonomy/server.py`, approval/server regressions, API/README/parity docs, changelog, QA/review evidence | Optional authenticated `RunServer`/`RunClient` routes list and inspect bounded approvals and record approve/deny decisions with optional bounded edited arguments; the existing `ApprovalStore` remains authoritative; transport never consumes or executes an approval and makes no hosted identity, scheduling, notification, tenancy, or exactly-once claim | done: feature commit `3b0121c`; focused server suite `26 passed in 11.38s`; autonomy suite `362 passed in 14.29s`; exact tracked manifest `1324 passed, 1 skipped in 253.70s` across 108 tracked Python test files; isort/Black/Ruff/changed-boundary mypy/compile/diff pass; clean `git archive HEAD` `1.1.3` wheel/sdist build and Twine checks exit `0`, wheel `104` entries, sdist `567` entries with zero workspace-only files, isolated clean-archive no-dependency approval transport export smoke pass; QA and code/security review pass; declared-project pip-audit reports no known vulnerabilities; environment-wide dependency-governance veto remains; hosted identity, notifications, scheduling, tenancy, sandboxing, and exactly-once effects remain separate |
 | 128 | Bounded durable event journal and restart replay | Chief Architect / Backend / Observability / Security / QA / Release | `docs/adr/074-*`, `maple/autonomy/events.py`, event/server regressions, API/README/parity docs, changelog, QA/review evidence | Optional host-owned `FileEventJournal` persists redacted bounded events through atomic JSON replacement and fencing leases; `EventStream` rehydrates the retained window and cursor sequence after restart; malformed/oversized/non-monotonic records fail closed; no unbounded log, multi-writer allocator, remote aggregation, or exactly-once delivery claim | done: feature commit `f30ae25`; fail-closed timestamp fix `032429f`; evidence normalization `2ae4a9c`; QA/review normalization `3409f39`; focused event suite `20 passed in 0.78s`; exact tracked manifest `1329 passed, 1 skipped in 270.82s` across 108 tracked Python test files; isort/Black/Ruff/changed-boundary mypy/compile/diff pass; clean `git archive HEAD` `1.1.3` wheel/sdist build and Twine checks exit `0`, wheel `104` entries, sdist `570` entries with zero workspace-only files, isolated no-dependency event-journal export smoke pass; declared-project pip-audit reports no known vulnerabilities; QA and code/security review pass; remote aggregation, batching, hosted tracing, and exactly-once delivery remain separate |
 | 129 | Bounded authenticated event batch transport | Chief Architect / Backend / Interoperability / Security / Observability / QA / Release | `docs/adr/075-*`, `maple/autonomy/server.py`, server/client event regressions, API/README/parity docs, changelog, QA/review evidence | Authenticated `POST /v1/events/batch` and `RunClient.publish_events(...)` accept 1–100 existing event envelopes, preserve request order and stream-owned redaction/sequence semantics, and return bounded per-item published/failed results; malformed batch structure fails before attempts; partial success, no retry/deduplication, and no durable remote queue or exactly-once claim are explicit | done: feature commit `c542828`; focused server/event suite `50 passed in 21.58s`; exact tracked manifest `1333 passed, 1 skipped in 284.61s` across `108` tracked Python test files; Black/isort/Ruff/changed-boundary mypy/compile/diff/secret/dangerous-construct gates passed; clean feature archive `c542828` built `1.1.3` wheel/sdist with exit `0`, Twine checks `PASSED`, wheel `104` entries, sdist `571` entries, and isolated no-dependency event-journal smoke passed; final closure archive `ab9d2e6` built with exit `0`, Twine checks `PASSED`, wheel `104` entries, sdist `573` entries, and no-dependency event batch/journal smoke passed; QA and code review filed; declared-project pip-audit reported no known vulnerabilities; environment-wide dependency-governance veto remains; durable remote replay, aggregation, backpressure, hosted tracing, and exactly-once effects remain separate |
-| 130 | Bounded durable event forwarding and remote aggregation | Chief Architect / Backend / Interoperability / Security / Observability / QA / Release | `docs/adr/076-*`, `maple/autonomy/events.py`, autonomy/root exports, event regressions, API/README/parity docs, changelog, QA/review evidence | Opt-in `EventForwarder` reads at most 100 retained events, sends them through an authenticated `HttpEventBatchSender`, and persists only the contiguous acknowledged prefix through an in-memory or atomic fenced `FileEventCursorStore`; cursor expiry, malformed acknowledgements, transport errors, and cursor-save failures fail closed; duplicate sends remain possible and no implicit retry, remote queue, ordering across forwarders, or exactly-once effect claim is made | in progress |
+| 130 | Bounded durable event forwarding and remote aggregation | Chief Architect / Backend / Interoperability / Security / Observability / QA / Release | `docs/adr/076-*`, `maple/autonomy/events.py`, autonomy/root exports, event regressions, API/README/parity docs, changelog, QA/review evidence | Opt-in `EventForwarder` reads at most 100 retained events, sends them through an authenticated `HttpEventBatchSender`, and persists only the contiguous acknowledged prefix through an in-memory or atomic fenced `FileEventCursorStore`; cursor expiry, malformed acknowledgements, transport errors, and cursor-save failures fail closed; duplicate sends remain possible and no implicit retry, remote queue, ordering across forwarders, or exactly-once effect claim is made | done: feature commit `9e74115`; focused event suite `31 passed in 2.70s`; event/server suite `61 passed in 15.24s`; exact tracked manifest `1344 passed, 1 skipped in 245.95s` across `108` tracked Python test files; Black/isort/Ruff/changed-boundary mypy/compile/diff/secret/dangerous-construct gates passed; clean feature archive built with exit `0`, Twine checks `PASSED`, wheel `104` entries, sdist `574` entries, and isolated no-dependency forwarder smoke passed; QA and code review filed; declared-project pip-audit reported no known vulnerabilities; environment-wide dependency-governance veto remains; hosted scheduling, backpressure, remote deduplication, hosted aggregation/tracing, tenancy, sandboxing, and exactly-once effects remain separate |
 
 ## Slice 127 closure
 
@@ -258,6 +258,34 @@ validation, re-redaction, HTTPS requirements, strict byte/count bounds, and
 explicit at-least-once semantics contain the blast radius.
 
 **Date:** 2026-08-27
+
+## Slice 130 closure
+
+Slice 130 is complete. MAPLE now has an explicit, synchronous, opt-in
+`EventForwarder` that reads one bounded retained window, submits it through an
+authenticated `HttpEventBatchSender`, and persists only the contiguous
+acknowledged prefix. In-memory and atomic fenced file cursor stores support
+restart replay without silently skipping failures. Source retention gaps,
+expired or malformed cursor state, malformed or incomplete acknowledgements,
+transport errors, and cursor-save failures fail closed. Duplicate sends remain
+possible by design after uncertain remote or cursor outcomes; no implicit
+retry, remote queue, hosted scheduler, deduplication, cross-forwarder ordering,
+or exactly-once effect claim is made.
+
+Evidence is green: the focused event suite passed `31` tests, the event/server
+suite passed `61` tests, and the exact tracked manifest passed `1344` tests with
+`1` skip across `108` tracked Python test files. Black, isort, Ruff,
+changed-boundary mypy, compile, diff, secret, and dangerous-construct checks
+passed. A clean feature archive built `maple_oss-1.1.3-py3-none-any.whl` and
+`maple_oss-1.1.3.tar.gz` with exit `0`; Twine passed, with `104` wheel entries
+and `574` sdist entries, and the isolated no-dependency forwarder smoke passed.
+QA and code-review evidence is filed in `docs/qa/` and `docs/reviews/`.
+
+Declared-project pip-audit reported no known vulnerabilities and no runtime
+dependency was added. The environment-wide audit still reports `384` known
+vulnerabilities across `77` installed packages and remains a release-governance
+veto. No publication, deployment, cloud action, or website update was
+performed.
 
 Slice 127 is complete. The authenticated dependency-free control plane now
 supports bounded approval listing, inspection, and approve/deny decisions with
