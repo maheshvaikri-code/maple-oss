@@ -3,17 +3,25 @@
 from __future__ import annotations
 
 import json
+import ipaddress
 import threading
 import time
 from collections import deque
 from dataclasses import dataclass
 from typing import Any, Callable, Deque, Dict, List, Mapping, Optional, Protocol, Tuple
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit, urlunsplit
+from urllib.request import Request, urlopen
 
 from ..core.result import Result
 
 Error = Dict[str, Any]
 EventCallback = Callable[["AgentEvent"], None]
 _MAX_LATENCY_SAMPLES = 4_096
+_DEFAULT_EXPORT_TIMEOUT_SECONDS = 5.0
+_DEFAULT_EXPORT_MAX_EVENT_BYTES = 1_048_576
+_DEFAULT_EXPORT_MAX_RESPONSE_BYTES = 64 * 1024
+_MAX_EXPORT_PATH_BYTES = 4_096
 
 
 def _percentile(values: List[int], percentile: int) -> int:
@@ -37,6 +45,125 @@ class EventExporter(Protocol):
 
     def export(self, event: "AgentEvent") -> None:
         """Receive one bounded event without changing the run outcome."""
+
+
+def _validate_export_token(auth_token: Optional[str]) -> None:
+    if auth_token is None:
+        return
+    if not isinstance(auth_token, str) or not auth_token.strip():
+        raise ValueError("auth_token must be a non-empty string when provided")
+    if any(ord(character) < 0x20 or ord(character) == 0x7F for character in auth_token):
+        raise ValueError("auth_token must not contain control characters")
+
+
+class HttpEventExporter:
+    """Synchronous, bounded HTTP delivery for already-redacted events.
+
+    Delivery is best-effort: failures are raised to ``EventStream``, which
+    records the exporter failure and preserves the published event. This class
+    never retries or stores events for later delivery.
+    """
+
+    def __init__(
+        self,
+        endpoint: str,
+        *,
+        auth_token: Optional[str] = None,
+        timeout_seconds: float = _DEFAULT_EXPORT_TIMEOUT_SECONDS,
+        max_event_bytes: int = _DEFAULT_EXPORT_MAX_EVENT_BYTES,
+        max_response_bytes: int = _DEFAULT_EXPORT_MAX_RESPONSE_BYTES,
+    ) -> None:
+        if not isinstance(endpoint, str) or not endpoint.strip():
+            raise ValueError("endpoint must be a non-empty URL")
+        if any(
+            ord(character) < 0x20 or ord(character) == 0x7F for character in endpoint
+        ):
+            raise ValueError("endpoint must not contain control characters")
+        parsed = urlsplit(endpoint.strip())
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("endpoint must use http or https and include a host")
+        try:
+            hostname = parsed.hostname
+        except ValueError as exc:
+            raise ValueError("endpoint host is invalid") from exc
+        if not hostname:
+            raise ValueError("endpoint must include a host")
+        if parsed.username is not None or parsed.password is not None:
+            raise ValueError("endpoint must not include user information")
+        if parsed.query or parsed.fragment:
+            raise ValueError("endpoint must not include a query or fragment")
+        _validate_export_token(auth_token)
+        is_loopback = hostname.lower() == "localhost"
+        if not is_loopback:
+            try:
+                is_loopback = ipaddress.ip_address(hostname).is_loopback
+            except ValueError:
+                is_loopback = False
+        if parsed.scheme != "https" and not is_loopback:
+            raise ValueError("non-loopback event export requires https")
+        normalized_endpoint = urlunsplit(
+            (parsed.scheme, parsed.netloc, parsed.path, "", "")
+        )
+        if len(normalized_endpoint.encode("utf-8")) > _MAX_EXPORT_PATH_BYTES:
+            raise ValueError("endpoint URL is too large")
+        if (
+            not isinstance(timeout_seconds, (int, float))
+            or isinstance(timeout_seconds, bool)
+            or timeout_seconds <= 0
+        ):
+            raise ValueError("timeout_seconds must be a positive number")
+        for value, name in (
+            (max_event_bytes, "max_event_bytes"),
+            (max_response_bytes, "max_response_bytes"),
+        ):
+            if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+                raise ValueError(f"{name} must be a positive integer")
+        self.endpoint = normalized_endpoint
+        self.auth_token = auth_token
+        self.timeout_seconds = float(timeout_seconds)
+        self.max_event_bytes = max_event_bytes
+        self.max_response_bytes = max_response_bytes
+
+    def export(self, event: "AgentEvent") -> None:
+        """POST one bounded event and raise on delivery failure."""
+        if not isinstance(event, AgentEvent):
+            raise TypeError("event must be an AgentEvent")
+        try:
+            encoded = json.dumps(
+                event.as_dict(),
+                ensure_ascii=False,
+                allow_nan=False,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError("event must be JSON serializable") from exc
+        if len(encoded) > self.max_event_bytes:
+            raise ValueError("event exceeds the configured byte limit")
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
+        if self.auth_token is not None:
+            headers["Authorization"] = f"Bearer {self.auth_token}"
+        request = Request(
+            self.endpoint,
+            data=encoded,
+            headers=headers,
+            method="POST",
+        )
+        try:
+            with urlopen(request, timeout=self.timeout_seconds) as response:
+                status = int(response.status)
+                body = response.read(self.max_response_bytes + 1)
+                if len(body) > self.max_response_bytes:
+                    raise RuntimeError("event export response exceeds the byte limit")
+                if not 200 <= status < 300:
+                    raise RuntimeError("event export endpoint returned an error")
+        except HTTPError as exc:
+            exc.close()
+            raise RuntimeError("event export endpoint returned an error") from None
+        except (URLError, TimeoutError, OSError) as exc:
+            raise RuntimeError("event export endpoint could not be reached") from exc
 
 
 @dataclass(frozen=True)

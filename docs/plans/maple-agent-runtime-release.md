@@ -125,6 +125,8 @@
 
 | 112 | Bounded authenticated workflow HTTP transport | Chief Architect / Backend / Security / QA / Release | `docs/adr/058-*`, `maple/autonomy/server.py`, autonomy exports, server/client regressions, API/README/parity docs, changelog, QA/review evidence | Dependency-free `RunClient` for health/run/resume/inspection, request/path/response bounds, typed transport errors, optional constant-time bearer authentication, loopback-only server compatibility, static/package/doctor gates | done: focused `7 passed in 3.77s`; tracked regression `1276 passed, 1 skipped in 255.31s`; Black/Ruff/changed-boundary mypy/compile/diff/doctor pass; clean archive candidate `c7fe5bd` build exit `0`, Twine wheel/sdist `PASSED`, sdist `522` entries, required files `6/6`, workspace-only audit `0`; QA and code/security review pass; dependency-governance veto remains; TLS termination, token issuance, tenancy, remote scheduling, streaming delivery, and exactly-once effects remain separate |
 
+| 113 | Bounded HTTP event exporter | Chief Architect / Backend / Observability / Security / QA / Release | `docs/adr/059-*`, `maple/autonomy/events.py`, autonomy exports, event regressions, API/README/parity docs, changelog, QA/review evidence | Dependency-free synchronous POST of redacted `AgentEvent` envelopes, HTTPS for authenticated/non-loopback delivery, bearer-header safety, request/response/time bounds, no retry or persistence, exporter failure isolation, static/package/doctor gates | in progress: implementation and focused regressions are running; batching, durable replay, fleet aggregation, hosted trace search, and exactly-once delivery remain separate |
+
 ## Threat sketch
 
 Assets touched: workflow state, tool arguments, model outputs, checkpoint

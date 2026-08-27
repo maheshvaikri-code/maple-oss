@@ -60,6 +60,7 @@ from .events import (
     EventCursor,
     EventExporter,
     EventStream,
+    HttpEventExporter,
     RedactionPolicy,
 )
 from .interactions import (
@@ -209,6 +210,7 @@ __all__ = [
     "EventCursor",
     "EventExporter",
     "EventStream",
+    "HttpEventExporter",
     "RedactionPolicy",
     "SpanRecorder",
     "TraceSpan",

@@ -77,6 +77,7 @@ from .autonomy.events import (
     EventCursor,
     EventExporter,
     EventStream,
+    HttpEventExporter,
     RedactionPolicy,
 )
 from .autonomy.interactions import (
@@ -307,6 +308,7 @@ __all__ = [
     "EventCursor",
     "EventExporter",
     "EventStream",
+    "HttpEventExporter",
     "RedactionPolicy",
     "HumanInputDecision",
     "HumanInputNotification",

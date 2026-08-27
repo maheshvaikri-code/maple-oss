@@ -883,7 +883,8 @@ reference for citation.
 and tool lifecycle events. It assigns monotonic sequence numbers, retains a
 bounded ring, supports snapshots/waiters and synchronous subscribers, and
 redacts credential-like keys before retention or delivery. A host-owned
-`EventExporter` may receive each already-redacted event; exporter exceptions
+`EventExporter` may receive each already-redacted event; the optional
+`HttpEventExporter` provides bounded best-effort HTTP delivery and exporter exceptions
 are isolated from the run. Payload shape,
 string, item, depth, and byte limits fail closed with structured errors. The
 autonomous agent can publish a shared sync/async run lifecycle through
@@ -902,8 +903,10 @@ for event in events.snapshot().unwrap():
     print(event.sequence, event.event_type, event.payload)
 ```
 
-An exporter is intentionally synchronous and local; hosts that need queues,
-durability, retries, or remote telemetry must own that boundary:
+`HttpEventExporter` is synchronous and performs one POST per event. It requires
+a finite timeout, bounds event/response bytes, sends optional bearer auth only
+in a header, requires HTTPS for non-loopback endpoints, and performs no retry
+or persistence. Use a host-owned queue when the collector may block:
 
 ```python
 from maple import EventExporter, EventStream
@@ -933,8 +936,8 @@ next_batch = events.read(restored, limit=25)
 
 `EventStream.wait_for(..., cancellation=token)` accepts MAPLE's cooperative
 `CancellationToken` contract and returns `EVENT_CANCELLED` when signalled. This
-is a local event contract, not a durable broker, remote transport, or hosted
-telemetry service. Provider-native `LLMChunk` streams can expose a bounded
+is a local event contract plus an optional best-effort HTTP sink, not a durable
+broker, remote event log, or hosted telemetry service. Provider-native `LLMChunk` streams can expose a bounded
 final `TokenUsage` trailer and request correlation ID when the provider emits
 them; OpenAI-compatible providers opt into the usage request with
 `LLMConfig.extra["include_stream_usage"] = True`. Subscribers and exporters are
@@ -999,8 +1002,8 @@ print(spans.metrics()["sampled_out_spans"])
 Sampling uses a stable local hash bucket and returns a typed
 `SPAN_SAMPLED_OUT` result for spans not retained; the agent treats that
 observability result as non-fatal. This is an in-process inspection contract.
-Percentile latency histograms, durable/remote exporters, approval-replay
-correlation, and hosted trace search remain host-owned or deferred.
+Percentile latency histograms, durable replay, approval-replay correlation,
+fleet aggregation, and hosted trace search remain host-owned or deferred.
 
 ## Evaluation and Provider Capabilities (preview)
 

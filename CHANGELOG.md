@@ -10,6 +10,13 @@
 
 ### Additions
 
+- **Bounded HTTP event exporter**: added optional dependency-free
+  `HttpEventExporter` for synchronous POST delivery of already-redacted event
+  envelopes with bounded request/response sizes, finite timeout, optional
+  bearer headers, HTTPS enforcement for non-loopback endpoints, and no
+  automatic retry or persistence. Export failures remain isolated from runs;
+  batching, durable replay, fleet aggregation, and hosted trace search remain
+  host-owned.
 - **Bounded workflow HTTP transport**: added dependency-free `RunClient`
   support for health, workflow run, resume, and inspection calls with request,
   URL, and response bounds, typed transport errors, and optional bearer

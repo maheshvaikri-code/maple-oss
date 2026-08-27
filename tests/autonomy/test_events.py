@@ -1,6 +1,18 @@
 """Tests for bounded event streaming and payload redaction."""
 
-from maple.autonomy.events import EventCursor, EventStream, RedactionPolicy
+import json
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+import pytest
+
+from maple.autonomy.events import (
+    AgentEvent,
+    EventCursor,
+    EventStream,
+    HttpEventExporter,
+    RedactionPolicy,
+)
 from maple.autonomy.execution import CancellationToken
 
 
@@ -215,3 +227,74 @@ def test_subscriber_failure_is_isolated_and_counted():
 
     assert published.is_ok()
     assert stream.metrics()["subscriber_failures"] == 1
+
+
+def test_http_event_exporter_sends_redacted_event_with_bearer_auth():
+    received = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):  # noqa: N802
+            length = int(self.headers["Content-Length"])
+            received.append(
+                (self.headers.get("Authorization"), json.loads(self.rfile.read(length)))
+            )
+            self.send_response(204)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+        def log_message(self, format, *args):
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        exporter = HttpEventExporter(
+            f"http://127.0.0.1:{server.server_address[1]}/events",
+            auth_token="local-token",
+        )
+        stream = EventStream(exporter=exporter)
+        published = stream.publish(
+            "tool.completed",
+            {"status": "ok", "secret": "never-sent"},
+            run_id="run-http-export",
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+    assert published.is_ok()
+    assert received[0][0] == "Bearer local-token"
+    assert received[0][1]["payload"]["secret"] == "[REDACTED]"
+    assert received[0][1]["run_id"] == "run-http-export"
+
+
+def test_http_event_exporter_is_bounded_and_requires_secure_remote_transport():
+    with pytest.raises(ValueError):
+        HttpEventExporter("http://example.test/events")
+    with pytest.raises(ValueError):
+        HttpEventExporter("http://127.0.0.1:1/events", auth_token="bad\r\ntoken")
+
+    exporter = HttpEventExporter(
+        "http://127.0.0.1:1/events", timeout_seconds=0.1, max_event_bytes=32
+    )
+    event = AgentEvent(
+        sequence=1,
+        event_type="large",
+        timestamp=1.0,
+        payload={"value": "x" * 100},
+    )
+
+    with pytest.raises(ValueError):
+        exporter.export(event)
+
+
+def test_http_event_exporter_failure_isolated_from_event_publish():
+    exporter = HttpEventExporter("http://127.0.0.1:1/events", timeout_seconds=0.1)
+    stream = EventStream(exporter=exporter)
+
+    published = stream.publish("safe", {})
+
+    assert published.is_ok()
+    assert stream.metrics()["exporter_failures"] == 1
