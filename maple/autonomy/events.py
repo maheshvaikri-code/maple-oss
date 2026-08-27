@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import ipaddress
 import json
 import logging
@@ -10,7 +11,7 @@ import os
 import tempfile
 import threading
 import time
-from collections import deque
+from collections import OrderedDict, deque
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import (
@@ -45,10 +46,13 @@ DEFAULT_MAX_FORWARD_BATCH_ITEMS = 100
 DEFAULT_MAX_CURSOR_BYTES = 4 * 1024
 DEFAULT_FORWARD_INTERVAL_SECONDS = 1.0
 DEFAULT_MAX_FORWARD_BATCHES_PER_TICK = 1
+DEFAULT_MAX_EVENT_DEDUP_ENTRIES = 10_000
+DEFAULT_EVENT_DEDUP_TTL_SECONDS = 3_600.0
 _EVENT_JOURNAL_VERSION = 1
 _EVENT_CURSOR_VERSION = 1
 _MAX_EVENT_PAYLOAD_ITEMS = 10_000
 _MAX_EVENT_PAYLOAD_DEPTH = 32
+_MAX_EVENT_SOURCE_ID_LENGTH = 256
 
 logger = logging.getLogger(__name__)
 
@@ -242,6 +246,22 @@ def _error(error_type: str, message: str, **details: Any) -> Error:
     if details:
         error["details"] = details
     return error
+
+
+def validate_event_source_id(value: Any) -> Optional[Error]:
+    """Validate a bounded source identity used by remote event deduplication."""
+    if (
+        not isinstance(value, str)
+        or not value
+        or len(value) > _MAX_EVENT_SOURCE_ID_LENGTH
+        or any(ord(char) < 32 or ord(char) == 127 for char in value)
+    ):
+        return _error(
+            "EVENT_SOURCE_ID_INVALID",
+            "source_id must be bounded and contain no control characters.",
+            max_length=_MAX_EVENT_SOURCE_ID_LENGTH,
+        )
+    return None
 
 
 def _json_size(value: Any) -> Result[int, Error]:
@@ -514,6 +534,26 @@ class EventBatchSender(Protocol):
 
     def send(self, events: Sequence[AgentEvent]) -> Result[EventDelivery, Error]:
         """Deliver events and return a complete indexed acknowledgement."""
+
+
+class EventDeduplicationStore(Protocol):
+    """Host-owned bounded claim/complete contract for forwarded events."""
+
+    def claim(
+        self,
+        source_id: str,
+        source_sequence: int,
+        event: AgentEvent,
+    ) -> Result[Optional[AgentEvent], Error]:
+        """Claim an event or return its already completed destination event."""
+
+    def complete(
+        self, source_id: str, source_sequence: int, event: AgentEvent
+    ) -> Result[AgentEvent, Error]:
+        """Record the destination event after successful stream publication."""
+
+    def abort(self, source_id: str, source_sequence: int) -> Result[None, Error]:
+        """Release an incomplete claim after a failed publication."""
 
 
 class EventCursorStore(Protocol):
@@ -1306,6 +1346,7 @@ class HttpEventBatchSender(HttpEventExporter):
         endpoint: str,
         *,
         auth_token: Optional[str] = None,
+        source_id: Optional[str] = None,
         timeout_seconds: float = _DEFAULT_EXPORT_TIMEOUT_SECONDS,
         max_request_bytes: int = _DEFAULT_EXPORT_MAX_EVENT_BYTES,
         max_response_bytes: int = _DEFAULT_EXPORT_MAX_RESPONSE_BYTES,
@@ -1320,6 +1361,12 @@ class HttpEventBatchSender(HttpEventExporter):
         )
         self.max_request_bytes = max_request_bytes
         self.redaction = redaction or RedactionPolicy()
+        source_error = (
+            validate_event_source_id(source_id) if source_id is not None else None
+        )
+        if source_error is not None:
+            raise ValueError(source_error["message"])
+        self.source_id = source_id
         config_error = self.redaction.validate()
         if config_error is not None:
             raise ValueError(config_error["message"])
@@ -1362,12 +1409,21 @@ class HttpEventBatchSender(HttpEventExporter):
                 "event_type": event.event_type,
                 "payload": redacted.unwrap(),
             }
+            if self.source_id is not None:
+                item["sequence"] = event.sequence
             if event.run_id is not None:
                 item["run_id"] = event.run_id
             normalized.append(item)
         try:
             encoded = json.dumps(
-                {"events": normalized},
+                {
+                    "events": normalized,
+                    **(
+                        {"source_id": self.source_id}
+                        if self.source_id is not None
+                        else {}
+                    ),
+                },
                 ensure_ascii=False,
                 allow_nan=False,
                 separators=(",", ":"),
@@ -1592,6 +1648,241 @@ def _event_from_dict(value: Any) -> Result[AgentEvent, Error]:
     if invalid is not None:
         return Result.err(invalid)
     return Result.ok(event)
+
+
+@dataclass(frozen=True)
+class _EventDeduplicationRecord:
+    fingerprint: str
+    event: Optional[AgentEvent]
+    expires_at: float
+
+
+def _event_deduplication_fingerprint(event: AgentEvent) -> Result[str, Error]:
+    """Return a stable digest without retaining the source payload."""
+    try:
+        encoded = json.dumps(
+            {
+                "event_type": event.event_type,
+                "payload": event.payload,
+                "run_id": event.run_id,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+    except (TypeError, ValueError, OverflowError):
+        return Result.err(
+            _error(
+                "EVENT_DEDUPLICATION_INPUT_INVALID",
+                "event identity is not JSON serializable.",
+            )
+        )
+    return Result.ok(hashlib.sha256(encoded).hexdigest())
+
+
+class InMemoryEventDeduplicationStore:
+    """Bounded, process-local deduplication for authenticated event batches.
+
+    The store keys claims by ``(source_id, source_sequence)`` and retains only
+    a digest plus the already-redacted destination event. A claim is reserved
+    before publication so concurrent duplicates fail closed while the first
+    publication is in flight. Expiration and capacity eviction are deliberate;
+    this is not durable deduplication or an exactly-once effects contract.
+    """
+
+    _MAX_ENTRIES = 100_000
+    _MAX_TTL_SECONDS = 7 * 24 * 60 * 60.0
+
+    def __init__(
+        self,
+        *,
+        max_entries: int = DEFAULT_MAX_EVENT_DEDUP_ENTRIES,
+        ttl_seconds: float = DEFAULT_EVENT_DEDUP_TTL_SECONDS,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        if (
+            not isinstance(max_entries, int)
+            or isinstance(max_entries, bool)
+            or not 1 <= max_entries <= self._MAX_ENTRIES
+        ):
+            raise ValueError("max_entries must be between 1 and 100000")
+        if (
+            not isinstance(ttl_seconds, (int, float))
+            or isinstance(ttl_seconds, bool)
+            or not 0 < float(ttl_seconds) <= self._MAX_TTL_SECONDS
+            or not math.isfinite(float(ttl_seconds))
+        ):
+            raise ValueError("ttl_seconds must be finite and within seven days")
+        if not callable(clock):
+            raise TypeError("clock must be callable")
+        self.max_entries = max_entries
+        self.ttl_seconds = float(ttl_seconds)
+        self._clock = clock
+        self._records: "OrderedDict[Tuple[str, int], _EventDeduplicationRecord]" = (
+            OrderedDict()
+        )
+        self._lock = threading.RLock()
+
+    @staticmethod
+    def _validate_key(source_id: Any, source_sequence: Any) -> Optional[Error]:
+        source_error = validate_event_source_id(source_id)
+        if source_error is not None:
+            return source_error
+        if (
+            not isinstance(source_sequence, int)
+            or isinstance(source_sequence, bool)
+            or source_sequence <= 0
+        ):
+            return _error(
+                "EVENT_SOURCE_SEQUENCE_INVALID",
+                "source_sequence must be a positive integer.",
+            )
+        return None
+
+    def _purge_expired(self, now: float) -> None:
+        expired = [
+            key for key, record in self._records.items() if record.expires_at <= now
+        ]
+        for key in expired:
+            self._records.pop(key, None)
+
+    def claim(
+        self,
+        source_id: str,
+        source_sequence: int,
+        event: AgentEvent,
+    ) -> Result[Optional[AgentEvent], Error]:
+        """Reserve one source event or return its completed destination event."""
+        key_error = self._validate_key(source_id, source_sequence)
+        if key_error is not None:
+            return Result.err(key_error)
+        if not isinstance(event, AgentEvent) or event.sequence != source_sequence:
+            return Result.err(
+                _error(
+                    "EVENT_DEDUPLICATION_INPUT_INVALID",
+                    "event sequence must match source_sequence.",
+                )
+            )
+        event_error = _validate_event_record(event)
+        if event_error is not None:
+            return Result.err(
+                _error(
+                    "EVENT_DEDUPLICATION_INPUT_INVALID",
+                    "event is invalid for deduplication.",
+                )
+            )
+        fingerprint_result = _event_deduplication_fingerprint(event)
+        if fingerprint_result.is_err():
+            return Result.err(fingerprint_result.unwrap_err())
+        now = float(self._clock())
+        if not math.isfinite(now):
+            return Result.err(
+                _error(
+                    "EVENT_DEDUPLICATION_CLOCK_INVALID",
+                    "deduplication clock is invalid.",
+                )
+            )
+        key = (source_id, source_sequence)
+        with self._lock:
+            self._purge_expired(now)
+            existing = self._records.get(key)
+            if existing is not None:
+                if existing.fingerprint != fingerprint_result.unwrap():
+                    return Result.err(
+                        _error(
+                            "EVENT_DEDUPLICATION_CONFLICT",
+                            "source sequence was previously claimed with different content.",
+                        )
+                    )
+                self._records.move_to_end(key)
+                if existing.event is None:
+                    return Result.err(
+                        _error(
+                            "EVENT_DEDUPLICATION_IN_PROGRESS",
+                            "source sequence is currently being published.",
+                        )
+                    )
+                return Result.ok(existing.event)
+            while len(self._records) >= self.max_entries:
+                self._records.popitem(last=False)
+            self._records[key] = _EventDeduplicationRecord(
+                fingerprint=fingerprint_result.unwrap(),
+                event=None,
+                expires_at=now + self.ttl_seconds,
+            )
+        return Result.ok(None)
+
+    def complete(
+        self, source_id: str, source_sequence: int, event: AgentEvent
+    ) -> Result[AgentEvent, Error]:
+        """Complete a claim with the redacted destination event."""
+        key_error = self._validate_key(source_id, source_sequence)
+        if key_error is not None:
+            return Result.err(key_error)
+        if not isinstance(event, AgentEvent):
+            return Result.err(
+                _error("EVENT_DEDUPLICATION_INPUT_INVALID", "event is invalid.")
+            )
+        event_error = _validate_event_record(event)
+        if event_error is not None:
+            return Result.err(
+                _error(
+                    "EVENT_DEDUPLICATION_INPUT_INVALID",
+                    "destination event is invalid.",
+                )
+            )
+        key = (source_id, source_sequence)
+        now = float(self._clock())
+        if not math.isfinite(now):
+            return Result.err(
+                _error(
+                    "EVENT_DEDUPLICATION_CLOCK_INVALID",
+                    "deduplication clock is invalid.",
+                )
+            )
+        with self._lock:
+            self._purge_expired(now)
+            existing = self._records.get(key)
+            if existing is None:
+                return Result.err(
+                    _error(
+                        "EVENT_DEDUPLICATION_CLAIM_MISSING",
+                        "event has no active deduplication claim.",
+                    )
+                )
+            if existing.event is not None:
+                return Result.ok(existing.event)
+            completed = _EventDeduplicationRecord(
+                fingerprint=existing.fingerprint,
+                event=event,
+                expires_at=existing.expires_at,
+            )
+            self._records[key] = completed
+            self._records.move_to_end(key)
+            return Result.ok(event)
+
+    def abort(self, source_id: str, source_sequence: int) -> Result[None, Error]:
+        """Release a pending claim without removing a completed event."""
+        key_error = self._validate_key(source_id, source_sequence)
+        if key_error is not None:
+            return Result.err(key_error)
+        key = (source_id, source_sequence)
+        with self._lock:
+            self._purge_expired(float(self._clock()))
+            existing = self._records.get(key)
+            if existing is not None and existing.event is None:
+                self._records.pop(key, None)
+        return Result.ok(None)
+
+    def metrics(self) -> Dict[str, int]:
+        """Return a bounded local record count without exposing payloads."""
+        with self._lock:
+            self._purge_expired(float(self._clock()))
+            return {
+                "retained_claims": len(self._records),
+                "max_entries": self.max_entries,
+            }
 
 
 class FileEventJournal:

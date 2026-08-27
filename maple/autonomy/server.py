@@ -17,7 +17,13 @@ from urllib.request import Request, urlopen
 
 from ..core.result import Result
 from .approval import ApprovalRequest, ApprovalStore
-from .events import EventCursor, EventStream
+from .events import (
+    AgentEvent,
+    EventCursor,
+    EventDeduplicationStore,
+    EventStream,
+    validate_event_source_id,
+)
 from .handoffs import HandoffRecord, HandoffStore
 from .interactions import HumanInputRequest, HumanInputStore
 from .runs import AgentRunCheckpoint, AgentRunStore
@@ -1405,6 +1411,15 @@ class _RequestHandler(BaseHTTPRequestHandler):
             )
             return
 
+        dedup_store = self.server.application.event_deduplication_store
+        dedup_source_id: Optional[str] = None
+        if dedup_store is not None:
+            source_error = validate_event_source_id(body.get("source_id"))
+            if source_error is not None:
+                self._write_error(400, source_error)
+                return
+            dedup_source_id = cast(str, body.get("source_id"))
+
         published = []
         failed = []
         for index, item in enumerate(raw_events):
@@ -1430,15 +1445,72 @@ class _RequestHandler(BaseHTTPRequestHandler):
                     }
                 )
                 continue
+            source_sequence: Optional[int] = None
+            source_event: Optional[AgentEvent] = None
+            if dedup_store is not None and dedup_source_id is not None:
+                candidate_sequence = item.get("sequence")
+                if (
+                    not isinstance(candidate_sequence, int)
+                    or isinstance(candidate_sequence, bool)
+                    or candidate_sequence <= 0
+                ):
+                    failed.append(
+                        {
+                            "index": index,
+                            "error": _error(
+                                "EVENT_SOURCE_SEQUENCE_INVALID",
+                                "sequence must be a positive integer when deduplication is enabled.",
+                            ),
+                        }
+                    )
+                    continue
+                input_error = _validate_event_input(
+                    item["event_type"], item.get("run_id")
+                )
+                if input_error is not None:
+                    failed.append({"index": index, "error": input_error})
+                    continue
+                source_sequence = candidate_sequence
+                source_event = AgentEvent(
+                    sequence=source_sequence,
+                    event_type=item["event_type"],
+                    timestamp=0.0,
+                    payload=item["payload"],
+                    run_id=item.get("run_id"),
+                )
+                claim = dedup_store.claim(
+                    dedup_source_id, source_sequence, source_event
+                )
+                if claim.is_err():
+                    failed.append({"index": index, "error": claim.unwrap_err()})
+                    continue
+                existing_event = claim.unwrap()
+                if existing_event is not None:
+                    published.append(
+                        {"index": index, "event": existing_event.as_dict()}
+                    )
+                    continue
             result = stream.publish(
                 item["event_type"],
                 item["payload"],
                 run_id=item.get("run_id"),
             )
             if result.is_err():
+                if source_sequence is not None and dedup_source_id is not None:
+                    dedup_store.abort(dedup_source_id, source_sequence)
                 failed.append({"index": index, "error": result.unwrap_err()})
                 continue
-            published.append({"index": index, "event": result.unwrap().as_dict()})
+            event = result.unwrap()
+            if source_sequence is not None and dedup_source_id is not None:
+                completed = dedup_store.complete(
+                    dedup_source_id, source_sequence, event
+                )
+                if completed.is_err():
+                    dedup_store.abort(dedup_source_id, source_sequence)
+                    failed.append({"index": index, "error": completed.unwrap_err()})
+                    continue
+                event = completed.unwrap()
+            published.append({"index": index, "event": event.as_dict()})
         self._write_json(200, {"published": published, "failed": failed})
 
     def _read_events(self) -> None:
@@ -1785,6 +1857,7 @@ class RunServer:
         agent_run_store: Optional[AgentRunStore] = None,
         handoff_store: Optional[HandoffStore] = None,
         event_stream: Optional[EventStream] = None,
+        event_deduplication_store: Optional[EventDeduplicationStore] = None,
     ) -> None:
         if not isinstance(registry, WorkflowRegistry):
             raise TypeError("registry must be a WorkflowRegistry")
@@ -1882,6 +1955,23 @@ class RunServer:
                 for name in ("publish", "read")
             ):
                 raise TypeError("event_stream must implement publish and read")
+        if event_deduplication_store is not None:
+            if event_stream is None:
+                raise ValueError(
+                    "event_stream is required when event deduplication is configured"
+                )
+            if auth_token is None:
+                raise ValueError(
+                    "auth_token is required when event deduplication is configured"
+                )
+            dedup_required_methods = ("claim", "complete", "abort")
+            if any(
+                not callable(getattr(event_deduplication_store, name, None))
+                for name in dedup_required_methods
+            ):
+                raise TypeError(
+                    "event_deduplication_store must implement claim, complete, and abort"
+                )
         self.registry = registry
         self.host = host
         self.port = port
@@ -1894,6 +1984,7 @@ class RunServer:
         self.agent_run_store = agent_run_store
         self.handoff_store = handoff_store
         self.event_stream = event_stream
+        self.event_deduplication_store = event_deduplication_store
         self._server: Optional[_MAPLEHTTPServer] = None
         self._thread: Optional[threading.Thread] = None
 
@@ -2087,9 +2178,20 @@ class RunClient:
         return self._request("POST", ("v1", "events"), body)
 
     def publish_events(
-        self, events: Sequence[Mapping[str, Any]]
+        self,
+        events: Sequence[Mapping[str, Any]],
+        *,
+        source_id: Optional[str] = None,
     ) -> Result[Dict[str, Any], Error]:
-        """Publish up to 100 events and return indexed per-item outcomes."""
+        """Publish up to 100 events and return indexed per-item outcomes.
+
+        When ``source_id`` is supplied, each event must also contain a positive
+        source ``sequence`` for an explicitly configured deduplication store.
+        """
+        if source_id is not None:
+            source_error = validate_event_source_id(source_id)
+            if source_error is not None:
+                return Result.err(source_error)
         if (
             not isinstance(events, (list, tuple))
             or not events
@@ -2131,10 +2233,28 @@ class RunClient:
                 "event_type": item["event_type"],
                 "payload": item["payload"],
             }
+            if source_id is not None:
+                source_sequence = item.get("sequence")
+                if (
+                    not isinstance(source_sequence, int)
+                    or isinstance(source_sequence, bool)
+                    or source_sequence <= 0
+                ):
+                    return Result.err(
+                        _error(
+                            "EVENT_SOURCE_SEQUENCE_INVALID",
+                            "sequence must be a positive integer when source_id is provided.",
+                            index=index,
+                        )
+                    )
+                normalized_item["sequence"] = source_sequence
             if item.get("run_id") is not None:
                 normalized_item["run_id"] = item["run_id"]
             normalized.append(normalized_item)
-        return self._request("POST", ("v1", "events", "batch"), {"events": normalized})
+        body: Dict[str, Any] = {"events": normalized}
+        if source_id is not None:
+            body["source_id"] = source_id
+        return self._request("POST", ("v1", "events", "batch"), body)
 
     def read_events(
         self,

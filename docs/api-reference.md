@@ -1037,6 +1037,7 @@ forwarder = EventForwarder(
     HttpEventBatchSender(
         "https://collector.example/v1/events/batch",
         auth_token="collector-token",
+        source_id="worker-a",
     ),
     FileEventCursorStore(".maple-event-forwarder"),
 )
@@ -1064,9 +1065,23 @@ stats = scheduler.metrics()
 
 Each tick performs at most `max_batches_per_tick` synchronous forward calls and
 stops early when a report attempted no events. The scheduler does not retry,
-persist a queue, deduplicate remote effects, coordinate multiple processes, or
-claim hosted aggregation/exactly-once delivery. A blocked sender can cause a
-typed stop-timeout result; the worker remains owned until it returns.
+persist a queue, coordinate multiple processes, or claim hosted
+aggregation/exactly-once delivery. A blocked sender can cause a typed
+stop-timeout result; the worker remains owned until it returns.
+
+To suppress a repeated accepted batch at an authenticated receiver, configure
+`RunServer(event_stream=..., event_deduplication_store=..., auth_token=...)`
+with `InMemoryEventDeduplicationStore`. Keep the `source_id` stable across
+forwarder restarts. The sender includes each source sequence; a matching
+completed claim returns the previously redacted destination event without
+publishing another one. Changed content for the same `(source_id, sequence)`
+returns `EVENT_DEDUPLICATION_CONFLICT`, and a concurrent pending claim returns
+`EVENT_DEDUPLICATION_IN_PROGRESS`.
+
+The store is bounded by `max_entries` and finite `ttl_seconds`, retains only a
+content digest plus redacted destination event, and is process-local. Eviction,
+expiration, restart, and multiple receiver stores can allow duplicates again;
+durable distributed deduplication and exactly-once side effects are not claimed.
 
 For incremental consumers, persist an `EventCursor` and use bounded reads. A
 cursor older than the retained ring fails with `EVENT_CURSOR_EXPIRED` rather
@@ -2040,9 +2055,26 @@ if batch.is_ok():
 ```
 
 Malformed batch structure, including an empty or over-100 item list, is
-rejected before any event is attempted. Valid batches may partially succeed;
-there is no implicit retry, deduplication, transaction, or exactly-once effect
-guarantee, so callers own retry and idempotency policy.
+rejected before any event is attempted. Valid batches may partially succeed.
+Without a configured deduplication store, callers own retry and idempotency
+policy. With one, callers may pass a stable `source_id` and positive per-item
+`sequence` values:
+
+```python
+events = client.publish_events(
+    [{
+        "sequence": 1,
+        "event_type": "agent.completed",
+        "payload": {"status": "ok"},
+    }],
+    source_id="worker-a",
+)
+```
+
+The receiver acknowledges a matching completed source claim without publishing
+a second event. Conflicting content and concurrent pending claims are typed
+failures. Capacity, TTL, process restart, and downstream effects remain outside
+the bounded in-memory deduplication contract.
 
 For bounded remote inspection, use the same authenticated server with a
 cursor-based read. `after` is the last sequence already processed and `limit`

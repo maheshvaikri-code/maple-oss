@@ -21,6 +21,7 @@ from maple.autonomy.events import (
     HttpEventBatchSender,
     HttpEventExporter,
     InMemoryEventCursorStore,
+    InMemoryEventDeduplicationStore,
     RedactionPolicy,
 )
 from maple.autonomy.execution import CancellationToken
@@ -826,6 +827,90 @@ def test_event_forwarder_scheduler_sanitizes_forward_errors():
     assert stats.last_error is not None
     assert stats.last_error["details"]["cause"] == "REMOTE_FAILURE"
     assert "secret-token" not in str(stats.last_error)
+
+
+def test_event_deduplication_store_claims_completes_and_replays_redacted_events():
+    store = InMemoryEventDeduplicationStore(max_entries=2, ttl_seconds=10.0)
+    source_event = AgentEvent(
+        sequence=1,
+        event_type="agent.completed",
+        timestamp=0.0,
+        payload={"secret": "hidden", "status": "ok"},
+        run_id="run-1",
+    )
+
+    claimed = store.claim("source-a", 1, source_event)
+    pending = store.claim("source-a", 1, source_event)
+    assert claimed.is_ok()
+    assert claimed.unwrap() is None
+    assert pending.is_err()
+    assert pending.unwrap_err()["errorType"] == "EVENT_DEDUPLICATION_IN_PROGRESS"
+
+    destination_event = AgentEvent(
+        sequence=7,
+        event_type="agent.completed",
+        timestamp=1.0,
+        payload={"secret": "[REDACTED]", "status": "ok"},
+        run_id="run-1",
+    )
+    completed = store.complete("source-a", 1, destination_event)
+    replayed = store.claim("source-a", 1, source_event)
+    conflict = store.claim(
+        "source-a",
+        1,
+        AgentEvent(
+            sequence=1,
+            event_type="agent.completed",
+            timestamp=0.0,
+            payload={"secret": "different", "status": "ok"},
+            run_id="run-1",
+        ),
+    )
+
+    assert completed.is_ok()
+    assert replayed.is_ok()
+    assert replayed.unwrap() == destination_event
+    assert conflict.is_err()
+    assert conflict.unwrap_err()["errorType"] == "EVENT_DEDUPLICATION_CONFLICT"
+    assert store.metrics() == {"retained_claims": 1, "max_entries": 2}
+
+
+def test_http_event_batch_sender_deduplicates_replayed_source_sequences():
+    from maple.autonomy import RunClient, RunServer, WorkflowRegistry
+
+    destination = EventStream(max_events=10)
+    server = RunServer(
+        WorkflowRegistry(),
+        event_stream=destination,
+        event_deduplication_store=InMemoryEventDeduplicationStore(),
+        auth_token="forward-token",
+    )
+    base_url = server.start()
+    try:
+        source = EventStream(max_events=10)
+        source.publish("one", {"secret": "hidden"})
+        events = source.snapshot().unwrap()
+        sender = HttpEventBatchSender(
+            f"{base_url}/v1/events/batch",
+            auth_token="forward-token",
+            source_id="source-a",
+        )
+        first = sender.send(events)
+        second = sender.send(events)
+        remote = RunClient(base_url, auth_token="forward-token").read_events(
+            EventCursor(), limit=10
+        )
+    finally:
+        server.close()
+
+    assert first.is_ok()
+    assert second.is_ok()
+    assert first.unwrap().published == (0,)
+    assert second.unwrap().published == (0,)
+    assert remote.is_ok()
+    remote_events = remote.unwrap()["batch"]["events"]
+    assert len(remote_events) == 1
+    assert remote_events[0]["payload"]["secret"] == "[REDACTED]"
 
 
 def test_file_event_forwarder_replays_authenticated_batches_after_restart(tmp_path):

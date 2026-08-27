@@ -19,6 +19,7 @@ from maple.autonomy import (
     InMemoryAgentRunStore,
     InMemoryApprovalStore,
     InMemoryCheckpointStore,
+    InMemoryEventDeduplicationStore,
     InMemoryHandoffStore,
     InMemoryHumanInputStore,
     RunClient,
@@ -836,6 +837,45 @@ def test_event_batch_transport_returns_partial_item_failures_without_retry():
         "remote.before",
         "remote.after",
     ]
+
+
+def test_event_batch_transport_deduplicates_explicit_source_sequences():
+    stream = EventStream(max_events=10)
+    server = RunServer(
+        WorkflowRegistry(),
+        event_stream=stream,
+        event_deduplication_store=InMemoryEventDeduplicationStore(),
+        auth_token="event-token",
+    )
+    base_url = server.start()
+
+    try:
+        client = RunClient(base_url, auth_token="event-token")
+        first = client.publish_events(
+            [{"sequence": 1, "event_type": "remote.one", "payload": {"value": 1}}],
+            source_id="source-a",
+        )
+        duplicate = client.publish_events(
+            [{"sequence": 1, "event_type": "remote.one", "payload": {"value": 1}}],
+            source_id="source-a",
+        )
+        conflict = client.publish_events(
+            [{"sequence": 1, "event_type": "remote.one", "payload": {"value": 2}}],
+            source_id="source-a",
+        )
+        remote = client.read_events(EventCursor(), limit=10)
+    finally:
+        server.close()
+
+    assert first.is_ok()
+    assert duplicate.is_ok()
+    assert duplicate.unwrap()["published"][0]["event"]["sequence"] == 1
+    assert conflict.is_ok()
+    assert conflict.unwrap()["failed"][0]["error"]["errorType"] == (
+        "EVENT_DEDUPLICATION_CONFLICT"
+    )
+    assert remote.is_ok()
+    assert len(remote.unwrap()["batch"]["events"]) == 1
 
 
 def test_event_batch_transport_enforces_structural_bounds_before_attempts():

@@ -10,6 +10,13 @@
 
 ### Additions
 
+- **Bounded remote event deduplication**: opt-in authenticated receivers can
+  use `InMemoryEventDeduplicationStore` with stable `source_id` and source
+  sequence values from `HttpEventBatchSender` or `RunClient.publish_events(...)`.
+  Matching retries replay the existing redacted destination event; conflicts
+  and concurrent claims fail closed. Capacity, TTL, restart, distributed
+  durability, and exactly-once effects remain outside the contract.
+
 - **Whole-package type-gate hardening**: explicit `Result` narrowing, host/store
   boundary casts, and executor callback annotations close the authoritative
   `mypy maple/ --ignore-missing-imports` gate without changing runtime behavior.
