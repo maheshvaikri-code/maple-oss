@@ -10,6 +10,12 @@
 
 ### Additions
 
+- **Bounded document connector ingestion**: hosts can provide cursor-based
+  document pages to `ingest_documents(...)` and an explicit retrieval sink.
+  Page, document, batch-count, cursor-progress, duplicate-ID, and source
+  validation remain bounded and fail closed; connector/sink failures are typed
+  and redacted, with no implicit network, retry, transaction, or rollback.
+
 - **Provider-neutral retrieval reranking**: bounded lexical or vector hit
   candidates can now pass through a host-supplied `RetrievalReranker` without
   adding a model dependency or implicit network call. The helper validates

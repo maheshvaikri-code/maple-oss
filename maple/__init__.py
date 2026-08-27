@@ -118,8 +118,12 @@ from .autonomy.replay import (
 )
 from .autonomy.retrieval import (
     ChunkingPolicy,
+    ConnectorIngestReport,
     Document,
+    DocumentBatch,
     DocumentChunk,
+    DocumentConnector,
+    DocumentIngestor,
     EmbeddingProvider,
     InMemoryLexicalRetriever,
     InMemoryVectorRetriever,
@@ -130,6 +134,7 @@ from .autonomy.retrieval import (
     SourceRef,
     TextChunker,
     VectorRetrievalHit,
+    ingest_documents,
     rerank_hits,
 )
 from .autonomy.runs import (
@@ -307,8 +312,12 @@ __all__ = [
     "ExecutionPolicy",
     "TrustedLocalExecutor",
     "ChunkingPolicy",
+    "ConnectorIngestReport",
     "Document",
+    "DocumentBatch",
     "DocumentChunk",
+    "DocumentConnector",
+    "DocumentIngestor",
     "EmbeddingProvider",
     "InMemoryLexicalRetriever",
     "InMemoryVectorRetriever",
@@ -319,6 +328,7 @@ __all__ = [
     "SourceRef",
     "TextChunker",
     "VectorRetrievalHit",
+    "ingest_documents",
     "rerank_hits",
     "DEFAULT_MAX_RUN_BYTES",
     "DEFAULT_MAX_RUN_MESSAGES",

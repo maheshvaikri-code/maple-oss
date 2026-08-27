@@ -3,11 +3,13 @@
 from maple.autonomy.retrieval import (
     ChunkingPolicy,
     Document,
+    DocumentBatch,
     InMemoryLexicalRetriever,
     InMemoryVectorRetriever,
     RetrievalHit,
     SourceRef,
     TextChunker,
+    ingest_documents,
     rerank_hits,
 )
 from maple.core.result import Result
@@ -51,6 +53,153 @@ def test_chunker_rejects_document_and_chunk_limits():
     assert oversized.unwrap_err()["errorType"] == "RETRIEVAL_DOCUMENT_TOO_LARGE"
     assert too_many.is_err()
     assert too_many.unwrap_err()["errorType"] == "RETRIEVAL_CHUNK_LIMIT"
+
+
+def test_document_connector_ingests_cursor_pages_into_a_bounded_sink():
+    pages = {
+        None: DocumentBatch((make_document("doc-a"),), "cursor-1"),
+        "cursor-1": DocumentBatch((make_document("doc-b"),), None),
+    }
+    calls = []
+
+    class Connector:
+        def fetch(self, cursor, *, limit):
+            calls.append((cursor, limit))
+            return Result.ok(pages[cursor])
+
+    sink = InMemoryLexicalRetriever()
+    result = ingest_documents(Connector(), sink, batch_size=1, max_documents=10)
+
+    assert result.is_ok()
+    assert result.unwrap().to_dict() == {
+        "documents_ingested": 2,
+        "batches_fetched": 2,
+        "next_cursor": None,
+        "complete": True,
+    }
+    assert calls == [(None, 1), ("cursor-1", 1)]
+    assert sink.stats()["documents"] == 2
+
+
+def test_document_connector_returns_resume_cursor_at_batch_quota():
+    calls = []
+
+    class Connector:
+        def fetch(self, cursor, *, limit):
+            calls.append((cursor, limit))
+            document_id = "doc-a" if cursor is None else "doc-b"
+            next_cursor = "next" if cursor is None else "last"
+            return Result.ok(DocumentBatch((make_document(document_id),), next_cursor))
+
+    result = ingest_documents(
+        Connector(),
+        InMemoryLexicalRetriever(),
+        batch_size=10,
+        max_documents=10,
+        max_batches=1,
+    )
+
+    assert result.is_ok()
+    assert result.unwrap().to_dict() == {
+        "documents_ingested": 1,
+        "batches_fetched": 1,
+        "next_cursor": "next",
+        "complete": False,
+    }
+    assert calls == [(None, 10)]
+
+
+def test_document_connector_rejects_over_limit_pages_without_sink_mutation():
+    page = DocumentBatch((make_document("doc-a"), make_document("doc-b")), "next")
+
+    class Connector:
+        def fetch(self, cursor, *, limit):
+            assert cursor is None
+            assert limit == 1
+            return Result.ok(page)
+
+    sink = InMemoryLexicalRetriever()
+    result = ingest_documents(Connector(), sink, max_documents=1)
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "RETRIEVAL_CONNECTOR_LIMIT"
+    assert sink.stats() == {"documents": 0, "chunks": 0, "terms": 0}
+
+
+def test_document_connector_fails_closed_on_stalled_cursor_and_errors():
+    document = make_document("doc-a")
+
+    class StalledConnector:
+        def fetch(self, cursor, *, limit):
+            return Result.ok(DocumentBatch((document,), cursor))
+
+    class RaisingConnector:
+        def fetch(self, cursor, *, limit):
+            raise RuntimeError("private connector detail")
+
+    class ErrorConnector:
+        def fetch(self, cursor, *, limit):
+            return Result.err(
+                {"errorType": "PRIVATE_CONNECTOR_ERROR", "message": "secret"}
+            )
+
+    class RaisingSink:
+        def add_document(self, document):
+            raise RuntimeError("private sink detail")
+
+    class SinglePageConnector:
+        def fetch(self, cursor, *, limit):
+            return Result.ok(DocumentBatch((document,), None))
+
+    stalled = ingest_documents(
+        StalledConnector(), InMemoryLexicalRetriever(), cursor="cursor-1"
+    )
+    failed = ingest_documents(RaisingConnector(), InMemoryLexicalRetriever())
+    error_result = ingest_documents(ErrorConnector(), InMemoryLexicalRetriever())
+    failed_sink = ingest_documents(SinglePageConnector(), RaisingSink())
+
+    assert stalled.is_err()
+    assert stalled.unwrap_err()["errorType"] == "RETRIEVAL_CONNECTOR_CURSOR_STALLED"
+    assert failed.is_err()
+    assert failed.unwrap_err()["errorType"] == "RETRIEVAL_CONNECTOR_ERROR"
+    assert "private connector detail" not in str(failed.unwrap_err())
+    assert error_result.is_err()
+    assert error_result.unwrap_err()["errorType"] == "RETRIEVAL_CONNECTOR_ERROR"
+    assert "secret" not in str(error_result.unwrap_err())
+    assert failed_sink.is_err()
+    assert failed_sink.unwrap_err()["errorType"] == "RETRIEVAL_SINK_ERROR"
+    assert "private sink detail" not in str(failed_sink.unwrap_err())
+
+
+def test_document_connector_rejects_empty_advancing_pages():
+    class Connector:
+        def fetch(self, cursor, *, limit):
+            return Result.ok(DocumentBatch((), "next"))
+
+    result = ingest_documents(Connector(), InMemoryLexicalRetriever())
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "RETRIEVAL_CONNECTOR_INVALID"
+
+
+def test_document_connector_rejects_repeated_ids_before_second_sink_write():
+    document = make_document("doc-a")
+    calls = []
+
+    class Connector:
+        def fetch(self, cursor, *, limit):
+            calls.append(cursor)
+            return Result.ok(
+                DocumentBatch((document,), "next" if cursor is None else None)
+            )
+
+    sink = InMemoryLexicalRetriever()
+    first = ingest_documents(Connector(), sink, max_batches=2)
+
+    assert first.is_err()
+    assert first.unwrap_err()["errorType"] == "RETRIEVAL_CONNECTOR_DUPLICATE_DOCUMENT"
+    assert calls == [None, "next"]
+    assert sink.stats()["documents"] == 1
 
 
 def test_retriever_returns_ranked_hits_with_citations():

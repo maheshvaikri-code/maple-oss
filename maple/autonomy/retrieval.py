@@ -27,6 +27,9 @@ from ..core.result import Result
 Error = Dict[str, Any]
 _TOKEN_PATTERN = re.compile(r"\w+", re.UNICODE)
 _MAX_RERANK_CANDIDATES = 100
+_MAX_CONNECTOR_BATCH_SIZE = 100
+_MAX_CONNECTOR_DOCUMENTS = 10_000
+_MAX_CONNECTOR_BATCHES = 100
 
 
 def _error(error_type: str, message: str, **details: Any) -> Error:
@@ -129,6 +132,103 @@ class Document:
                 "document metadata exceeds the byte limit.",
             )
         return None
+
+
+@dataclass(frozen=True)
+class DocumentBatch:
+    """One bounded connector page of source-bearing documents."""
+
+    documents: Tuple[Document, ...]
+    next_cursor: Optional[str] = None
+
+    def validate(
+        self, *, max_documents: int = _MAX_CONNECTOR_BATCH_SIZE
+    ) -> Optional[Error]:
+        """Validate page shape, document identities, and cursor bounds."""
+        if (
+            not isinstance(max_documents, int)
+            or isinstance(max_documents, bool)
+            or not 0 < max_documents <= _MAX_CONNECTOR_BATCH_SIZE
+        ):
+            return _error(
+                "RETRIEVAL_CONNECTOR_LIMIT",
+                "max_documents must be between 1 and 100.",
+            )
+        if isinstance(self.documents, (str, bytes)) or not isinstance(
+            self.documents, Sequence
+        ):
+            return _error(
+                "RETRIEVAL_CONNECTOR_INVALID",
+                "documents must be a bounded sequence.",
+            )
+        if len(self.documents) > max_documents:
+            return _error(
+                "RETRIEVAL_CONNECTOR_LIMIT",
+                "connector batch exceeds the requested limit.",
+            )
+        if self.next_cursor is not None:
+            cursor_error = _validate_identifier(self.next_cursor, "next_cursor")
+            if cursor_error is not None:
+                return _error(
+                    "RETRIEVAL_CONNECTOR_INVALID",
+                    "next_cursor must be a bounded string.",
+                )
+        if not self.documents and self.next_cursor is not None:
+            return _error(
+                "RETRIEVAL_CONNECTOR_INVALID",
+                "an empty page must not advance the cursor.",
+            )
+        seen_document_ids: Set[str] = set()
+        for index, document in enumerate(self.documents):
+            if not isinstance(document, Document) or document.validate() is not None:
+                return _error(
+                    "RETRIEVAL_CONNECTOR_INVALID",
+                    "connector returned an invalid document.",
+                    index=index,
+                )
+            if document.document_id in seen_document_ids:
+                return _error(
+                    "RETRIEVAL_CONNECTOR_DUPLICATE_DOCUMENT",
+                    "connector returned a duplicate document ID.",
+                    index=index,
+                )
+            seen_document_ids.add(document.document_id)
+        return None
+
+
+class DocumentConnector(Protocol):
+    """Host-owned cursor source for bounded document pages."""
+
+    def fetch(
+        self, cursor: Optional[str], *, limit: int
+    ) -> Result[DocumentBatch, Error]:
+        """Return one page and an optional opaque continuation cursor."""
+
+
+class DocumentIngestor(Protocol):
+    """Sink contract for adding one validated document to a retrieval index."""
+
+    def add_document(self, document: Document) -> Result[List[DocumentChunk], Error]:
+        """Add a document and return its generated chunks."""
+
+
+@dataclass(frozen=True)
+class ConnectorIngestReport:
+    """Bounded progress returned by one connector ingestion call."""
+
+    documents_ingested: int
+    batches_fetched: int
+    next_cursor: Optional[str]
+    complete: bool
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Return the JSON-safe progress summary."""
+        return {
+            "documents_ingested": self.documents_ingested,
+            "batches_fetched": self.batches_fetched,
+            "next_cursor": self.next_cursor,
+            "complete": self.complete,
+        }
 
 
 @dataclass(frozen=True)
@@ -297,6 +397,169 @@ class RetrievalBackend(Protocol):
 
 def _tokens(value: str) -> List[str]:
     return [token.casefold() for token in _TOKEN_PATTERN.findall(value)]
+
+
+def ingest_documents(
+    connector: DocumentConnector,
+    sink: DocumentIngestor,
+    *,
+    cursor: Optional[str] = None,
+    batch_size: int = _MAX_CONNECTOR_BATCH_SIZE,
+    max_documents: int = 1_000,
+    max_batches: int = _MAX_CONNECTOR_BATCHES,
+) -> Result[ConnectorIngestReport, Error]:
+    """Ingest bounded connector pages into an explicit host-owned sink.
+
+    The helper performs no retry, network operation, transaction, or rollback;
+    connector and sink lifecycle policies remain with the host.
+    """
+    if (
+        not isinstance(batch_size, int)
+        or isinstance(batch_size, bool)
+        or not 0 < batch_size <= _MAX_CONNECTOR_BATCH_SIZE
+    ):
+        return Result.err(
+            _error(
+                "RETRIEVAL_CONNECTOR_LIMIT",
+                "batch_size must be between 1 and 100.",
+            )
+        )
+    if (
+        not isinstance(max_documents, int)
+        or isinstance(max_documents, bool)
+        or not 0 < max_documents <= _MAX_CONNECTOR_DOCUMENTS
+    ):
+        return Result.err(
+            _error(
+                "RETRIEVAL_CONNECTOR_LIMIT",
+                "max_documents must be between 1 and 10000.",
+            )
+        )
+    if (
+        not isinstance(max_batches, int)
+        or isinstance(max_batches, bool)
+        or not 0 < max_batches <= _MAX_CONNECTOR_BATCHES
+    ):
+        return Result.err(
+            _error(
+                "RETRIEVAL_CONNECTOR_LIMIT",
+                "max_batches must be between 1 and 100.",
+            )
+        )
+    if cursor is not None and _validate_identifier(cursor, "cursor") is not None:
+        return Result.err(
+            _error("RETRIEVAL_CONNECTOR_INVALID", "cursor must be a bounded string.")
+        )
+    fetch = getattr(connector, "fetch", None)
+    add_document = getattr(sink, "add_document", None)
+    if not callable(fetch):
+        return Result.err(
+            _error("RETRIEVAL_CONNECTOR_INVALID", "connector must expose fetch(...).")
+        )
+    if not callable(add_document):
+        return Result.err(
+            _error("RETRIEVAL_SINK_INVALID", "sink must expose add_document(...).")
+        )
+
+    current_cursor = cursor
+    documents_ingested = 0
+    batches_fetched = 0
+    seen_document_ids: Set[str] = set()
+    while documents_ingested < max_documents and batches_fetched < max_batches:
+        requested_limit = min(batch_size, max_documents - documents_ingested)
+        try:
+            batch_result = fetch(current_cursor, limit=requested_limit)
+        except Exception:
+            return Result.err(
+                _error(
+                    "RETRIEVAL_CONNECTOR_ERROR",
+                    "connector fetch failed.",
+                    batch_index=batches_fetched,
+                )
+            )
+        if not isinstance(batch_result, Result) or batch_result.is_err():
+            return Result.err(
+                _error(
+                    "RETRIEVAL_CONNECTOR_ERROR",
+                    "connector fetch returned an error.",
+                    batch_index=batches_fetched,
+                )
+            )
+        batch = batch_result.unwrap()
+        if not isinstance(batch, DocumentBatch):
+            return Result.err(
+                _error(
+                    "RETRIEVAL_CONNECTOR_INVALID",
+                    "connector must return a DocumentBatch.",
+                    batch_index=batches_fetched,
+                )
+            )
+        batch_error = batch.validate(max_documents=requested_limit)
+        if batch_error is not None:
+            return Result.err(batch_error)
+        if batch.next_cursor is not None and batch.next_cursor == current_cursor:
+            return Result.err(
+                _error(
+                    "RETRIEVAL_CONNECTOR_CURSOR_STALLED",
+                    "connector cursor did not advance.",
+                    batch_index=batches_fetched,
+                )
+            )
+        for index, document in enumerate(batch.documents):
+            if document.document_id in seen_document_ids:
+                return Result.err(
+                    _error(
+                        "RETRIEVAL_CONNECTOR_DUPLICATE_DOCUMENT",
+                        "connector repeated a document ID.",
+                        batch_index=batches_fetched,
+                        document_index=index,
+                    )
+                )
+        for index, document in enumerate(batch.documents):
+            try:
+                sink_result = add_document(document)
+            except Exception:
+                return Result.err(
+                    _error(
+                        "RETRIEVAL_SINK_ERROR",
+                        "document sink failed.",
+                        batch_index=batches_fetched,
+                        document_index=index,
+                        documents_ingested=documents_ingested,
+                    )
+                )
+            if not isinstance(sink_result, Result) or sink_result.is_err():
+                return Result.err(
+                    _error(
+                        "RETRIEVAL_SINK_ERROR",
+                        "document sink returned an error.",
+                        batch_index=batches_fetched,
+                        document_index=index,
+                        documents_ingested=documents_ingested,
+                    )
+                )
+            seen_document_ids.add(document.document_id)
+            documents_ingested += 1
+        batches_fetched += 1
+        if batch.next_cursor is None:
+            return Result.ok(
+                ConnectorIngestReport(
+                    documents_ingested=documents_ingested,
+                    batches_fetched=batches_fetched,
+                    next_cursor=None,
+                    complete=True,
+                )
+            )
+        current_cursor = batch.next_cursor
+
+    return Result.ok(
+        ConnectorIngestReport(
+            documents_ingested=documents_ingested,
+            batches_fetched=batches_fetched,
+            next_cursor=current_cursor,
+            complete=False,
+        )
+    )
 
 
 def rerank_hits(

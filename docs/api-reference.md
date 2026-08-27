@@ -909,6 +909,38 @@ call, and does not claim that its score measures semantic faithfulness. The
 default candidate bound is `100`; callback errors, invalid candidate values,
 and non-finite scores fail closed with typed errors.
 
+Hosts can load documents from a file, API, or managed store through the
+provider-neutral connector seam. A connector returns bounded cursor pages, and
+`ingest_documents(...)` sends each validated page to an explicit sink:
+
+```python
+from maple import Document, DocumentBatch, InMemoryLexicalRetriever, SourceRef, ingest_documents
+from maple.core.result import Result
+
+source = SourceRef(uri="memory://connector")
+document_a = Document("doc-a", "first connector document", source)
+document_b = Document("doc-b", "second connector document", source)
+
+
+class Connector:
+    def fetch(self, cursor, *, limit):
+        if cursor is None:
+            return Result.ok(DocumentBatch((document_a,), "page-2"))
+        return Result.ok(DocumentBatch((document_b,), None))
+
+
+sink = InMemoryLexicalRetriever()
+report = ingest_documents(Connector(), sink, batch_size=50, max_documents=500)
+if report.is_ok():
+    print(report.unwrap().to_dict())
+```
+
+Connector pages are capped at `100` documents, one call is capped at `10,000`
+documents and `100` batches, and repeated IDs or stalled cursors fail closed.
+The helper performs no network calls, retries, transactions, rollback, or
+managed-store selection; the host owns those policies and can resume using the
+reported cursor.
+
 ## Event Streaming and Redaction (preview)
 
 `EventStream` provides an in-process observability contract for workflow, model,

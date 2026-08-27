@@ -108,8 +108,12 @@ from .replay import (
 )
 from .retrieval import (
     ChunkingPolicy,
+    ConnectorIngestReport,
     Document,
+    DocumentBatch,
     DocumentChunk,
+    DocumentConnector,
+    DocumentIngestor,
     EmbeddingProvider,
     InMemoryLexicalRetriever,
     InMemoryVectorRetriever,
@@ -120,6 +124,7 @@ from .retrieval import (
     SourceRef,
     TextChunker,
     VectorRetrievalHit,
+    ingest_documents,
     rerank_hits,
 )
 from .runs import (
@@ -209,8 +214,12 @@ __all__ = [
     "ExecutionPolicy",
     "TrustedLocalExecutor",
     "ChunkingPolicy",
+    "ConnectorIngestReport",
     "Document",
+    "DocumentBatch",
     "DocumentChunk",
+    "DocumentConnector",
+    "DocumentIngestor",
     "EmbeddingProvider",
     "InMemoryLexicalRetriever",
     "InMemoryVectorRetriever",
@@ -221,6 +230,7 @@ __all__ = [
     "SourceRef",
     "TextChunker",
     "VectorRetrievalHit",
+    "ingest_documents",
     "rerank_hits",
     "DEFAULT_MAX_RUN_BYTES",
     "DEFAULT_MAX_RUN_MESSAGES",
