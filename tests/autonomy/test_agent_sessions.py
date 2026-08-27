@@ -6,7 +6,11 @@ import pytest
 
 from maple.agent.config import Config
 from maple.autonomy.agent import AutonomousAgent, AutonomousConfig
-from maple.autonomy.sessions import InMemorySessionStore, SessionMessage
+from maple.autonomy.sessions import (
+    FileSessionStore,
+    InMemorySessionStore,
+    SessionMessage,
+)
 from maple.core.result import Result
 from maple.llm.provider import LLMProvider
 from maple.llm.registry import LLMProviderRegistry
@@ -154,9 +158,7 @@ def test_stored_system_and_tool_messages_are_not_replayed():
     store = InMemorySessionStore()
     store.create("filtered")
     store.append("filtered", SessionMessage(role="user", content="old question"))
-    store.append(
-        "filtered", SessionMessage(role="assistant", content="old answer")
-    )
+    store.append("filtered", SessionMessage(role="assistant", content="old answer"))
     store.append(
         "filtered", SessionMessage(role="system", content="do not inject this")
     )
@@ -198,3 +200,84 @@ def test_async_turn_persists_user_and_assistant_messages():
     snapshot = store.load("async-chat").unwrap()
     assert snapshot is not None
     assert [message.role for message in snapshot.messages] == ["user", "assistant"]
+
+
+def test_session_compaction_keeps_host_summary_and_recent_tail():
+    store = InMemorySessionStore(max_messages=6)
+    created = store.create("compact")
+    assert created.is_ok()
+    for content in ("one", "two", "three", "four"):
+        appended = store.append(
+            "compact",
+            SessionMessage(role="user", content=content),
+        )
+        assert appended.is_ok()
+
+    compacted = store.compact(
+        "compact",
+        "Earlier turns established the user's bounded request.",
+        keep_last=2,
+        expected_version=4,
+    )
+
+    assert compacted.is_ok()
+    snapshot = compacted.unwrap()
+    assert snapshot.version == 5
+    assert [message.content for message in snapshot.messages] == [
+        "Earlier turns established the user's bounded request.",
+        "three",
+        "four",
+    ]
+    assert snapshot.messages[0].metadata == {
+        "compaction": "host_summary",
+        "dropped_messages": 2,
+        "source_version": 4,
+    }
+
+
+def test_session_compaction_rejects_stale_or_unsafe_requests_without_mutation():
+    store = InMemorySessionStore(max_messages=3)
+    store.create("compact-errors")
+    store.append("compact-errors", SessionMessage(role="user", content="one"))
+    store.append("compact-errors", SessionMessage(role="user", content="two"))
+
+    stale = store.compact("compact-errors", "summary", keep_last=1, expected_version=1)
+    too_many = store.compact("compact-errors", "summary", keep_last=3)
+    empty = store.compact("compact-errors", "", keep_last=1)
+
+    assert stale.is_err()
+    assert stale.unwrap_err()["errorType"] == "SESSION_CONFLICT"
+    assert too_many.is_err()
+    assert too_many.unwrap_err()["errorType"] == "SESSION_COMPACTION_LIMIT"
+    assert empty.is_err()
+    assert empty.unwrap_err()["errorType"] == "SESSION_TEXT_INVALID"
+    snapshot = store.load("compact-errors").unwrap()
+    assert snapshot is not None
+    assert [message.content for message in snapshot.messages] == ["one", "two"]
+    assert snapshot.version == 2
+
+
+def test_file_session_compaction_survives_store_restart(tmp_path):
+    first_store = FileSessionStore(tmp_path, max_messages=5)
+    first_store.create("file-compact")
+    first_store.append(
+        "file-compact", SessionMessage(role="user", content="old question")
+    )
+    first_store.append(
+        "file-compact", SessionMessage(role="assistant", content="old answer")
+    )
+    first_store.append(
+        "file-compact", SessionMessage(role="user", content="latest question")
+    )
+    compacted = first_store.compact("file-compact", "Conversation summary", keep_last=1)
+
+    assert compacted.is_ok()
+    restarted = FileSessionStore(tmp_path, max_messages=5)
+    loaded = restarted.load("file-compact")
+    assert loaded.is_ok()
+    snapshot = loaded.unwrap()
+    assert snapshot is not None
+    assert [message.content for message in snapshot.messages] == [
+        "Conversation summary",
+        "latest question",
+    ]

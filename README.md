@@ -68,6 +68,8 @@ Most agent frameworks give you either **infrastructure** (messaging, security, f
 - **Workflow Runtime (preview)** — Define validated workflows with stable run IDs, JSON-safe node-boundary checkpoints, bounded fan-out/fan-in, interruption, conditional routing, local file-backed resume, bounded in-process history inspection, and opt-in crash-window output recovery.
 - **Composable Sub-Workflows (preview)** — Register a bounded `Workflow` as a parent node with explicit parent-to-child and child-to-parent state maps; interrupted children resume through their own checkpoint store, and completed children can be reused after parent journal recovery. Remote scheduling, distributed routing, and exactly-once effects remain outside the local contract.
 
+**Session Compaction (preview)** - Built-in session stores support an explicit host-supplied summary plus retained recent tail under optimistic version control. Compaction is bounded and provider-neutral; it never calls an LLM or runs automatically.
+
 **Local Tool Spans (preview)** - When a `SpanRecorder` is attached, normal sync and async tool executions are recorded as bounded `agent.tool` child spans under the active model span. Arguments, results, and provider objects are not retained; optional stable sampling plus local retention, latency, and status metrics expose observability pressure.
 
 **Remote Human-Input Transport (preview)** — When a `HumanInputStore` is

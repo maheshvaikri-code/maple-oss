@@ -10,6 +10,12 @@
 
 ### Additions
 
+- **Bounded host-supplied session compaction**: built-in in-memory and atomic
+  file-backed session stores can replace older messages with an explicit
+  bounded summary plus a retained recent tail under optimistic version control.
+  Compaction is atomic, typed, provider-neutral, and never calls an LLM or runs
+  automatically; automatic/token-aware summarization remains outside the
+  contract.
 - **Bounded agent tool-result replay**: explicitly opted-in tools can set
   `replay_policy="reuse_success"` and reuse successful results recorded in the
   existing bounded in-memory or file execution journal after a durable-run

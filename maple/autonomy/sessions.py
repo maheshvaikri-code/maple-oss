@@ -383,6 +383,19 @@ class SessionStore(Protocol):
     ) -> Result[SessionSnapshot, Error]: ...
 
 
+class SessionCompactionStore(Protocol):
+    """Optional host-supplied-summary compaction contract."""
+
+    def compact(
+        self,
+        session_id: str,
+        summary: str,
+        *,
+        keep_last: int = 8,
+        expected_version: Optional[int] = None,
+    ) -> Result[SessionSnapshot, Error]: ...
+
+
 class _SessionStoreSupport:
     def _configure_limits(
         self,
@@ -622,6 +635,72 @@ class _SessionStoreSupport:
             )
         )
 
+    def _compact_snapshot(
+        self,
+        current: SessionSnapshot,
+        summary: str,
+        keep_last: int,
+        expected_version: Optional[int],
+    ) -> Result[SessionSnapshot, Error]:
+        if expected_version is not None and expected_version != current.version:
+            return Result.err(
+                _error(
+                    "SESSION_CONFLICT",
+                    "Session version does not match.",
+                    session_id=current.session_id,
+                    expected_version=expected_version,
+                    actual_version=current.version,
+                )
+            )
+        if not isinstance(keep_last, int) or isinstance(keep_last, bool):
+            return Result.err(
+                _error(
+                    "SESSION_COMPACTION_LIMIT",
+                    "keep_last must be a non-negative integer.",
+                )
+            )
+        if keep_last < 0 or keep_last >= self.max_messages:
+            return Result.err(
+                _error(
+                    "SESSION_COMPACTION_LIMIT",
+                    "keep_last must leave room for the summary message.",
+                    max_messages=self.max_messages,
+                )
+            )
+        if not current.messages or keep_last >= len(current.messages):
+            return Result.err(
+                _error(
+                    "SESSION_COMPACTION_NOOP",
+                    "Compaction must remove at least one existing message.",
+                    message_count=len(current.messages),
+                    keep_last=keep_last,
+                )
+            )
+        text_error = _valid_text(summary, "summary")
+        if text_error:
+            return Result.err(text_error)
+        summary_message = SessionMessage(
+            role=ChatRole.ASSISTANT.value,
+            content=summary,
+            metadata={
+                "compaction": "host_summary",
+                "dropped_messages": len(current.messages) - keep_last,
+                "source_version": current.version,
+            },
+        )
+        summary_result = self._message(summary_message)
+        if summary_result.is_err():
+            return Result.err(summary_result.unwrap_err())
+        tail = current.messages[-keep_last:] if keep_last else ()
+        return self._copy_snapshot(
+            replace(
+                current,
+                messages=(summary_result.unwrap(),) + tuple(tail),
+                version=current.version + 1,
+                updated_at=time.time(),
+            )
+        )
+
 
 class InMemorySessionStore(_SessionStoreSupport):
     """Thread-safe bounded session store for tests and local hosts."""
@@ -738,6 +817,35 @@ class InMemorySessionStore(_SessionStoreSupport):
                     )
                 )
             candidate = self._clear_snapshot(current, expected_version)
+            if candidate.is_err():
+                return Result.err(candidate.unwrap_err())
+            self._sessions[session_id] = candidate.unwrap()
+            return Result.ok(self._copy_snapshot(candidate.unwrap()).unwrap())
+
+    def compact(
+        self,
+        session_id: str,
+        summary: str,
+        *,
+        keep_last: int = 8,
+        expected_version: Optional[int] = None,
+    ) -> Result[SessionSnapshot, Error]:
+        id_result = self._session_id(session_id)
+        if id_result.is_err():
+            return Result.err(id_result.unwrap_err())
+        with self._lock:
+            current = self._sessions.get(session_id)
+            if current is None:
+                return Result.err(
+                    _error(
+                        "SESSION_NOT_FOUND",
+                        "Session was not found.",
+                        session_id=session_id,
+                    )
+                )
+            candidate = self._compact_snapshot(
+                current, summary, keep_last, expected_version
+            )
             if candidate.is_err():
                 return Result.err(candidate.unwrap_err())
             self._sessions[session_id] = candidate.unwrap()
@@ -962,6 +1070,37 @@ class FileSessionStore(_SessionStoreSupport):
                 return Result.err(candidate.unwrap_err())
             return self._write_unlocked(candidate.unwrap())
 
+    def compact(
+        self,
+        session_id: str,
+        summary: str,
+        *,
+        keep_last: int = 8,
+        expected_version: Optional[int] = None,
+    ) -> Result[SessionSnapshot, Error]:
+        id_result = self._session_id(session_id)
+        if id_result.is_err():
+            return Result.err(id_result.unwrap_err())
+        with self._lock:
+            current = self._read_unlocked(session_id)
+            if current.is_err():
+                return Result.err(current.unwrap_err())
+            current_snapshot = current.unwrap()
+            if current_snapshot is None:
+                return Result.err(
+                    _error(
+                        "SESSION_NOT_FOUND",
+                        "Session was not found.",
+                        session_id=session_id,
+                    )
+                )
+            candidate = self._compact_snapshot(
+                current_snapshot, summary, keep_last, expected_version
+            )
+            if candidate.is_err():
+                return Result.err(candidate.unwrap_err())
+            return self._write_unlocked(candidate.unwrap())
+
 
 __all__ = [
     "DEFAULT_MAX_MESSAGES",
@@ -971,6 +1110,7 @@ __all__ = [
     "DEFAULT_MAX_SESSIONS",
     "FileSessionStore",
     "InMemorySessionStore",
+    "SessionCompactionStore",
     "SessionMessage",
     "SessionSnapshot",
     "SessionStore",

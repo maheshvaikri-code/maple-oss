@@ -52,6 +52,11 @@ with bounded JSON responses and optional bearer authentication on
 `RunServer`. Loopback binding remains the default; TLS, token issuance,
 tenancy, and remote scheduling remain host-owned.
 
+The bounded session contract now also includes optional host-supplied summary
+compaction with a retained recent tail and optimistic version checks on the
+built-in memory/file stores. Automatic or token-aware LLM summarization,
+broader trace replay, and cross-process session leases remain separate.
+
 The local observability contract now includes bounded `agent.tool` child spans
 for normal sync and async tool execution under the active model span. Hosted
 export, sampling/backpressure metrics, approval-replay correlation, and remote

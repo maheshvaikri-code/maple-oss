@@ -1525,7 +1525,33 @@ session bytes are bounded before mutation. Appends and clears accept an
 optional expected version and return `SESSION_CONFLICT` on a stale version.
 Returned snapshots are fresh JSON-safe copies. File persistence is
 thread-safe within one process; encryption, cross-process leases, and
-summarization remain separate host/runtime decisions.
+summarization remain separate host/runtime decisions. The built-in stores also
+implement the optional `SessionCompactionStore` contract for an explicit,
+host-supplied summary:
+
+```python
+from maple import InMemorySessionStore, SessionMessage
+
+store = InMemorySessionStore(max_messages=100)
+created = store.create("chat-1")
+store.append(
+    "chat-1",
+    SessionMessage(role="user", content="Earlier request"),
+    expected_version=created.unwrap().version,
+)
+compacted = store.compact(
+    "chat-1",
+    "The earlier request asked for a bounded release summary.",
+    keep_last=0,
+    expected_version=1,
+)
+```
+
+Compaction stores one bounded assistant summary and the requested recent tail
+as one versioned mutation. It never calls an LLM or runs automatically;
+invalid limits, stale versions, oversized summaries, and no-op requests fail
+without mutation. The summary's provenance and any sensitive data retained in
+the store remain host responsibilities.
 
 `AutonomousAgent` can bind these sessions explicitly for multi-turn context:
 
@@ -1543,8 +1569,8 @@ The same contract is available through `pursue_goal_async`. If execution
 finishes but the assistant result cannot be persisted, the returned `Goal`
 remains available and exposes the typed failure in `goal.session_error`.
 Without `session_id`, existing agent behavior is unchanged. Full ReAct trace
-replay, tool-result replay, compaction, authentication, and cross-process
-turn leases remain separate capabilities.
+replay, tool-result replay, automatic/token-aware compaction, authentication,
+and cross-process turn leases remain separate capabilities.
 
 ### Durable agent runs (preview)
 
