@@ -27,12 +27,13 @@ optional human-input store and bounded authenticated routes:
   round.
 - `POST /v1/interactions/<interaction_id>/consume` performs one-time consume.
 
-The existing server bearer token protects every route before dispatch. Mutation
-requests may include an `actor_id`; the configured store remains authoritative
-for actor authorization, schema validation, persistence, notification, and
-lease ownership. Request and response JSON bytes use the existing server
-bounds, path segments are URL-encoded by `RunClient`, and store failures map
-to structured HTTP errors. A missing store fails closed with `503`.
+Configuring the human-input store requires a server bearer token; that token
+protects every route before dispatch. Mutation requests may include an
+`actor_id`; the configured store remains authoritative for actor
+authorization, schema validation, persistence, notification, and lease
+ownership. Request and response JSON bytes use the existing server bounds,
+path segments are URL-encoded by `RunClient`, and store failures map to
+structured HTTP errors. A missing store fails closed with `503`.
 
 The server remains loopback-only and does not provide TLS, token issuance,
 identity federation, tenancy, operator UI, remote scheduling, or automatic

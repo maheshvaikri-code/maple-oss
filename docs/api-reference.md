@@ -1558,7 +1558,8 @@ deployment must supply those host-owned controls and must not infer exactly-once
 effects from this transport.
 
 When `RunServer` receives `human_input_store=...`, the same authenticated
-contract exposes bounded human-in-the-loop control. `RunClient` provides
+contract exposes bounded human-in-the-loop control; configuring that store
+requires `RunServer(auth_token="...")`. `RunClient` provides
 `list_pending_human_input(limit)`, `get_human_input(id)`,
 `respond_human_input(id, response, actor_id=...)`,
 `reject_human_input(id, reason, actor_id=...)`,

@@ -616,6 +616,10 @@ class RunServer:
             raise ValueError("server limits must be positive integers")
         _validate_auth_token(auth_token)
         if human_input_store is not None:
+            if auth_token is None:
+                raise ValueError(
+                    "auth_token is required when human_input_store is configured"
+                )
             required_methods = ("get", "list_pending", "respond", "reject", "consume")
             if any(
                 not callable(getattr(human_input_store, name, None))

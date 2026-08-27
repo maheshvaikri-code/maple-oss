@@ -320,6 +320,14 @@ def test_run_server_human_input_transport_fails_closed_without_a_store():
     assert result.unwrap_err()["errorType"] == "HUMAN_INPUT_STORE_UNAVAILABLE"
 
 
+def test_run_server_requires_authentication_for_human_input_transport():
+    registry = WorkflowRegistry()
+    assert registry.register(_workflow()).is_ok()
+
+    with pytest.raises(ValueError):
+        RunServer(registry, human_input_store=InMemoryHumanInputStore())
+
+
 def test_run_client_rejects_out_of_bounds_human_input_list_limits():
     client = RunClient("http://127.0.0.1:1", timeout_seconds=0.1)
 
