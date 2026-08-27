@@ -134,7 +134,24 @@
 | 117 | Bounded host-supplied session compaction | Chief Architect / Backend / Security / QA / Release | `docs/adr/063-*`, `maple/autonomy/sessions.py`, autonomy exports, session regressions, API/README/parity docs, changelog, QA/review evidence | Optional `SessionCompactionStore` on built-in memory/file stores; explicit provider-neutral summary plus retained recent tail; optimistic version check; atomic bounded mutation; invalid/no-op/oversized/stale requests fail closed; no automatic LLM summarization; static/package/doctor gates | done: focused `10 passed in 4.88s`; autonomy regression `335 passed in 6.94s`; tracked regression `1297 passed, 1 skipped in 228.90s`; Black/Ruff/changed-boundary mypy/compile/diff/doctor pass; clean archive candidate `889c476` builds wheel/sdist, Twine checks `PASSED`, sdist `535` entries, required files `6/6`, wheel `104` entries and no-dependency smoke pass; QA and code review pass; dependency-governance veto remains; automatic/token-aware summarization, broader trace replay, and cross-process session leases remain separate |
 
 | 118 | Bounded authenticated agent-run transport | Chief Architect / Backend / Security / QA / Release | `docs/adr/064-*`, `maple/autonomy/server.py`, autonomy exports, server/client regressions, API/README/parity docs, changelog, QA/review evidence | Optional host-owned `AgentRegistry` and dependency-free `RunClient.run_agent(...)` route with bounded task/context/session/run inputs, bearer authentication, typed JSON-safe `AgentRun` envelopes, identity binding, and handler exception redaction; no retries, remote persistence, cancellation, scheduling, or exactly-once effects | done: focused `14 passed in 5.68s`; autonomy `338 passed in 7.52s`; tracked `1300 passed, 1 skipped in 212.14s`; Black/Ruff/changed-boundary mypy/compile/diff/doctor pass; clean archive candidate `a6e3575` build/Twine exit `0`, sdist `538` entries, required files `6/6`, wheel `104` entries, no-dependency export smoke pass; QA and code review pass; environment-wide dependency-governance veto remains; remote durable handoff remains separate |
-| 119 | Bounded authenticated handoff transport | Chief Architect / Backend / Security / QA / Release | `docs/adr/065-*`, `maple/autonomy/server.py`, autonomy exports, server/client regressions, API/README/parity docs, changelog, QA/review evidence | Optional host-owned `HandoffStore` and dependency-free authenticated routes for digest-only create/inspect/list/accept/complete/fail transitions; existing store validation, ownership, terminal state, and file fencing remain authoritative; no raw payload delivery, principal scopes, retries, scheduling, or exactly-once effects | in progress: implementation, focused/full regressions, static/package/doctor gates, and fresh QA/review pending |
+| 119 | Bounded authenticated handoff transport | Chief Architect / Backend / Security / QA / Release | `docs/adr/065-*`, `maple/autonomy/server.py`, autonomy exports, server/client regressions, API/README/parity docs, changelog, QA/review evidence | Optional host-owned `HandoffStore` and dependency-free authenticated routes for digest-only create/inspect/list/accept/complete/fail transitions; existing store validation, ownership, terminal state, and file fencing remain authoritative; no raw payload delivery, principal scopes, retries, scheduling, or exactly-once effects | done: focused `16 passed in 6.24s`; autonomy `340 passed in 9.27s`; tracked `1302 passed, 1 skipped in 214.52s`; Black/Ruff/changed-boundary mypy/compile/diff/doctor pass; clean archive candidate `cafff3c` build/Twine exit `0`, sdist `541` entries, required files `6/6`, wheel `104` entries, no-dependency export smoke pass; QA and code review pass; environment-wide dependency-governance veto remains; remote payload delivery and principal scopes remain separate |
+
+## Slice 119 closure
+
+2026-08-27: Slice 119 is behaviorally and package-gate complete. The focused
+server suite reports `16 passed in 6.24s`; the full autonomy suite reports
+`340 passed in 9.27s`; the exact tracked application manifest reports `1302
+passed, 1 skipped in 214.52s` across 108 tracked test files. Black, Ruff,
+changed-boundary mypy, compile, diff, and network-free doctor checks pass. A
+clean archive candidate from `cafff3c` builds wheel and sdist successfully,
+both Twine checks pass, the sdist has `541` entries, the wheel has `104`
+members, required public files are `6/6`, and a fresh no-dependency install
+imports the handoff transport exports. The declared-project dependency audit
+reports no known vulnerabilities; the separate environment-wide audit remains
+a release veto with `383` findings across `77` packages. No publication or
+website change was performed. The handoff transport is digest-only and does
+not claim raw payload delivery, principal scopes, notifications, retries,
+scheduling, cancellation, or exactly-once effects.
 
 ## Slice 118 closure
 
