@@ -18,7 +18,12 @@
   JSON Schema validation, actor
   authorization, leases, notifications, and one-time consumption. Hosted
   identity, TLS termination, automatic scheduling, and exactly-once effects
-  remain host-owned; no publication was performed.
+  remain host-owned. Focused validation reports `19 passed in 5.17s`; the
+  tracked application regression reports `1283 passed, 1 skipped in 275.08s`.
+  Clean package candidate `b8a252a` rebuilt wheel/sdist `1.1.3`, both Twine
+  checks passed, the sdist contains `528` entries, required files are `6/6`,
+  and workspace-only audit is `0`. Dependency-governance veto remains open; no
+  publication was performed.
 - **Bounded HTTP event exporter**: added optional dependency-free
   `HttpEventExporter` for synchronous POST delivery of already-redacted event
   envelopes with bounded request/response sizes, finite timeout, optional
