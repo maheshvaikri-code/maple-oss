@@ -1,6 +1,6 @@
 # Slice 128 QA — Bounded durable event journal @ `2ae4a9c`
 
-**QA Engineer** · **Security Reviewer** · **Date:** 2026-08-27  
+**QA Engineer** · **Security Reviewer** · **Date:** 2026-08-27
 **Build under test:** `2ae4a9c` (`fix(events): normalize journal evidence`)
 
 ## Acceptance criteria verification
@@ -72,5 +72,5 @@ event count, journal bytes, payload shape/depth, identifiers, timestamps, JSON
 serialization, monotonic sequences, atomic writes, fencing leases, and callback
 ordering are covered.
 
-**Security verdict:** SIGN-OFF · human override: n/a  
+**Security verdict:** SIGN-OFF · human override: n/a
 **QA verdict:** pass

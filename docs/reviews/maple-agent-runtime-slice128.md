@@ -1,8 +1,8 @@
 # Code Review — Slice 128 @ `2ae4a9c`
 
-**Reviewer role:** Code Reviewer · **Date:** 2026-08-27  
+**Reviewer role:** Code Reviewer · **Date:** 2026-08-27
 **Reviewed against:** [ADR-074](../adr/074-bounded-durable-event-journal.md),
-[release plan](../plans/maple-agent-runtime-release.md)  
+[release plan](../plans/maple-agent-runtime-release.md)
 **Diff reviewed:** `e92237d..2ae4a9c`, read from disk after the author pass
 
 ## Executed
