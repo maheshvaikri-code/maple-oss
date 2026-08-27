@@ -875,7 +875,39 @@ hits = vector_retriever.search((0.7, 0.3, 0.1), top_k=3)
 
 MAPLE does not select or call an embedding model. Empty/malformed/oversized
 inputs fail with structured `Result` errors, and every hit carries a source
-reference for citation.
+reference for citation. A host can add a provider-neutral reranking step to
+either lexical or vector hits. The callback receives the query and bounded
+`DocumentChunk`, and returns one finite score; MAPLE retains the original
+retrieval score and uses deterministic chunk-ID tie-breaking:
+
+```python
+from maple import Document, InMemoryLexicalRetriever, SourceRef, rerank_hits
+from maple.core.result import Result
+
+retriever = InMemoryLexicalRetriever()
+retriever.add_document(
+    Document(
+        document_id="guide-1",
+        text="MAPLE uses resource-aware agent orchestration.",
+        source=SourceRef(uri="https://example.invalid/guide"),
+    )
+)
+candidates = retriever.search("agent orchestration", top_k=5)
+
+
+class HostReranker:
+    def score(self, query, chunk):
+        return Result.ok(1.0 if "resource" in chunk.text else 0.5)
+
+
+if candidates.is_ok():
+    reranked = rerank_hits(query="agent orchestration", candidates=candidates.unwrap(), reranker=HostReranker())
+```
+
+The reranker is host-owned: it adds no provider dependency, makes no network
+call, and does not claim that its score measures semantic faithfulness. The
+default candidate bound is `100`; callback errors, invalid candidate values,
+and non-finite scores fail closed with typed errors.
 
 ## Event Streaming and Redaction (preview)
 

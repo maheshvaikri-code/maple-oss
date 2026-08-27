@@ -10,6 +10,13 @@
 
 ### Additions
 
+- **Provider-neutral retrieval reranking**: bounded lexical or vector hit
+  candidates can now pass through a host-supplied `RetrievalReranker` without
+  adding a model dependency or implicit network call. The helper validates
+  finite scores, preserves source references and original scores, uses stable
+  tie-breaking, and redacts callback failures; semantic faithfulness remains a
+  separate evaluation concern.
+
 - **Authenticated cooperative agent-run cancellation**: `AgentRegistry` now
   accepts an explicit `cancel_handler`, and `RunServer`/`RunClient` expose a
   bounded authenticated cancel route that requires a typed `cancelled`

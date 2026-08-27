@@ -8,12 +8,25 @@ import re
 import threading
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Mapping, Optional, Protocol, Sequence, Set, Tuple
+from typing import (
+    Any,
+    Dict,
+    List,
+    Mapping,
+    Optional,
+    Protocol,
+    Sequence,
+    Set,
+    Tuple,
+    Union,
+    cast,
+)
 
 from ..core.result import Result
 
 Error = Dict[str, Any]
 _TOKEN_PATTERN = re.compile(r"\w+", re.UNICODE)
+_MAX_RERANK_CANDIDATES = 100
 
 
 def _error(error_type: str, message: str, **details: Any) -> Error:
@@ -76,7 +89,7 @@ class SourceRef:
             )
         metadata_size = _json_size(dict(self.metadata))
         if metadata_size.is_err():
-            return metadata_size.unwrap_err()
+            return cast(Error, metadata_size.unwrap_err())
         if metadata_size.unwrap() > 65_536:
             return _error(
                 "RETRIEVAL_METADATA_TOO_LARGE",
@@ -109,7 +122,7 @@ class Document:
             )
         metadata_size = _json_size(dict(self.metadata))
         if metadata_size.is_err():
-            return metadata_size.unwrap_err()
+            return cast(Error, metadata_size.unwrap_err())
         if metadata_size.unwrap() > 65_536:
             return _error(
                 "RETRIEVAL_METADATA_TOO_LARGE",
@@ -147,6 +160,22 @@ class VectorRetrievalHit:
 
     chunk: DocumentChunk
     score: float
+
+
+@dataclass(frozen=True)
+class RerankedRetrievalHit:
+    """A host-reranked hit retaining its retrieval score and source."""
+
+    chunk: DocumentChunk
+    score: float
+    original_score: float
+
+
+class RetrievalReranker(Protocol):
+    """Host-owned provider-neutral score seam for retrieval candidates."""
+
+    def score(self, query: str, chunk: DocumentChunk) -> Result[float, Error]:
+        """Return one finite score for a bounded candidate chunk."""
 
 
 class EmbeddingProvider(Protocol):
@@ -268,6 +297,147 @@ class RetrievalBackend(Protocol):
 
 def _tokens(value: str) -> List[str]:
     return [token.casefold() for token in _TOKEN_PATTERN.findall(value)]
+
+
+def rerank_hits(
+    query: str,
+    candidates: Sequence[Union[RetrievalHit, VectorRetrievalHit]],
+    reranker: RetrievalReranker,
+    *,
+    top_k: int = 5,
+    max_candidates: int = 100,
+) -> Result[List[RerankedRetrievalHit], Error]:
+    """Apply a bounded host-owned reranker to lexical or vector hits.
+
+    MAPLE validates the callback boundary and ordering but does not select a
+    model, make network calls, or claim that a score measures faithfulness.
+    """
+    if (
+        not isinstance(max_candidates, int)
+        or isinstance(max_candidates, bool)
+        or not 0 < max_candidates <= _MAX_RERANK_CANDIDATES
+    ):
+        return Result.err(
+            _error(
+                "RETRIEVAL_RERANK_CONFIG_INVALID",
+                "max_candidates must be between 1 and 100.",
+            )
+        )
+    if not isinstance(query, str) or not query.strip():
+        return Result.err(_error("RETRIEVAL_QUERY_INVALID", "query must not be empty."))
+    if len(query.encode("utf-8")) > 16_384:
+        return Result.err(
+            _error("RETRIEVAL_QUERY_TOO_LARGE", "query exceeds the byte limit.")
+        )
+    if (
+        not isinstance(top_k, int)
+        or isinstance(top_k, bool)
+        or not 1 <= top_k <= max_candidates
+    ):
+        return Result.err(
+            _error("RETRIEVAL_RERANK_LIMIT", "top_k is outside the allowed range.")
+        )
+    if isinstance(candidates, (str, bytes)) or not isinstance(candidates, Sequence):
+        return Result.err(
+            _error("RETRIEVAL_CANDIDATE_INVALID", "candidates must be a sequence.")
+        )
+    if len(candidates) > max_candidates:
+        return Result.err(_error("RETRIEVAL_RERANK_LIMIT", "candidate limit exceeded."))
+    scorer = getattr(reranker, "score", None)
+    if not callable(scorer):
+        return Result.err(
+            _error("RETRIEVAL_RERANKER_INVALID", "reranker must expose score(...).")
+        )
+
+    ranked: List[RerankedRetrievalHit] = []
+    seen_chunk_ids: Set[str] = set()
+    for index, candidate in enumerate(candidates):
+        if not isinstance(candidate, (RetrievalHit, VectorRetrievalHit)):
+            return Result.err(
+                _error(
+                    "RETRIEVAL_CANDIDATE_INVALID",
+                    "candidates must be retrieval hit values.",
+                    index=index,
+                )
+            )
+        if not isinstance(candidate.chunk, DocumentChunk):
+            return Result.err(
+                _error(
+                    "RETRIEVAL_CANDIDATE_INVALID",
+                    "candidate chunks must be DocumentChunk values.",
+                    index=index,
+                )
+            )
+        chunk_id = candidate.chunk.chunk_id
+        if _validate_identifier(chunk_id, "chunk_id") is not None:
+            return Result.err(
+                _error(
+                    "RETRIEVAL_CANDIDATE_INVALID",
+                    "candidate chunk IDs must be bounded strings.",
+                    index=index,
+                )
+            )
+        if chunk_id in seen_chunk_ids:
+            return Result.err(
+                _error(
+                    "RETRIEVAL_CANDIDATE_INVALID",
+                    "candidate chunk IDs must be unique.",
+                    index=index,
+                )
+            )
+        seen_chunk_ids.add(chunk_id)
+        if (
+            isinstance(candidate.score, bool)
+            or not isinstance(candidate.score, (int, float))
+            or not math.isfinite(float(candidate.score))
+        ):
+            return Result.err(
+                _error(
+                    "RETRIEVAL_CANDIDATE_INVALID",
+                    "candidate scores must be finite numbers.",
+                    index=index,
+                )
+            )
+        try:
+            score_result = scorer(query, candidate.chunk)
+        except Exception:
+            return Result.err(
+                _error(
+                    "RETRIEVAL_RERANKER_ERROR",
+                    "reranker callback failed.",
+                    index=index,
+                )
+            )
+        if not isinstance(score_result, Result) or score_result.is_err():
+            return Result.err(
+                _error(
+                    "RETRIEVAL_RERANKER_ERROR",
+                    "reranker callback returned an error.",
+                    index=index,
+                )
+            )
+        score = score_result.unwrap()
+        if (
+            isinstance(score, bool)
+            or not isinstance(score, (int, float))
+            or not math.isfinite(float(score))
+        ):
+            return Result.err(
+                _error(
+                    "RETRIEVAL_RERANKER_RESULT_INVALID",
+                    "reranker scores must be finite numbers.",
+                    index=index,
+                )
+            )
+        ranked.append(
+            RerankedRetrievalHit(
+                chunk=candidate.chunk,
+                score=float(score),
+                original_score=float(candidate.score),
+            )
+        )
+    ranked.sort(key=lambda hit: (-hit.score, hit.chunk.chunk_id))
+    return Result.ok(ranked[:top_k])
 
 
 class InMemoryLexicalRetriever:

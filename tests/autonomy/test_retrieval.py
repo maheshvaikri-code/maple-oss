@@ -5,9 +5,12 @@ from maple.autonomy.retrieval import (
     Document,
     InMemoryLexicalRetriever,
     InMemoryVectorRetriever,
+    RetrievalHit,
     SourceRef,
     TextChunker,
+    rerank_hits,
 )
+from maple.core.result import Result
 
 
 def make_document(document_id="doc-1", text="MAPLE agent orchestration uses resources"):
@@ -69,6 +72,59 @@ def test_retriever_returns_ranked_hits_with_citations():
     assert hits[0].chunk.source.uri == "memory://doc-1"
     assert set(hits[0].matched_terms) == {"agent", "resources"}
     assert hits[0].score > 0
+
+
+def test_reranker_reorders_lexical_hits_and_preserves_original_scores():
+    retriever = InMemoryLexicalRetriever()
+    retriever.add_document(make_document("doc-a", "agent resources"))
+    retriever.add_document(make_document("doc-b", "agent resources"))
+    candidates = retriever.search("agent resources", top_k=2).unwrap()
+
+    class HostReranker:
+        def score(self, query, chunk):
+            assert query == "agent resources"
+            return Result.ok(1.0 if chunk.document_id == "doc-b" else 0.5)
+
+    result = rerank_hits("agent resources", candidates, HostReranker(), top_k=2)
+
+    assert result.is_ok()
+    reranked = result.unwrap()
+    assert [hit.chunk.document_id for hit in reranked] == ["doc-b", "doc-a"]
+    assert [hit.score for hit in reranked] == [1.0, 0.5]
+    assert all(hit.original_score > 0 for hit in reranked)
+    assert all(hit.chunk.source.uri.startswith("memory://") for hit in reranked)
+
+
+def test_reranker_bounds_candidates_and_redacts_callback_failures():
+    chunk = TextChunker().chunk(make_document()).unwrap()[0]
+    candidate = RetrievalHit(
+        chunk=chunk,
+        score=1.0,
+        matched_terms=(),
+    )
+
+    class RaisingReranker:
+        def score(self, query, chunk):
+            raise RuntimeError("private reranking detail")
+
+    invalid = rerank_hits("agent", [object()], RaisingReranker())
+    invalid_bound = rerank_hits(
+        "agent", [candidate], RaisingReranker(), max_candidates=101
+    )
+    too_many = rerank_hits(
+        "agent", [candidate, candidate], RaisingReranker(), max_candidates=1
+    )
+    failed = rerank_hits("agent", [candidate], RaisingReranker())
+
+    assert invalid.is_err()
+    assert invalid.unwrap_err()["errorType"] == "RETRIEVAL_CANDIDATE_INVALID"
+    assert invalid_bound.is_err()
+    assert invalid_bound.unwrap_err()["errorType"] == "RETRIEVAL_RERANK_CONFIG_INVALID"
+    assert too_many.is_err()
+    assert too_many.unwrap_err()["errorType"] == "RETRIEVAL_RERANK_LIMIT"
+    assert failed.is_err()
+    assert failed.unwrap_err()["errorType"] == "RETRIEVAL_RERANKER_ERROR"
+    assert "private reranking detail" not in str(failed.unwrap_err())
 
 
 def test_retriever_search_is_bounded_and_empty_queries_fail():
