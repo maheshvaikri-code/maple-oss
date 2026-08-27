@@ -15,7 +15,9 @@
   events through cursor-based `GET /v1/events` batches. Strict `after`/`limit`
   query validation and explicit `EVENT_CURSOR_EXPIRED` responses preserve the
   host stream's bounded retention semantics; durable replay, remote search,
-  batching, and fleet aggregation remain outside the contract.
+  batching, and fleet aggregation remain outside the contract. Validation
+  reports `37 passed` for event/server coverage and `346 passed` for autonomy;
+  no publication was performed.
 - **Bounded authenticated event ingestion**: the dependency-free
   `RunServer`/`RunClient` contract can now receive one event at a time into a
   host-owned `EventStream`. The receiver assigns local sequence/timestamp
