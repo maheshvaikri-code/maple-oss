@@ -1,4 +1,4 @@
-# Code Review - MAPLE Agent Runtime Slice 115 @ 8c08018
+# Code Review - MAPLE Agent Runtime Slice 115 @ 47a1617
 
 **Reviewer role:** Code Reviewer · **Date:** 2026-08-26  
 **Reviewed against:** [project brief](../briefs/maple-agent-runtime-release.md),
@@ -8,16 +8,15 @@ entry in the [implementation plan](../plans/maple-agent-runtime-release.md)
 **Executed:**
 
 ```text
-29 passed in 2.54s
-30 passed in 2.90s
+31 passed in 4.62s
 3 files would be left unchanged.
 All checks passed!
 Success: no issues found in 1 source file
 git diff --check: no output (exit 0)
 ```
 
-The first focused run covered the feature; the second included the malformed
-child-checkpoint regression added during review hardening.
+The focused run includes the malformed child-checkpoint regression and the
+documented mapping-limit boundary matrix.
 
 ## Findings
 
@@ -35,7 +34,8 @@ publication, license, or preserved user-owned file was changed.
 
 Correctness review covered normal completion, explicit input/output isolation,
 missing mapped inputs, duplicate map destinations, self-reference, malformed
-child checkpoints, child interruption/resume, and parent journal recovery.
+child checkpoints, child interruption/resume, parent journal recovery, and
+mapping limits at their documented boundaries.
 The child store remains the state owner; external effects remain explicitly
 at-least-once.
 
