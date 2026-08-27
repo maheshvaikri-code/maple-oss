@@ -33,9 +33,11 @@ successful tool results:
   tool errors; a write failure explicitly warns that the external effect may
   already have occurred.
 - The journal remains bounded by the existing record and run quotas and must
-  be retained/cleared by the host. This closes a saved-record crash window; it
-  does not provide exactly-once effects, distributed locking, or transactional
-  coordination with external systems.
+  be retained/cleared by the host. Because successful tool-result content is
+  persisted, the host must protect the journal with its normal storage access
+  controls and should not opt in tools whose results cannot be retained. This
+  closes a saved-record crash window; it does not provide exactly-once effects,
+  distributed locking, or transactional coordination with external systems.
 
 ## Alternatives considered
 
@@ -53,7 +55,8 @@ successful tool results:
   regenerated provider call ID differs.
 - Negative / debt accepted: journal persistence happens after the handler, so
   the unsaved crash window remains at-least-once. Approval-resume replay and
-  remote aggregation remain separate boundaries.
+  remote aggregation remain separate boundaries. Retention and access control
+  for persisted result content remain host responsibilities.
 - Invalidation triggers: a requirement for exactly-once external effects,
   cross-host ownership, or automatic approval-result replay reopens this ADR
   before implementation.

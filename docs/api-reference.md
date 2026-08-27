@@ -1388,7 +1388,9 @@ provider's tool-call ID, so a regenerated ID can reuse a matching saved
 result. Only successful results are recorded; approval-required and human
 input tools retain their existing ownership contracts. Journal records are
 bounded and should be cleared with `execution_journal.clear(run_id)` after
-retention is no longer required.
+retention is no longer required. Because result content is persisted, protect
+the journal with the host's normal storage access controls and do not opt in
+tools whose results cannot be retained.
 
 This is an opt-in crash-window guard, not exactly-once execution. A process
 failure after the handler returns but before the journal save can repeat the

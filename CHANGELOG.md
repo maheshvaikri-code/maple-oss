@@ -18,7 +18,9 @@
   fails closed, and journal persistence failures warn that an effect may have
   occurred. Approval and human-input tools retain their existing ownership
   contracts. This remains at-least-once and does not claim exactly-once
-  external effects. Autonomy validation reports `331 passed in 10.47s`.
+  external effects. Autonomy validation reports `331 passed in 10.47s`; the
+  tracked application regression reports `1294 passed, 1 skipped`, and the
+  clean candidate package passes build and Twine checks.
 - **Composable bounded sub-workflows**: workflows can register another
   `Workflow` as a node with explicit parent-to-child and child-to-parent state
   maps. Child checkpoint stores remain authoritative; deterministic child run
