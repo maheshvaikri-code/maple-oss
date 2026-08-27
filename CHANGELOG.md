@@ -10,6 +10,12 @@
 
 ### Additions
 
+- **Authenticated cooperative agent-run cancellation**: `AgentRegistry` now
+  accepts an explicit `cancel_handler`, and `RunServer`/`RunClient` expose a
+  bounded authenticated cancel route that requires a typed `cancelled`
+  `AgentRun` result. The host remains responsible for token propagation,
+  checkpoint state, cleanup, retries, and exactly-once side-effect policy.
+
 - **Bounded authenticated event inspection**: the dependency-free
   `RunServer`/`RunClient` contract can now read retained, already-redacted
   events through cursor-based `GET /v1/events` batches. Strict `after`/`limit`

@@ -12,13 +12,13 @@ from maple.autonomy import (
     AgentRunCheckpoint,
     EventCursor,
     EventStream,
-    HttpEventExporter,
     HandoffRecord,
+    HttpEventExporter,
     HumanInputRequest,
-    InMemoryHumanInputStore,
-    InMemoryHandoffStore,
     InMemoryAgentRunStore,
     InMemoryCheckpointStore,
+    InMemoryHandoffStore,
+    InMemoryHumanInputStore,
     RunClient,
     RunServer,
     Workflow,
@@ -474,6 +474,30 @@ def test_agent_registry_rejects_result_identity_and_non_json_values():
     assert malformed.unwrap_err()["errorType"] == "AGENT_RESULT_INVALID"
 
 
+def test_agent_registry_cancellation_requires_cancelled_result_and_redacts_failures():
+    def handler(task, context, *, session_id, run_id):
+        return Result.ok(AgentRun("cancelable", run_id, "paused", result={}))
+
+    def wrong_status(run_id):
+        return Result.ok(AgentRun("wrong-status", run_id, "completed", result={}))
+
+    def raising(run_id):
+        raise RuntimeError("private cancellation detail")
+
+    agents = AgentRegistry()
+    assert agents.register("wrong-status", handler, cancel_handler=wrong_status).is_ok()
+    assert agents.register("raising", handler, cancel_handler=raising).is_ok()
+
+    wrong = agents.cancel("wrong-status", "run-1")
+    failed = agents.cancel("raising", "run-1")
+
+    assert wrong.is_err()
+    assert wrong.unwrap_err()["errorType"] == "AGENT_CANCEL_RESULT_INVALID"
+    assert failed.is_err()
+    assert failed.unwrap_err()["errorType"] == "AGENT_CANCEL_HANDLER_ERROR"
+    assert "private cancellation detail" not in str(failed.unwrap_err())
+
+
 def test_authenticated_durable_agent_run_inspection_and_resume():
     run_store = InMemoryAgentRunStore()
     assert run_store.save(
@@ -488,6 +512,7 @@ def test_authenticated_durable_agent_run_inspection_and_resume():
         )
     ).is_ok()
     resume_calls = []
+    cancel_calls = []
 
     def handler(task, context, *, session_id, run_id):
         return Result.ok(
@@ -500,8 +525,27 @@ def test_authenticated_durable_agent_run_inspection_and_resume():
             AgentRun("researcher", run_id, "completed", result={"answer": "ready"})
         )
 
+    def cancel_handler(run_id):
+        cancel_calls.append(run_id)
+        return Result.ok(
+            AgentRun(
+                "researcher",
+                run_id,
+                "cancelled",
+                error={
+                    "errorType": "AGENT_RUN_CANCELLED",
+                    "message": "Cancellation was requested.",
+                },
+            )
+        )
+
     agents = AgentRegistry()
-    assert agents.register("researcher", handler, resume_handler=resume_handler).is_ok()
+    assert agents.register(
+        "researcher",
+        handler,
+        resume_handler=resume_handler,
+        cancel_handler=cancel_handler,
+    ).is_ok()
     server = RunServer(
         WorkflowRegistry(),
         agent_registry=agents,
@@ -514,6 +558,7 @@ def test_authenticated_durable_agent_run_inspection_and_resume():
         inspected = client.inspect_agent_run("researcher", "durable-agent-run")
         wrong_agent = client.inspect_agent_run("other", "durable-agent-run")
         resumed = client.resume_agent_run("researcher", "durable-agent-run")
+        cancelled = client.cancel_agent_run("researcher", "durable-agent-run")
         unauthorized = RunClient(base_url).inspect_agent_run(
             "researcher", "durable-agent-run"
         )
@@ -532,6 +577,10 @@ def test_authenticated_durable_agent_run_inspection_and_resume():
     assert resumed.is_ok()
     assert resumed.unwrap()["run"]["status"] == "completed"
     assert resume_calls == ["durable-agent-run"]
+    assert cancelled.is_ok()
+    assert cancelled.unwrap()["run"]["status"] == "cancelled"
+    assert cancelled.unwrap()["run"]["error"]["errorType"] == "AGENT_RUN_CANCELLED"
+    assert cancel_calls == ["durable-agent-run"]
     assert unauthorized.is_err()
     assert unauthorized.unwrap_err()["errorType"] == "UNAUTHORIZED"
 
@@ -550,6 +599,7 @@ def test_durable_agent_transport_fails_closed_without_store_or_resume_handler():
         client = RunClient(base_url, auth_token="agent-token")
         unavailable = client.inspect_agent_run("researcher", "run-1")
         unsupported = client.resume_agent_run("researcher", "run-1")
+        unsupported_cancel = client.cancel_agent_run("researcher", "run-1")
     finally:
         server.close()
 
@@ -557,6 +607,8 @@ def test_durable_agent_transport_fails_closed_without_store_or_resume_handler():
     assert unavailable.unwrap_err()["errorType"] == "AGENT_RUN_STORE_UNAVAILABLE"
     assert unsupported.is_err()
     assert unsupported.unwrap_err()["errorType"] == "AGENT_RESUME_UNAVAILABLE"
+    assert unsupported_cancel.is_err()
+    assert unsupported_cancel.unwrap_err()["errorType"] == "AGENT_CANCEL_UNAVAILABLE"
 
 
 def test_authenticated_event_transport_ingests_redacted_events_and_preserves_local_order():

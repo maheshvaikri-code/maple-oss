@@ -1712,7 +1712,9 @@ with RunServer(registry, agent_registry=agents, auth_token="local-token") as ser
 
 The route is `POST /v1/agents/<agent_id>/runs` and returns `201` with a
 `{"run": {"agent_id": ..., "run_id": ..., "status": ..., "result": ...,
-"error": ...}}` envelope. Status is `completed`, `paused`, or `failed`.
+"error": ...}}` envelope. Invocation status is `completed`, `paused`, or
+`failed`; a separately registered cancellation callback may return
+`cancelled`.
 Task text is limited to 8 KiB; IDs are limited to 256 UTF-8 bytes; context is
 limited to 32 top-level keys, 128 items per object/array, depth 8, 8,192
 characters per string, and 32 KiB serialized. Non-JSON handler results,
@@ -1753,10 +1755,12 @@ correlation, usage, result/error, version, and timestamps. Messages and
 reasoning steps are intentionally omitted. `POST
 /v1/agents/<agent_id>/runs/<run_id>/resume` invokes only the explicitly
 registered callback and returns the same `AgentRun` envelope as invocation.
-Missing stores return `503`, cross-agent or missing runs return `404`, and
-missing resume callbacks return `501`. This adds no scheduler, retries,
-cancellation, principal scopes, remote event aggregation, or exactly-once
-side-effect guarantee; the host remains responsible for those policies.
+`POST /v1/agents/<agent_id>/runs/<run_id>/cancel` invokes an explicitly
+registered `cancel_handler` and requires a `cancelled` envelope. Missing
+stores return `503`, cross-agent or missing runs return `404`, and missing
+resume/cancel callbacks return `501`. Cancellation is cooperative; the host
+remains responsible for token propagation, checkpoint mutation, cleanup,
+retries, principal scopes, and exactly-once side-effect policy.
 
 ### Authenticated event transport
 

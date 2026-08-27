@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import hmac
 import ipaddress
 import json
-import hmac
 import math
 import threading
 import uuid
@@ -40,7 +40,7 @@ _MAX_AGENT_CONTEXT_ITEMS = 128
 _MAX_AGENT_CONTEXT_DEPTH = 8
 _MAX_AGENT_CONTEXT_STRING_LENGTH = 8_192
 _MAX_AGENT_CONTEXT_BYTES = 32 * 1024
-_AGENT_RUN_STATUSES = frozenset({"completed", "paused", "failed"})
+_AGENT_RUN_STATUSES = frozenset({"cancelled", "completed", "paused", "failed"})
 
 
 def _error(error_type: str, message: str, **details: Any) -> Error:
@@ -220,6 +220,12 @@ class AgentRunResumeHandler(Protocol):
     def __call__(self, run_id: str) -> Result["AgentRun", Error]: ...
 
 
+class AgentRunCancelHandler(Protocol):
+    """Host-owned synchronous callback for one cooperative agent-run cancel."""
+
+    def __call__(self, run_id: str) -> Result["AgentRun", Error]: ...
+
+
 @dataclass(frozen=True)
 class AgentRun:
     """JSON-safe result envelope returned by a registered agent handler."""
@@ -272,6 +278,7 @@ class AgentRegistry:
         self.max_agents = max_agents
         self._agents: Dict[str, AgentRunHandler] = {}
         self._resume_handlers: Dict[str, AgentRunResumeHandler] = {}
+        self._cancel_handlers: Dict[str, AgentRunCancelHandler] = {}
         self._lock = threading.RLock()
 
     def register(
@@ -280,6 +287,7 @@ class AgentRegistry:
         handler: AgentRunHandler,
         *,
         resume_handler: Optional[AgentRunResumeHandler] = None,
+        cancel_handler: Optional[AgentRunCancelHandler] = None,
     ) -> Result[None, Error]:
         """Register one host-owned handler before serving requests."""
         identifier_error = _validate_agent_identifier(agent_id, "agent_id")
@@ -294,6 +302,13 @@ class AgentRegistry:
                 _error(
                     "AGENT_RESUME_HANDLER_INVALID",
                     "resume_handler must be callable when provided.",
+                )
+            )
+        if cancel_handler is not None and not callable(cancel_handler):
+            return Result.err(
+                _error(
+                    "AGENT_CANCEL_HANDLER_INVALID",
+                    "cancel_handler must be callable when provided.",
                 )
             )
         with self._lock:
@@ -316,6 +331,8 @@ class AgentRegistry:
             self._agents[agent_id] = handler
             if resume_handler is not None:
                 self._resume_handlers[agent_id] = resume_handler
+            if cancel_handler is not None:
+                self._cancel_handlers[agent_id] = cancel_handler
         return Result.ok(None)
 
     def _get(self, agent_id: str) -> Result[AgentRunHandler, Error]:
@@ -347,6 +364,28 @@ class AgentRegistry:
                 _error(
                     "AGENT_RESUME_UNAVAILABLE",
                     "No durable resume handler is configured for this agent.",
+                    agent_id=agent_id,
+                )
+            )
+        return Result.ok(handler)
+
+    def _get_cancel_handler(
+        self, agent_id: str
+    ) -> Result[AgentRunCancelHandler, Error]:
+        identifier_error = _validate_agent_identifier(agent_id, "agent_id")
+        if identifier_error is not None:
+            return Result.err(identifier_error)
+        with self._lock:
+            if agent_id not in self._agents:
+                return Result.err(
+                    _error("AGENT_NOT_FOUND", "Agent was not found.", agent_id=agent_id)
+                )
+            handler = self._cancel_handlers.get(agent_id)
+        if handler is None:
+            return Result.err(
+                _error(
+                    "AGENT_CANCEL_UNAVAILABLE",
+                    "No cooperative cancel handler is configured for this agent.",
                     agent_id=agent_id,
                 )
             )
@@ -418,6 +457,37 @@ class AgentRegistry:
                 )
             )
         return _normalize_agent_result(result, agent_id, run_id)
+
+    def cancel(self, agent_id: str, run_id: str) -> Result[AgentRun, Error]:
+        """Request cooperative cancellation through an explicit host callback."""
+        handler_result = self._get_cancel_handler(agent_id)
+        if handler_result.is_err():
+            return Result.err(handler_result.unwrap_err())
+        run_error = _validate_agent_identifier(run_id, "run_id")
+        if run_error is not None:
+            return Result.err(run_error)
+        try:
+            result = handler_result.unwrap()(run_id)
+        except Exception:
+            return Result.err(
+                _error(
+                    "AGENT_CANCEL_HANDLER_ERROR",
+                    "Registered agent cancel handler failed.",
+                    agent_id=agent_id,
+                    run_id=run_id,
+                )
+            )
+        normalized = _normalize_agent_result(result, agent_id, run_id)
+        if normalized.is_err():
+            return Result.err(normalized.unwrap_err())
+        if normalized.unwrap().status != "cancelled":
+            return Result.err(
+                _error(
+                    "AGENT_CANCEL_RESULT_INVALID",
+                    "Agent cancel handler must return a cancelled AgentRun.",
+                )
+            )
+        return normalized
 
 
 def _normalize_agent_result(
@@ -640,6 +710,8 @@ def _status_for_error(error: Error) -> int:
         return 503
     if error_type == "AGENT_RESUME_UNAVAILABLE":
         return 501
+    if error_type == "AGENT_CANCEL_UNAVAILABLE":
+        return 501
     if error_type == "HUMAN_INPUT_STORE_UNAVAILABLE":
         return 503
     if error_type == "HUMAN_INPUT_MULTI_ROUND_UNSUPPORTED":
@@ -810,9 +882,12 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 method == "POST"
                 and len(path) == 6
                 and path[0:4] == ("v1", "agents", path[2], "runs")
-                and path[5] == "resume"
+                and path[5] in {"resume", "cancel"}
             ):
-                self._resume_agent(path[2], path[4])
+                if path[5] == "resume":
+                    self._resume_agent(path[2], path[4])
+                else:
+                    self._cancel_agent(path[2], path[4])
                 return
             if self._handoff_route(method, path):
                 return
@@ -1273,6 +1348,26 @@ class _RequestHandler(BaseHTTPRequestHandler):
             )
             return
         result = registry.resume(agent_id, run_id)
+        if result.is_err():
+            self._write_error(
+                _status_for_error(result.unwrap_err()), result.unwrap_err()
+            )
+            return
+        self._write_json(200, {"run": _agent_run_to_dict(result.unwrap())})
+
+    def _cancel_agent(self, agent_id: str, run_id: str) -> None:
+        self._discard_bounded_request_body()
+        registry = self.server.application.agent_registry
+        if registry is None:
+            self._write_error(
+                503,
+                _error(
+                    "AGENT_REGISTRY_UNAVAILABLE",
+                    "No agent registry is configured.",
+                ),
+            )
+            return
+        result = registry.cancel(agent_id, run_id)
         if result.is_err():
             self._write_error(
                 _status_for_error(result.unwrap_err()), result.unwrap_err()
@@ -1836,6 +1931,20 @@ class RunClient:
             "POST", ("v1", "agents", agent_id, "runs", run_id, "resume"), {}
         )
 
+    def cancel_agent_run(
+        self, agent_id: str, run_id: str
+    ) -> Result[Dict[str, Any], Error]:
+        """Request cooperative cancellation through the host callback seam."""
+        identifier_error = _validate_agent_identifier(agent_id, "agent_id")
+        if identifier_error is not None:
+            return Result.err(identifier_error)
+        run_error = _validate_agent_identifier(run_id, "run_id")
+        if run_error is not None:
+            return Result.err(run_error)
+        return self._request(
+            "POST", ("v1", "agents", agent_id, "runs", run_id, "cancel"), {}
+        )
+
     def create_handoff(self, record: HandoffRecord) -> Result[Dict[str, Any], Error]:
         """Create or idempotently retrieve a remote digest-only handoff record."""
         if not isinstance(record, HandoffRecord):
@@ -2142,6 +2251,7 @@ class RunClient:
 __all__ = [
     "AgentRegistry",
     "AgentRun",
+    "AgentRunCancelHandler",
     "AgentRunHandler",
     "RunClient",
     "RunServer",

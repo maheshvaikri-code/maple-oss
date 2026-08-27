@@ -80,30 +80,30 @@ from .autonomy.events import (
     HttpEventExporter,
     RedactionPolicy,
 )
-from .autonomy.interactions import (
-    FileHumanInputStore,
-    HumanInputAuthorizer,
-    HumanInputDecision,
-    HumanInputNotification,
-    HumanInputNotifier,
-    HumanInputRound,
-    HumanInputRequest,
-    HumanInputStore,
-    InMemoryHumanInputStore,
-)
 from .autonomy.execution import (
     CancellationToken,
     ExecutionExecutor,
     ExecutionPolicy,
     TrustedLocalExecutor,
 )
-from .autonomy.interop import InteropEnvelope, round_trip_json
 from .autonomy.handoffs import (
     FileHandoffStore,
     HandoffRecord,
     HandoffStore,
     InMemoryHandoffStore,
 )
+from .autonomy.interactions import (
+    FileHumanInputStore,
+    HumanInputAuthorizer,
+    HumanInputDecision,
+    HumanInputNotification,
+    HumanInputNotifier,
+    HumanInputRequest,
+    HumanInputRound,
+    HumanInputStore,
+    InMemoryHumanInputStore,
+)
+from .autonomy.interop import InteropEnvelope, round_trip_json
 from .autonomy.memory import MemoryManager
 from .autonomy.observability import SpanRecorder, TraceSpan
 from .autonomy.orchestrator import AgentOrchestrator
@@ -141,6 +141,7 @@ from .autonomy.runs import (
 from .autonomy.server import (
     AgentRegistry,
     AgentRun,
+    AgentRunCancelHandler,
     AgentRunHandler,
     AgentRunResumeHandler,
     RunClient,
@@ -173,12 +174,12 @@ from .autonomy.workflow import (
     FileCheckpointStore,
     HistoryCheckpointStore,
     InMemoryCheckpointStore,
+    RetryPolicy,
     Workflow,
     WorkflowCheckpoint,
     WorkflowContext,
     WorkflowPause,
     WorkflowRun,
-    RetryPolicy,
 )
 from .broker.broker import MessageBroker
 from .communication.streaming import Stream, StreamOptions
@@ -381,6 +382,7 @@ __all__ = [
     "AgentRegistry",
     "AgentRun",
     "AgentRunHandler",
+    "AgentRunCancelHandler",
     "AgentRunResumeHandler",
     "DEFAULT_MAX_RECORD_BYTES",
     "DEFAULT_MAX_RECORDS",
