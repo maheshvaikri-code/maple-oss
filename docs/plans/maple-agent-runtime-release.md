@@ -173,7 +173,6 @@ indexes, provider lifecycle, timeout/retry, and semantic faithfulness to
 separate contracts.
 
 ## Slice 123 closure
-## Slice 123 closure
 
 2026-08-27: Slice 123 is behaviorally and package-gate complete. The explicit
 host-owned `cancel_handler` is an additive callback on `AgentRegistry`; the
