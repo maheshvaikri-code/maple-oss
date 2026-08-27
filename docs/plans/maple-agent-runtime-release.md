@@ -135,7 +135,24 @@
 
 | 118 | Bounded authenticated agent-run transport | Chief Architect / Backend / Security / QA / Release | `docs/adr/064-*`, `maple/autonomy/server.py`, autonomy exports, server/client regressions, API/README/parity docs, changelog, QA/review evidence | Optional host-owned `AgentRegistry` and dependency-free `RunClient.run_agent(...)` route with bounded task/context/session/run inputs, bearer authentication, typed JSON-safe `AgentRun` envelopes, identity binding, and handler exception redaction; no retries, remote persistence, cancellation, scheduling, or exactly-once effects | done: focused `14 passed in 5.68s`; autonomy `338 passed in 7.52s`; tracked `1300 passed, 1 skipped in 212.14s`; Black/Ruff/changed-boundary mypy/compile/diff/doctor pass; clean archive candidate `a6e3575` build/Twine exit `0`, sdist `538` entries, required files `6/6`, wheel `104` entries, no-dependency export smoke pass; QA and code review pass; environment-wide dependency-governance veto remains; remote durable handoff remains separate |
 | 119 | Bounded authenticated handoff transport | Chief Architect / Backend / Security / QA / Release | `docs/adr/065-*`, `maple/autonomy/server.py`, autonomy exports, server/client regressions, API/README/parity docs, changelog, QA/review evidence | Optional host-owned `HandoffStore` and dependency-free authenticated routes for digest-only create/inspect/list/accept/complete/fail transitions; existing store validation, ownership, terminal state, and file fencing remain authoritative; no raw payload delivery, principal scopes, retries, scheduling, or exactly-once effects | done: focused `16 passed in 6.24s`; autonomy `340 passed in 9.27s`; tracked `1302 passed, 1 skipped in 214.52s`; Black/Ruff/changed-boundary mypy/compile/diff/doctor pass; clean archive candidate `cafff3c` build/Twine exit `0`, sdist `541` entries, required files `6/6`, wheel `104` entries, no-dependency export smoke pass; QA and code review pass; environment-wide dependency-governance veto remains; remote payload delivery and principal scopes remain separate |
-| 120 | Bounded authenticated durable agent-run inspection and resume | Chief Architect / Backend / Security / QA / Release | `docs/adr/066-*`, `maple/autonomy/server.py`, autonomy exports, server/client regressions, API/README/parity docs, changelog, QA/review evidence | Optional `AgentRunStore` checkpoint summaries omit messages/reasoning trace; explicit `AgentRunResumeHandler` callback enables authenticated resume; agent identity is checked, callback results use the existing JSON-safe envelope, and missing store/callback/cross-agent run fail closed; no scheduler, cancellation, retries, principal scopes, remote aggregation, or exactly-once effects | in progress |
+| 120 | Bounded authenticated durable agent-run inspection and resume | Chief Architect / Backend / Security / QA / Release | `docs/adr/066-*`, `maple/autonomy/server.py`, autonomy exports, server/client regressions, API/README/parity docs, changelog, QA/review evidence | Optional `AgentRunStore` checkpoint summaries omit messages/reasoning trace; explicit `AgentRunResumeHandler` callback enables authenticated resume; agent identity is checked, callback results use the existing JSON-safe envelope, and missing store/callback/cross-agent run fail closed; no scheduler, cancellation, retries, principal scopes, remote aggregation, or exactly-once effects | done: focused `18 passed in 10.19s`; autonomy `342 passed in 14.06s`; tracked `1304 passed, 1 skipped in 224.03s`; Black/Ruff/changed-boundary mypy/compile/diff/doctor pass; clean archive candidate `9d1d7aa` build/Twine exit `0`, sdist `505` entries, required files `6/6`, wheel `104` entries, no-dependency export smoke pass; QA and code review pass; environment-wide dependency-governance veto remains; scheduling, cancellation, retries, principal scopes, remote aggregation, and exactly-once effects remain separate |
+
+## Slice 120 closure
+
+2026-08-27: Slice 120 is behaviorally and package-gate complete. The focused
+server suite reports `18 passed in 10.19s`; the full autonomy suite reports
+`342 passed in 14.06s`; the exact tracked application manifest reports `1304
+passed, 1 skipped in 224.03s` across 108 tracked test files. Black, Ruff,
+changed-boundary mypy, compile, diff, and network-free doctor checks pass. A
+clean archive candidate from `9d1d7aa` builds wheel and sdist successfully,
+both Twine checks pass, the sdist has `505` entries, the wheel has `104`
+members, required public files are `6/6`, and a fresh no-dependency install
+imports the durable agent transport exports. The declared-project dependency
+audit reports no known vulnerabilities; the separate environment-wide audit
+remains a release veto with `383` findings across `77` packages. No publication
+or website change was performed. Inspection is redacted and resume is only
+available through an explicit host callback; scheduling, cancellation, retries,
+principal scopes, remote aggregation, and exactly-once effects remain separate.
 
 ## Slice 119 closure
 
