@@ -485,11 +485,15 @@ def _validate_event_record(event: Any) -> Optional[Error]:
             "EVENT_JOURNAL_RECORD_INVALID",
             "event_type must be bounded and contain no control characters.",
         )
-    if (
-        not isinstance(event.timestamp, (int, float))
-        or isinstance(event.timestamp, bool)
-        or not math.isfinite(float(event.timestamp))
-    ):
+    timestamp_valid = isinstance(event.timestamp, (int, float)) and not isinstance(
+        event.timestamp, bool
+    )
+    if timestamp_valid:
+        try:
+            timestamp_valid = math.isfinite(float(event.timestamp))
+        except (OverflowError, ValueError):
+            timestamp_valid = False
+    if not timestamp_valid:
         return _error(
             "EVENT_JOURNAL_RECORD_INVALID",
             "event timestamp must be finite.",
@@ -610,9 +614,12 @@ class FileEventJournal:
                     )
                 )
             data = json.loads(self.path.read_text(encoding="utf-8"))
+            version = data.get("version") if isinstance(data, Mapping) else None
             if (
                 not isinstance(data, Mapping)
-                or data.get("version") != _EVENT_JOURNAL_VERSION
+                or not isinstance(version, int)
+                or isinstance(version, bool)
+                or version != _EVENT_JOURNAL_VERSION
             ):
                 return Result.err(
                     _error(

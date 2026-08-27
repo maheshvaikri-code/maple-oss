@@ -394,6 +394,26 @@ def test_file_event_journal_rejects_malformed_state_and_bounds_writes(tmp_path):
         EventStream(max_events=2, journal=FileEventJournal(tmp_path, max_events=2))
 
 
+def test_file_event_journal_rejects_nonfinite_and_unrepresentable_records(tmp_path):
+    journal = FileEventJournal(tmp_path, max_events=2)
+
+    nonfinite = journal.append(
+        AgentEvent(sequence=1, event_type="bad", timestamp=math.inf, payload={})
+    )
+    oversized_timestamp = journal.append(
+        AgentEvent(sequence=1, event_type="bad", timestamp=10**400, payload={})
+    )
+
+    assert nonfinite.is_err()
+    assert nonfinite.unwrap_err()["errorType"] == "EVENT_JOURNAL_RECORD_INVALID"
+    assert oversized_timestamp.is_err()
+    assert (
+        oversized_timestamp.unwrap_err()["errorType"]
+        == "EVENT_JOURNAL_RECORD_INVALID"
+    )
+    assert not journal.path.exists()
+
+
 def test_journal_failure_prevents_callbacks_and_memory_publication():
     class BrokenJournal:
         max_events = 10
