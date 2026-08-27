@@ -10,6 +10,13 @@
 
 ### Additions
 
+- **Bounded authenticated handoff transport**: the dependency-free
+  `RunServer`/`RunClient` contract can expose a host-owned `HandoffStore` for
+  digest-only create, inspect, list, accept, complete, and fail transitions.
+  Existing validation, ownership conflicts, terminal state, and file-backed
+  fencing remain authoritative; raw task/context delivery, principal scopes,
+  retries, scheduling, and exactly-once external effects remain outside the
+  contract.
 - **Bounded authenticated agent-run transport**: hosts can register named
   synchronous agent handlers with `AgentRegistry` and invoke them through the
   dependency-free `RunServer`/`RunClient` contract. Task/context/session/run

@@ -16,6 +16,7 @@ from urllib.parse import quote, unquote, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
 from ..core.result import Result
+from .handoffs import HandoffRecord, HandoffStore
 from .interactions import HumanInputRequest, HumanInputStore
 from .workflow import Workflow, WorkflowRun
 
@@ -26,6 +27,7 @@ _DEFAULT_MAX_BODY_BYTES = 1 * 1024 * 1024
 _DEFAULT_MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 _DEFAULT_CLIENT_TIMEOUT_SECONDS = 10.0
 _MAX_HUMAN_INPUT_LIMIT = 1_000
+_MAX_HANDOFF_LIMIT = 100
 _MAX_AGENTS = 64
 _MAX_AGENT_IDENTIFIER_BYTES = 256
 _MAX_AGENT_TASK_BYTES = 8 * 1024
@@ -227,6 +229,10 @@ def _agent_run_to_dict(run: AgentRun) -> Dict[str, Any]:
         "result": run.result,
         "error": run.error,
     }
+
+
+def _handoff_to_dict(record: HandoffRecord) -> Dict[str, Any]:
+    return cast(Dict[str, Any], record.to_dict())
 
 
 class AgentRegistry:
@@ -479,7 +485,12 @@ def _run_to_dict(run: WorkflowRun) -> Dict[str, Any]:
 
 def _status_for_error(error: Error) -> int:
     error_type = error.get("errorType")
-    if error_type in {"RUN_NOT_FOUND", "WORKFLOW_NOT_FOUND", "AGENT_NOT_FOUND"}:
+    if error_type in {
+        "RUN_NOT_FOUND",
+        "WORKFLOW_NOT_FOUND",
+        "AGENT_NOT_FOUND",
+        "HANDOFF_NOT_FOUND",
+    }:
         return 404
     if error_type == "HUMAN_INPUT_NOT_FOUND":
         return 404
@@ -490,6 +501,9 @@ def _status_for_error(error: Error) -> int:
         "HUMAN_INPUT_NOT_READY",
         "HUMAN_INPUT_ROUND_CONFLICT",
         "HUMAN_INPUT_ROUND_LIMIT",
+        "HANDOFF_CONFLICT",
+        "HANDOFF_STATE_CONFLICT",
+        "HANDOFF_OWNER_ERROR",
     }:
         return 409
     if error_type in {
@@ -503,6 +517,9 @@ def _status_for_error(error: Error) -> int:
         "INVALID_JSON",
         "REQUEST_BODY_INVALID",
         "WORKFLOW_MISMATCH",
+        "HANDOFF_INPUT_INVALID",
+        "HANDOFF_LIMIT_INVALID",
+        "HANDOFF_RECORD_INVALID",
         "HUMAN_INPUT_IDENTIFIER_INVALID",
         "HUMAN_INPUT_ACTOR_INVALID",
         "HUMAN_INPUT_LIMIT_INVALID",
@@ -669,6 +686,8 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 and path[3] == "runs"
             ):
                 self._run_agent(path[2])
+                return
+            if self._handoff_route(method, path):
                 return
             if self._interaction_route(method, path):
                 return
@@ -961,6 +980,116 @@ class _RequestHandler(BaseHTTPRequestHandler):
             return
         self._write_json(201, {"run": _agent_run_to_dict(result.unwrap())})
 
+    def _handoff_route(self, method: str, path: Tuple[str, ...]) -> bool:
+        store = self.server.application.handoff_store
+        if not path or path[0:2] != ("v1", "handoffs"):
+            return False
+        if store is None:
+            self._write_error(
+                503,
+                _error(
+                    "HANDOFF_STORE_UNAVAILABLE",
+                    "No handoff store is configured.",
+                ),
+            )
+            return True
+        if method == "POST" and path == ("v1", "handoffs"):
+            self._create_handoff(store)
+            return True
+        if method == "GET" and len(path) == 4 and path[2] == "open":
+            try:
+                limit = int(path[3])
+            except ValueError:
+                self._write_error(
+                    400,
+                    _error("HANDOFF_LIMIT_INVALID", "list limit must be an integer."),
+                )
+                return True
+            result = store.list_open(limit)
+            if result.is_err():
+                self._write_error(
+                    _status_for_error(result.unwrap_err()), result.unwrap_err()
+                )
+                return True
+            self._write_json(
+                200,
+                {"handoffs": [_handoff_to_dict(record) for record in result.unwrap()]},
+            )
+            return True
+        if method == "GET" and len(path) == 3:
+            result = store.get(path[2])
+            if result.is_err():
+                self._write_error(
+                    _status_for_error(result.unwrap_err()), result.unwrap_err()
+                )
+                return True
+            record = result.unwrap()
+            if record is None:
+                self._write_error(
+                    404, _error("HANDOFF_NOT_FOUND", "handoff was not found.")
+                )
+                return True
+            self._write_json(200, {"handoff": _handoff_to_dict(record)})
+            return True
+        if (
+            method == "POST"
+            and len(path) == 4
+            and path[3]
+            in {
+                "accept",
+                "complete",
+                "fail",
+            }
+        ):
+            self._mutate_handoff(store, path[2], path[3])
+            return True
+        self._write_error(404, _error("NOT_FOUND", "Handoff route was not found."))
+        return True
+
+    def _create_handoff(self, store: HandoffStore) -> None:
+        body = self._read_body()
+        raw_record = body.get("record")
+        if not isinstance(raw_record, Mapping):
+            self._write_error(
+                400,
+                _error("HANDOFF_RECORD_INVALID", "record must be an object."),
+            )
+            return
+        try:
+            record = HandoffRecord.from_dict(raw_record)
+        except (TypeError, ValueError, KeyError):
+            self._write_error(
+                400,
+                _error("HANDOFF_RECORD_INVALID", "record is not a valid handoff."),
+            )
+            return
+        result = store.create(record)
+        self._write_handoff_result(result, success_status=201)
+
+    def _mutate_handoff(
+        self, store: HandoffStore, handoff_id: str, action: str
+    ) -> None:
+        body = self._read_body()
+        target_agent_id = body.get("target_agent_id")
+        if action == "accept":
+            result = store.accept(handoff_id, target_agent_id)
+        elif action == "complete":
+            result = store.complete(
+                handoff_id, target_agent_id, body.get("target_goal_id")
+            )
+        else:
+            result = store.fail(handoff_id, target_agent_id, body.get("error_type"))
+        self._write_handoff_result(result, success_status=200)
+
+    def _write_handoff_result(
+        self, result: Result[HandoffRecord, Error], *, success_status: int
+    ) -> None:
+        if result.is_err():
+            error = result.unwrap_err()
+            self._write_error(_status_for_error(error), error)
+            return
+        self._write_json(success_status, {"handoff": _handoff_to_dict(result.unwrap())})
+
     def _resume(self, workflow_name: str, run_id: str) -> None:
         body = self._read_body()
         result = self.server.application.registry.resume(
@@ -1051,6 +1180,7 @@ class RunServer:
         auth_token: Optional[str] = None,
         human_input_store: Optional[HumanInputStore] = None,
         agent_registry: Optional[AgentRegistry] = None,
+        handoff_store: Optional[HandoffStore] = None,
     ) -> None:
         if not isinstance(registry, WorkflowRegistry):
             raise TypeError("registry must be a WorkflowRegistry")
@@ -1097,6 +1227,27 @@ class RunServer:
                 raise ValueError(
                     "auth_token is required when agent_registry is configured"
                 )
+        if handoff_store is not None:
+            if auth_token is None:
+                raise ValueError(
+                    "auth_token is required when handoff_store is configured"
+                )
+            handoff_required_methods = (
+                "create",
+                "get",
+                "accept",
+                "complete",
+                "fail",
+                "list_open",
+            )
+            if any(
+                not callable(getattr(handoff_store, name, None))
+                for name in handoff_required_methods
+            ):
+                raise TypeError(
+                    "handoff_store must implement create, get, accept, complete, "
+                    "fail, and list_open"
+                )
         self.registry = registry
         self.host = host
         self.port = port
@@ -1105,6 +1256,7 @@ class RunServer:
         self._auth_token = auth_token
         self.human_input_store = human_input_store
         self.agent_registry = agent_registry
+        self.handoff_store = handoff_store
         self._server: Optional[_MAPLEHTTPServer] = None
         self._thread: Optional[threading.Thread] = None
 
@@ -1280,6 +1432,65 @@ class RunClient:
         if run_id is not None:
             body["run_id"] = run_id
         return self._request("POST", ("v1", "agents", agent_id, "runs"), body)
+
+    def create_handoff(self, record: HandoffRecord) -> Result[Dict[str, Any], Error]:
+        """Create or idempotently retrieve a remote digest-only handoff record."""
+        if not isinstance(record, HandoffRecord):
+            return Result.err(
+                _error("HANDOFF_RECORD_INVALID", "record must be a HandoffRecord.")
+            )
+        return self._request("POST", ("v1", "handoffs"), {"record": record.to_dict()})
+
+    def get_handoff(self, handoff_id: str) -> Result[Dict[str, Any], Error]:
+        """Inspect one remote digest-only handoff record."""
+        return self._request("GET", ("v1", "handoffs", handoff_id))
+
+    def list_open_handoffs(
+        self, limit: int = _MAX_HANDOFF_LIMIT
+    ) -> Result[Dict[str, Any], Error]:
+        """List bounded pending or accepted remote handoff records."""
+        if (
+            not isinstance(limit, int)
+            or isinstance(limit, bool)
+            or not 0 < limit <= _MAX_HANDOFF_LIMIT
+        ):
+            return Result.err(
+                _error("HANDOFF_LIMIT_INVALID", "list limit is out of bounds.")
+            )
+        return self._request("GET", ("v1", "handoffs", "open", str(limit)))
+
+    def accept_handoff(
+        self, handoff_id: str, target_agent_id: str
+    ) -> Result[Dict[str, Any], Error]:
+        """Transfer a pending handoff to its target owner."""
+        return self._request(
+            "POST",
+            ("v1", "handoffs", handoff_id, "accept"),
+            {"target_agent_id": target_agent_id},
+        )
+
+    def complete_handoff(
+        self, handoff_id: str, target_agent_id: str, target_goal_id: str
+    ) -> Result[Dict[str, Any], Error]:
+        """Complete an accepted handoff and return ownership to its source."""
+        return self._request(
+            "POST",
+            ("v1", "handoffs", handoff_id, "complete"),
+            {
+                "target_agent_id": target_agent_id,
+                "target_goal_id": target_goal_id,
+            },
+        )
+
+    def fail_handoff(
+        self, handoff_id: str, target_agent_id: str, error_type: str
+    ) -> Result[Dict[str, Any], Error]:
+        """Fail an accepted handoff and return ownership to its source."""
+        return self._request(
+            "POST",
+            ("v1", "handoffs", handoff_id, "fail"),
+            {"target_agent_id": target_agent_id, "error_type": error_type},
+        )
 
     def resume(
         self,

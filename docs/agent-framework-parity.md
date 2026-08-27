@@ -59,6 +59,13 @@ JSON-safe results, and handler exceptions are bounded and typed. No remote
 result persistence, cancellation, resume, scheduling, retries, or exactly-once
 effect guarantee is implied.
 
+Remote handoff identity now has an optional authenticated `RunServer`/
+`RunClient` control plane over the existing digest-only `HandoffStore`.
+Create, inspect, list, accept, complete, and fail transitions retain the
+store's ownership and fencing semantics; raw task/context delivery, per-agent
+principal scopes, notifications, retries, and exactly-once effects remain
+separate.
+
 The bounded session contract now also includes optional host-supplied summary
 compaction with a retained recent tail and optimistic version checks on the
 built-in memory/file stores. Automatic or token-aware LLM summarization,

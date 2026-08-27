@@ -1723,6 +1723,41 @@ no remote persistence, cancellation, resume, scheduling, duplicate
 suppression, or exactly-once side-effect guarantee. The host owns those
 policies and must adapt asynchronous agents explicitly.
 
+### Handoff HTTP transport
+
+When `handoff_store=...` is configured, `RunServer` exposes the existing
+digest-only `HandoffStore` state machine through `RunClient`. Configuration
+requires a server bearer token:
+
+```python
+from maple import HandoffRecord, InMemoryHandoffStore, RunClient, RunServer
+
+handoffs = InMemoryHandoffStore()
+record = HandoffRecord.pending(
+    "handoff-1", "source", "target", "a" * 64, "b" * 64
+)
+
+with RunServer(registry, handoff_store=handoffs, auth_token="local-token") as server:
+    client = RunClient(server.url, auth_token="local-token")
+    created = client.create_handoff(record)
+    accepted = client.accept_handoff("handoff-1", "target")
+    completed = client.complete_handoff("handoff-1", "target", "goal-1")
+    assert completed.is_ok()
+```
+
+The contract provides `create_handoff(record)`, `get_handoff(id)`,
+`list_open_handoffs(limit)`, `accept_handoff(id, target_agent_id)`,
+`complete_handoff(id, target_agent_id, target_goal_id)`, and
+`fail_handoff(id, target_agent_id, error_type)`. Routes return digest-only
+`HandoffRecord` envelopes; task and context contents are never transmitted.
+The store remains authoritative for state, ownership, validation, and file
+fencing. The bearer token authenticates transport access but does not create a
+per-agent principal or authorization scope. Missing stores return `503`,
+invalid records/limits return `400`, missing records return `404`, and state or
+owner conflicts return `409`. No retries, queueing, notifications,
+cancellation, scheduling, payload delivery, or exactly-once effect guarantee
+is provided.
+
 ## Usage Example
 
 ```python

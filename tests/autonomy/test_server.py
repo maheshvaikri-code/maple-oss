@@ -9,8 +9,10 @@ import pytest
 from maple.autonomy import (
     AgentRegistry,
     AgentRun,
+    HandoffRecord,
     HumanInputRequest,
     InMemoryHumanInputStore,
+    InMemoryHandoffStore,
     InMemoryCheckpointStore,
     RunClient,
     RunServer,
@@ -465,3 +467,71 @@ def test_agent_registry_rejects_result_identity_and_non_json_values():
     assert invalid.unwrap_err()["errorType"] == "AGENT_RESULT_INVALID"
     assert malformed.is_err()
     assert malformed.unwrap_err()["errorType"] == "AGENT_RESULT_INVALID"
+
+
+def test_authenticated_handoff_transport_preserves_store_ownership_state():
+    store = InMemoryHandoffStore()
+    record = HandoffRecord.pending(
+        "remote-handoff",
+        "source",
+        "target",
+        "a" * 64,
+        "b" * 64,
+    )
+    with pytest.raises(ValueError):
+        RunServer(WorkflowRegistry(), handoff_store=store)
+
+    server = RunServer(
+        WorkflowRegistry(),
+        handoff_store=store,
+        auth_token="handoff-token",
+    )
+    base_url = server.start()
+    try:
+        client = RunClient(base_url, auth_token="handoff-token")
+        created = client.create_handoff(record)
+        listed = client.list_open_handoffs(10)
+        inspected = client.get_handoff("remote-handoff")
+        wrong_owner = client.accept_handoff("remote-handoff", "other")
+        accepted = client.accept_handoff("remote-handoff", "target")
+        completed = client.complete_handoff("remote-handoff", "target", "target-goal")
+        unauthorized = RunClient(base_url).list_open_handoffs()
+    finally:
+        server.close()
+
+    assert created.is_ok()
+    assert created.unwrap()["handoff"]["status"] == "pending"
+    assert listed.is_ok()
+    assert listed.unwrap()["handoffs"][0]["handoff_id"] == "remote-handoff"
+    assert inspected.is_ok()
+    assert inspected.unwrap()["handoff"]["task_digest"] == "a" * 64
+    assert "secret task" not in str(inspected.unwrap())
+    assert wrong_owner.is_err()
+    assert wrong_owner.unwrap_err()["errorType"] == "HANDOFF_OWNER_ERROR"
+    assert accepted.is_ok()
+    assert accepted.unwrap()["handoff"]["owner_id"] == "target"
+    assert completed.is_ok()
+    assert completed.unwrap()["handoff"]["status"] == "completed"
+    assert completed.unwrap()["handoff"]["owner_id"] == "source"
+    assert unauthorized.is_err()
+    assert unauthorized.unwrap_err()["errorType"] == "UNAUTHORIZED"
+
+
+def test_handoff_transport_fails_closed_without_store_and_bounds_client_inputs():
+    server = RunServer(WorkflowRegistry(), auth_token="token")
+    base_url = server.start()
+    try:
+        unavailable = RunClient(base_url, auth_token="token").list_open_handoffs()
+    finally:
+        server.close()
+
+    client = RunClient("http://127.0.0.1:1", timeout_seconds=0.1)
+    bad_record = client.create_handoff(object())  # type: ignore[arg-type]
+    bad_limit = client.list_open_handoffs(0)
+
+    assert unavailable.is_err()
+    assert unavailable.unwrap_err()["errorType"] == "HANDOFF_STORE_UNAVAILABLE"
+    assert bad_record.is_err()
+    assert bad_record.unwrap_err()["errorType"] == "HANDOFF_RECORD_INVALID"
+    assert bad_limit.is_err()
+    assert bad_limit.unwrap_err()["errorType"] == "HANDOFF_LIMIT_INVALID"
