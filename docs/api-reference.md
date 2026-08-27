@@ -1749,6 +1749,42 @@ one-time consumption. A server without a configured store returns `503` for
 these routes. This is a loopback transport contract, not a hosted operator
 service or automatic run scheduler.
 
+When `approval_store=...` is configured, the same authenticated contract
+exposes bounded approval control through `RunServer` and `RunClient`:
+
+```python
+from maple import InMemoryApprovalStore, RunClient, RunServer
+
+approvals = InMemoryApprovalStore()
+approvals.create(approval_request)
+
+with RunServer(
+    registry,
+    approval_store=approvals,
+    auth_token="approval-token",
+) as server:
+    client = RunClient(server.url, auth_token="approval-token")
+    pending = client.list_pending_approvals(limit=25)
+    inspected = client.get_approval(approval_request.approval_id)
+    decided = client.decide_approval(
+        approval_request.approval_id,
+        approved=True,
+        edited_arguments={"value": "operator-approved"},
+    )
+```
+
+These calls map to `GET /v1/approvals/pending/<limit>`,
+`GET /v1/approvals/<approval_id>`, and
+`POST /v1/approvals/<approval_id>/decide`. The response is the bounded
+JSON-safe `ApprovalRequest` envelope, including tool arguments and any recorded
+terminal outcome; hosts must apply appropriate bearer-token scope, TLS,
+retention, and sensitive-data controls. Invalid IDs, limits, decisions, and
+edited arguments fail before mutation; missing stores return `503`, missing
+records return `404`, and store conflicts preserve their typed `409` errors.
+The route only records the decision. It does not consume or execute the
+approval, retry a request, schedule a run, or provide hosted identity,
+notifications, tenancy, or exactly-once effects.
+
 ### Agent run HTTP transport
 
 `AgentRegistry` and `RunClient.run_agent(...)` provide a bounded, authenticated

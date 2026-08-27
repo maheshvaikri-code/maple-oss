@@ -16,6 +16,7 @@ from urllib.parse import parse_qsl, quote, unquote, urlencode, urlsplit, urlunsp
 from urllib.request import Request, urlopen
 
 from ..core.result import Result
+from .approval import ApprovalRequest, ApprovalStore
 from .events import EventCursor, EventStream
 from .handoffs import HandoffRecord, HandoffStore
 from .interactions import HumanInputRequest, HumanInputStore
@@ -31,6 +32,7 @@ _MAX_EARLY_BODY_DISCARD_BYTES = 64 * 1024
 _DEFAULT_CLIENT_TIMEOUT_SECONDS = 10.0
 _MAX_EVENT_READ_LIMIT = 1_000
 _MAX_HUMAN_INPUT_LIMIT = 1_000
+_MAX_APPROVAL_LIMIT = 100
 _MAX_HANDOFF_LIMIT = 100
 _MAX_AGENTS = 64
 _MAX_AGENT_IDENTIFIER_BYTES = 256
@@ -643,6 +645,7 @@ def _status_for_error(error: Error) -> int:
         "WORKFLOW_NOT_FOUND",
         "AGENT_NOT_FOUND",
         "HANDOFF_NOT_FOUND",
+        "APPROVAL_NOT_FOUND",
     }:
         return 404
     if error_type == "HUMAN_INPUT_NOT_FOUND":
@@ -664,6 +667,8 @@ def _status_for_error(error: Error) -> int:
         "HANDOFF_CONFLICT",
         "HANDOFF_STATE_CONFLICT",
         "HANDOFF_OWNER_ERROR",
+        "APPROVAL_CONFLICT",
+        "APPROVAL_LEASE_ERROR",
         "EVENT_CURSOR_EXPIRED",
     }:
         return 409
@@ -683,6 +688,8 @@ def _status_for_error(error: Error) -> int:
         "HANDOFF_INPUT_INVALID",
         "HANDOFF_LIMIT_INVALID",
         "HANDOFF_RECORD_INVALID",
+        "APPROVAL_LIMIT_INVALID",
+        "APPROVAL_DECISION_INVALID",
         "HUMAN_INPUT_IDENTIFIER_INVALID",
         "HUMAN_INPUT_ACTOR_INVALID",
         "HUMAN_INPUT_LIMIT_INVALID",
@@ -713,6 +720,8 @@ def _status_for_error(error: Error) -> int:
     if error_type == "AGENT_CANCEL_UNAVAILABLE":
         return 501
     if error_type == "HUMAN_INPUT_STORE_UNAVAILABLE":
+        return 503
+    if error_type == "APPROVAL_STORE_UNAVAILABLE":
         return 503
     if error_type == "HUMAN_INPUT_MULTI_ROUND_UNSUPPORTED":
         return 501
@@ -893,6 +902,8 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 return
             if self._interaction_route(method, path):
                 return
+            if self._approval_route(method, path):
+                return
             if (
                 method == "GET"
                 and len(path) == 5
@@ -1008,6 +1019,108 @@ class _RequestHandler(BaseHTTPRequestHandler):
             return True
         self._write_error(404, _error("NOT_FOUND", "Interaction route was not found."))
         return True
+
+    def _approval_route(self, method: str, path: Tuple[str, ...]) -> bool:
+        store = self.server.application.approval_store
+        if not path or path[0:2] != ("v1", "approvals"):
+            return False
+        if store is None:
+            self._write_error(
+                503,
+                _error(
+                    "APPROVAL_STORE_UNAVAILABLE",
+                    "No approval store is configured.",
+                ),
+            )
+            return True
+        if method == "GET" and len(path) == 4 and path[2] == "pending":
+            try:
+                limit = int(path[3])
+            except ValueError:
+                self._write_error(
+                    400,
+                    _error(
+                        "APPROVAL_LIMIT_INVALID",
+                        "Approval list limit must be an integer.",
+                    ),
+                )
+                return True
+            result = store.list_pending(limit)
+            if result.is_err():
+                self._write_error(
+                    _status_for_error(result.unwrap_err()), result.unwrap_err()
+                )
+                return True
+            self._write_json(
+                200,
+                {
+                    "approvals": [
+                        self._approval_to_dict(item) for item in result.unwrap()
+                    ]
+                },
+            )
+            return True
+        if method == "GET" and len(path) == 3:
+            result = store.get(path[2])
+            if result.is_err():
+                self._write_error(
+                    _status_for_error(result.unwrap_err()), result.unwrap_err()
+                )
+                return True
+            request = result.unwrap()
+            if request is None:
+                self._write_error(
+                    404,
+                    _error("APPROVAL_NOT_FOUND", "Approval request was not found."),
+                )
+                return True
+            self._write_json(200, {"approval": self._approval_to_dict(request)})
+            return True
+        if method == "POST" and len(path) == 4 and path[3] == "decide":
+            self._mutate_approval(store, path[2])
+            return True
+        self._write_error(404, _error("NOT_FOUND", "Approval route was not found."))
+        return True
+
+    @staticmethod
+    def _approval_to_dict(request: ApprovalRequest) -> Dict[str, Any]:
+        return cast(Dict[str, Any], request.to_dict())
+
+    def _mutate_approval(self, store: ApprovalStore, approval_id: str) -> None:
+        body = self._read_body()
+        approved = body.get("approved")
+        if type(approved) is not bool:
+            self._write_error(
+                400,
+                _error("APPROVAL_DECISION_INVALID", "approved must be boolean."),
+            )
+            return
+        edited_arguments = body.get("edited_arguments")
+        if edited_arguments is not None and not isinstance(edited_arguments, Mapping):
+            self._write_error(
+                400,
+                _error(
+                    "APPROVAL_DECISION_INVALID",
+                    "edited_arguments must be an object or null.",
+                ),
+            )
+            return
+        result = store.decide(
+            approval_id,
+            approved,
+            edited_arguments=(
+                dict(edited_arguments) if edited_arguments is not None else None
+            ),
+        )
+        if result.is_err():
+            self._write_error(
+                _status_for_error(result.unwrap_err()), result.unwrap_err()
+            )
+            return
+        self._write_json(
+            200,
+            {"approval": self._approval_to_dict(result.unwrap())},
+        )
 
     @staticmethod
     def _interaction_to_dict(request: HumanInputRequest) -> Dict[str, Any]:
@@ -1573,6 +1686,7 @@ class RunServer:
         max_body_bytes: int = _DEFAULT_MAX_BODY_BYTES,
         max_response_bytes: int = _DEFAULT_MAX_RESPONSE_BYTES,
         auth_token: Optional[str] = None,
+        approval_store: Optional[ApprovalStore] = None,
         human_input_store: Optional[HumanInputStore] = None,
         agent_registry: Optional[AgentRegistry] = None,
         agent_run_store: Optional[AgentRunStore] = None,
@@ -1603,6 +1717,19 @@ class RunServer:
         ):
             raise ValueError("server limits must be positive integers")
         _validate_auth_token(auth_token)
+        if approval_store is not None:
+            if auth_token is None:
+                raise ValueError(
+                    "auth_token is required when approval_store is configured"
+                )
+            approval_required_methods = ("get", "list_pending", "decide")
+            if any(
+                not callable(getattr(approval_store, name, None))
+                for name in approval_required_methods
+            ):
+                raise TypeError(
+                    "approval_store must implement get, list_pending, and decide"
+                )
         if human_input_store is not None:
             if auth_token is None:
                 raise ValueError(
@@ -1668,6 +1795,7 @@ class RunServer:
         self.max_body_bytes = max_body_bytes
         self.max_response_bytes = max_response_bytes
         self._auth_token = auth_token
+        self.approval_store = approval_store
         self.human_input_store = human_input_store
         self.agent_registry = agent_registry
         self.agent_run_store = agent_run_store
@@ -1943,6 +2071,52 @@ class RunClient:
             return Result.err(run_error)
         return self._request(
             "POST", ("v1", "agents", agent_id, "runs", run_id, "cancel"), {}
+        )
+
+    def list_pending_approvals(
+        self, limit: int = _MAX_APPROVAL_LIMIT
+    ) -> Result[Dict[str, Any], Error]:
+        """List bounded pending approval requests from the remote host."""
+        if (
+            not isinstance(limit, int)
+            or isinstance(limit, bool)
+            or not 0 < limit <= _MAX_APPROVAL_LIMIT
+        ):
+            return Result.err(
+                _error(
+                    "APPROVAL_LIMIT_INVALID", "Approval list limit is out of bounds."
+                )
+            )
+        return self._request("GET", ("v1", "approvals", "pending", str(limit)))
+
+    def get_approval(self, approval_id: str) -> Result[Dict[str, Any], Error]:
+        """Inspect one remote approval request."""
+        return self._request("GET", ("v1", "approvals", approval_id))
+
+    def decide_approval(
+        self,
+        approval_id: str,
+        approved: bool,
+        *,
+        edited_arguments: Optional[Mapping[str, Any]] = None,
+    ) -> Result[Dict[str, Any], Error]:
+        """Record a bounded remote approval decision without consuming it."""
+        if type(approved) is not bool:
+            return Result.err(
+                _error("APPROVAL_DECISION_INVALID", "approved must be boolean.")
+            )
+        if edited_arguments is not None and not isinstance(edited_arguments, Mapping):
+            return Result.err(
+                _error(
+                    "APPROVAL_DECISION_INVALID",
+                    "edited_arguments must be an object or null.",
+                )
+            )
+        payload: Dict[str, Any] = {"approved": approved}
+        if edited_arguments is not None:
+            payload["edited_arguments"] = dict(edited_arguments)
+        return self._request(
+            "POST", ("v1", "approvals", approval_id, "decide"), payload
         )
 
     def create_handoff(self, record: HandoffRecord) -> Result[Dict[str, Any], Error]:

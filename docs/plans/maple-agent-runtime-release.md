@@ -146,6 +146,23 @@
 
 | 125 | Bounded document connector and ingestion contract | Chief Architect / Backend / Security / QA / Release | `docs/adr/071-*`, `maple/autonomy/retrieval.py`, autonomy/root exports, retrieval regressions, API/README/parity docs, changelog, QA/review evidence | Host-owned cursor connector pages feed an explicit document sink; page/document/batch quotas, document/source validation, duplicate-ID and cursor-progress checks, bounded progress reporting, redacted connector/sink failures, and no implicit network/retry/transaction/rollback behavior | done: feature commit `0ea1084`; focused retrieval suite `18 passed in 0.07s`; full autonomy `355 passed in 16.97s`; exact tracked manifest `1317 passed, 1 skipped in 229.72s` across 108 tracked Python test files; isort/Black/Ruff/changed-boundary mypy/compile/diff pass; wheel/sdist build and Twine checks pass, wheel `104` entries, sdist `568` entries, isolated no-dependency export smoke pass; declared-project audit reports no known vulnerabilities; QA and code/security review pass; environment-wide dependency-governance veto remains; durable cursor checkpoints, managed-store adapters, connector rate limits, retries, transactions, rollback, and semantic evaluation remain separate |
 | 126 | Bounded durable approval-outcome replay | Chief Architect / Backend / Security / QA / Release | `docs/adr/072-*`, `maple/autonomy/approval.py`, `maple/autonomy/agent.py`, approval/run regressions, API/README/parity docs, changelog, QA/review evidence | Built-in approval stores persist one bounded terminal tool outcome after a consumed approval; repeated execution and durable sync/async run resume replay the stored outcome without invoking the handler again; malformed/oversized outcomes, record conflicts, missing optional recorder capability, and consumed-without-outcome crash windows fail closed; external side effects remain at-least-once and no exactly-once claim is made | done: feature commit `8ea5b6d`; focused approval/run/agent suite `66 passed in 0.43s`; autonomy suite `359 passed in 15.24s`; exact tracked manifest `1321 passed, 1 skipped in 231.38s` across 108 tracked Python test files; isort/Black/Ruff/changed-boundary mypy/compile/diff pass; clean `git archive HEAD` `1.1.3` wheel/sdist build and Twine checks exit `0`, wheel `104` entries, sdist `564` entries with zero workspace-only files, isolated clean-archive no-dependency approval replay export smoke pass; QA and code/security review pass; declared-project pip-audit reports no known vulnerabilities; environment-wide dependency-governance veto remains; distributed transactions, remote approval transport, sandboxing, scheduling, and exactly-once effects remain separate |
+| 127 | Authenticated bounded remote approval control transport | Chief Architect / Backend / Security / QA / Release | `docs/adr/073-*`, `maple/autonomy/server.py`, approval/server regressions, API/README/parity docs, changelog, QA/review evidence | Optional authenticated `RunServer`/`RunClient` routes list and inspect bounded approvals and record approve/deny decisions with optional bounded edited arguments; the existing `ApprovalStore` remains authoritative; transport never consumes or executes an approval and makes no hosted identity, scheduling, notification, tenancy, or exactly-once claim | in progress: architecture recorded; implementation, regression, full-suite, static, package, QA, and review gates pending |
+
+## Slice 127
+
+Add a narrow approval control plane over the existing authenticated loopback
+transport. The server exposes bounded list/inspect/decide operations backed by
+the configured `ApprovalStore`; the client validates the same limits before
+sending. The transport intentionally stops at the decision boundary: local
+agent execution remains responsible for consume, handler invocation, durable
+outcome recording, and side-effect uncertainty.
+
+Threat sketch: the assets are approval arguments, decisions, and any recorded
+tool outcome; entry points are authenticated list/inspect/decide routes; the
+worst plausible abuse is unauthorized approval mutation or disclosure of
+sensitive tool arguments. Bearer authentication, loopback defaults, bounded
+JSON/path/response limits, store-authoritative validation and leases, and no
+remote consume/execute route contain the blast radius.
 
 ## Slice 126 closure
 

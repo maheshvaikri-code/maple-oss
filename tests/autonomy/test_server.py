@@ -10,12 +10,14 @@ from maple.autonomy import (
     AgentRegistry,
     AgentRun,
     AgentRunCheckpoint,
+    ApprovalRequest,
     EventCursor,
     EventStream,
     HandoffRecord,
     HttpEventExporter,
     HumanInputRequest,
     InMemoryAgentRunStore,
+    InMemoryApprovalStore,
     InMemoryCheckpointStore,
     InMemoryHandoffStore,
     InMemoryHumanInputStore,
@@ -51,6 +53,15 @@ def _human_input_request(interaction_id="remote-input", max_rounds=2):
             "additionalProperties": False,
         },
         max_rounds=max_rounds,
+    )
+
+
+def _approval_request(approval_id="remote-approval"):
+    return ApprovalRequest(
+        approval_id=approval_id,
+        tool_call_id="remote-tool-call",
+        tool_name="write_value",
+        arguments={"value": "original"},
     )
 
 
@@ -313,6 +324,103 @@ def test_authenticated_run_client_round_trips_human_input_operations():
     assert consumed.unwrap()["interaction"]["status"] == "consumed"
     assert unauthorized.is_err()
     assert unauthorized.unwrap_err()["errorType"] == "UNAUTHORIZED"
+
+
+def test_authenticated_run_client_round_trips_approval_control_operations():
+    registry = WorkflowRegistry()
+    assert registry.register(_workflow()).is_ok()
+    store = InMemoryApprovalStore()
+    assert store.create(_approval_request()).is_ok()
+    server = RunServer(
+        registry,
+        auth_token="approval-token",
+        approval_store=store,
+    )
+    base_url = server.start()
+
+    try:
+        client = RunClient(base_url, auth_token="approval-token")
+        pending = client.list_pending_approvals(limit=10)
+        inspected = client.get_approval("remote-approval")
+        decided = client.decide_approval(
+            "remote-approval",
+            True,
+            edited_arguments={"value": "approved"},
+        )
+        consumed = store.consume("remote-approval")
+        unauthorized = RunClient(base_url).list_pending_approvals()
+    finally:
+        server.close()
+
+    assert pending.is_ok()
+    assert pending.unwrap()["approvals"][0]["approval_id"] == "remote-approval"
+    assert inspected.is_ok()
+    assert inspected.unwrap()["approval"]["status"] == "pending"
+    assert decided.is_ok()
+    assert decided.unwrap()["approval"]["status"] == "approved"
+    assert decided.unwrap()["approval"]["decision"]["edited_arguments"] == {
+        "value": "approved"
+    }
+    assert consumed.is_ok()
+    assert unauthorized.is_err()
+    assert unauthorized.unwrap_err()["errorType"] == "UNAUTHORIZED"
+
+
+def test_run_server_approval_control_fails_closed_without_store_and_bounds_inputs():
+    registry = WorkflowRegistry()
+    assert registry.register(_workflow()).is_ok()
+    server = RunServer(registry)
+    base_url = server.start()
+    try:
+        unavailable = RunClient(base_url).list_pending_approvals()
+    finally:
+        server.close()
+
+    assert unavailable.is_err()
+    assert unavailable.unwrap_err()["errorType"] == "APPROVAL_STORE_UNAVAILABLE"
+
+    with pytest.raises(ValueError, match="approval_store"):
+        RunServer(registry, approval_store=InMemoryApprovalStore())
+
+    client = RunClient("http://127.0.0.1:1")
+    assert client.list_pending_approvals(0).unwrap_err()["errorType"] == (
+        "APPROVAL_LIMIT_INVALID"
+    )
+    assert client.decide_approval("approval", "yes").unwrap_err()["errorType"] == (
+        "APPROVAL_DECISION_INVALID"
+    )
+    assert (
+        client.decide_approval("approval", True, edited_arguments=[]).unwrap_err()[
+            "errorType"
+        ]
+        == "APPROVAL_DECISION_INVALID"
+    )
+
+
+def test_run_server_rejects_invalid_remote_approval_decision_before_store_mutation():
+    registry = WorkflowRegistry()
+    assert registry.register(_workflow()).is_ok()
+    store = InMemoryApprovalStore()
+    assert store.create(_approval_request("invalid-approval")).is_ok()
+    server = RunServer(
+        registry,
+        auth_token="approval-token",
+        approval_store=store,
+    )
+    base_url = server.start()
+    try:
+        status, payload = _request(
+            f"{base_url}/v1/approvals/invalid-approval/decide",
+            method="POST",
+            payload={"approved": "yes", "edited_arguments": {"value": "bad"}},
+            headers={"Authorization": "Bearer approval-token"},
+        )
+    finally:
+        server.close()
+
+    assert status == 400
+    assert payload["error"]["errorType"] == "APPROVAL_DECISION_INVALID"
+    assert store.get("invalid-approval").unwrap().status == "pending"
 
 
 def test_run_server_human_input_transport_fails_closed_without_a_store():

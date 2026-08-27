@@ -10,6 +10,13 @@
 
 ### Additions
 
+- **Bounded authenticated approval control transport**: `RunServer` and
+  `RunClient` can now expose an authenticated `ApprovalStore` for bounded
+  pending-list, inspection, and approve/deny decision operations with optional
+  edited arguments. The transport never consumes or executes an approval and
+  does not claim hosted identity, notifications, scheduling, tenancy, or
+  exactly-once effects.
+
 - **Bounded durable approval-outcome replay**: built-in in-memory and atomic
   file approval stores can record one bounded terminal tool outcome after a
   consumed approval. Direct calls and sync/async durable run resume replay a
