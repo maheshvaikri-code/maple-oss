@@ -1,15 +1,15 @@
-# Code Review — Slice 128 @ `2ae4a9c`
+# Code Review — Slice 128 @ `3409f39`
 
 **Reviewer role:** Code Reviewer · **Date:** 2026-08-27
 **Reviewed against:** [ADR-074](../adr/074-bounded-durable-event-journal.md),
 [release plan](../plans/maple-agent-runtime-release.md)
-**Diff reviewed:** `e92237d..2ae4a9c`, read from disk after the author pass
+**Diff reviewed:** `e92237d..3409f39`, read from disk after the author pass
 
 ## Executed
 
 ```text
 20 passed in 0.78s
-1329 passed, 1 skipped in 233.35s (0:03:53)
+1329 passed, 1 skipped in 270.82s (0:04:30)
 All checks passed!                         # Ruff
 Success: no issues found in 1 source file # mypy events.py --follow-imports=skip
 1 file would be left unchanged.            # Black --check test/source boundary

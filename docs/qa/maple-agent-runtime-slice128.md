@@ -1,13 +1,13 @@
-# Slice 128 QA — Bounded durable event journal @ `2ae4a9c`
+# Slice 128 QA — Bounded durable event journal @ `3409f39`
 
 **QA Engineer** · **Security Reviewer** · **Date:** 2026-08-27
-**Build under test:** `2ae4a9c` (`fix(events): normalize journal evidence`)
+**Build under test:** `3409f39` (`docs(qa): normalize slice128 reports`)
 
 ## Acceptance criteria verification
 
 | # | Criterion | How executed | Evidence (real output) | Pass |
 |---|---|---|---|---|
-| 1 | Optional host-owned journal persists a bounded redacted event window with atomic replacement and fencing | Focused event tests; clean archive build; source review of `FileEventJournal` | `20 passed in 0.78s`; clean archive `build_exit=0`, wheel `104` entries, sdist `568` entries | PASS |
+| 1 | Optional host-owned journal persists a bounded redacted event window with atomic replacement and fencing | Focused event tests; clean archive build; source review of `FileEventJournal` | `20 passed in 0.78s`; clean archive `build_exit=0`, wheel `104` entries, sdist `570` entries | PASS |
 | 2 | Restart rehydrates retained events, reapplies redaction, preserves cursor semantics, and continues sequence numbers | `test_file_event_journal_rehydrates_redacted_events_and_sequence`; cursor-expiry regression | `20 passed in 0.78s`; exact manifest also passed | PASS |
 | 3 | Malformed, oversized, non-finite, and non-monotonic records fail closed | Focused malformed-state, journal-size, and invalid-timestamp tests | `20 passed in 0.78s` | PASS |
 | 4 | Durable append precedes callbacks/exporters and append failure does not publish in memory | `test_journal_failure_prevents_callbacks_and_memory_publication` | `20 passed in 0.78s` | PASS |
@@ -37,14 +37,14 @@ Focused suite:
 Exact tracked manifest:
 
 ```text
-1329 passed, 1 skipped in 233.35s (0:03:53)
+1329 passed, 1 skipped in 270.82s (0:04:30)
 ```
 
 Clean archive package boundary:
 
 ```text
 wheel entries: 104
-sdist entries: 568
+sdist entries: 570
 clean archive no-dependency event journal export smoke passed
 build_exit=0
 twine_exit=0
