@@ -128,7 +128,14 @@ from .runs import (
     FileAgentRunStore,
     InMemoryAgentRunStore,
 )
-from .server import RunClient, RunServer, WorkflowRegistry
+from .server import (
+    AgentRegistry,
+    AgentRun,
+    AgentRunHandler,
+    RunClient,
+    RunServer,
+    WorkflowRegistry,
+)
 from .sessions import (
     DEFAULT_MAX_MESSAGE_BYTES,
     DEFAULT_MAX_MESSAGES,
@@ -285,6 +292,9 @@ __all__ = [
     "RunServer",
     "RunClient",
     "WorkflowRegistry",
+    "AgentRegistry",
+    "AgentRun",
+    "AgentRunHandler",
     "DEFAULT_MAX_RECORD_BYTES",
     "DEFAULT_MAX_RECORDS",
     "DEFAULT_MAX_RUN_RECORDS",

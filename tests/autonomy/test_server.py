@@ -7,6 +7,8 @@ import urllib.request
 import pytest
 
 from maple.autonomy import (
+    AgentRegistry,
+    AgentRun,
     HumanInputRequest,
     InMemoryHumanInputStore,
     InMemoryCheckpointStore,
@@ -16,6 +18,7 @@ from maple.autonomy import (
     WorkflowPause,
     WorkflowRegistry,
 )
+from maple.core.result import Result
 
 
 def _workflow(name="echo"):
@@ -341,3 +344,124 @@ def test_run_client_rejects_out_of_bounds_human_input_list_limits():
     assert too_large.unwrap_err()["errorType"] == "HUMAN_INPUT_LIMIT_INVALID"
     assert invalid_schema.is_err()
     assert invalid_schema.unwrap_err()["errorType"] == "REQUEST_BODY_INVALID"
+
+
+def test_authenticated_agent_transport_round_trips_bounded_host_handler():
+    calls = []
+
+    def handler(task, context, *, session_id, run_id):
+        calls.append((task, dict(context), session_id, run_id))
+        return Result.ok(
+            AgentRun(
+                agent_id="researcher",
+                run_id=run_id,
+                status="completed",
+                result={"answer": f"done: {task}", "context": dict(context)},
+            )
+        )
+
+    agents = AgentRegistry()
+    assert agents.register("researcher", handler).is_ok()
+    with pytest.raises(ValueError):
+        RunServer(WorkflowRegistry(), agent_registry=agents)
+
+    server = RunServer(
+        WorkflowRegistry(),
+        agent_registry=agents,
+        auth_token="agent-token",
+    )
+    base_url = server.start()
+    try:
+        client = RunClient(base_url, auth_token="agent-token")
+        result = client.run_agent(
+            "researcher",
+            "find the release notes",
+            {"tenant": "local", "limit": 3},
+            session_id="session-1",
+            run_id="agent-run-1",
+        )
+        unauthorized = RunClient(base_url).run_agent("researcher", "blocked")
+    finally:
+        server.close()
+
+    assert result.is_ok()
+    assert result.unwrap()["run"] == {
+        "agent_id": "researcher",
+        "run_id": "agent-run-1",
+        "status": "completed",
+        "result": {
+            "answer": "done: find the release notes",
+            "context": {"tenant": "local", "limit": 3},
+        },
+        "error": None,
+    }
+    assert calls == [
+        (
+            "find the release notes",
+            {"tenant": "local", "limit": 3},
+            "session-1",
+            "agent-run-1",
+        )
+    ]
+    assert unauthorized.is_err()
+    assert unauthorized.unwrap_err()["errorType"] == "UNAUTHORIZED"
+
+
+def test_agent_transport_bounds_inputs_and_normalizes_host_failures():
+    def failing_handler(task, context, *, session_id, run_id):
+        raise RuntimeError("private provider detail")
+
+    agents = AgentRegistry()
+    assert agents.register("failing", failing_handler).is_ok()
+    server = RunServer(
+        WorkflowRegistry(),
+        agent_registry=agents,
+        auth_token="agent-token",
+    )
+    base_url = server.start()
+    try:
+        client = RunClient(base_url, auth_token="agent-token")
+        bad_context = client.run_agent("failing", "task", [])  # type: ignore[arg-type]
+        bad_task = client.run_agent("failing", "")
+        missing = client.run_agent("missing", "task")
+        failed = client.run_agent("failing", "task")
+    finally:
+        server.close()
+
+    assert bad_context.is_err()
+    assert bad_context.unwrap_err()["errorType"] == "AGENT_CONTEXT_INVALID"
+    assert bad_task.is_err()
+    assert bad_task.unwrap_err()["errorType"] == "AGENT_TASK_INVALID"
+    assert missing.is_err()
+    assert missing.unwrap_err()["errorType"] == "AGENT_NOT_FOUND"
+    assert failed.is_err()
+    assert failed.unwrap_err()["errorType"] == "AGENT_HANDLER_ERROR"
+    assert failed.unwrap_err()["message"] == "Registered agent handler failed."
+    assert failed.unwrap_err()["details"]["agent_id"] == "failing"
+
+
+def test_agent_registry_rejects_result_identity_and_non_json_values():
+    def wrong_identity(task, context, *, session_id, run_id):
+        return Result.ok(AgentRun("other", run_id, "completed", result={}))
+
+    def non_json(task, context, *, session_id, run_id):
+        return Result.ok(AgentRun("json", run_id, "completed", result=object()))
+
+    def malformed_error(task, context, *, session_id, run_id):
+        return Result.err({"message": "missing error type"})
+
+    agents = AgentRegistry()
+    assert agents.register("wrong", wrong_identity).is_ok()
+    assert agents.register("json", non_json).is_ok()
+    assert agents.register("error", malformed_error).is_ok()
+
+    identity = agents.run("wrong", "task", {})
+    invalid = agents.run("json", "task", {})
+    malformed = agents.run("error", "task", {})
+
+    assert identity.is_err()
+    assert identity.unwrap_err()["errorType"] == "AGENT_RESULT_INVALID"
+    assert invalid.is_err()
+    assert invalid.unwrap_err()["errorType"] == "AGENT_RESULT_INVALID"
+    assert malformed.is_err()
+    assert malformed.unwrap_err()["errorType"] == "AGENT_RESULT_INVALID"

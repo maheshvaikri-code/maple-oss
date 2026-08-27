@@ -1678,6 +1678,51 @@ one-time consumption. A server without a configured store returns `503` for
 these routes. This is a loopback transport contract, not a hosted operator
 service or automatic run scheduler.
 
+### Agent run HTTP transport
+
+`AgentRegistry` and `RunClient.run_agent(...)` provide a bounded, authenticated
+one-way invocation seam for a host-owned agent handler. The handler receives a
+task, copied JSON context, optional session ID, and request run ID, and returns
+an `AgentRun` envelope:
+
+```python
+from maple import AgentRegistry, AgentRun, Result, RunClient, RunServer
+
+agents = AgentRegistry()
+
+def handler(task, context, *, session_id, run_id):
+    return Result.ok(
+        AgentRun(
+            agent_id="researcher",
+            run_id=run_id,
+            status="completed",
+            result={"task": task, "context": dict(context)},
+        )
+    )
+
+agents.register("researcher", handler)
+
+with RunServer(registry, agent_registry=agents, auth_token="local-token") as server:
+    client = RunClient(server.url, auth_token="local-token")
+    result = client.run_agent(
+        "researcher", "find release notes", {"limit": 3}, session_id="s-1"
+    )
+    assert result.is_ok()
+```
+
+The route is `POST /v1/agents/<agent_id>/runs` and returns `201` with a
+`{"run": {"agent_id": ..., "run_id": ..., "status": ..., "result": ...,
+"error": ...}}` envelope. Status is `completed`, `paused`, or `failed`.
+Task text is limited to 8 KiB; IDs are limited to 256 UTF-8 bytes; context is
+limited to 32 top-level keys, 128 items per object/array, depth 8, 8,192
+characters per string, and 32 KiB serialized. Non-JSON handler results,
+identity mismatches, malformed errors, and handler exceptions fail closed;
+handler exception text is not returned. Attaching an `AgentRegistry` requires
+a server bearer token. The client performs no retries, and the route provides
+no remote persistence, cancellation, resume, scheduling, duplicate
+suppression, or exactly-once side-effect guarantee. The host owns those
+policies and must adapt asynchronous agents explicitly.
+
 ## Usage Example
 
 ```python

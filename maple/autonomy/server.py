@@ -5,9 +5,12 @@ from __future__ import annotations
 import ipaddress
 import json
 import hmac
+import math
 import threading
+import uuid
+from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any, Dict, Mapping, Optional, Tuple, cast
+from typing import Any, Dict, Mapping, Optional, Protocol, Tuple, cast
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, unquote, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
@@ -23,6 +26,15 @@ _DEFAULT_MAX_BODY_BYTES = 1 * 1024 * 1024
 _DEFAULT_MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 _DEFAULT_CLIENT_TIMEOUT_SECONDS = 10.0
 _MAX_HUMAN_INPUT_LIMIT = 1_000
+_MAX_AGENTS = 64
+_MAX_AGENT_IDENTIFIER_BYTES = 256
+_MAX_AGENT_TASK_BYTES = 8 * 1024
+_MAX_AGENT_CONTEXT_KEYS = 32
+_MAX_AGENT_CONTEXT_ITEMS = 128
+_MAX_AGENT_CONTEXT_DEPTH = 8
+_MAX_AGENT_CONTEXT_STRING_LENGTH = 8_192
+_MAX_AGENT_CONTEXT_BYTES = 32 * 1024
+_AGENT_RUN_STATUSES = frozenset({"completed", "paused", "failed"})
 
 
 def _error(error_type: str, message: str, **details: Any) -> Error:
@@ -39,6 +51,414 @@ def _validate_auth_token(auth_token: Optional[str]) -> None:
         raise ValueError("auth_token must be a non-empty string when provided")
     if any(ord(character) < 0x20 or ord(character) == 0x7F for character in auth_token):
         raise ValueError("auth_token must not contain control characters")
+
+
+def _validate_agent_identifier(value: Any, field: str) -> Optional[Error]:
+    if not isinstance(value, str) or not value.strip():
+        return _error(
+            "AGENT_IDENTIFIER_INVALID", f"{field} must be a non-empty string."
+        )
+    if len(value.encode("utf-8")) > _MAX_AGENT_IDENTIFIER_BYTES:
+        return _error(
+            "AGENT_IDENTIFIER_INVALID",
+            f"{field} exceeds the configured byte limit.",
+            max_bytes=_MAX_AGENT_IDENTIFIER_BYTES,
+        )
+    return None
+
+
+def _copy_bounded_json(
+    value: Any,
+    *,
+    error_type: str,
+    path: str = "$",
+    depth: int = 0,
+) -> Result[Any, Error]:
+    if depth > _MAX_AGENT_CONTEXT_DEPTH:
+        return Result.err(
+            _error(error_type, "JSON value is too deeply nested.", path=path)
+        )
+    if value is None or isinstance(value, (bool, int)):
+        return Result.ok(value)
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            return Result.err(
+                _error(error_type, "JSON numbers must be finite.", path=path)
+            )
+        return Result.ok(value)
+    if isinstance(value, str):
+        if len(value) > _MAX_AGENT_CONTEXT_STRING_LENGTH:
+            return Result.err(
+                _error(
+                    error_type, "JSON string exceeds the configured limit.", path=path
+                )
+            )
+        return Result.ok(value)
+    if isinstance(value, Mapping):
+        if len(value) > _MAX_AGENT_CONTEXT_ITEMS:
+            return Result.err(
+                _error(error_type, "JSON object exceeds the item limit.", path=path)
+            )
+        copied: Dict[str, Any] = {}
+        for key, item in value.items():
+            if not isinstance(key, str) or not key or len(key) > 128:
+                return Result.err(
+                    _error(
+                        error_type,
+                        "JSON object keys must be bounded strings.",
+                        path=path,
+                    )
+                )
+            child = _copy_bounded_json(
+                item,
+                error_type=error_type,
+                path=f"{path}.{key}",
+                depth=depth + 1,
+            )
+            if child.is_err():
+                return Result.err(child.unwrap_err())
+            copied[key] = child.unwrap()
+        return Result.ok(copied)
+    if isinstance(value, (list, tuple)):
+        if len(value) > _MAX_AGENT_CONTEXT_ITEMS:
+            return Result.err(
+                _error(error_type, "JSON array exceeds the item limit.", path=path)
+            )
+        copied_list = []
+        for index, item in enumerate(value):
+            child = _copy_bounded_json(
+                item,
+                error_type=error_type,
+                path=f"{path}[{index}]",
+                depth=depth + 1,
+            )
+            if child.is_err():
+                return Result.err(child.unwrap_err())
+            copied_list.append(child.unwrap())
+        return Result.ok(copied_list)
+    return Result.err(
+        _error(error_type, "Value must contain only JSON-compatible values.", path=path)
+    )
+
+
+def _normalize_agent_context(
+    context: Optional[Mapping[str, Any]],
+) -> Result[Dict[str, Any], Error]:
+    if context is None:
+        return Result.ok({})
+    if not isinstance(context, Mapping):
+        return Result.err(_error("AGENT_CONTEXT_INVALID", "context must be an object."))
+    if len(context) > _MAX_AGENT_CONTEXT_KEYS:
+        return Result.err(
+            _error(
+                "AGENT_CONTEXT_INVALID",
+                "context exceeds the key limit.",
+                max_keys=_MAX_AGENT_CONTEXT_KEYS,
+            )
+        )
+    copied = _copy_bounded_json(context, error_type="AGENT_CONTEXT_INVALID")
+    if copied.is_err():
+        return Result.err(copied.unwrap_err())
+    normalized = copied.unwrap()
+    if not isinstance(normalized, dict):
+        return Result.err(_error("AGENT_CONTEXT_INVALID", "context must be an object."))
+    try:
+        encoded = json.dumps(normalized, ensure_ascii=False, allow_nan=False)
+    except (TypeError, ValueError, OverflowError):
+        return Result.err(
+            _error("AGENT_CONTEXT_INVALID", "context must be JSON serializable.")
+        )
+    if len(encoded.encode("utf-8")) > _MAX_AGENT_CONTEXT_BYTES:
+        return Result.err(
+            _error(
+                "AGENT_CONTEXT_INVALID",
+                "context exceeds the byte limit.",
+                max_bytes=_MAX_AGENT_CONTEXT_BYTES,
+            )
+        )
+    return Result.ok(normalized)
+
+
+def _normalize_agent_task(task: Any) -> Result[str, Error]:
+    if not isinstance(task, str) or not task.strip():
+        return Result.err(
+            _error("AGENT_TASK_INVALID", "task must be a non-empty string.")
+        )
+    if len(task.encode("utf-8")) > _MAX_AGENT_TASK_BYTES:
+        return Result.err(
+            _error(
+                "AGENT_TASK_INVALID",
+                "task exceeds the configured byte limit.",
+                max_bytes=_MAX_AGENT_TASK_BYTES,
+            )
+        )
+    return Result.ok(task)
+
+
+class AgentRunHandler(Protocol):
+    """Host-owned synchronous callback for one bounded agent invocation."""
+
+    def __call__(
+        self,
+        task: str,
+        context: Mapping[str, Any],
+        *,
+        session_id: Optional[str],
+        run_id: str,
+    ) -> Result["AgentRun", Error]: ...
+
+
+@dataclass(frozen=True)
+class AgentRun:
+    """JSON-safe result envelope returned by a registered agent handler."""
+
+    agent_id: str
+    run_id: str
+    status: str
+    result: Optional[Any] = None
+    error: Optional[Error] = None
+
+
+def _agent_run_to_dict(run: AgentRun) -> Dict[str, Any]:
+    return {
+        "agent_id": run.agent_id,
+        "run_id": run.run_id,
+        "status": run.status,
+        "result": run.result,
+        "error": run.error,
+    }
+
+
+class AgentRegistry:
+    """Thread-safe registry for host-owned agent run handlers."""
+
+    def __init__(self, *, max_agents: int = _MAX_AGENTS) -> None:
+        if (
+            not isinstance(max_agents, int)
+            or isinstance(max_agents, bool)
+            or not 0 < max_agents <= _MAX_AGENTS
+        ):
+            raise ValueError("max_agents must be between 1 and 64")
+        self.max_agents = max_agents
+        self._agents: Dict[str, AgentRunHandler] = {}
+        self._lock = threading.RLock()
+
+    def register(self, agent_id: str, handler: AgentRunHandler) -> Result[None, Error]:
+        """Register one host-owned handler before serving requests."""
+        identifier_error = _validate_agent_identifier(agent_id, "agent_id")
+        if identifier_error is not None:
+            return Result.err(identifier_error)
+        if not callable(handler):
+            return Result.err(
+                _error("AGENT_HANDLER_INVALID", "handler must be callable.")
+            )
+        with self._lock:
+            if agent_id in self._agents:
+                return Result.err(
+                    _error(
+                        "AGENT_EXISTS",
+                        "An agent with this ID is already registered.",
+                        agent_id=agent_id,
+                    )
+                )
+            if len(self._agents) >= self.max_agents:
+                return Result.err(
+                    _error(
+                        "AGENT_LIMIT",
+                        "AgentRegistry has reached its agent limit.",
+                        max_agents=self.max_agents,
+                    )
+                )
+            self._agents[agent_id] = handler
+        return Result.ok(None)
+
+    def _get(self, agent_id: str) -> Result[AgentRunHandler, Error]:
+        identifier_error = _validate_agent_identifier(agent_id, "agent_id")
+        if identifier_error is not None:
+            return Result.err(identifier_error)
+        with self._lock:
+            handler = self._agents.get(agent_id)
+        if handler is None:
+            return Result.err(
+                _error("AGENT_NOT_FOUND", "Agent was not found.", agent_id=agent_id)
+            )
+        return Result.ok(handler)
+
+    def run(
+        self,
+        agent_id: str,
+        task: str,
+        context: Optional[Mapping[str, Any]] = None,
+        *,
+        session_id: Optional[str] = None,
+        run_id: Optional[str] = None,
+    ) -> Result[AgentRun, Error]:
+        """Invoke one handler with bounded task/context and no transport retry."""
+        handler_result = self._get(agent_id)
+        if handler_result.is_err():
+            return Result.err(handler_result.unwrap_err())
+        task_result = _normalize_agent_task(task)
+        if task_result.is_err():
+            return Result.err(task_result.unwrap_err())
+        context_result = _normalize_agent_context(context)
+        if context_result.is_err():
+            return Result.err(context_result.unwrap_err())
+        if session_id is not None:
+            session_error = _validate_agent_identifier(session_id, "session_id")
+            if session_error is not None:
+                return Result.err(session_error)
+        if run_id is not None:
+            run_error = _validate_agent_identifier(run_id, "run_id")
+            if run_error is not None:
+                return Result.err(run_error)
+        chosen_run_id = run_id or str(uuid.uuid4())
+        try:
+            result = handler_result.unwrap()(
+                task_result.unwrap(),
+                context_result.unwrap(),
+                session_id=session_id,
+                run_id=chosen_run_id,
+            )
+        except Exception:
+            return Result.err(
+                _error(
+                    "AGENT_HANDLER_ERROR",
+                    "Registered agent handler failed.",
+                    agent_id=agent_id,
+                    run_id=chosen_run_id,
+                )
+            )
+        if not isinstance(result, Result):
+            return Result.err(
+                _error("AGENT_RESULT_INVALID", "Agent handler must return a Result.")
+            )
+        if result.is_err():
+            error = result.unwrap_err()
+            if not isinstance(error, Mapping):
+                return Result.err(
+                    _error(
+                        "AGENT_RESULT_INVALID", "Agent handler errors must be objects."
+                    )
+                )
+            if (
+                not isinstance(error.get("errorType"), str)
+                or not str(error.get("errorType")).strip()
+            ):
+                return Result.err(
+                    _error(
+                        "AGENT_RESULT_INVALID",
+                        "Agent handler errors require a non-empty errorType.",
+                    )
+                )
+            if (
+                not isinstance(error.get("message"), str)
+                or not str(error.get("message")).strip()
+            ):
+                return Result.err(
+                    _error(
+                        "AGENT_RESULT_INVALID",
+                        "Agent handler errors require a non-empty message.",
+                    )
+                )
+            copied_error = _copy_bounded_json(error, error_type="AGENT_RESULT_INVALID")
+            if copied_error.is_err():
+                return Result.err(copied_error.unwrap_err())
+            normalized_error = copied_error.unwrap()
+            if not isinstance(normalized_error, dict):
+                return Result.err(
+                    _error(
+                        "AGENT_RESULT_INVALID", "Agent handler errors must be objects."
+                    )
+                )
+            return Result.err(normalized_error)
+        run = result.unwrap()
+        if not isinstance(run, AgentRun):
+            return Result.err(
+                _error("AGENT_RESULT_INVALID", "Agent handler must return an AgentRun.")
+            )
+        if run.agent_id != agent_id or run.run_id != chosen_run_id:
+            return Result.err(
+                _error(
+                    "AGENT_RESULT_INVALID",
+                    "AgentRun identity does not match the request.",
+                    agent_id=agent_id,
+                    run_id=chosen_run_id,
+                )
+            )
+        if run.status not in _AGENT_RUN_STATUSES:
+            return Result.err(
+                _error(
+                    "AGENT_RESULT_INVALID",
+                    "AgentRun status is not supported.",
+                    allowed_statuses=sorted(_AGENT_RUN_STATUSES),
+                )
+            )
+        copied_result = _copy_bounded_json(
+            run.result, error_type="AGENT_RESULT_INVALID"
+        )
+        if copied_result.is_err():
+            return Result.err(copied_result.unwrap_err())
+        copied_run_error: Optional[Error] = None
+        if run.error is not None:
+            if not isinstance(run.error, Mapping):
+                return Result.err(
+                    _error("AGENT_RESULT_INVALID", "AgentRun error must be an object.")
+                )
+            if (
+                not isinstance(run.error.get("errorType"), str)
+                or not str(run.error.get("errorType")).strip()
+            ):
+                return Result.err(
+                    _error(
+                        "AGENT_RESULT_INVALID",
+                        "AgentRun errors require a non-empty errorType.",
+                    )
+                )
+            if (
+                not isinstance(run.error.get("message"), str)
+                or not str(run.error.get("message")).strip()
+            ):
+                return Result.err(
+                    _error(
+                        "AGENT_RESULT_INVALID",
+                        "AgentRun errors require a non-empty message.",
+                    )
+                )
+            error_result = _copy_bounded_json(
+                run.error, error_type="AGENT_RESULT_INVALID"
+            )
+            if error_result.is_err():
+                return Result.err(error_result.unwrap_err())
+            normalized_run_error = error_result.unwrap()
+            if not isinstance(normalized_run_error, dict):
+                return Result.err(
+                    _error("AGENT_RESULT_INVALID", "AgentRun error must be an object.")
+                )
+            copied_run_error = normalized_run_error
+        normalized = AgentRun(
+            agent_id=agent_id,
+            run_id=chosen_run_id,
+            status=run.status,
+            result=copied_result.unwrap(),
+            error=copied_run_error,
+        )
+        try:
+            encoded = json.dumps(
+                _agent_run_to_dict(normalized), ensure_ascii=False, allow_nan=False
+            )
+        except (TypeError, ValueError, OverflowError):
+            return Result.err(
+                _error("AGENT_RESULT_INVALID", "AgentRun is not JSON serializable.")
+            )
+        if len(encoded.encode("utf-8")) > _DEFAULT_MAX_RESPONSE_BYTES:
+            return Result.err(
+                _error(
+                    "AGENT_RESULT_INVALID",
+                    "AgentRun exceeds the configured response limit.",
+                    max_bytes=_DEFAULT_MAX_RESPONSE_BYTES,
+                )
+            )
+        return Result.ok(normalized)
 
 
 def _run_to_dict(run: WorkflowRun) -> Dict[str, Any]:
@@ -59,7 +479,7 @@ def _run_to_dict(run: WorkflowRun) -> Dict[str, Any]:
 
 def _status_for_error(error: Error) -> int:
     error_type = error.get("errorType")
-    if error_type in {"RUN_NOT_FOUND", "WORKFLOW_NOT_FOUND"}:
+    if error_type in {"RUN_NOT_FOUND", "WORKFLOW_NOT_FOUND", "AGENT_NOT_FOUND"}:
         return 404
     if error_type == "HUMAN_INPUT_NOT_FOUND":
         return 404
@@ -76,6 +496,10 @@ def _status_for_error(error: Error) -> int:
         "INVALID_STATE",
         "INVALID_IDENTIFIER",
         "INVALID_WORKFLOW",
+        "AGENT_IDENTIFIER_INVALID",
+        "AGENT_TASK_INVALID",
+        "AGENT_CONTEXT_INVALID",
+        "AGENT_HANDLER_INVALID",
         "INVALID_JSON",
         "REQUEST_BODY_INVALID",
         "WORKFLOW_MISMATCH",
@@ -91,6 +515,8 @@ def _status_for_error(error: Error) -> int:
         "HUMAN_INPUT_VALUE_TOO_LARGE",
     }:
         return 400
+    if error_type == "AGENT_REGISTRY_UNAVAILABLE":
+        return 503
     if error_type == "HUMAN_INPUT_STORE_UNAVAILABLE":
         return 503
     if error_type == "HUMAN_INPUT_MULTI_ROUND_UNSUPPORTED":
@@ -235,6 +661,14 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 return
             if method == "GET" and path == ("healthz",):
                 self._write_json(200, {"status": "ok", "service": "maple-run-server"})
+                return
+            if (
+                method == "POST"
+                and len(path) == 4
+                and path[0:2] == ("v1", "agents")
+                and path[3] == "runs"
+            ):
+                self._run_agent(path[2])
                 return
             if self._interaction_route(method, path):
                 return
@@ -501,6 +935,32 @@ class _RequestHandler(BaseHTTPRequestHandler):
         )
         self._write_result(result, success_status=201)
 
+    def _run_agent(self, agent_id: str) -> None:
+        registry = self.server.application.agent_registry
+        if registry is None:
+            self._write_error(
+                503,
+                _error(
+                    "AGENT_REGISTRY_UNAVAILABLE",
+                    "No agent registry is configured.",
+                ),
+            )
+            return
+        body = self._read_body()
+        result = registry.run(
+            agent_id,
+            body.get("task"),
+            body.get("context", {}),
+            session_id=body.get("session_id"),
+            run_id=body.get("run_id"),
+        )
+        if result.is_err():
+            self._write_error(
+                _status_for_error(result.unwrap_err()), result.unwrap_err()
+            )
+            return
+        self._write_json(201, {"run": _agent_run_to_dict(result.unwrap())})
+
     def _resume(self, workflow_name: str, run_id: str) -> None:
         body = self._read_body()
         result = self.server.application.registry.resume(
@@ -590,6 +1050,7 @@ class RunServer:
         max_response_bytes: int = _DEFAULT_MAX_RESPONSE_BYTES,
         auth_token: Optional[str] = None,
         human_input_store: Optional[HumanInputStore] = None,
+        agent_registry: Optional[AgentRegistry] = None,
     ) -> None:
         if not isinstance(registry, WorkflowRegistry):
             raise TypeError("registry must be a WorkflowRegistry")
@@ -629,6 +1090,13 @@ class RunServer:
                     "human_input_store must implement get, list_pending, respond, "
                     "reject, and consume"
                 )
+        if agent_registry is not None:
+            if not isinstance(agent_registry, AgentRegistry):
+                raise TypeError("agent_registry must be an AgentRegistry")
+            if auth_token is None:
+                raise ValueError(
+                    "auth_token is required when agent_registry is configured"
+                )
         self.registry = registry
         self.host = host
         self.port = port
@@ -636,6 +1104,7 @@ class RunServer:
         self.max_response_bytes = max_response_bytes
         self._auth_token = auth_token
         self.human_input_store = human_input_store
+        self.agent_registry = agent_registry
         self._server: Optional[_MAPLEHTTPServer] = None
         self._thread: Optional[threading.Thread] = None
 
@@ -774,6 +1243,43 @@ class RunClient:
         if run_id is not None:
             body["run_id"] = run_id
         return self._request("POST", ("v1", "workflows", workflow_name, "runs"), body)
+
+    def run_agent(
+        self,
+        agent_id: str,
+        task: str,
+        context: Optional[Mapping[str, Any]] = None,
+        *,
+        session_id: Optional[str] = None,
+        run_id: Optional[str] = None,
+    ) -> Result[Dict[str, Any], Error]:
+        """Invoke one remote host-owned agent handler without retrying."""
+        identifier_error = _validate_agent_identifier(agent_id, "agent_id")
+        if identifier_error is not None:
+            return Result.err(identifier_error)
+        task_result = _normalize_agent_task(task)
+        if task_result.is_err():
+            return Result.err(task_result.unwrap_err())
+        context_result = _normalize_agent_context(context)
+        if context_result.is_err():
+            return Result.err(context_result.unwrap_err())
+        if session_id is not None:
+            session_error = _validate_agent_identifier(session_id, "session_id")
+            if session_error is not None:
+                return Result.err(session_error)
+        if run_id is not None:
+            run_error = _validate_agent_identifier(run_id, "run_id")
+            if run_error is not None:
+                return Result.err(run_error)
+        body: Dict[str, Any] = {
+            "task": task_result.unwrap(),
+            "context": context_result.unwrap(),
+        }
+        if session_id is not None:
+            body["session_id"] = session_id
+        if run_id is not None:
+            body["run_id"] = run_id
+        return self._request("POST", ("v1", "agents", agent_id, "runs"), body)
 
     def resume(
         self,
@@ -1003,4 +1509,11 @@ class RunClient:
         return Result.ok(decoded)
 
 
-__all__ = ["RunClient", "RunServer", "WorkflowRegistry"]
+__all__ = [
+    "AgentRegistry",
+    "AgentRun",
+    "AgentRunHandler",
+    "RunClient",
+    "RunServer",
+    "WorkflowRegistry",
+]

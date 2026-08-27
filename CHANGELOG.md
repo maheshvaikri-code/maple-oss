@@ -10,6 +10,14 @@
 
 ### Additions
 
+- **Bounded authenticated agent-run transport**: hosts can register named
+  synchronous agent handlers with `AgentRegistry` and invoke them through the
+  dependency-free `RunServer`/`RunClient` contract. Task/context/session/run
+  inputs, JSON-safe `AgentRun` envelopes, handler identity, response size, and
+  exception boundaries are validated; attaching the registry requires bearer
+  authentication. The client does not retry, and remote persistence,
+  scheduling, cancellation, durable resume, and exactly-once external effects
+  remain separate host-owned boundaries.
 - **Bounded host-supplied session compaction**: built-in in-memory and atomic
   file-backed session stores can replace older messages with an explicit
   bounded summary plus a retained recent tail under optimistic version control.

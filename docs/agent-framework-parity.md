@@ -1,6 +1,6 @@
 # MAPLE Agent-Framework Parity Ledger
 
-**Observed:** 2026-08-25
+**Observed:** 2026-08-26
 **Scope:** functionality and developer/runtime surfaces only; adoption and
 licensing are intentionally excluded.
 **Comparison set:** LangGraph, CrewAI, Microsoft Agent Framework (the current
@@ -51,6 +51,13 @@ The workflow transport contract now includes a dependency-free `RunClient`
 with bounded JSON responses and optional bearer authentication on
 `RunServer`. Loopback binding remains the default; TLS, token issuance,
 tenancy, and remote scheduling remain host-owned.
+
+The same authenticated loopback transport now has an optional
+`AgentRegistry`/`RunClient.run_agent(...)` seam for one-way invocation of
+host-owned synchronous handlers. Agent IDs, task/context/session/run inputs,
+JSON-safe results, and handler exceptions are bounded and typed. No remote
+result persistence, cancellation, resume, scheduling, retries, or exactly-once
+effect guarantee is implied.
 
 The bounded session contract now also includes optional host-supplied summary
 compaction with a retained recent tail and optimistic version checks on the
