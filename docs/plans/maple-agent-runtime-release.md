@@ -140,6 +140,37 @@
 | 121 | Bounded authenticated event ingestion into a host-owned stream | Chief Architect / Backend / Security / Observability / QA / Release | `docs/adr/067-*`, `maple/autonomy/server.py`, server/client regressions, API/README/parity docs, changelog, QA/review evidence | Optional authenticated `RunServer(event_stream=...)` route accepts one bounded event at a time; `RunClient.publish_event(...)` and existing `HttpEventExporter` round-trip through host-assigned local sequence/timestamp values and the stream's redaction/size boundary; absent stream, malformed fields, unauthorized calls, and invalid payloads fail closed; no batching, durable replay, fleet aggregation, or remote trace search | done: combined event/server suite `36 passed in 10.07s`; autonomy `345 passed in 11.94s`; exact tracked manifest `1307 passed, 1 skipped in 213.45s` across 108 tracked Python test files; Black/Ruff/changed-boundary mypy/compile/diff/doctor pass; clean archive candidate `0ca0924` build/Twine exit `0`, sdist `547` entries, required public files `6/6`, wheel `104` entries, no-dependency event transport smoke pass; QA and code review pass; environment-wide dependency-governance veto remains; batching, durable replay, fleet aggregation, remote trace search, principal scopes, and exactly-once delivery remain separate |
 | 122 | Bounded authenticated event inspection by cursor | Chief Architect / Backend / Security / Observability / QA / Release | `docs/adr/068-*`, `maple/autonomy/server.py`, server/client regressions, API/README/parity docs, changelog, QA/review evidence | Authenticated `GET /v1/events?after=<sequence>&limit=<limit>` reads the existing redacted host-owned ring through serializable cursor batches; strict query validation, a `1,000` remote batch cap, explicit retention-gap errors, and bounded response behavior remain authoritative; no durable replay, batching, remote search, fleet aggregation, or exactly-once delivery | done: combined event/server suite `37 passed in 10.68s`; autonomy `346 passed in 12.57s`; exact tracked manifest `1308 passed, 1 skipped in 226.26s` across 108 tracked Python files; Black/Ruff/changed-boundary mypy/compile/diff pass; clean archive candidate `3642805` build/Twine exit `0`, sdist `550` entries, required files `6/6`, wheel `104` entries, no-dependency event inspection smoke pass; QA and code review pass; environment-wide dependency-governance veto remains; durable replay, batching, remote search, fleet aggregation, principal scopes, and exactly-once delivery remain separate |
 
+| 124 | Provider-neutral bounded retrieval reranking seam | Chief Architect / Backend / Security / QA / Release | `docs/adr/070-*`, `maple/autonomy/retrieval.py`, autonomy/root exports, retrieval regressions, API/README/parity docs, changelog, QA/review evidence | Host-supplied `RetrievalReranker.score(...)` can rerank bounded lexical or vector hits while preserving source references and original scores; candidate type/ID/uniqueness/score validation, finite callback scores, deterministic ties, redacted failures, and no implicit provider/network behavior | done: feature commit `aeb80bd`; focused retrieval suite `12 passed in 0.07s`; autonomy `349 passed in 16.38s`; exact tracked manifest `1311 passed, 1 skipped in 230.15s` across 108 tracked Python test files; isort/Black/Ruff/changed-boundary mypy/compile/diff pass; wheel/sdist build and Twine checks pass, wheel `104` entries, sdist `565` entries, isolated no-dependency export smoke pass; QA and code/security review pass; declared-project audit reports no known vulnerabilities; environment-wide dependency-governance veto remains; document connectors, managed stores, and semantic evaluation remain separate |
+
+## Slice 124 closure
+
+2026-08-27: Slice 124 is behaviorally and package-gate complete. The new
+`RetrievalReranker` protocol and `rerank_hits(...)` helper accept bounded
+lexical or vector candidates, preserve source references and original scores,
+and require finite host-supplied scores with deterministic tie-breaking. The
+focused retrieval suite reports `12 passed in 0.07s`; the full autonomy suite
+reports `349 passed in 16.38s`; the exact tracked manifest reports `1311
+passed, 1 skipped in 230.15s` across 108 tracked Python files. isort, Black,
+Ruff, changed-boundary mypy, compile, and diff checks pass. The `aeb80bd`
+candidate builds wheel and sdist, both Twine checks pass, the wheel has `104`
+entries, the sdist has `565` entries in the release workspace, and an isolated
+`-I -S` import smoke test loads the new root/autonomy exports. The
+declared-project dependency audit reports no known vulnerabilities; the
+separate environment-wide audit remains a release veto with `384` findings
+across `77` installed packages. No publication, deployment, cloud action, or
+website change was performed. Document connectors, managed stores, provider
+orchestration, and semantic evaluation remain separate boundaries.
+
+## Slice 124
+
+Implementation is intentionally limited to a provider-neutral reranking seam.
+The helper is host-owned and dependency-free; it does not automatically call a
+model or replace the backend's score. It validates the candidate boundary and
+returns a separate reranked envelope, leaving document loading, managed
+indexes, provider lifecycle, timeout/retry, and semantic faithfulness to
+separate contracts.
+
+## Slice 123 closure
 | 123 | Bounded authenticated host-owned agent-run cancellation | Chief Architect / Backend / Security / QA / Release | `docs/adr/069-*`, `maple/autonomy/server.py`, autonomy/root exports, server regressions, API/README/parity docs, changelog, QA/review evidence | Optional `cancel_handler` callback and authenticated `POST /v1/agents/<agent_id>/runs/<run_id>/cancel`; validated IDs, typed `cancelled` `AgentRun` envelope, redacted callback errors, missing-capability `501`, and existing loopback/auth/body bounds; cooperative request only, with token propagation, checkpoint mutation, hard termination, scheduling, retries, principal scopes, and exactly-once effects remaining host-owned | done: feature commit `8ec56bb`; focused server suite `23 passed in 9.78s`; full autonomy `347 passed in 16.99s`; exact tracked manifest `1309 passed, 1 skipped in 236.70s` across 108 tracked Python test files; isort/Black/Ruff/changed-boundary mypy/compile/diff pass; wheel/sdist build and Twine checks pass, wheel `104` entries, sdist `562` entries, isolated no-dependency export smoke pass; QA and code/security review pass; declared-project audit reports no known vulnerabilities; environment-wide dependency-governance veto remains; hard termination, durable cancellation state, scheduling, retries, principal scopes, and exactly-once effects remain separate |
 
 ## Slice 123 closure
