@@ -1,7 +1,7 @@
-# QA + Security Report - MAPLE Agent Runtime Slice 115 @ decbf36
+# QA + Security Report - MAPLE Agent Runtime Slice 115 @ 338650a
 
 **QA Engineer - Security Reviewer - Date:** 2026-08-26  
-**Build under test:** `decbf36` (feature, boundary-test, and review commits)
+**Build under test:** `338650a` (feature, boundary-test, review, and QA commits)
 
 ## Acceptance criteria verification
 
@@ -14,7 +14,7 @@
 | 5 | Documented mapping limits are enforced. | Boundary sweep at 255/256/257 entries and 256/257-character keys. | 255 and 256 entries/characters accepted; 257-entry/key cases return typed errors; `31 passed`. | Yes |
 | 6 | Existing application behavior remains green. | Exact tracked test manifest; five user-owned untracked Doctrine test files excluded. | `1290 passed, 1 skipped in 234.57s (0:03:54)` across 1291 collected tests. | Yes |
 | 7 | Public/runtime surfaces are documented and statically valid. | Black, Ruff, changed-boundary mypy, compile, doctor, and diff checks. | Black: `3 files would be left unchanged`; Ruff: `All checks passed!`; mypy: `Success: no issues found in 1 source file`; doctor `ready=true`, all eight checks true, `network=false`; compile/diff exit `0`. | Yes |
-| 8 | Clean package evidence is collected before release promotion. | Package build is intentionally run from the committed QA-artifact tip after this report is committed; no publication is performed. | Pending next release-gate command; recorded in the plan closure. | Pending |
+| 8 | Clean package evidence is collected before release promotion. | Clean archive build, package inspection, and isolated wheel smoke test. | Candidate `338650a`: `python -m build --wheel --sdist` exit `0`; Twine wheel/sdist checks `PASSED`; sdist `531` entries; required public files `6/6`; workspace-only audit `0`; wheel `104` entries and fresh no-dependency install/import smoke passed for `Workflow` and `add_subworkflow`. No publication performed. | Yes |
 
 ## Adversarial and edge matrix
 
@@ -82,6 +82,6 @@ retry-until-lucky behavior was used.
 **Security verdict:** **VETO** for a final repository publication claim until
 dependency findings are dispositioned; no new Slice 115 security defect found.
 Human override: n/a.  
-**QA verdict:** pass for Slice 115 behavior, boundaries, static checks, and
-regression coverage; package gate remains pending and release remains
-conditional on dependency-governance disposition.
+**QA verdict:** pass for Slice 115 behavior, boundaries, static checks,
+regression coverage, and clean package evidence. Release remains conditional
+on dependency-governance disposition; no publication was performed.

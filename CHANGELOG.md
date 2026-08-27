@@ -16,7 +16,13 @@
   IDs support pause/resume and reuse of completed child work after parent
   journal recovery. Mapping and state boundaries are bounded and typed;
   distributed scheduling and exactly-once external effects remain outside the
-  contract. Focused validation reports `29 passed`.
+  contract. Focused validation reports `31 passed in 4.62s`; the tracked
+  application regression reports `1290 passed, 1 skipped in 234.57s`. Clean
+  package candidate `338650a` rebuilt wheel/sdist `1.1.3`, both Twine checks
+  passed, the sdist contains `531` entries, required files are `6/6`,
+  workspace-only audit is `0`, and a fresh no-dependency wheel smoke test
+  imported `Workflow` and `add_subworkflow`. Dependency-governance veto
+  remains open; no publication was performed.
 - **Bounded authenticated human-input transport**: the existing dependency-free
   loopback `RunServer`/`RunClient` contract can now list, inspect, respond to,
   reject, continue, and consume durable human-input requests when a
