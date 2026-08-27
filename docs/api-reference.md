@@ -949,7 +949,8 @@ bounded ring, supports snapshots/waiters and synchronous subscribers, and
 redacts credential-like keys before retention or delivery. A host-owned
 `EventExporter` may receive each already-redacted event; the optional
 `HttpEventExporter` provides bounded best-effort HTTP delivery and exporter exceptions
-are isolated from the run. Payload shape,
+are isolated from the run. `EventForwarder` and `HttpEventBatchSender` provide
+an explicit, bounded remote aggregation pump with a host-owned cursor. Payload shape,
 string, item, depth, and byte limits fail closed with structured errors. The
 autonomous agent can publish a shared sync/async run lifecycle through
 `set_event_stream()`.
@@ -960,9 +961,8 @@ atomic replacement and fences each load/append with a host-local lease. The
 stream re-applies redaction when hydrating the window and resumes its sequence
 after the persisted tail. Malformed, oversized, or non-monotonic journal state
 fails closed during stream construction; an append failure prevents retention,
-subscriber callbacks, and exporter delivery for that event. This is bounded
-local replay, not a remote broker, retry queue, fleet aggregator, or exactly-once
-delivery mechanism.
+subscriber callbacks, and exporter delivery for that event. `FileEventCursorStore`
+adds atomic, fenced persistence for an `EventForwarder` consumer position.
 
 ```python
 from maple import EventStream, FileEventJournal
@@ -994,7 +994,9 @@ for event in events.snapshot().unwrap():
 `HttpEventExporter` is synchronous and performs one POST per event. It requires
 a finite timeout, bounds event/response bytes, sends optional bearer auth only
 in a header, requires HTTPS for non-loopback endpoints, and performs no retry
-or persistence. Use a host-owned queue when the collector may block:
+or persistence. `HttpEventBatchSender` performs one bounded POST to an existing
+batch endpoint and parses a complete indexed acknowledgement. Use a host-owned
+queue or an explicit `EventForwarder` when the collector may block:
 
 ```python
 from maple import EventExporter, EventStream
@@ -1004,6 +1006,38 @@ class JsonExporter:
         print(event.as_dict())
 
 events = EventStream(exporter=JsonExporter())
+```
+
+`EventForwarder.forward()` reads at most 100 events from the source cursor,
+sends them once, and persists only the contiguous acknowledged prefix. A
+`FileEventCursorStore` is atomic and fenced across local processes, but a lost
+remote response or cursor write can resend an accepted item. Partial delivery,
+cursor expiry, malformed acknowledgements, transport errors, and cursor-save
+errors are surfaced; the forwarder never retries in the background and makes no
+exactly-once, remote-queue, or cross-forwarder ordering claim:
+
+```python
+from maple import (
+    EventForwarder,
+    EventStream,
+    FileEventCursorStore,
+    FileEventJournal,
+    HttpEventBatchSender,
+)
+
+source = EventStream(
+    max_events=1_000,
+    journal=FileEventJournal(".maple-events", max_events=1_000),
+)
+forwarder = EventForwarder(
+    source,
+    HttpEventBatchSender(
+        "https://collector.example/v1/events/batch",
+        auth_token="collector-token",
+    ),
+    FileEventCursorStore(".maple-event-forwarder"),
+)
+report = forwarder.forward()
 ```
 
 For incremental consumers, persist an `EventCursor` and use bounded reads. A
@@ -1965,8 +1999,9 @@ are already redacted and include the receiver-assigned sequence/timestamp. A
 cursor before the retained ring returns `EVENT_CURSOR_EXPIRED` with HTTP `409`
 rather than silently skipping events; malformed, duplicate, unknown, negative,
 or over-bound query values return typed `400` errors. The route reads the
-host-owned in-memory bounded ring only; it does not provide durable replay,
-batch ingestion, remote search, or fleet aggregation.
+host-owned in-memory bounded ring only. The route itself does not provide
+durable replay, remote search, or fleet aggregation; use the local journal plus
+`EventForwarder` for explicit bounded remote replay and aggregation.
 
 ### Handoff HTTP transport
 

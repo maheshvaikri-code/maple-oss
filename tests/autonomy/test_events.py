@@ -10,12 +10,19 @@ import pytest
 from maple.autonomy.events import (
     AgentEvent,
     EventCursor,
+    EventDelivery,
+    EventDeliveryFailure,
+    EventForwarder,
     EventStream,
+    FileEventCursorStore,
     FileEventJournal,
+    HttpEventBatchSender,
     HttpEventExporter,
+    InMemoryEventCursorStore,
     RedactionPolicy,
 )
 from maple.autonomy.execution import CancellationToken
+from maple.core.result import Result
 
 
 def test_publish_redacts_nested_secrets_and_preserves_sequence():
@@ -442,3 +449,327 @@ def test_journal_failure_prevents_callbacks_and_memory_publication():
     assert received == []
     assert stream.snapshot().unwrap() == []
     assert stream.metrics()["journal_failures"] == 1
+
+
+def test_in_memory_event_cursor_store_is_monotonic():
+    store = InMemoryEventCursorStore()
+
+    advanced = store.save(EventCursor(sequence=3))
+    regressed = store.save(EventCursor(sequence=2))
+
+    assert advanced.is_ok()
+    assert store.load().unwrap().sequence == 3
+    assert regressed.is_err()
+    assert regressed.unwrap_err()["errorType"] == "EVENT_CURSOR_CONFLICT"
+
+
+def test_file_event_cursor_store_rehydrates_and_rejects_regression(tmp_path):
+    store = FileEventCursorStore(tmp_path)
+    assert store.save(EventCursor(sequence=4)).is_ok()
+
+    restarted = FileEventCursorStore(tmp_path)
+    loaded = restarted.load()
+    regressed = restarted.save(EventCursor(sequence=3))
+    persisted = json.loads(store.path.read_text(encoding="utf-8"))
+
+    assert loaded.is_ok()
+    assert loaded.unwrap().sequence == 4
+    assert persisted == {"version": 1, "cursor": {"sequence": 4}}
+    assert regressed.is_err()
+    assert regressed.unwrap_err()["errorType"] == "EVENT_CURSOR_CONFLICT"
+
+
+def test_file_event_cursor_store_rejects_malformed_state_without_advancing(tmp_path):
+    store = FileEventCursorStore(tmp_path)
+    store.path.write_text(
+        json.dumps({"version": True, "cursor": {"sequence": 3}}),
+        encoding="utf-8",
+    )
+
+    loaded = store.load()
+    attempted_save = store.save(EventCursor(sequence=4))
+
+    assert loaded.is_err()
+    assert loaded.unwrap_err()["errorType"] == "EVENT_CURSOR_LOAD_ERROR"
+    assert attempted_save.is_err()
+    assert attempted_save.unwrap_err()["errorType"] == "EVENT_CURSOR_LOAD_ERROR"
+    assert json.loads(store.path.read_text(encoding="utf-8"))["version"] is True
+
+
+def test_event_forwarder_advances_only_through_contiguous_successes():
+    source = EventStream(max_events=5)
+    source.publish("one", {})
+    source.publish("two", {})
+    source.publish("three", {})
+    cursor_store = InMemoryEventCursorStore()
+    calls = []
+    failure = EventDeliveryFailure(
+        index=1,
+        error={"errorType": "REMOTE_REJECTED", "message": "rejected"},
+    )
+
+    class Sender:
+        def __init__(self):
+            self.responses = [
+                EventDelivery(published=(0, 2), failed=(failure,)),
+                EventDelivery(published=(0, 1), failed=()),
+            ]
+
+        def send(self, events):
+            calls.append([event.sequence for event in events])
+            return Result.ok(self.responses.pop(0))
+
+    forwarder = EventForwarder(source, Sender(), cursor_store, max_batch_size=3)
+    first = forwarder.forward()
+    second = forwarder.forward()
+
+    assert first.is_ok()
+    assert first.unwrap().attempted == 3
+    assert first.unwrap().published == (0, 2)
+    assert first.unwrap().failed == (failure,)
+    assert first.unwrap().next_cursor.sequence == 1
+    assert second.is_ok()
+    assert second.unwrap().cursor.sequence == 1
+    assert second.unwrap().next_cursor.sequence == 3
+    assert calls == [[1, 2, 3], [2, 3]]
+    assert cursor_store.load().unwrap().sequence == 3
+
+
+def test_event_forwarder_preserves_cursor_when_sender_fails():
+    source = EventStream()
+    source.publish("one", {})
+    cursor_store = InMemoryEventCursorStore()
+
+    class Sender:
+        def send(self, events):
+            return Result.err(
+                {"errorType": "EVENT_FORWARD_TRANSPORT_ERROR", "message": "offline"}
+            )
+
+    result = EventForwarder(source, Sender(), cursor_store).forward()
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "EVENT_FORWARD_TRANSPORT_ERROR"
+    assert cursor_store.load().unwrap().sequence == 0
+
+
+def test_event_forwarder_preserves_cursor_when_cursor_save_fails():
+    source = EventStream()
+    source.publish("one", {})
+
+    class CursorStore:
+        def load(self):
+            return Result.ok(EventCursor())
+
+        def save(self, cursor):
+            return Result.err(
+                {"errorType": "EVENT_CURSOR_SAVE_ERROR", "message": "disk full"}
+            )
+
+    class Sender:
+        def send(self, events):
+            return Result.ok(EventDelivery(published=(0,), failed=()))
+
+    result = EventForwarder(source, Sender(), CursorStore()).forward()
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "EVENT_CURSOR_SAVE_ERROR"
+
+
+def test_event_forwarder_fails_closed_when_source_cursor_expired():
+    source = EventStream(max_events=2)
+    source.publish("one", {})
+    source.publish("two", {})
+    source.publish("three", {})
+    calls = []
+
+    class Sender:
+        def send(self, events):
+            calls.append(events)
+            return Result.ok(EventDelivery(published=(0,), failed=()))
+
+    result = EventForwarder(
+        source, Sender(), InMemoryEventCursorStore(), max_batch_size=1
+    ).forward()
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "EVENT_CURSOR_EXPIRED"
+    assert calls == []
+
+
+def test_http_event_batch_sender_redacts_and_parses_complete_acknowledgement():
+    received = []
+
+    class Handler(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def do_POST(self):  # noqa: N802
+            length = int(self.headers["Content-Length"])
+            received.append(
+                (
+                    self.headers.get("Authorization"),
+                    json.loads(self.rfile.read(length)),
+                )
+            )
+            body = json.dumps(
+                {
+                    "published": [{"index": 0}, {"index": 1}],
+                    "failed": [],
+                }
+            ).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            self.wfile.flush()
+
+        def log_message(self, format, *args):
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        sender = HttpEventBatchSender(
+            f"http://127.0.0.1:{server.server_address[1]}/v1/events/batch",
+            auth_token="batch-token",
+        )
+        result = sender.send(
+            [
+                AgentEvent(
+                    sequence=1,
+                    event_type="one",
+                    timestamp=1.0,
+                    payload={"secret": "hidden"},
+                ),
+                AgentEvent(
+                    sequence=2,
+                    event_type="two",
+                    timestamp=2.0,
+                    payload={"value": 2},
+                ),
+            ]
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+    assert result.is_ok()
+    assert result.unwrap().published == (0, 1)
+    assert result.unwrap().failed == ()
+    assert received[0][0] == "Bearer batch-token"
+    assert received[0][1]["events"][0]["payload"]["secret"] == "[REDACTED]"
+    assert "sequence" not in received[0][1]["events"][0]
+
+
+def test_http_event_batch_sender_rejects_incomplete_acknowledgement():
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):  # noqa: N802
+            length = int(self.headers["Content-Length"])
+            self.rfile.read(length)
+            body = b'{"published":[{"index":0}],"failed":[]}'
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, format, *args):
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        sender = HttpEventBatchSender(
+            f"http://127.0.0.1:{server.server_address[1]}/v1/events/batch"
+        )
+        result = sender.send(
+            [
+                AgentEvent(1, "one", 1.0, {}),
+                AgentEvent(2, "two", 2.0, {}),
+            ]
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "EVENT_DELIVERY_INVALID"
+
+
+def test_http_event_batch_sender_rejects_oversized_request_before_network():
+    sender = HttpEventBatchSender(
+        "http://127.0.0.1:1/v1/events/batch",
+        max_request_bytes=1,
+    )
+
+    result = sender.send([AgentEvent(1, "one", 1.0, {})])
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "EVENT_FORWARD_REQUEST_TOO_LARGE"
+
+
+def test_file_event_forwarder_replays_authenticated_batches_after_restart(tmp_path):
+    from maple.autonomy.server import RunClient, RunServer, WorkflowRegistry
+
+    destination = EventStream(max_events=10)
+    server = RunServer(
+        WorkflowRegistry(),
+        event_stream=destination,
+        auth_token="forward-token",
+    )
+    base_url = server.start()
+    try:
+        source_directory = tmp_path / "source"
+        source = EventStream(
+            max_events=10,
+            journal=FileEventJournal(source_directory / "journal", max_events=10),
+        )
+        source.publish("one", {"secret": "hidden"})
+        source.publish("two", {"value": 2})
+        source.publish("three", {"value": 3})
+        sender = HttpEventBatchSender(
+            f"{base_url}/v1/events/batch", auth_token="forward-token"
+        )
+        cursor_directory = tmp_path / "cursor"
+        first_forwarder = EventForwarder(
+            source,
+            sender,
+            FileEventCursorStore(cursor_directory),
+            max_batch_size=2,
+        )
+        first = first_forwarder.forward()
+        second = first_forwarder.forward()
+
+        restarted_source = EventStream(
+            max_events=10,
+            journal=FileEventJournal(source_directory / "journal", max_events=10),
+        )
+        restarted = EventForwarder(
+            restarted_source,
+            HttpEventBatchSender(
+                f"{base_url}/v1/events/batch", auth_token="forward-token"
+            ),
+            FileEventCursorStore(cursor_directory),
+            max_batch_size=2,
+        )
+        empty = restarted.forward()
+        remote = RunClient(base_url, auth_token="forward-token").read_events(
+            EventCursor(), limit=10
+        )
+    finally:
+        server.close()
+
+    assert first.is_ok()
+    assert second.is_ok()
+    assert first.unwrap().next_cursor.sequence == 2
+    assert second.unwrap().next_cursor.sequence == 3
+    assert empty.is_ok()
+    assert empty.unwrap().attempted == 0
+    assert remote.is_ok()
+    remote_events = remote.unwrap()["batch"]["events"]
+    assert [event["event_type"] for event in remote_events] == ["one", "two", "three"]
+    assert remote_events[0]["payload"]["secret"] == "[REDACTED]"

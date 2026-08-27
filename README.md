@@ -44,7 +44,7 @@ Most agent frameworks give you either **infrastructure** (messaging, security, f
 - **Trusted Local Execution (preview)** — Opt tools into bounded input/output, timeout, cooperative cancellation, approval, and concurrency controls; this is not an untrusted-code sandbox.
 - **Retrieval/Data Primitives (preview)** — Ingest bounded documents through host-owned cursor connectors, split deterministic chunks, run local lexical or caller-supplied-vector retrieval, apply an optional provider-neutral reranker, and retain source references for grounded answers.
 - **Durable Agent Runs (preview)** — Opt synchronous or asynchronous ReAct goals into bounded in-memory or atomic file checkpoints with stable `run_id` recovery; file-backed run cursors use per-run cross-process fencing leases, pending durable approvals pause before further tool side effects, built-in approval stores replay bounded recorded terminal outcomes after a checkpoint crash window, and explicitly opted-in `Tool(replay_policy="reuse_success")` tools can reuse successful journaled results. Exactly-once external effects, host notifications, and sandboxing remain host-owned or unsupported.
-- **Event Streaming and Redaction (preview)** — Publish bounded sequenced events with ring retention, cursor-based reads with explicit eviction errors, cooperative cancellation for waiters, wait/snapshot consumers, subscriber isolation, recursive credential redaction, provider request correlation in agent metadata, opt-in metadata-only `model.chunk` events from sync/async provider stream aggregation, optional atomic `FileEventJournal` restart replay of already-redacted events, optional `HttpEventExporter` delivery, and authenticated `RunServer`/`RunClient` single-event or bounded batch ingestion into a host-owned stream; remote delivery remains bounded, best-effort, and cannot fail a run.
+- **Event Streaming and Redaction (preview)** — Publish bounded sequenced events with ring retention, cursor-based reads with explicit eviction errors, cooperative cancellation for waiters, wait/snapshot consumers, subscriber isolation, recursive credential redaction, provider request correlation in agent metadata, opt-in metadata-only `model.chunk` events from sync/async provider stream aggregation, optional atomic `FileEventJournal` restart replay of already-redacted events, optional `HttpEventExporter` delivery, and authenticated `RunServer`/`RunClient` single-event or bounded batch ingestion into a host-owned stream; `EventForwarder` adds explicit bounded remote aggregation with a durable cursor and at-least-once semantics, while remote delivery remains bounded and cannot fail a run.
 - **Evaluation Harness (preview)** — Run versioned deterministic golden cases with output-schema checks, exact outputs, tool-trajectory checks, bounded reports, and redacted actual values; optionally add a host-supplied bounded judge result without selecting a provider or claiming semantic faithfulness.
 - **Retrieval/Citation Evaluation (preview)** — Score lexical or vector retrieval against bounded golden source URIs with deterministic source-level precision, recall, and F1; generated-answer faithfulness remains a separate calibrated evaluation.
 - **Grounded-Answer Evaluation (preview)** — Score bounded answer claims against supplied source text with deterministic lexical overlap and typed threshold failures; this is an explicit proxy, not semantic entailment or an LLM judge.
@@ -591,6 +591,43 @@ The `negotiate` action uses an injected `ResourceNegotiator` and requires
 validated at the MCP boundary and synchronous negotiation is moved off the
 event loop. See [ADR-023](docs/adr/023-mcp-resource-management-boundary.md)
 for the ownership and failure contract.
+
+### Durable remote event forwarding
+
+Hosts that need restartable delivery can combine a local bounded journal with
+an authenticated batch destination. The forwarder advances its cursor only
+through a contiguous acknowledged prefix; a lost response or cursor write may
+cause a duplicate on the next explicit call, so this is at-least-once delivery
+and not exactly-once effects:
+
+```python
+from maple import (
+    EventForwarder,
+    EventStream,
+    FileEventCursorStore,
+    FileEventJournal,
+    HttpEventBatchSender,
+)
+
+events = EventStream(
+    max_events=1_000,
+    journal=FileEventJournal(".maple-events", max_events=1_000),
+)
+forwarder = EventForwarder(
+    events,
+    HttpEventBatchSender(
+        "https://collector.example/v1/events/batch",
+        auth_token="collector-token",
+    ),
+    FileEventCursorStore(".maple-event-forwarder"),
+)
+report = forwarder.forward()
+```
+
+Each call sends at most 100 events and returns indexed published/failed
+outcomes. Cursor expiry, malformed acknowledgements, transport failure, and
+cursor persistence failure are surfaced rather than silently dropping events;
+the forwarder performs no implicit retry or background scheduling.
 
 ### Artifacts and code blocks
 

@@ -21,6 +21,7 @@ from typing import (
     Mapping,
     Optional,
     Protocol,
+    Sequence,
     Tuple,
     Union,
 )
@@ -39,7 +40,10 @@ _DEFAULT_EXPORT_MAX_EVENT_BYTES = 1_048_576
 _DEFAULT_EXPORT_MAX_RESPONSE_BYTES = 64 * 1024
 _MAX_EXPORT_PATH_BYTES = 4_096
 DEFAULT_MAX_JOURNAL_BYTES = 16 * 1024 * 1024
+DEFAULT_MAX_FORWARD_BATCH_ITEMS = 100
+DEFAULT_MAX_CURSOR_BYTES = 4 * 1024
 _EVENT_JOURNAL_VERSION = 1
+_EVENT_CURSOR_VERSION = 1
 _MAX_EVENT_PAYLOAD_ITEMS = 10_000
 _MAX_EVENT_PAYLOAD_DEPTH = 32
 
@@ -403,6 +407,740 @@ class EventBatch:
             "oldest_sequence": self.oldest_sequence,
             "latest_sequence": self.latest_sequence,
         }
+
+
+@dataclass(frozen=True)
+class EventDeliveryFailure:
+    """A bounded remote rejection identified by its source batch index."""
+
+    index: int
+    error: Error
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.index, int)
+            or isinstance(self.index, bool)
+            or self.index < 0
+        ):
+            raise ValueError("index must be a non-negative integer")
+        if not isinstance(self.error, Mapping):
+            raise ValueError("error must be a mapping")
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Return a JSON-safe failure representation."""
+        return {"index": self.index, "error": dict(self.error)}
+
+
+@dataclass(frozen=True)
+class EventDelivery:
+    """The bounded acknowledgement returned by an event batch destination."""
+
+    published: Tuple[int, ...]
+    failed: Tuple[EventDeliveryFailure, ...]
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Return the delivery acknowledgement without event payloads."""
+        return {
+            "published": list(self.published),
+            "failed": [failure.to_dict() for failure in self.failed],
+        }
+
+
+@dataclass(frozen=True)
+class EventForwardReport:
+    """One bounded forwarding attempt and its durable cursor outcome."""
+
+    cursor: EventCursor
+    next_cursor: EventCursor
+    published: Tuple[int, ...]
+    failed: Tuple[EventDeliveryFailure, ...]
+
+    @property
+    def attempted(self) -> int:
+        """Return the number of source events included in the attempt."""
+        return len(self.published) + len(self.failed)
+
+    @property
+    def cursor_advanced(self) -> bool:
+        """Return whether the durable cursor moved during this attempt."""
+        return self.next_cursor != self.cursor
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Return bounded forwarding metrics and indexed outcomes."""
+        return {
+            "cursor": self.cursor.to_dict(),
+            "next_cursor": self.next_cursor.to_dict(),
+            "attempted": self.attempted,
+            "published": list(self.published),
+            "failed": [failure.to_dict() for failure in self.failed],
+            "cursor_advanced": self.cursor_advanced,
+        }
+
+
+class EventBatchSender(Protocol):
+    """Host-owned destination for one bounded group of redacted events."""
+
+    def send(self, events: Sequence[AgentEvent]) -> Result[EventDelivery, Error]:
+        """Deliver events and return a complete indexed acknowledgement."""
+
+
+class EventCursorStore(Protocol):
+    """Durable position contract for a forwarding consumer."""
+
+    def load(self) -> Result[EventCursor, Error]:
+        """Load the last contiguous source sequence acknowledged."""
+
+    def save(self, cursor: EventCursor) -> Result[EventCursor, Error]:
+        """Advance the cursor without allowing regression."""
+
+
+class InMemoryEventCursorStore:
+    """Thread-safe cursor store for one-process forwarding consumers."""
+
+    def __init__(self, cursor: Optional[EventCursor] = None) -> None:
+        if cursor is not None and not isinstance(cursor, EventCursor):
+            raise TypeError("cursor must be an EventCursor when provided")
+        self._cursor = cursor or EventCursor()
+        self._lock = threading.RLock()
+
+    def load(self) -> Result[EventCursor, Error]:
+        """Return the current immutable cursor."""
+        with self._lock:
+            return Result.ok(self._cursor)
+
+    def save(self, cursor: EventCursor) -> Result[EventCursor, Error]:
+        """Persist a non-regressing cursor in memory."""
+        if not isinstance(cursor, EventCursor):
+            return Result.err(_error("EVENT_CURSOR_INVALID", "cursor is invalid."))
+        with self._lock:
+            if cursor.sequence < self._cursor.sequence:
+                return Result.err(
+                    _error(
+                        "EVENT_CURSOR_CONFLICT",
+                        "cursor cannot move backwards.",
+                        current_sequence=self._cursor.sequence,
+                        requested_sequence=cursor.sequence,
+                    )
+                )
+            self._cursor = cursor
+            return Result.ok(cursor)
+
+
+class FileEventCursorStore:
+    """Atomic, bounded, cross-process cursor persistence for one forwarder."""
+
+    _FILENAME = "cursor.json"
+    _TEMP_PREFIX = ".maple-event-cursor-"
+
+    def __init__(
+        self,
+        directory: Union[str, Path],
+        *,
+        max_bytes: int = DEFAULT_MAX_CURSOR_BYTES,
+        lease_ttl_seconds: float = 30.0,
+    ) -> None:
+        if (
+            not isinstance(max_bytes, int)
+            or isinstance(max_bytes, bool)
+            or max_bytes <= 0
+        ):
+            raise ValueError("max_bytes must be a positive integer")
+        self.max_bytes = max_bytes
+        self.directory = Path(directory)
+        try:
+            self.directory.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise ValueError("event cursor directory is unavailable") from exc
+        if not self.directory.is_dir():
+            raise ValueError("event cursor path must be a directory")
+        self.path = self.directory / self._FILENAME
+        self._lock = threading.RLock()
+        try:
+            self._lease = DurableRecordLease(
+                self.directory,
+                namespace="event-forwarder",
+                holder_label="file-event-cursor",
+                lease_ttl_seconds=lease_ttl_seconds,
+            )
+        except (OSError, TypeError, ValueError) as exc:
+            raise ValueError("event cursor lease is unavailable") from exc
+
+    def _read_unlocked(self) -> Result[EventCursor, Error]:
+        if not self.path.exists():
+            return Result.ok(EventCursor())
+        try:
+            if self.path.stat().st_size > self.max_bytes:
+                return Result.err(
+                    _error(
+                        "EVENT_CURSOR_LOAD_ERROR",
+                        "event cursor exceeds the byte limit.",
+                    )
+                )
+            data = json.loads(self.path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, TypeError, ValueError, json.JSONDecodeError):
+            return Result.err(
+                _error("EVENT_CURSOR_LOAD_ERROR", "event cursor could not be loaded.")
+            )
+        if (
+            not isinstance(data, Mapping)
+            or not isinstance(data.get("version"), int)
+            or isinstance(data.get("version"), bool)
+            or data.get("version") != _EVENT_CURSOR_VERSION
+        ):
+            return Result.err(
+                _error("EVENT_CURSOR_LOAD_ERROR", "event cursor version is invalid.")
+            )
+        raw_cursor = data.get("cursor")
+        if not isinstance(raw_cursor, Mapping):
+            return Result.err(
+                _error("EVENT_CURSOR_LOAD_ERROR", "event cursor record is invalid.")
+            )
+        parsed = EventCursor.from_dict(raw_cursor)
+        if parsed.is_err():
+            return Result.err(
+                _error("EVENT_CURSOR_LOAD_ERROR", "event cursor record is invalid.")
+            )
+        return parsed
+
+    def _encode(self, cursor: EventCursor) -> Result[str, Error]:
+        try:
+            encoded = json.dumps(
+                {"version": _EVENT_CURSOR_VERSION, "cursor": cursor.to_dict()},
+                ensure_ascii=False,
+                allow_nan=False,
+                separators=(",", ":"),
+            )
+        except (TypeError, ValueError, OverflowError):
+            return Result.err(
+                _error("EVENT_CURSOR_SAVE_ERROR", "event cursor is not serializable.")
+            )
+        if len(encoded.encode("utf-8")) > self.max_bytes:
+            return Result.err(
+                _error(
+                    "EVENT_CURSOR_SIZE",
+                    "event cursor exceeds the byte limit.",
+                    max_bytes=self.max_bytes,
+                )
+            )
+        return Result.ok(encoded)
+
+    def _write_unlocked(self, cursor: EventCursor) -> Result[EventCursor, Error]:
+        encoded = self._encode(cursor)
+        if encoded.is_err():
+            return Result.err(encoded.unwrap_err())
+        temporary_path: Optional[Path] = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=str(self.directory),
+                prefix=self._TEMP_PREFIX,
+                suffix=".tmp",
+                delete=False,
+            ) as handle:
+                temporary_path = Path(handle.name)
+                handle.write(encoded.unwrap())
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(str(temporary_path), str(self.path))
+            temporary_path = None
+            return Result.ok(cursor)
+        except (OSError, TypeError, ValueError) as exc:
+            return Result.err(
+                _error(
+                    "EVENT_CURSOR_SAVE_ERROR",
+                    "event cursor could not be saved.",
+                    reason=type(exc).__name__,
+                )
+            )
+        finally:
+            if temporary_path is not None:
+                try:
+                    temporary_path.unlink()
+                except OSError:
+                    pass
+
+    def _run(
+        self,
+        operation: str,
+        callback: Callable[[], Result[Any, Error]],
+    ) -> Result[Any, Error]:
+        try:
+            return self._lease.run(
+                "cursor",
+                operation,
+                callback,
+                acquire_error_type="EVENT_CURSOR_LEASE_ERROR",
+                acquire_error_message="event cursor lease could not be acquired.",
+                release_error_type="EVENT_CURSOR_LEASE_RELEASE_ERROR",
+                release_error_message="event cursor lease could not be released.",
+            )
+        except Exception as exc:
+            return Result.err(
+                _error(
+                    "EVENT_CURSOR_ERROR",
+                    "event cursor operation failed.",
+                    operation=operation,
+                    reason=type(exc).__name__,
+                )
+            )
+
+    def load(self) -> Result[EventCursor, Error]:
+        """Load the cursor under a fencing lease."""
+        with self._lock:
+            result = self._run("load", self._read_unlocked)
+        if result.is_err():
+            return Result.err(result.unwrap_err())
+        return Result.ok(result.unwrap())
+
+    def save(self, cursor: EventCursor) -> Result[EventCursor, Error]:
+        """Atomically save a cursor that does not regress."""
+        if not isinstance(cursor, EventCursor):
+            return Result.err(_error("EVENT_CURSOR_INVALID", "cursor is invalid."))
+
+        def operation() -> Result[EventCursor, Error]:
+            current = self._read_unlocked()
+            if current.is_err():
+                return Result.err(current.unwrap_err())
+            if cursor.sequence < current.unwrap().sequence:
+                return Result.err(
+                    _error(
+                        "EVENT_CURSOR_CONFLICT",
+                        "cursor cannot move backwards.",
+                        current_sequence=current.unwrap().sequence,
+                        requested_sequence=cursor.sequence,
+                    )
+                )
+            return self._write_unlocked(cursor)
+
+        with self._lock:
+            result = self._run("save", operation)
+        if result.is_err():
+            return Result.err(result.unwrap_err())
+        return Result.ok(result.unwrap())
+
+
+def _validate_event_delivery(
+    delivery: Any, expected_count: int
+) -> Result[EventDelivery, Error]:
+    """Require a complete, duplicate-free acknowledgement partition."""
+    if not isinstance(delivery, EventDelivery):
+        return Result.err(
+            _error("EVENT_DELIVERY_INVALID", "event delivery is not typed.")
+        )
+    published = list(delivery.published)
+    failed = list(delivery.failed)
+    all_indices = published + [failure.index for failure in failed]
+    if (
+        any(
+            not isinstance(index, int)
+            or isinstance(index, bool)
+            or index < 0
+            or index >= expected_count
+            for index in all_indices
+        )
+        or len(set(all_indices)) != expected_count
+        or len(all_indices) != expected_count
+    ):
+        return Result.err(
+            _error(
+                "EVENT_DELIVERY_INVALID",
+                "event delivery must acknowledge every source item exactly once.",
+                expected_items=expected_count,
+            )
+        )
+    return Result.ok(delivery)
+
+
+class EventForwarder:
+    """Forward one bounded source window with a durable at-least-once cursor.
+
+    The source stream and cursor store are host-owned. Calls on one instance
+    are serialized; separate processes may resend an already-accepted batch
+    if a cursor save or response is lost. The class never claims exactly-once
+    delivery and never retries implicitly.
+    """
+
+    def __init__(
+        self,
+        stream: EventStream,
+        sender: EventBatchSender,
+        cursor_store: EventCursorStore,
+        *,
+        max_batch_size: int = DEFAULT_MAX_FORWARD_BATCH_ITEMS,
+    ) -> None:
+        if not callable(getattr(stream, "read", None)):
+            raise TypeError("stream must implement read")
+        if not callable(getattr(sender, "send", None)):
+            raise TypeError("sender must implement send")
+        if not callable(getattr(cursor_store, "load", None)) or not callable(
+            getattr(cursor_store, "save", None)
+        ):
+            raise TypeError("cursor_store must implement load and save")
+        if (
+            not isinstance(max_batch_size, int)
+            or isinstance(max_batch_size, bool)
+            or not 1 <= max_batch_size <= DEFAULT_MAX_FORWARD_BATCH_ITEMS
+        ):
+            raise ValueError(
+                "max_batch_size must be between 1 and "
+                f"{DEFAULT_MAX_FORWARD_BATCH_ITEMS}"
+            )
+        self.stream = stream
+        self.sender = sender
+        self.cursor_store = cursor_store
+        self.max_batch_size = max_batch_size
+        self._lock = threading.Lock()
+
+    def forward(self) -> Result[EventForwardReport, Error]:
+        """Forward one source batch and persist only its acknowledged prefix."""
+        with self._lock:
+            try:
+                cursor_result = self.cursor_store.load()
+            except Exception as exc:
+                return Result.err(
+                    _error(
+                        "EVENT_FORWARD_CURSOR_ERROR",
+                        "event forward cursor could not be loaded.",
+                        reason=type(exc).__name__,
+                    )
+                )
+            if cursor_result.is_err():
+                return Result.err(cursor_result.unwrap_err())
+            cursor = cursor_result.unwrap()
+            if not isinstance(cursor, EventCursor):
+                return Result.err(
+                    _error(
+                        "EVENT_CURSOR_INVALID",
+                        "cursor store returned an invalid cursor.",
+                    )
+                )
+            try:
+                batch_result = self.stream.read(cursor, limit=self.max_batch_size)
+            except Exception as exc:
+                return Result.err(
+                    _error(
+                        "EVENT_FORWARD_SOURCE_ERROR",
+                        "event source could not be read.",
+                        reason=type(exc).__name__,
+                    )
+                )
+            if batch_result.is_err():
+                return Result.err(batch_result.unwrap_err())
+            batch = batch_result.unwrap()
+            if not isinstance(batch, EventBatch):
+                return Result.err(
+                    _error(
+                        "EVENT_FORWARD_SOURCE_ERROR",
+                        "event source returned an invalid batch.",
+                    )
+                )
+            events = batch.events
+            if not events:
+                return Result.ok(
+                    EventForwardReport(
+                        cursor=cursor,
+                        next_cursor=cursor,
+                        published=(),
+                        failed=(),
+                    )
+                )
+            try:
+                delivery_result = self.sender.send(events)
+            except Exception as exc:
+                return Result.err(
+                    _error(
+                        "EVENT_FORWARD_TRANSPORT_ERROR",
+                        "event batch delivery failed.",
+                        reason=type(exc).__name__,
+                    )
+                )
+            if delivery_result.is_err():
+                return Result.err(delivery_result.unwrap_err())
+            validated = _validate_event_delivery(delivery_result.unwrap(), len(events))
+            if validated.is_err():
+                return Result.err(validated.unwrap_err())
+            delivery = validated.unwrap()
+            published_indices = set(delivery.published)
+            contiguous_count = 0
+            while (
+                contiguous_count < len(events) and contiguous_count in published_indices
+            ):
+                contiguous_count += 1
+            next_cursor = cursor
+            if contiguous_count:
+                next_cursor = EventCursor(
+                    sequence=events[contiguous_count - 1].sequence
+                )
+                try:
+                    saved = self.cursor_store.save(next_cursor)
+                except Exception as exc:
+                    return Result.err(
+                        _error(
+                            "EVENT_FORWARD_CURSOR_ERROR",
+                            "event forward cursor could not be saved.",
+                            reason=type(exc).__name__,
+                        )
+                    )
+                if saved.is_err():
+                    return Result.err(saved.unwrap_err())
+                if saved.unwrap() != next_cursor:
+                    return Result.err(
+                        _error(
+                            "EVENT_CURSOR_CONFLICT",
+                            "cursor store returned a different cursor.",
+                        )
+                    )
+            return Result.ok(
+                EventForwardReport(
+                    cursor=cursor,
+                    next_cursor=next_cursor,
+                    published=delivery.published,
+                    failed=delivery.failed,
+                )
+            )
+
+
+def _remote_delivery_error(value: Any, index: int) -> Result[Error, Error]:
+    """Keep remote item errors bounded and free of remote message text."""
+    if not isinstance(value, Mapping):
+        return Result.err(
+            _error(
+                "EVENT_DELIVERY_INVALID",
+                "remote delivery failure is not an object.",
+                index=index,
+            )
+        )
+    error_type = value.get("errorType")
+    if (
+        not isinstance(error_type, str)
+        or not error_type
+        or len(error_type) > 128
+        or any(ord(char) < 32 or ord(char) == 127 for char in error_type)
+    ):
+        return Result.err(
+            _error(
+                "EVENT_DELIVERY_INVALID",
+                "remote delivery failure has an invalid error type.",
+                index=index,
+            )
+        )
+    return Result.ok(
+        _error(
+            "EVENT_REMOTE_ITEM_FAILED",
+            "remote event item was rejected.",
+            index=index,
+            remote_error_type=error_type,
+        )
+    )
+
+
+def _parse_event_delivery(
+    value: Any, expected_count: int
+) -> Result[EventDelivery, Error]:
+    """Parse and validate the public batch acknowledgement shape."""
+    if not isinstance(value, Mapping):
+        return Result.err(
+            _error(
+                "EVENT_DELIVERY_INVALID", "event delivery response must be an object."
+            )
+        )
+    raw_published = value.get("published")
+    raw_failed = value.get("failed")
+    if not isinstance(raw_published, list) or not isinstance(raw_failed, list):
+        return Result.err(
+            _error(
+                "EVENT_DELIVERY_INVALID",
+                "event delivery response must contain published and failed lists.",
+            )
+        )
+    if len(raw_published) > expected_count or len(raw_failed) > expected_count:
+        return Result.err(
+            _error(
+                "EVENT_DELIVERY_INVALID",
+                "event delivery response exceeds the source batch size.",
+                expected_items=expected_count,
+            )
+        )
+    published: List[int] = []
+    for item in raw_published:
+        if not isinstance(item, Mapping):
+            return Result.err(
+                _error("EVENT_DELIVERY_INVALID", "published delivery item is invalid.")
+            )
+        index = item.get("index")
+        if not isinstance(index, int) or isinstance(index, bool):
+            return Result.err(
+                _error("EVENT_DELIVERY_INVALID", "published delivery index is invalid.")
+            )
+        published.append(index)
+    failed: List[EventDeliveryFailure] = []
+    for item in raw_failed:
+        if not isinstance(item, Mapping):
+            return Result.err(
+                _error("EVENT_DELIVERY_INVALID", "failed delivery item is invalid.")
+            )
+        index = item.get("index")
+        if not isinstance(index, int) or isinstance(index, bool):
+            return Result.err(
+                _error("EVENT_DELIVERY_INVALID", "failed delivery index is invalid.")
+            )
+        failure_error = _remote_delivery_error(item.get("error"), index)
+        if failure_error.is_err():
+            return Result.err(failure_error.unwrap_err())
+        failed.append(EventDeliveryFailure(index=index, error=failure_error.unwrap()))
+    delivery = EventDelivery(published=tuple(published), failed=tuple(failed))
+    return _validate_event_delivery(delivery, expected_count)
+
+
+class HttpEventBatchSender(HttpEventExporter):
+    """Dependency-free HTTP batch destination for :class:`EventForwarder`.
+
+    Events are re-redacted before serialization. The sender performs one
+    bounded request and never retries or stores a request locally.
+    """
+
+    def __init__(
+        self,
+        endpoint: str,
+        *,
+        auth_token: Optional[str] = None,
+        timeout_seconds: float = _DEFAULT_EXPORT_TIMEOUT_SECONDS,
+        max_request_bytes: int = _DEFAULT_EXPORT_MAX_EVENT_BYTES,
+        max_response_bytes: int = _DEFAULT_EXPORT_MAX_RESPONSE_BYTES,
+        redaction: Optional[RedactionPolicy] = None,
+    ) -> None:
+        super().__init__(
+            endpoint,
+            auth_token=auth_token,
+            timeout_seconds=timeout_seconds,
+            max_event_bytes=max_request_bytes,
+            max_response_bytes=max_response_bytes,
+        )
+        self.max_request_bytes = max_request_bytes
+        self.redaction = redaction or RedactionPolicy()
+        config_error = self.redaction.validate()
+        if config_error is not None:
+            raise ValueError(config_error["message"])
+
+    def send(self, events: Sequence[AgentEvent]) -> Result[EventDelivery, Error]:
+        """Send one bounded event group and parse its complete acknowledgement."""
+        if (
+            not isinstance(events, (list, tuple))
+            or not events
+            or len(events) > DEFAULT_MAX_FORWARD_BATCH_ITEMS
+        ):
+            return Result.err(
+                _error(
+                    "EVENT_BATCH_INVALID",
+                    "events must contain between 1 and 100 items.",
+                    max_items=DEFAULT_MAX_FORWARD_BATCH_ITEMS,
+                )
+            )
+        normalized: List[Dict[str, Any]] = []
+        for index, event in enumerate(events):
+            invalid = _validate_event_record(event)
+            if invalid is not None:
+                return Result.err(
+                    _error(
+                        "EVENT_FORWARD_INPUT_INVALID",
+                        "source event is invalid.",
+                        index=index,
+                    )
+                )
+            redacted = self.redaction.redact(event.payload)
+            if redacted.is_err():
+                return Result.err(
+                    _error(
+                        "EVENT_FORWARD_INPUT_INVALID",
+                        "source event payload failed redaction.",
+                        index=index,
+                    )
+                )
+            item: Dict[str, Any] = {
+                "event_type": event.event_type,
+                "payload": redacted.unwrap(),
+            }
+            if event.run_id is not None:
+                item["run_id"] = event.run_id
+            normalized.append(item)
+        try:
+            encoded = json.dumps(
+                {"events": normalized},
+                ensure_ascii=False,
+                allow_nan=False,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        except (TypeError, ValueError, OverflowError) as exc:
+            return Result.err(
+                _error(
+                    "EVENT_FORWARD_INPUT_INVALID",
+                    "event batch is not JSON serializable.",
+                    reason=type(exc).__name__,
+                )
+            )
+        if len(encoded) > self.max_request_bytes:
+            return Result.err(
+                _error(
+                    "EVENT_FORWARD_REQUEST_TOO_LARGE",
+                    "event batch exceeds the request byte limit.",
+                    max_bytes=self.max_request_bytes,
+                )
+            )
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
+        if self.auth_token is not None:
+            headers["Authorization"] = f"Bearer {self.auth_token}"
+        request = Request(self.endpoint, data=encoded, headers=headers, method="POST")
+        try:
+            with urlopen(request, timeout=self.timeout_seconds) as response:
+                status = int(response.status)
+                raw = response.read(self.max_response_bytes + 1)
+        except HTTPError as exc:
+            exc.close()
+            return Result.err(
+                _error(
+                    "EVENT_FORWARD_HTTP_ERROR",
+                    "remote event endpoint returned an error.",
+                    status=int(exc.code),
+                )
+            )
+        except (URLError, TimeoutError, OSError) as exc:
+            return Result.err(
+                _error(
+                    "EVENT_FORWARD_TRANSPORT_ERROR",
+                    "remote event endpoint could not be reached.",
+                    reason=type(exc).__name__,
+                )
+            )
+        if len(raw) > self.max_response_bytes:
+            return Result.err(
+                _error(
+                    "EVENT_FORWARD_RESPONSE_TOO_LARGE",
+                    "remote event response exceeds the byte limit.",
+                    max_bytes=self.max_response_bytes,
+                )
+            )
+        if not 200 <= status < 300:
+            return Result.err(
+                _error(
+                    "EVENT_FORWARD_HTTP_ERROR",
+                    "remote event endpoint returned an error.",
+                    status=status,
+                )
+            )
+        try:
+            decoded = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return Result.err(
+                _error(
+                    "EVENT_FORWARD_RESPONSE_INVALID",
+                    "remote event response is not valid JSON.",
+                )
+            )
+        return _parse_event_delivery(decoded, len(events))
 
 
 class EventJournal(Protocol):

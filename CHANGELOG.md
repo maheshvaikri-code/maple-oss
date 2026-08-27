@@ -10,6 +10,14 @@
 
 ### Additions
 
+- **Bounded durable event forwarding**: `EventForwarder` reads at most 100
+  events from a host-owned `EventStream`, sends them through the authenticated
+  `HttpEventBatchSender`, and persists only the contiguous acknowledged prefix
+  through `InMemoryEventCursorStore` or fenced atomic `FileEventCursorStore`.
+  Cursor expiry, malformed acknowledgements, transport failures, and cursor
+  persistence failures remain visible; delivery is explicit at-least-once with
+  no implicit retry, remote queue, or exactly-once claim.
+
 - **Bounded authenticated event batching**: `RunServer` and `RunClient` now
   support authenticated `POST /v1/events/batch` and `publish_events(...)` for
   1–100 event envelopes with request-order submission, stream-owned redaction
