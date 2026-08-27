@@ -12,10 +12,13 @@
 
 - **Bounded workflow HTTP transport**: added dependency-free `RunClient`
   support for health, workflow run, resume, and inspection calls with request,
-  URL, and response bounds, typed transport errors, and optional bearer authentication.
-  `RunServer(auth_token=...)` validates every route with a constant-time
-  comparison while retaining loopback-only binding. TLS, tenancy, remote
-  scheduling, streaming delivery, and exactly-once effects remain host-owned.
+  URL, and response bounds, typed transport errors, and optional bearer
+  authentication. `RunServer(auth_token=...)` validates every route with a
+  constant-time comparison while retaining loopback-only binding. Clean package
+  candidate `c7fe5bd` rebuilt wheel/sdist `1.1.3`, both Twine checks passed, the
+  sdist contains `522` entries, required files are `6/6`, and workspace-only
+  audit is `0`. TLS, tenancy, remote scheduling, streaming delivery, and
+  exactly-once effects remain host-owned. No publication was performed.
 - **Bounded local latency percentiles**: `EventStream.metrics()` and
   `SpanRecorder.metrics()` now expose deterministic integer p50/p95/p99 views
   from bounded recent sample rings, while preserving existing totals, maxima,

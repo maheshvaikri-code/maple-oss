@@ -39,6 +39,21 @@ The skipped test is the existing NATS dependency-gated test. The five
 ignored files are user-owned untracked Doctrine tests, not skipped tracked
 application coverage. No flake or retry-until-lucky behavior was used.
 
+## Package evidence
+
+Clean archive source: `git archive HEAD` at candidate `c7fe5bd`.
+
+- `python -m build --wheel --sdist`: exit `0`.
+- `python -m twine check dist/maple_oss-1.1.3-py3-none-any.whl dist/maple_oss-1.1.3.tar.gz`:
+  both artifacts `PASSED`.
+- sdist entries: `522`.
+- Required public files: `6/6` present — `README.md`, `LICENSE`,
+  `CHANGELOG.md`, ADR-058, this QA report, and the Slice 112 review report.
+- Workspace-only audit: `0` entries for `AGENTS.md`, `CLAUDE.md`,
+  `COMMERCIAL_LICENSE.md`, `Makefile`, `docs/brief.md`, and `docs/maximus.md`.
+
+The package candidate is locally reproducible and is not published.
+
 ## Bugs found
 
 | # | Repro steps (minimal) | Severity | Fixed @ | Re-verified | Regression test |
@@ -69,5 +84,5 @@ application coverage. No flake or retry-until-lucky behavior was used.
 environment dependency audit is not clean and `gitleaks`/`bandit` are
 unavailable. No human override.
 
-**QA verdict:** pass for Slice 112 behavior and static gates; release remains
-conditional on dependency-governance disposition and clean package evidence.
+**QA verdict:** pass for Slice 112 behavior, static gates, and package
+evidence; release remains conditional on dependency-governance disposition.
