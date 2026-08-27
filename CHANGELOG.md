@@ -10,6 +10,14 @@
 
 ### Additions
 
+- **Bounded authenticated human-input transport**: the existing dependency-free
+  loopback `RunServer`/`RunClient` contract can now list, inspect, respond to,
+  reject, continue, and consume durable human-input requests when a
+  `HumanInputStore` is configured. Bearer authentication protects every route;
+  the store remains authoritative for JSON Schema validation, actor
+  authorization, leases, notifications, and one-time consumption. Hosted
+  identity, TLS termination, automatic scheduling, and exactly-once effects
+  remain host-owned; no publication was performed.
 - **Bounded HTTP event exporter**: added optional dependency-free
   `HttpEventExporter` for synchronous POST delivery of already-redacted event
   envelopes with bounded request/response sizes, finite timeout, optional

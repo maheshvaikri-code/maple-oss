@@ -1557,6 +1557,20 @@ multi-tenant authorization, streaming transport, or a hard sandbox. A remote
 deployment must supply those host-owned controls and must not infer exactly-once
 effects from this transport.
 
+When `RunServer` receives `human_input_store=...`, the same authenticated
+contract exposes bounded human-in-the-loop control. `RunClient` provides
+`list_pending_human_input(limit)`, `get_human_input(id)`,
+`respond_human_input(id, response, actor_id=...)`,
+`reject_human_input(id, reason, actor_id=...)`,
+`continue_human_input(id, prompt, input_schema, actor_id=...)`, and
+`consume_human_input(id)`. These map to `/v1/interactions` routes and return
+the store's JSON-safe request envelope. The server's existing request/response
+limits apply, and the configured `HumanInputStore` remains authoritative for
+schema validation, actor authorization, durable leases, notifications, and
+one-time consumption. A server without a configured store returns `503` for
+these routes. This is a loopback transport contract, not a hosted operator
+service or automatic run scheduler.
+
 ## Usage Example
 
 ```python

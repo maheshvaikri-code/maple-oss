@@ -7,6 +7,8 @@ import urllib.request
 import pytest
 
 from maple.autonomy import (
+    HumanInputRequest,
+    InMemoryHumanInputStore,
     InMemoryCheckpointStore,
     RunClient,
     RunServer,
@@ -24,6 +26,22 @@ def _workflow(name="echo"):
     assert workflow.set_entry_point("echo").is_ok()
     assert workflow.add_edge("echo").is_ok()
     return workflow
+
+
+def _human_input_request(interaction_id="remote-input", max_rounds=2):
+    return HumanInputRequest(
+        interaction_id=interaction_id,
+        run_id="remote-run",
+        tool_call_id="remote-call",
+        prompt="Confirm the deployment.",
+        input_schema={
+            "type": "object",
+            "properties": {"confirmed": {"type": "boolean"}},
+            "required": ["confirmed"],
+            "additionalProperties": False,
+        },
+        max_rounds=max_rounds,
+    )
 
 
 def _request(url, *, method="GET", payload=None, headers=None):
@@ -230,3 +248,88 @@ def test_run_client_rejects_responses_over_its_configured_limit():
 
     assert result.is_err()
     assert result.unwrap_err()["errorType"] == "RESPONSE_TOO_LARGE"
+
+
+def test_authenticated_run_client_round_trips_human_input_operations():
+    registry = WorkflowRegistry()
+    assert registry.register(_workflow()).is_ok()
+    store = InMemoryHumanInputStore()
+    assert store.create(_human_input_request()).is_ok()
+    server = RunServer(
+        registry,
+        auth_token="interaction-token",
+        human_input_store=store,
+    )
+    base_url = server.start()
+
+    try:
+        client = RunClient(base_url, auth_token="interaction-token")
+        pending = client.list_pending_human_input(limit=10)
+        inspected = client.get_human_input("remote-input")
+        responded = client.respond_human_input(
+            "remote-input", {"confirmed": True}, actor_id="operator-1"
+        )
+        continued = client.continue_human_input(
+            "remote-input",
+            "Confirm the second step.",
+            {
+                "type": "object",
+                "properties": {"confirmed": {"type": "boolean"}},
+                "required": ["confirmed"],
+            },
+            actor_id="operator-1",
+        )
+        responded_again = client.respond_human_input(
+            "remote-input", {"confirmed": False}, actor_id="operator-1"
+        )
+        consumed = client.consume_human_input("remote-input")
+        unauthorized = RunClient(base_url).list_pending_human_input()
+    finally:
+        server.close()
+
+    assert pending.is_ok()
+    assert pending.unwrap()["interactions"][0]["interaction_id"] == "remote-input"
+    assert inspected.is_ok()
+    assert inspected.unwrap()["interaction"]["status"] == "pending"
+    assert responded.is_ok()
+    assert responded.unwrap()["interaction"]["status"] == "responded"
+    assert continued.is_ok()
+    assert continued.unwrap()["interaction"]["round_index"] == 1
+    assert responded_again.is_ok()
+    assert responded_again.unwrap()["interaction"]["decision"]["response"] == {
+        "confirmed": False
+    }
+    assert consumed.is_ok()
+    assert consumed.unwrap()["interaction"]["status"] == "consumed"
+    assert unauthorized.is_err()
+    assert unauthorized.unwrap_err()["errorType"] == "UNAUTHORIZED"
+
+
+def test_run_server_human_input_transport_fails_closed_without_a_store():
+    registry = WorkflowRegistry()
+    assert registry.register(_workflow()).is_ok()
+    server = RunServer(registry)
+    base_url = server.start()
+
+    try:
+        result = RunClient(base_url).list_pending_human_input()
+    finally:
+        server.close()
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "HUMAN_INPUT_STORE_UNAVAILABLE"
+
+
+def test_run_client_rejects_out_of_bounds_human_input_list_limits():
+    client = RunClient("http://127.0.0.1:1", timeout_seconds=0.1)
+
+    zero = client.list_pending_human_input(0)
+    too_large = client.list_pending_human_input(1_001)
+    invalid_schema = client.continue_human_input("input-1", "next", [])  # type: ignore[arg-type]
+
+    assert zero.is_err()
+    assert zero.unwrap_err()["errorType"] == "HUMAN_INPUT_LIMIT_INVALID"
+    assert too_large.is_err()
+    assert too_large.unwrap_err()["errorType"] == "HUMAN_INPUT_LIMIT_INVALID"
+    assert invalid_schema.is_err()
+    assert invalid_schema.unwrap_err()["errorType"] == "REQUEST_BODY_INVALID"

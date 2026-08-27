@@ -69,6 +69,14 @@ Most agent frameworks give you either **infrastructure** (messaging, security, f
 
 **Local Tool Spans (preview)** - When a `SpanRecorder` is attached, normal sync and async tool executions are recorded as bounded `agent.tool` child spans under the active model span. Arguments, results, and provider objects are not retained; optional stable sampling plus local retention, latency, and status metrics expose observability pressure.
 
+**Remote Human-Input Transport (preview)** — When a `HumanInputStore` is
+configured, the bounded authenticated `RunServer`/`RunClient` contract can
+list, inspect, respond to, reject, continue, and consume durable interaction
+records. Schema validation, actor authorization, leases, notifications, and
+one-time consumption remain store-owned; hosted identity, TLS termination,
+automatic scheduling, and exactly-once effects remain outside the local
+contract.
+
 ### Production Infrastructure
 
 - **Result\<T,E\> Error Handling** — Rust-inspired type-safe results. No silent failures, no uncaught exceptions. Chain with `.map()`, `.and_then()`, `.map_err()`.

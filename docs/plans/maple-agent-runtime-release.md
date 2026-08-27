@@ -129,6 +129,12 @@
 
 ## Threat sketch
 
+Slice 114 is the bounded authenticated human-input transport slice. It adds
+optional interaction routes to the loopback workflow server and matching
+client operations; its implementation, tests, ADR, QA, review, and package
+evidence will be recorded here at closure. Hosted identity, TLS termination,
+automatic scheduling, and exactly-once side-effect policy remain separate.
+
 Assets touched: workflow state, tool arguments, model outputs, checkpoint
 metadata, source documents, credentials used by adapters, and release
 artifacts. Entry points / untrusted inputs: workflow definitions, node output,

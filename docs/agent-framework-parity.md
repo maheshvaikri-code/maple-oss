@@ -68,6 +68,13 @@ finite timeouts, requires HTTPS for non-loopback endpoints, and performs no
 retry or persistence. Durable replay, batching, fleet aggregation, and hosted
 trace search remain deferred.
 
+The bounded human-input transport now also exposes optional authenticated
+loopback `RunServer`/`RunClient` routes for listing, inspection, response,
+rejection, bounded continuation, and one-time consumption. The configured
+`HumanInputStore` remains authoritative for schema validation, actor
+authorization, leases, notifications, and durable state; hosted identity,
+TLS, automatic scheduling, and exactly-once effects remain separate.
+
 ## Highest-value gaps before a publish claim
 
 The next implementation work should be ordered by runtime correctness, not by

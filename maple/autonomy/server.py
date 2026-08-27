@@ -7,12 +7,13 @@ import json
 import hmac
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any, Dict, Mapping, Optional, Tuple
+from typing import Any, Dict, Mapping, Optional, Tuple, cast
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, unquote, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
 from ..core.result import Result
+from .interactions import HumanInputRequest, HumanInputStore
 from .workflow import Workflow, WorkflowRun
 
 Error = Dict[str, Any]
@@ -21,6 +22,7 @@ _MAX_WORKFLOWS = 64
 _DEFAULT_MAX_BODY_BYTES = 1 * 1024 * 1024
 _DEFAULT_MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 _DEFAULT_CLIENT_TIMEOUT_SECONDS = 10.0
+_MAX_HUMAN_INPUT_LIMIT = 1_000
 
 
 def _error(error_type: str, message: str, **details: Any) -> Error:
@@ -59,7 +61,16 @@ def _status_for_error(error: Error) -> int:
     error_type = error.get("errorType")
     if error_type in {"RUN_NOT_FOUND", "WORKFLOW_NOT_FOUND"}:
         return 404
+    if error_type == "HUMAN_INPUT_NOT_FOUND":
+        return 404
     if error_type in {"RUN_ID_EXISTS", "CHECKPOINT_CONFLICT"}:
+        return 409
+    if error_type in {
+        "HUMAN_INPUT_CONFLICT",
+        "HUMAN_INPUT_NOT_READY",
+        "HUMAN_INPUT_ROUND_CONFLICT",
+        "HUMAN_INPUT_ROUND_LIMIT",
+    }:
         return 409
     if error_type in {
         "INVALID_STATE",
@@ -68,8 +79,27 @@ def _status_for_error(error: Error) -> int:
         "INVALID_JSON",
         "REQUEST_BODY_INVALID",
         "WORKFLOW_MISMATCH",
+        "HUMAN_INPUT_IDENTIFIER_INVALID",
+        "HUMAN_INPUT_ACTOR_INVALID",
+        "HUMAN_INPUT_LIMIT_INVALID",
+        "HUMAN_INPUT_PROMPT_INVALID",
+        "HUMAN_INPUT_REASON_INVALID",
+        "HUMAN_INPUT_RESPONSE_INVALID",
+        "HUMAN_INPUT_ROUND_LIMIT_INVALID",
+        "HUMAN_INPUT_VALUE_INVALID",
+        "HUMAN_INPUT_VALUE_TOO_DEEP",
+        "HUMAN_INPUT_VALUE_TOO_LARGE",
     }:
         return 400
+    if error_type == "HUMAN_INPUT_STORE_UNAVAILABLE":
+        return 503
+    if error_type == "HUMAN_INPUT_MULTI_ROUND_UNSUPPORTED":
+        return 501
+    if error_type in {
+        "HUMAN_INPUT_ACTOR_REQUIRED",
+        "HUMAN_INPUT_UNAUTHORIZED",
+    }:
+        return 403
     return 500
 
 
@@ -206,6 +236,8 @@ class _RequestHandler(BaseHTTPRequestHandler):
             if method == "GET" and path == ("healthz",):
                 self._write_json(200, {"status": "ok", "service": "maple-run-server"})
                 return
+            if self._interaction_route(method, path):
+                return
             if (
                 method == "GET"
                 and len(path) == 5
@@ -257,6 +289,141 @@ class _RequestHandler(BaseHTTPRequestHandler):
             self._write_error(
                 500, _error("INTERNAL_ERROR", "Request could not be processed.")
             )
+
+    def _interaction_route(self, method: str, path: Tuple[str, ...]) -> bool:
+        store = self.server.application.human_input_store
+        if not path or path[0:2] != ("v1", "interactions"):
+            return False
+        if store is None:
+            self._write_error(
+                503,
+                _error(
+                    "HUMAN_INPUT_STORE_UNAVAILABLE",
+                    "No human input store is configured.",
+                ),
+            )
+            return True
+        if method == "GET" and len(path) == 4 and path[2] == "pending":
+            try:
+                limit = int(path[3])
+            except ValueError:
+                self._write_error(
+                    400,
+                    _error(
+                        "HUMAN_INPUT_LIMIT_INVALID",
+                        "Human input list limit must be an integer.",
+                    ),
+                )
+                return True
+            result = store.list_pending(limit)
+            if result.is_err():
+                self._write_error(
+                    _status_for_error(result.unwrap_err()), result.unwrap_err()
+                )
+                return True
+            self._write_json(
+                200,
+                {
+                    "interactions": [
+                        self._interaction_to_dict(item) for item in result.unwrap()
+                    ]
+                },
+            )
+            return True
+        if method == "GET" and len(path) == 3:
+            result = store.get(path[2])
+            if result.is_err():
+                self._write_error(
+                    _status_for_error(result.unwrap_err()), result.unwrap_err()
+                )
+                return True
+            request = result.unwrap()
+            if request is None:
+                self._write_error(
+                    404,
+                    _error(
+                        "HUMAN_INPUT_NOT_FOUND", "Human input request was not found."
+                    ),
+                )
+                return True
+            self._write_json(200, {"interaction": self._interaction_to_dict(request)})
+            return True
+        if method == "POST" and len(path) == 4:
+            self._mutate_interaction(store, path[2], path[3])
+            return True
+        self._write_error(404, _error("NOT_FOUND", "Interaction route was not found."))
+        return True
+
+    @staticmethod
+    def _interaction_to_dict(request: HumanInputRequest) -> Dict[str, Any]:
+        return cast(Dict[str, Any], request.to_dict())
+
+    def _mutate_interaction(
+        self, store: HumanInputStore, interaction_id: str, action: str
+    ) -> None:
+        body = self._read_body()
+        actor_id = body.get("actor_id")
+        if actor_id is not None and not isinstance(actor_id, str):
+            self._write_error(
+                400,
+                _error("HUMAN_INPUT_IDENTIFIER_INVALID", "actor_id must be a string."),
+            )
+            return
+        if action == "respond":
+            if "response" not in body:
+                self._write_error(
+                    400,
+                    _error("HUMAN_INPUT_RESPONSE_INVALID", "response is required."),
+                )
+                return
+            result = store.respond(interaction_id, body["response"], actor_id=actor_id)
+        elif action == "reject":
+            result = store.reject(
+                interaction_id,
+                body.get("reason", "Operator rejected the request."),
+                actor_id=actor_id,
+            )
+        elif action == "continue":
+            continue_round = getattr(store, "continue_round", None)
+            if not callable(continue_round):
+                self._write_error(
+                    501,
+                    _error(
+                        "HUMAN_INPUT_MULTI_ROUND_UNSUPPORTED",
+                        "The configured human input store does not support multi-round input.",
+                    ),
+                )
+                return
+            if "prompt" not in body or "input_schema" not in body:
+                self._write_error(
+                    400,
+                    _error(
+                        "REQUEST_BODY_INVALID",
+                        "prompt and input_schema are required.",
+                    ),
+                )
+                return
+            result = continue_round(
+                interaction_id,
+                body["prompt"],
+                body["input_schema"],
+                actor_id=actor_id,
+            )
+        elif action == "consume":
+            result = store.consume(interaction_id)
+        else:
+            self._write_error(
+                404, _error("NOT_FOUND", "Interaction action was not found.")
+            )
+            return
+        if result.is_err():
+            self._write_error(
+                _status_for_error(result.unwrap_err()), result.unwrap_err()
+            )
+            return
+        self._write_json(
+            200, {"interaction": self._interaction_to_dict(result.unwrap())}
+        )
 
     def _authorize(self) -> bool:
         expected_token = self.server.application.auth_token
@@ -422,6 +589,7 @@ class RunServer:
         max_body_bytes: int = _DEFAULT_MAX_BODY_BYTES,
         max_response_bytes: int = _DEFAULT_MAX_RESPONSE_BYTES,
         auth_token: Optional[str] = None,
+        human_input_store: Optional[HumanInputStore] = None,
     ) -> None:
         if not isinstance(registry, WorkflowRegistry):
             raise TypeError("registry must be a WorkflowRegistry")
@@ -447,12 +615,23 @@ class RunServer:
         ):
             raise ValueError("server limits must be positive integers")
         _validate_auth_token(auth_token)
+        if human_input_store is not None:
+            required_methods = ("get", "list_pending", "respond", "reject", "consume")
+            if any(
+                not callable(getattr(human_input_store, name, None))
+                for name in required_methods
+            ):
+                raise TypeError(
+                    "human_input_store must implement get, list_pending, respond, "
+                    "reject, and consume"
+                )
         self.registry = registry
         self.host = host
         self.port = port
         self.max_body_bytes = max_body_bytes
         self.max_response_bytes = max_response_bytes
         self._auth_token = auth_token
+        self.human_input_store = human_input_store
         self._server: Optional[_MAPLEHTTPServer] = None
         self._thread: Optional[threading.Thread] = None
 
@@ -609,6 +788,93 @@ class RunClient:
     def inspect(self, workflow_name: str, run_id: str) -> Result[Dict[str, Any], Error]:
         """Inspect a persisted workflow run."""
         return self._request("GET", ("v1", "workflows", workflow_name, "runs", run_id))
+
+    def list_pending_human_input(
+        self, limit: int = 100
+    ) -> Result[Dict[str, Any], Error]:
+        """List bounded pending human-input requests from the remote host."""
+        if (
+            not isinstance(limit, int)
+            or isinstance(limit, bool)
+            or not 0 < limit <= _MAX_HUMAN_INPUT_LIMIT
+        ):
+            return Result.err(
+                _error(
+                    "HUMAN_INPUT_LIMIT_INVALID",
+                    "Human input list limit is out of bounds.",
+                )
+            )
+        return self._request("GET", ("v1", "interactions", "pending", str(limit)))
+
+    def get_human_input(self, interaction_id: str) -> Result[Dict[str, Any], Error]:
+        """Inspect one remote human-input request."""
+        return self._request("GET", ("v1", "interactions", interaction_id))
+
+    def respond_human_input(
+        self,
+        interaction_id: str,
+        response: Any,
+        *,
+        actor_id: Optional[str] = None,
+    ) -> Result[Dict[str, Any], Error]:
+        """Submit a schema-validated remote human-input response."""
+        payload: Dict[str, Any] = {"response": response}
+        if actor_id is not None:
+            payload["actor_id"] = actor_id
+        return self._request(
+            "POST", ("v1", "interactions", interaction_id, "respond"), payload
+        )
+
+    def reject_human_input(
+        self,
+        interaction_id: str,
+        reason: str = "Operator rejected the request.",
+        *,
+        actor_id: Optional[str] = None,
+    ) -> Result[Dict[str, Any], Error]:
+        """Reject a remote human-input request with a bounded reason."""
+        payload: Dict[str, Any] = {"reason": reason}
+        if actor_id is not None:
+            payload["actor_id"] = actor_id
+        return self._request(
+            "POST", ("v1", "interactions", interaction_id, "reject"), payload
+        )
+
+    def continue_human_input(
+        self,
+        interaction_id: str,
+        prompt: str,
+        input_schema: Mapping[str, Any],
+        *,
+        actor_id: Optional[str] = None,
+    ) -> Result[Dict[str, Any], Error]:
+        """Open the next bounded round for a remote human-input request."""
+        if not isinstance(input_schema, Mapping):
+            return Result.err(
+                _error(
+                    "REQUEST_BODY_INVALID",
+                    "input_schema must be an object.",
+                )
+            )
+        if actor_id is not None and not isinstance(actor_id, str):
+            return Result.err(
+                _error(
+                    "HUMAN_INPUT_IDENTIFIER_INVALID",
+                    "actor_id must be a string.",
+                )
+            )
+        payload: Dict[str, Any] = {"prompt": prompt, "input_schema": dict(input_schema)}
+        if actor_id is not None:
+            payload["actor_id"] = actor_id
+        return self._request(
+            "POST", ("v1", "interactions", interaction_id, "continue"), payload
+        )
+
+    def consume_human_input(self, interaction_id: str) -> Result[Dict[str, Any], Error]:
+        """Consume a decided remote human-input request exactly once."""
+        return self._request(
+            "POST", ("v1", "interactions", interaction_id, "consume"), {}
+        )
 
     def _request(
         self,
