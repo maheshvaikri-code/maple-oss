@@ -1,7 +1,7 @@
 # ADR-077: Bounded structured evaluation trajectories
 
-**Date:** 2026-08-27  
-**Status:** accepted  
+**Date:** 2026-08-27
+**Status:** accepted
 **Deciders:** Chief Architect, Backend, Security, QA
 
 ## Context
