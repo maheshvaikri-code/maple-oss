@@ -41,10 +41,19 @@ coverage. No flaky retry or retry-until-lucky behavior was used.
 
 ## Package evidence
 
-Pending the clean archive build after this QA artifact is committed. The
-candidate must be built from `git archive`, pass wheel/sdist metadata checks,
-contain the required public docs, and contain none of the workspace-only
-governance files. Publication is not authorized by this task.
+Clean archive source: `git archive HEAD` at candidate `b4e7167`.
+
+- `python -m build --wheel --sdist`: exit `0`; built wheel/sdist `1.1.3`.
+- `python -m twine check dist/maple_oss-1.1.3-py3-none-any.whl
+  dist/maple_oss-1.1.3.tar.gz`: both artifacts `PASSED`.
+- Wheel entries: `104`; the wheel contains `maple/autonomy/events.py`.
+- sdist entries: `525`.
+- Required public files: `6/6` present — `README.md`, `LICENSE`,
+  `CHANGELOG.md`, ADR-059, this QA report, and the Slice 113 review report.
+- Workspace-only audit: `0` entries for `AGENTS.md`, `CLAUDE.md`,
+  `COMMERCIAL_LICENSE.md`, `Makefile`, `docs/brief.md`, and `docs/maximus.md`.
+
+The package candidate is locally reproducible and is not published.
 
 ## Bugs found
 
@@ -78,6 +87,6 @@ governance files. Publication is not authorized by this task.
 environment dependency audit is not clean and `gitleaks`/`bandit` are
 unavailable. No human override.
 
-**QA verdict:** pass for Slice 113 behavior, static checks, and regression
-coverage; release remains conditional on dependency-governance disposition and
-the pending clean package candidate.
+**QA verdict:** pass for Slice 113 behavior, static checks, regression
+coverage, and package evidence; release remains conditional on
+dependency-governance disposition.

@@ -16,7 +16,12 @@
   bearer headers, HTTPS enforcement for non-loopback endpoints, and no
   automatic retry or persistence. Export failures remain isolated from runs;
   batching, durable replay, fleet aggregation, and hosted trace search remain
-  host-owned.
+  host-owned. Focused validation reports `22 passed in 4.46s`; the tracked
+  application regression reports `1279 passed, 1 skipped in 212.83s`. Clean
+  package candidate `b4e7167` rebuilt wheel/sdist `1.1.3`, both Twine checks
+  passed, the sdist contains `525` entries, required files are `6/6`, and
+  workspace-only audit is `0`. Dependency-governance veto remains open; no
+  publication was performed.
 - **Bounded workflow HTTP transport**: added dependency-free `RunClient`
   support for health, workflow run, resume, and inspection calls with request,
   URL, and response bounds, typed transport errors, and optional bearer
