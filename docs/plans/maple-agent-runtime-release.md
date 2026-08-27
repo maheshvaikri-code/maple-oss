@@ -127,13 +127,18 @@
 
 | 113 | Bounded HTTP event exporter | Chief Architect / Backend / Observability / Security / QA / Release | `docs/adr/059-*`, `maple/autonomy/events.py`, autonomy exports, event regressions, API/README/parity docs, changelog, QA/review evidence | Dependency-free synchronous POST of redacted `AgentEvent` envelopes, HTTPS for authenticated/non-loopback delivery, bearer-header safety, request/response/time bounds, no retry or persistence, exporter failure isolation, static/package/doctor gates | done: focused `22 passed in 4.46s`; fixed non-finite timeout review finding in `d26973f`; tracked regression `1279 passed, 1 skipped in 212.83s`; Black/Ruff/changed-boundary mypy/compile/diff pass; clean archive candidate `b4e7167` build exit `0`, Twine wheel/sdist `PASSED`, sdist `525` entries, required files `6/6`, workspace-only audit `0`; QA and code review pass; dependency-governance veto remains; batching, durable replay, fleet aggregation, hosted trace search, and exactly-once delivery remain separate |
 
+| 114 | Bounded authenticated human-input transport | Chief Architect / Backend / Security / QA / Release | `docs/adr/060-*`, `maple/autonomy/server.py`, autonomy exports, server/interaction regressions, API/README/parity docs, changelog, QA/review evidence | Optional `HumanInputStore` on the bounded loopback `RunServer`; authenticated list/inspect/respond/reject/continue/consume routes with `RunClient`; existing schema, actor authorization, notification, lease, and one-time-consume semantics preserved; request/response/path bounds; no hosted identity, TLS termination, automatic scheduling, or exactly-once side-effect claim | in progress: implementation and focused regressions are running; hosted identity/deployment, remote scheduling, and exactly-once effects remain separate |
+
 ## Threat sketch
 
 Slice 114 is the bounded authenticated human-input transport slice. It adds
 optional interaction routes to the loopback workflow server and matching
-client operations; its implementation, tests, ADR, QA, review, and package
-evidence will be recorded here at closure. Hosted identity, TLS termination,
-automatic scheduling, and exactly-once side-effect policy remain separate.
+client operations; configuring the store requires a server bearer token, and
+the store remains authoritative for actor authorization, schema validation,
+leases, notifications, and one-time consumption. Its implementation, tests,
+ADR, QA, review, and package evidence will be recorded here at closure. Hosted
+identity, TLS termination, automatic scheduling, and exactly-once side-effect
+policy remain separate.
 
 Assets touched: workflow state, tool arguments, model outputs, checkpoint
 metadata, source documents, credentials used by adapters, and release

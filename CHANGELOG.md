@@ -13,8 +13,9 @@
 - **Bounded authenticated human-input transport**: the existing dependency-free
   loopback `RunServer`/`RunClient` contract can now list, inspect, respond to,
   reject, continue, and consume durable human-input requests when a
-  `HumanInputStore` is configured. Bearer authentication protects every route;
-  the store remains authoritative for JSON Schema validation, actor
+  `HumanInputStore` is configured; configuring the store requires a server
+  bearer token, which protects every route. The store remains authoritative for
+  JSON Schema validation, actor
   authorization, leases, notifications, and one-time consumption. Hosted
   identity, TLS termination, automatic scheduling, and exactly-once effects
   remain host-owned; no publication was performed.

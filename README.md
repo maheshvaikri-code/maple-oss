@@ -72,7 +72,8 @@ Most agent frameworks give you either **infrastructure** (messaging, security, f
 **Remote Human-Input Transport (preview)** — When a `HumanInputStore` is
 configured, the bounded authenticated `RunServer`/`RunClient` contract can
 list, inspect, respond to, reject, continue, and consume durable interaction
-records. Schema validation, actor authorization, leases, notifications, and
+records; configuring the store requires a server bearer token. Schema
+validation, actor authorization, leases, notifications, and
 one-time consumption remain store-owned; hosted identity, TLS termination,
 automatic scheduling, and exactly-once effects remain outside the local
 contract.
