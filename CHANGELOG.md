@@ -22,9 +22,11 @@
   dependency-free `RunServer`/`RunClient` contract. Task/context/session/run
   inputs, JSON-safe `AgentRun` envelopes, handler identity, response size, and
   exception boundaries are validated; attaching the registry requires bearer
-  authentication. The client does not retry, and remote persistence,
-  scheduling, cancellation, durable resume, and exactly-once external effects
-  remain separate host-owned boundaries.
+  authentication. An explicit `resume_handler` plus `agent_run_store` now add
+  authenticated redacted checkpoint inspection and resume without exposing
+  messages or reasoning traces. The client does not retry, and remote
+  scheduling, cancellation, retries, principal scopes, event aggregation, and
+  exactly-once external effects remain separate host-owned boundaries.
 - **Bounded host-supplied session compaction**: built-in in-memory and atomic
   file-backed session stores can replace older messages with an explicit
   bounded summary plus a retained recent tail under optimistic version control.

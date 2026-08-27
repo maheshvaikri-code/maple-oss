@@ -18,6 +18,7 @@ from urllib.request import Request, urlopen
 from ..core.result import Result
 from .handoffs import HandoffRecord, HandoffStore
 from .interactions import HumanInputRequest, HumanInputStore
+from .runs import AgentRunCheckpoint, AgentRunStore
 from .workflow import Workflow, WorkflowRun
 
 Error = Dict[str, Any]
@@ -210,6 +211,12 @@ class AgentRunHandler(Protocol):
     ) -> Result["AgentRun", Error]: ...
 
 
+class AgentRunResumeHandler(Protocol):
+    """Host-owned synchronous callback for one durable agent-run resume."""
+
+    def __call__(self, run_id: str) -> Result["AgentRun", Error]: ...
+
+
 @dataclass(frozen=True)
 class AgentRun:
     """JSON-safe result envelope returned by a registered agent handler."""
@@ -231,8 +238,22 @@ def _agent_run_to_dict(run: AgentRun) -> Dict[str, Any]:
     }
 
 
+def _agent_checkpoint_to_dict(checkpoint: AgentRunCheckpoint) -> Dict[str, Any]:
+    """Return a bounded remote summary without messages or reasoning trace."""
+
+    payload = checkpoint.to_dict()
+    if not isinstance(payload, dict):
+        raise TypeError("agent run checkpoint serialization must return an object")
+    payload.pop("messages", None)
+    payload.pop("reasoning_steps", None)
+    return cast(Dict[str, Any], payload)
+
+
 def _handoff_to_dict(record: HandoffRecord) -> Dict[str, Any]:
-    return cast(Dict[str, Any], record.to_dict())
+    payload = record.to_dict()
+    if not isinstance(payload, dict):
+        raise TypeError("handoff record serialization must return an object")
+    return cast(Dict[str, Any], payload)
 
 
 class AgentRegistry:
@@ -247,9 +268,16 @@ class AgentRegistry:
             raise ValueError("max_agents must be between 1 and 64")
         self.max_agents = max_agents
         self._agents: Dict[str, AgentRunHandler] = {}
+        self._resume_handlers: Dict[str, AgentRunResumeHandler] = {}
         self._lock = threading.RLock()
 
-    def register(self, agent_id: str, handler: AgentRunHandler) -> Result[None, Error]:
+    def register(
+        self,
+        agent_id: str,
+        handler: AgentRunHandler,
+        *,
+        resume_handler: Optional[AgentRunResumeHandler] = None,
+    ) -> Result[None, Error]:
         """Register one host-owned handler before serving requests."""
         identifier_error = _validate_agent_identifier(agent_id, "agent_id")
         if identifier_error is not None:
@@ -257,6 +285,13 @@ class AgentRegistry:
         if not callable(handler):
             return Result.err(
                 _error("AGENT_HANDLER_INVALID", "handler must be callable.")
+            )
+        if resume_handler is not None and not callable(resume_handler):
+            return Result.err(
+                _error(
+                    "AGENT_RESUME_HANDLER_INVALID",
+                    "resume_handler must be callable when provided.",
+                )
             )
         with self._lock:
             if agent_id in self._agents:
@@ -276,6 +311,8 @@ class AgentRegistry:
                     )
                 )
             self._agents[agent_id] = handler
+            if resume_handler is not None:
+                self._resume_handlers[agent_id] = resume_handler
         return Result.ok(None)
 
     def _get(self, agent_id: str) -> Result[AgentRunHandler, Error]:
@@ -287,6 +324,28 @@ class AgentRegistry:
         if handler is None:
             return Result.err(
                 _error("AGENT_NOT_FOUND", "Agent was not found.", agent_id=agent_id)
+            )
+        return Result.ok(handler)
+
+    def _get_resume_handler(
+        self, agent_id: str
+    ) -> Result[AgentRunResumeHandler, Error]:
+        identifier_error = _validate_agent_identifier(agent_id, "agent_id")
+        if identifier_error is not None:
+            return Result.err(identifier_error)
+        with self._lock:
+            if agent_id not in self._agents:
+                return Result.err(
+                    _error("AGENT_NOT_FOUND", "Agent was not found.", agent_id=agent_id)
+                )
+            handler = self._resume_handlers.get(agent_id)
+        if handler is None:
+            return Result.err(
+                _error(
+                    "AGENT_RESUME_UNAVAILABLE",
+                    "No durable resume handler is configured for this agent.",
+                    agent_id=agent_id,
+                )
             )
         return Result.ok(handler)
 
@@ -334,137 +393,157 @@ class AgentRegistry:
                     run_id=chosen_run_id,
                 )
             )
-        if not isinstance(result, Result):
-            return Result.err(
-                _error("AGENT_RESULT_INVALID", "Agent handler must return a Result.")
-            )
-        if result.is_err():
-            error = result.unwrap_err()
-            if not isinstance(error, Mapping):
-                return Result.err(
-                    _error(
-                        "AGENT_RESULT_INVALID", "Agent handler errors must be objects."
-                    )
-                )
-            if (
-                not isinstance(error.get("errorType"), str)
-                or not str(error.get("errorType")).strip()
-            ):
-                return Result.err(
-                    _error(
-                        "AGENT_RESULT_INVALID",
-                        "Agent handler errors require a non-empty errorType.",
-                    )
-                )
-            if (
-                not isinstance(error.get("message"), str)
-                or not str(error.get("message")).strip()
-            ):
-                return Result.err(
-                    _error(
-                        "AGENT_RESULT_INVALID",
-                        "Agent handler errors require a non-empty message.",
-                    )
-                )
-            copied_error = _copy_bounded_json(error, error_type="AGENT_RESULT_INVALID")
-            if copied_error.is_err():
-                return Result.err(copied_error.unwrap_err())
-            normalized_error = copied_error.unwrap()
-            if not isinstance(normalized_error, dict):
-                return Result.err(
-                    _error(
-                        "AGENT_RESULT_INVALID", "Agent handler errors must be objects."
-                    )
-                )
-            return Result.err(normalized_error)
-        run = result.unwrap()
-        if not isinstance(run, AgentRun):
-            return Result.err(
-                _error("AGENT_RESULT_INVALID", "Agent handler must return an AgentRun.")
-            )
-        if run.agent_id != agent_id or run.run_id != chosen_run_id:
-            return Result.err(
-                _error(
-                    "AGENT_RESULT_INVALID",
-                    "AgentRun identity does not match the request.",
-                    agent_id=agent_id,
-                    run_id=chosen_run_id,
-                )
-            )
-        if run.status not in _AGENT_RUN_STATUSES:
-            return Result.err(
-                _error(
-                    "AGENT_RESULT_INVALID",
-                    "AgentRun status is not supported.",
-                    allowed_statuses=sorted(_AGENT_RUN_STATUSES),
-                )
-            )
-        copied_result = _copy_bounded_json(
-            run.result, error_type="AGENT_RESULT_INVALID"
-        )
-        if copied_result.is_err():
-            return Result.err(copied_result.unwrap_err())
-        copied_run_error: Optional[Error] = None
-        if run.error is not None:
-            if not isinstance(run.error, Mapping):
-                return Result.err(
-                    _error("AGENT_RESULT_INVALID", "AgentRun error must be an object.")
-                )
-            if (
-                not isinstance(run.error.get("errorType"), str)
-                or not str(run.error.get("errorType")).strip()
-            ):
-                return Result.err(
-                    _error(
-                        "AGENT_RESULT_INVALID",
-                        "AgentRun errors require a non-empty errorType.",
-                    )
-                )
-            if (
-                not isinstance(run.error.get("message"), str)
-                or not str(run.error.get("message")).strip()
-            ):
-                return Result.err(
-                    _error(
-                        "AGENT_RESULT_INVALID",
-                        "AgentRun errors require a non-empty message.",
-                    )
-                )
-            error_result = _copy_bounded_json(
-                run.error, error_type="AGENT_RESULT_INVALID"
-            )
-            if error_result.is_err():
-                return Result.err(error_result.unwrap_err())
-            normalized_run_error = error_result.unwrap()
-            if not isinstance(normalized_run_error, dict):
-                return Result.err(
-                    _error("AGENT_RESULT_INVALID", "AgentRun error must be an object.")
-                )
-            copied_run_error = normalized_run_error
-        normalized = AgentRun(
-            agent_id=agent_id,
-            run_id=chosen_run_id,
-            status=run.status,
-            result=copied_result.unwrap(),
-            error=copied_run_error,
-        )
+        return _normalize_agent_result(result, agent_id, chosen_run_id)
+
+    def resume(self, agent_id: str, run_id: str) -> Result[AgentRun, Error]:
+        """Resume one durable run through an explicitly registered callback."""
+        handler_result = self._get_resume_handler(agent_id)
+        if handler_result.is_err():
+            return Result.err(handler_result.unwrap_err())
+        run_error = _validate_agent_identifier(run_id, "run_id")
+        if run_error is not None:
+            return Result.err(run_error)
         try:
-            encoded = json.dumps(
-                _agent_run_to_dict(normalized), ensure_ascii=False, allow_nan=False
-            )
-        except (TypeError, ValueError, OverflowError):
+            result = handler_result.unwrap()(run_id)
+        except Exception:
             return Result.err(
-                _error("AGENT_RESULT_INVALID", "AgentRun is not JSON serializable.")
+                _error(
+                    "AGENT_RESUME_HANDLER_ERROR",
+                    "Registered agent resume handler failed.",
+                    agent_id=agent_id,
+                    run_id=run_id,
+                )
             )
-        if len(encoded.encode("utf-8")) > _DEFAULT_MAX_RESPONSE_BYTES:
+        return _normalize_agent_result(result, agent_id, run_id)
+
+
+def _normalize_agent_result(
+    result: Any, agent_id: str, chosen_run_id: str
+) -> Result[AgentRun, Error]:
+    """Validate and copy a host callback's JSON-safe run envelope."""
+    if not isinstance(result, Result):
+        return Result.err(
+            _error("AGENT_RESULT_INVALID", "Agent handler must return a Result.")
+        )
+    if result.is_err():
+        error = result.unwrap_err()
+        if not isinstance(error, Mapping):
+            return Result.err(
+                _error("AGENT_RESULT_INVALID", "Agent handler errors must be objects.")
+            )
+        if (
+            not isinstance(error.get("errorType"), str)
+            or not str(error.get("errorType")).strip()
+        ):
             return Result.err(
                 _error(
                     "AGENT_RESULT_INVALID",
-                    "AgentRun exceeds the configured response limit.",
-                    max_bytes=_DEFAULT_MAX_RESPONSE_BYTES,
+                    "Agent handler errors require a non-empty errorType.",
                 )
             )
-        return Result.ok(normalized)
+        if (
+            not isinstance(error.get("message"), str)
+            or not str(error.get("message")).strip()
+        ):
+            return Result.err(
+                _error(
+                    "AGENT_RESULT_INVALID",
+                    "Agent handler errors require a non-empty message.",
+                )
+            )
+        copied_error = _copy_bounded_json(error, error_type="AGENT_RESULT_INVALID")
+        if copied_error.is_err():
+            return Result.err(copied_error.unwrap_err())
+        normalized_error = copied_error.unwrap()
+        if not isinstance(normalized_error, dict):
+            return Result.err(
+                _error("AGENT_RESULT_INVALID", "Agent handler errors must be objects.")
+            )
+        return Result.err(normalized_error)
+    run = result.unwrap()
+    if not isinstance(run, AgentRun):
+        return Result.err(
+            _error("AGENT_RESULT_INVALID", "Agent handler must return an AgentRun.")
+        )
+    if run.agent_id != agent_id or run.run_id != chosen_run_id:
+        return Result.err(
+            _error(
+                "AGENT_RESULT_INVALID",
+                "AgentRun identity does not match the request.",
+                agent_id=agent_id,
+                run_id=chosen_run_id,
+            )
+        )
+    if run.status not in _AGENT_RUN_STATUSES:
+        return Result.err(
+            _error(
+                "AGENT_RESULT_INVALID",
+                "AgentRun status is not supported.",
+                allowed_statuses=sorted(_AGENT_RUN_STATUSES),
+            )
+        )
+    copied_result = _copy_bounded_json(run.result, error_type="AGENT_RESULT_INVALID")
+    if copied_result.is_err():
+        return Result.err(copied_result.unwrap_err())
+    copied_run_error: Optional[Error] = None
+    if run.error is not None:
+        if not isinstance(run.error, Mapping):
+            return Result.err(
+                _error("AGENT_RESULT_INVALID", "AgentRun error must be an object.")
+            )
+        if (
+            not isinstance(run.error.get("errorType"), str)
+            or not str(run.error.get("errorType")).strip()
+        ):
+            return Result.err(
+                _error(
+                    "AGENT_RESULT_INVALID",
+                    "AgentRun errors require a non-empty errorType.",
+                )
+            )
+        if (
+            not isinstance(run.error.get("message"), str)
+            or not str(run.error.get("message")).strip()
+        ):
+            return Result.err(
+                _error(
+                    "AGENT_RESULT_INVALID",
+                    "AgentRun errors require a non-empty message.",
+                )
+            )
+        error_result = _copy_bounded_json(run.error, error_type="AGENT_RESULT_INVALID")
+        if error_result.is_err():
+            return Result.err(error_result.unwrap_err())
+        normalized_run_error = error_result.unwrap()
+        if not isinstance(normalized_run_error, dict):
+            return Result.err(
+                _error("AGENT_RESULT_INVALID", "AgentRun error must be an object.")
+            )
+        copied_run_error = normalized_run_error
+    normalized = AgentRun(
+        agent_id=agent_id,
+        run_id=chosen_run_id,
+        status=run.status,
+        result=copied_result.unwrap(),
+        error=copied_run_error,
+    )
+    try:
+        encoded = json.dumps(
+            _agent_run_to_dict(normalized), ensure_ascii=False, allow_nan=False
+        )
+    except (TypeError, ValueError, OverflowError):
+        return Result.err(
+            _error("AGENT_RESULT_INVALID", "AgentRun is not JSON serializable.")
+        )
+    if len(encoded.encode("utf-8")) > _DEFAULT_MAX_RESPONSE_BYTES:
+        return Result.err(
+            _error(
+                "AGENT_RESULT_INVALID",
+                "AgentRun exceeds the configured response limit.",
+                max_bytes=_DEFAULT_MAX_RESPONSE_BYTES,
+            )
+        )
+    return Result.ok(normalized)
 
 
 def _run_to_dict(run: WorkflowRun) -> Dict[str, Any]:
@@ -487,6 +566,7 @@ def _status_for_error(error: Error) -> int:
     error_type = error.get("errorType")
     if error_type in {
         "RUN_NOT_FOUND",
+        "AGENT_RUN_NOT_FOUND",
         "WORKFLOW_NOT_FOUND",
         "AGENT_NOT_FOUND",
         "HANDOFF_NOT_FOUND",
@@ -494,7 +574,14 @@ def _status_for_error(error: Error) -> int:
         return 404
     if error_type == "HUMAN_INPUT_NOT_FOUND":
         return 404
-    if error_type in {"RUN_ID_EXISTS", "CHECKPOINT_CONFLICT"}:
+    if error_type in {
+        "RUN_ID_EXISTS",
+        "CHECKPOINT_CONFLICT",
+        "RUN_CHECKPOINT_CONFLICT",
+        "RUN_NOT_RESUMABLE",
+        "RUN_WAITING_APPROVAL",
+        "RUN_WAITING_INPUT",
+    }:
         return 409
     if error_type in {
         "HUMAN_INPUT_CONFLICT",
@@ -510,10 +597,12 @@ def _status_for_error(error: Error) -> int:
         "INVALID_STATE",
         "INVALID_IDENTIFIER",
         "INVALID_WORKFLOW",
+        "RUN_IDENTIFIER_INVALID",
         "AGENT_IDENTIFIER_INVALID",
         "AGENT_TASK_INVALID",
         "AGENT_CONTEXT_INVALID",
         "AGENT_HANDLER_INVALID",
+        "AGENT_RESUME_HANDLER_INVALID",
         "INVALID_JSON",
         "REQUEST_BODY_INVALID",
         "WORKFLOW_MISMATCH",
@@ -534,6 +623,10 @@ def _status_for_error(error: Error) -> int:
         return 400
     if error_type == "AGENT_REGISTRY_UNAVAILABLE":
         return 503
+    if error_type == "AGENT_RUN_STORE_UNAVAILABLE":
+        return 503
+    if error_type == "AGENT_RESUME_UNAVAILABLE":
+        return 501
     if error_type == "HUMAN_INPUT_STORE_UNAVAILABLE":
         return 503
     if error_type == "HUMAN_INPUT_MULTI_ROUND_UNSUPPORTED":
@@ -686,6 +779,21 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 and path[3] == "runs"
             ):
                 self._run_agent(path[2])
+                return
+            if (
+                method == "GET"
+                and len(path) == 5
+                and path[0:4] == ("v1", "agents", path[2], "runs")
+            ):
+                self._inspect_agent(path[2], path[4])
+                return
+            if (
+                method == "POST"
+                and len(path) == 6
+                and path[0:4] == ("v1", "agents", path[2], "runs")
+                and path[5] == "resume"
+            ):
+                self._resume_agent(path[2], path[4])
                 return
             if self._handoff_route(method, path):
                 return
@@ -980,6 +1088,51 @@ class _RequestHandler(BaseHTTPRequestHandler):
             return
         self._write_json(201, {"run": _agent_run_to_dict(result.unwrap())})
 
+    def _inspect_agent(self, agent_id: str, run_id: str) -> None:
+        store = self.server.application.agent_run_store
+        if store is None:
+            self._write_error(
+                503,
+                _error(
+                    "AGENT_RUN_STORE_UNAVAILABLE",
+                    "No agent run store is configured.",
+                ),
+            )
+            return
+        result = store.load(run_id)
+        if result.is_err():
+            self._write_error(
+                _status_for_error(result.unwrap_err()), result.unwrap_err()
+            )
+            return
+        checkpoint = result.unwrap()
+        if checkpoint is None or checkpoint.agent_id != agent_id:
+            self._write_error(
+                404,
+                _error("AGENT_RUN_NOT_FOUND", "Agent run was not found."),
+            )
+            return
+        self._write_json(200, {"run": _agent_checkpoint_to_dict(checkpoint)})
+
+    def _resume_agent(self, agent_id: str, run_id: str) -> None:
+        registry = self.server.application.agent_registry
+        if registry is None:
+            self._write_error(
+                503,
+                _error(
+                    "AGENT_REGISTRY_UNAVAILABLE",
+                    "No agent registry is configured.",
+                ),
+            )
+            return
+        result = registry.resume(agent_id, run_id)
+        if result.is_err():
+            self._write_error(
+                _status_for_error(result.unwrap_err()), result.unwrap_err()
+            )
+            return
+        self._write_json(200, {"run": _agent_run_to_dict(result.unwrap())})
+
     def _handoff_route(self, method: str, path: Tuple[str, ...]) -> bool:
         store = self.server.application.handoff_store
         if not path or path[0:2] != ("v1", "handoffs"):
@@ -1180,6 +1333,7 @@ class RunServer:
         auth_token: Optional[str] = None,
         human_input_store: Optional[HumanInputStore] = None,
         agent_registry: Optional[AgentRegistry] = None,
+        agent_run_store: Optional[AgentRunStore] = None,
         handoff_store: Optional[HandoffStore] = None,
     ) -> None:
         if not isinstance(registry, WorkflowRegistry):
@@ -1227,6 +1381,13 @@ class RunServer:
                 raise ValueError(
                     "auth_token is required when agent_registry is configured"
                 )
+        if agent_run_store is not None:
+            if auth_token is None:
+                raise ValueError(
+                    "auth_token is required when agent_run_store is configured"
+                )
+            if not callable(getattr(agent_run_store, "load", None)):
+                raise TypeError("agent_run_store must implement load")
         if handoff_store is not None:
             if auth_token is None:
                 raise ValueError(
@@ -1256,6 +1417,7 @@ class RunServer:
         self._auth_token = auth_token
         self.human_input_store = human_input_store
         self.agent_registry = agent_registry
+        self.agent_run_store = agent_run_store
         self.handoff_store = handoff_store
         self._server: Optional[_MAPLEHTTPServer] = None
         self._thread: Optional[threading.Thread] = None
@@ -1432,6 +1594,32 @@ class RunClient:
         if run_id is not None:
             body["run_id"] = run_id
         return self._request("POST", ("v1", "agents", agent_id, "runs"), body)
+
+    def inspect_agent_run(
+        self, agent_id: str, run_id: str
+    ) -> Result[Dict[str, Any], Error]:
+        """Inspect a redacted durable agent-run checkpoint summary."""
+        identifier_error = _validate_agent_identifier(agent_id, "agent_id")
+        if identifier_error is not None:
+            return Result.err(identifier_error)
+        run_error = _validate_agent_identifier(run_id, "run_id")
+        if run_error is not None:
+            return Result.err(run_error)
+        return self._request("GET", ("v1", "agents", agent_id, "runs", run_id))
+
+    def resume_agent_run(
+        self, agent_id: str, run_id: str
+    ) -> Result[Dict[str, Any], Error]:
+        """Resume one durable agent run through the host callback seam."""
+        identifier_error = _validate_agent_identifier(agent_id, "agent_id")
+        if identifier_error is not None:
+            return Result.err(identifier_error)
+        run_error = _validate_agent_identifier(run_id, "run_id")
+        if run_error is not None:
+            return Result.err(run_error)
+        return self._request(
+            "POST", ("v1", "agents", agent_id, "runs", run_id, "resume"), {}
+        )
 
     def create_handoff(self, record: HandoffRecord) -> Result[Dict[str, Any], Error]:
         """Create or idempotently retrieve a remote digest-only handoff record."""

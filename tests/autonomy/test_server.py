@@ -9,10 +9,12 @@ import pytest
 from maple.autonomy import (
     AgentRegistry,
     AgentRun,
+    AgentRunCheckpoint,
     HandoffRecord,
     HumanInputRequest,
     InMemoryHumanInputStore,
     InMemoryHandoffStore,
+    InMemoryAgentRunStore,
     InMemoryCheckpointStore,
     RunClient,
     RunServer,
@@ -467,6 +469,91 @@ def test_agent_registry_rejects_result_identity_and_non_json_values():
     assert invalid.unwrap_err()["errorType"] == "AGENT_RESULT_INVALID"
     assert malformed.is_err()
     assert malformed.unwrap_err()["errorType"] == "AGENT_RESULT_INVALID"
+
+
+def test_authenticated_durable_agent_run_inspection_and_resume():
+    run_store = InMemoryAgentRunStore()
+    assert run_store.save(
+        AgentRunCheckpoint(
+            run_id="durable-agent-run",
+            agent_id="researcher",
+            description="Resume the release review.",
+            status="paused",
+            step_count=2,
+            pending_approval_id="approval-1",
+            result={"status": "waiting"},
+        )
+    ).is_ok()
+    resume_calls = []
+
+    def handler(task, context, *, session_id, run_id):
+        return Result.ok(
+            AgentRun("researcher", run_id, "paused", result={"status": "waiting"})
+        )
+
+    def resume_handler(run_id):
+        resume_calls.append(run_id)
+        return Result.ok(
+            AgentRun("researcher", run_id, "completed", result={"answer": "ready"})
+        )
+
+    agents = AgentRegistry()
+    assert agents.register("researcher", handler, resume_handler=resume_handler).is_ok()
+    server = RunServer(
+        WorkflowRegistry(),
+        agent_registry=agents,
+        agent_run_store=run_store,
+        auth_token="agent-token",
+    )
+    base_url = server.start()
+    try:
+        client = RunClient(base_url, auth_token="agent-token")
+        inspected = client.inspect_agent_run("researcher", "durable-agent-run")
+        wrong_agent = client.inspect_agent_run("other", "durable-agent-run")
+        resumed = client.resume_agent_run("researcher", "durable-agent-run")
+        unauthorized = RunClient(base_url).inspect_agent_run(
+            "researcher", "durable-agent-run"
+        )
+    finally:
+        server.close()
+
+    assert inspected.is_ok()
+    inspected_run = inspected.unwrap()["run"]
+    assert inspected_run["status"] == "paused"
+    assert inspected_run["step_count"] == 2
+    assert inspected_run["result"] == {"status": "waiting"}
+    assert "messages" not in inspected_run
+    assert "reasoning_steps" not in inspected_run
+    assert wrong_agent.is_err()
+    assert wrong_agent.unwrap_err()["errorType"] == "AGENT_RUN_NOT_FOUND"
+    assert resumed.is_ok()
+    assert resumed.unwrap()["run"]["status"] == "completed"
+    assert resume_calls == ["durable-agent-run"]
+    assert unauthorized.is_err()
+    assert unauthorized.unwrap_err()["errorType"] == "UNAUTHORIZED"
+
+
+def test_durable_agent_transport_fails_closed_without_store_or_resume_handler():
+    def handler(task, context, *, session_id, run_id):
+        return Result.ok(AgentRun("researcher", run_id, "completed", result={}))
+
+    agents = AgentRegistry()
+    assert agents.register("researcher", handler).is_ok()
+    server = RunServer(
+        WorkflowRegistry(), agent_registry=agents, auth_token="agent-token"
+    )
+    base_url = server.start()
+    try:
+        client = RunClient(base_url, auth_token="agent-token")
+        unavailable = client.inspect_agent_run("researcher", "run-1")
+        unsupported = client.resume_agent_run("researcher", "run-1")
+    finally:
+        server.close()
+
+    assert unavailable.is_err()
+    assert unavailable.unwrap_err()["errorType"] == "AGENT_RUN_STORE_UNAVAILABLE"
+    assert unsupported.is_err()
+    assert unsupported.unwrap_err()["errorType"] == "AGENT_RESUME_UNAVAILABLE"
 
 
 def test_authenticated_handoff_transport_preserves_store_ownership_state():

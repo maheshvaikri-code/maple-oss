@@ -1723,6 +1723,41 @@ no remote persistence, cancellation, resume, scheduling, duplicate
 suppression, or exactly-once side-effect guarantee. The host owns those
 policies and must adapt asynchronous agents explicitly.
 
+A host with an `AgentRunStore` can expose a bounded durable control plane by
+passing `agent_run_store=...` and registering an explicit resume callback:
+
+```python
+from maple import AgentRun, InMemoryAgentRunStore, Result
+
+run_store = InMemoryAgentRunStore()
+
+def resume_handler(run_id):
+    # Delegate to the same durable agent that owns this run_id.
+    return Result.ok(AgentRun("researcher", run_id, "completed", {"ok": True}))
+
+agents.register("researcher", handler, resume_handler=resume_handler)
+with RunServer(
+    registry,
+    agent_registry=agents,
+    agent_run_store=run_store,
+    auth_token="local-token",
+) as server:
+    client = RunClient(server.url, auth_token="local-token")
+    summary = client.inspect_agent_run("researcher", "run-1")
+    resumed = client.resume_agent_run("researcher", "run-1")
+```
+
+`GET /v1/agents/<agent_id>/runs/<run_id>` returns the authoritative
+checkpoint identity, status, counters, pending interaction IDs, session
+correlation, usage, result/error, version, and timestamps. Messages and
+reasoning steps are intentionally omitted. `POST
+/v1/agents/<agent_id>/runs/<run_id>/resume` invokes only the explicitly
+registered callback and returns the same `AgentRun` envelope as invocation.
+Missing stores return `503`, cross-agent or missing runs return `404`, and
+missing resume callbacks return `501`. This adds no scheduler, retries,
+cancellation, principal scopes, remote event aggregation, or exactly-once
+side-effect guarantee; the host remains responsible for those policies.
+
 ### Handoff HTTP transport
 
 When `handoff_store=...` is configured, `RunServer` exposes the existing
