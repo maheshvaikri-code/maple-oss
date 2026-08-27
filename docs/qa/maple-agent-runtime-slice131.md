@@ -11,7 +11,7 @@
 | 2 | Actual trajectories are redacted before report and judge exposure | Secret-bearing report and judge tests | `44 passed in 0.40s`; both report and judge saw `[REDACTED]` for the token-bearing argument/result | PASS |
 | 3 | Invalid, inconsistent, and oversized trajectory data fails closed per case | Invalid status/duration, name mismatch, per-step, and total report-bound tests | `24 passed in 0.26s`; malformed contracts returned typed case/observation errors without aborting the harness | PASS |
 | 4 | Existing evaluation semantics and public compatibility remain intact | Exact tracked manifest, exports, API/README/parity review | `1348 passed, 1 skipped in 274.74s`; existing two-argument `EvalObservation` tests passed | PASS |
-| 5 | Release boundary remains dependency-free and tracked-source-only | Clean archive build, Twine check, entry counts, and isolated `python -S` smoke | `build_exit=0`; wheel `104` entries; sdist `?` entries; Twine checks `PASSED`; no-dependency evaluation export smoke passed | PENDING |
+| 5 | Release boundary remains dependency-free and tracked-source-only | Clean archive build, Twine check, entry counts, and isolated `python -S` smoke | `build_exit=0`; wheel `104` entries; sdist `579` entries; Twine checks `PASSED`; no-dependency structured-trajectory export smoke passed | PASS |
 
 ## Adversarial & edge matrix
 
@@ -82,4 +82,4 @@ environment-wide dependency finding above is a governance veto, not a defect
 introduced by this slice.
 
 **Security verdict:** SIGN-OFF · human override: n/a
-**QA verdict:** pass pending final package-boundary evidence
+**QA verdict:** pass
