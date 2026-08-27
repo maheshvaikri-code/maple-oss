@@ -1787,6 +1787,29 @@ return typed `400` errors; an absent stream returns `503`. This is a bounded
 authenticated ingestion seam for a host-owned stream, not batching, durable
 remote replay, fleet aggregation, or remote trace search.
 
+For bounded remote inspection, use the same authenticated server with a
+cursor-based read. `after` is the last sequence already processed and `limit`
+is capped at `1,000` and at the stream's configured capacity:
+
+```python
+from maple import EventCursor, RunClient
+
+cursor = EventCursor()
+page = client.read_events(cursor, limit=25)
+if page.is_ok():
+    batch = page.unwrap()["batch"]
+    events = batch["events"]
+    next_cursor = EventCursor.from_dict(batch["next_cursor"]).unwrap()
+```
+
+This calls `GET /v1/events?after=<sequence>&limit=<limit>`. Returned events
+are already redacted and include the receiver-assigned sequence/timestamp. A
+cursor before the retained ring returns `EVENT_CURSOR_EXPIRED` with HTTP `409`
+rather than silently skipping events; malformed, duplicate, unknown, negative,
+or over-bound query values return typed `400` errors. The route reads the
+host-owned in-memory bounded ring only; it does not provide durable replay,
+batch ingestion, remote search, or fleet aggregation.
+
 ### Handoff HTTP transport
 
 When `handoff_store=...` is configured, `RunServer` exposes the existing

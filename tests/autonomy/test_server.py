@@ -10,6 +10,7 @@ from maple.autonomy import (
     AgentRegistry,
     AgentRun,
     AgentRunCheckpoint,
+    EventCursor,
     EventStream,
     HttpEventExporter,
     HandoffRecord,
@@ -648,6 +649,50 @@ def test_event_transport_reports_missing_stream_and_invalid_client_inputs():
     assert invalid_type.unwrap_err()["errorType"] == "EVENT_INPUT_INVALID"
     assert invalid_run.is_err()
     assert invalid_run.unwrap_err()["errorType"] == "EVENT_INPUT_INVALID"
+
+
+def test_authenticated_event_transport_reads_redacted_batches_by_cursor():
+    stream = EventStream(max_events=2)
+    server = RunServer(
+        WorkflowRegistry(),
+        event_stream=stream,
+        auth_token="event-token",
+    )
+    base_url = server.start()
+    try:
+        client = RunClient(base_url, auth_token="event-token")
+        assert client.publish_event("remote.one", {"secret": "hidden"}).is_ok()
+        assert client.publish_event(
+            "remote.two", {"value": 2, "secret": "retained-but-redacted"}
+        ).is_ok()
+        assert client.publish_event("remote.three", {"value": 3}).is_ok()
+
+        page = client.read_events(EventCursor(sequence=1), limit=1)
+        tail = client.read_events(EventCursor(sequence=2), limit=2)
+        expired = client.read_events(EventCursor(sequence=0))
+        invalid_limit = client._request("GET", ("v1", "events"), query={"limit": "0"})
+        unknown_query = client._request("GET", ("v1", "events"), query={"unknown": "1"})
+        unauthorized = RunClient(base_url).read_events()
+    finally:
+        server.close()
+
+    assert page.is_ok()
+    page_batch = page.unwrap()["batch"]
+    assert [event["sequence"] for event in page_batch["events"]] == [2]
+    assert page_batch["events"][0]["payload"]["secret"] == "[REDACTED]"
+    assert page_batch["next_cursor"] == {"sequence": 2}
+    assert page_batch["oldest_sequence"] == 2
+    assert page_batch["latest_sequence"] == 3
+    assert tail.is_ok()
+    assert [event["sequence"] for event in tail.unwrap()["batch"]["events"]] == [3]
+    assert expired.is_err()
+    assert expired.unwrap_err()["errorType"] == "EVENT_CURSOR_EXPIRED"
+    assert invalid_limit.is_err()
+    assert invalid_limit.unwrap_err()["errorType"] == "EVENT_QUERY_INVALID"
+    assert unknown_query.is_err()
+    assert unknown_query.unwrap_err()["errorType"] == "EVENT_QUERY_INVALID"
+    assert unauthorized.is_err()
+    assert unauthorized.unwrap_err()["errorType"] == "UNAUTHORIZED"
 
 
 def test_authenticated_handoff_transport_preserves_store_ownership_state():

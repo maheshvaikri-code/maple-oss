@@ -10,6 +10,12 @@
 
 ### Additions
 
+- **Bounded authenticated event inspection**: the dependency-free
+  `RunServer`/`RunClient` contract can now read retained, already-redacted
+  events through cursor-based `GET /v1/events` batches. Strict `after`/`limit`
+  query validation and explicit `EVENT_CURSOR_EXPIRED` responses preserve the
+  host stream's bounded retention semantics; durable replay, remote search,
+  batching, and fleet aggregation remain outside the contract.
 - **Bounded authenticated event ingestion**: the dependency-free
   `RunServer`/`RunClient` contract can now receive one event at a time into a
   host-owned `EventStream`. The receiver assigns local sequence/timestamp

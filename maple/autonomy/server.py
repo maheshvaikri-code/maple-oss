@@ -12,11 +12,11 @@ from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Dict, Mapping, Optional, Protocol, Tuple, cast
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote, unquote, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, quote, unquote, urlencode, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
 from ..core.result import Result
-from .events import EventStream
+from .events import EventCursor, EventStream
 from .handoffs import HandoffRecord, HandoffStore
 from .interactions import HumanInputRequest, HumanInputStore
 from .runs import AgentRunCheckpoint, AgentRunStore
@@ -29,6 +29,7 @@ _DEFAULT_MAX_BODY_BYTES = 1 * 1024 * 1024
 _DEFAULT_MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 _MAX_EARLY_BODY_DISCARD_BYTES = 64 * 1024
 _DEFAULT_CLIENT_TIMEOUT_SECONDS = 10.0
+_MAX_EVENT_READ_LIMIT = 1_000
 _MAX_HUMAN_INPUT_LIMIT = 1_000
 _MAX_HANDOFF_LIMIT = 100
 _MAX_AGENTS = 64
@@ -593,6 +594,7 @@ def _status_for_error(error: Error) -> int:
         "HANDOFF_CONFLICT",
         "HANDOFF_STATE_CONFLICT",
         "HANDOFF_OWNER_ERROR",
+        "EVENT_CURSOR_EXPIRED",
     }:
         return 409
     if error_type in {
@@ -623,6 +625,8 @@ def _status_for_error(error: Error) -> int:
         "HUMAN_INPUT_VALUE_TOO_LARGE",
         "EVENT_CONFIG_INVALID",
         "EVENT_INPUT_INVALID",
+        "EVENT_QUERY_INVALID",
+        "EVENT_CURSOR_INVALID",
         "EVENT_NON_JSON_PAYLOAD",
         "EVENT_PAYLOAD_TOO_DEEP",
         "EVENT_PAYLOAD_TOO_LARGE",
@@ -783,6 +787,9 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 return
             if method == "POST" and path == ("v1", "events"):
                 self._publish_event()
+                return
+            if method == "GET" and path == ("v1", "events"):
+                self._read_events()
                 return
             if (
                 method == "POST"
@@ -1155,6 +1162,78 @@ class _RequestHandler(BaseHTTPRequestHandler):
             return
         self._write_json(201, {"event": result.unwrap().as_dict()})
 
+    def _read_events(self) -> None:
+        stream = self.server.application.event_stream
+        if stream is None:
+            self._write_error(
+                503,
+                _error(
+                    "EVENT_STREAM_UNAVAILABLE",
+                    "No event stream is configured.",
+                ),
+            )
+            return
+        parsed = urlsplit(self.path)
+        try:
+            pairs = parse_qsl(
+                parsed.query,
+                keep_blank_values=True,
+                strict_parsing=True,
+                max_num_fields=2,
+            )
+        except ValueError:
+            self._write_error(
+                400,
+                _error("EVENT_QUERY_INVALID", "event query parameters are invalid."),
+            )
+            return
+        if any(key not in {"after", "limit"} for key, _ in pairs) or len(
+            {key for key, _ in pairs}
+        ) != len(pairs):
+            self._write_error(
+                400,
+                _error(
+                    "EVENT_QUERY_INVALID",
+                    "event query supports one after and one limit parameter.",
+                ),
+            )
+            return
+        query = dict(pairs)
+        try:
+            after = int(query.get("after", "0"))
+            limit = (
+                int(query["limit"])
+                if "limit" in query
+                else min(stream.max_events, _MAX_EVENT_READ_LIMIT)
+            )
+        except (TypeError, ValueError):
+            self._write_error(
+                400,
+                _error("EVENT_QUERY_INVALID", "after and limit must be integers."),
+            )
+            return
+        if limit > _MAX_EVENT_READ_LIMIT:
+            self._write_error(
+                400,
+                _error(
+                    "EVENT_QUERY_INVALID",
+                    "limit exceeds the remote event batch bound.",
+                    max_limit=_MAX_EVENT_READ_LIMIT,
+                ),
+            )
+            return
+        cursor_result = EventCursor.from_dict({"sequence": after})
+        if cursor_result.is_err():
+            self._write_error(400, cursor_result.unwrap_err())
+            return
+        result = stream.read(cursor_result.unwrap(), limit=limit)
+        if result.is_err():
+            self._write_error(
+                _status_for_error(result.unwrap_err()), result.unwrap_err()
+            )
+            return
+        self._write_json(200, {"batch": result.unwrap().to_dict()})
+
     def _inspect_agent(self, agent_id: str, run_id: str) -> None:
         store = self.server.application.agent_run_store
         if store is None:
@@ -1483,8 +1562,11 @@ class RunServer:
                 raise ValueError(
                     "auth_token is required when event_stream is configured"
                 )
-            if not callable(getattr(event_stream, "publish", None)):
-                raise TypeError("event_stream must implement publish")
+            if any(
+                not callable(getattr(event_stream, name, None))
+                for name in ("publish", "read")
+            ):
+                raise TypeError("event_stream must implement publish and read")
         self.registry = registry
         self.host = host
         self.port = port
@@ -1706,6 +1788,28 @@ class RunClient:
             body["run_id"] = run_id
         return self._request("POST", ("v1", "events"), body)
 
+    def read_events(
+        self,
+        cursor: Optional[EventCursor] = None,
+        *,
+        limit: Optional[int] = None,
+    ) -> Result[Dict[str, Any], Error]:
+        """Read a bounded redacted batch from a remote event stream."""
+        if cursor is not None and not isinstance(cursor, EventCursor):
+            return Result.err(_error("EVENT_CURSOR_INVALID", "cursor is invalid."))
+        if limit is not None and (
+            not isinstance(limit, int) or isinstance(limit, bool) or limit <= 0
+        ):
+            return Result.err(
+                _error("EVENT_QUERY_INVALID", "limit must be a positive integer.")
+            )
+        query: Dict[str, str] = {}
+        if cursor is not None:
+            query["after"] = str(cursor.sequence)
+        if limit is not None:
+            query["limit"] = str(limit)
+        return self._request("GET", ("v1", "events"), query=query)
+
     def inspect_agent_run(
         self, agent_id: str, run_id: str
     ) -> Result[Dict[str, Any], Error]:
@@ -1901,6 +2005,8 @@ class RunClient:
         method: str,
         segments: Tuple[str, ...],
         payload: Optional[Dict[str, Any]] = None,
+        *,
+        query: Optional[Mapping[str, str]] = None,
     ) -> Result[Dict[str, Any], Error]:
         if any(
             not isinstance(segment, str) or not segment or segment in {".", ".."}
@@ -1911,6 +2017,20 @@ class RunClient:
             )
         path = "/".join(quote(segment, safe="") for segment in segments)
         url = f"{self.base_url}/{path}"
+        if query is not None:
+            if not isinstance(query, Mapping):
+                return Result.err(
+                    _error("REQUEST_QUERY_INVALID", "Request query is invalid.")
+                )
+            query_items = []
+            for key, value in query.items():
+                if not isinstance(key, str) or not key or not isinstance(value, str):
+                    return Result.err(
+                        _error("REQUEST_QUERY_INVALID", "Request query is invalid.")
+                    )
+                query_items.append((key, value))
+            if query_items:
+                url = f"{url}?{urlencode(query_items)}"
         if len(url.encode("utf-8")) > _MAX_PATH_BYTES:
             return Result.err(_error("PATH_TOO_LARGE", "Request path is too large."))
         data: Optional[bytes] = None
