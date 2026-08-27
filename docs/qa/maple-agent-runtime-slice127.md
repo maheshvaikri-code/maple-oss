@@ -26,11 +26,20 @@
 - Diff check: passed for the implementation/public-doc changes.
 - Narrow changed-surface secret scan: no matches.
 - No runtime dependency was added. The declared-project dependency audit and
-  clean package evidence are recorded in the Slice 127 closure below.
+  clean package evidence are green: `No known vulnerabilities found`.
+
+## Package evidence
+
+- `git archive HEAD` clean checkout plus `python -m build --wheel --sdist`:
+  `Successfully built maple_oss-1.1.3-py3-none-any.whl and
+  maple_oss-1.1.3.tar.gz`; exit `0`.
+- Twine checks: wheel and sdist both `PASSED`; exit `0`.
+- Artifact shape: wheel `104` entries and clean sdist `567` entries; the clean
+  archive excludes workspace-only Doctrine files.
+- Isolated wheel smoke: `clean archive no-dependency approval transport export
+  smoke passed`; exit `0`.
 
 ## QA verdict
 
-**Behavioral pass for Slice 127.** The package gate is completed in the final
-release closure after the QA and review records are included in the tracked
-archive. Publication, deployment, cloud action, and website changes were not
-performed.
+**Pass for Slice 127 behavior and repository gates.** Publication, deployment,
+cloud action, and website changes were not performed.

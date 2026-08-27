@@ -28,5 +28,7 @@
 
 **Approved for the bounded authenticated control-plane slice.** The feature
 closes remote approval decision transport while preserving local execution and
-side-effect ownership. Hosted identity, delivery, scheduling, sandboxing,
-distributed transactions, and exactly-once effects remain separate work.
+side-effect ownership. The clean tracked archive package, Twine checks, and
+isolated no-dependency transport-export smoke also pass. Hosted identity,
+delivery, scheduling, sandboxing, distributed transactions, and exactly-once
+effects remain separate work.
