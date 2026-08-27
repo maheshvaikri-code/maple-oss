@@ -1,6 +1,6 @@
 # Slice 130 QA — Bounded durable event forwarding @ `9e74115`
 
-**QA Engineer** · **Security Reviewer** · **Date:** 2026-08-27  
+**QA Engineer** · **Security Reviewer** · **Date:** 2026-08-27
 **Build under test:** `9e74115` (`feat(events): add durable remote forwarding`)
 
 ## Acceptance criteria verification
@@ -87,5 +87,5 @@ dangerous construct patterns. `python -m pip_audit . --skip-editable` reported
 environment-wide dependency finding above is a governance veto, not a defect
 introduced by Slice 130.
 
-**Security verdict:** SIGN-OFF · human override: n/a  
+**Security verdict:** SIGN-OFF · human override: n/a
 **QA verdict:** pass

@@ -1,8 +1,8 @@
 # Code Review — Slice 130 @ `9e74115`
 
-**Reviewer role:** Code Reviewer · **Date:** 2026-08-27  
+**Reviewer role:** Code Reviewer · **Date:** 2026-08-27
 **Reviewed against:** [ADR-076](../adr/076-bounded-durable-event-forwarding.md),
-[release plan](../plans/maple-agent-runtime-release.md)  
+[release plan](../plans/maple-agent-runtime-release.md)
 **Diff reviewed:** `3b1c1f2..9e74115`, read from disk after the author pass
 
 ## Executed
