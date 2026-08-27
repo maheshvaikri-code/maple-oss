@@ -55,6 +55,8 @@ MAX_HANDOFF_CONTEXT_ITEMS = 128
 MAX_HANDOFF_CONTEXT_DEPTH = 8
 MAX_HANDOFF_CONTEXT_STRING_LENGTH = 8_192
 MAX_HANDOFF_CONTEXT_BYTES = 32_768
+TOOL_REPLAY_DISABLED = "disabled"
+TOOL_REPLAY_REUSE_SUCCESS = "reuse_success"
 
 
 def _handoff_context_error(message: str, **details: Any) -> Dict[str, Any]:
@@ -197,12 +199,18 @@ class Tool:
     async_handler: Optional[Callable[..., Awaitable[Result[Any, Dict[str, Any]]]]] = (
         None
     )
+    replay_policy: str = TOOL_REPLAY_DISABLED
     _input_model_schema: Optional[Dict[str, Any]] = field(
         default=None, init=False, repr=False
     )
 
     def __post_init__(self) -> None:
         """Validate typed model configuration once at tool registration time."""
+        if not isinstance(self.replay_policy, str) or self.replay_policy not in {
+            TOOL_REPLAY_DISABLED,
+            TOOL_REPLAY_REUSE_SUCCESS,
+        }:
+            raise ValueError("replay_policy must be 'disabled' or 'reuse_success'")
         if self.input_model is not None:
             schema = structured_model_schema(self.input_model)
             if schema.is_err():

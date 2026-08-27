@@ -64,11 +64,13 @@ from .events import EventStream
 from .interactions import HumanInputRequest, HumanInputStore
 from .memory import MemoryManager
 from .observability import DecisionTrace, SpanRecorder, TraceSpan
+from .replay import ExecutionJournal, ExecutionRecord
 from .runs import AgentRunCheckpoint, AgentRunStore
 from .sessions import SessionMessage, SessionSnapshot, SessionStore
 from .tools import (
     Tool,
     ToolRegistry,
+    TOOL_REPLAY_REUSE_SUCCESS,
     _normalize_handoff_context,
     create_builtin_tools,
 )
@@ -233,6 +235,7 @@ class AutonomousAgent(Agent):
         self._human_input_store: Optional[HumanInputStore] = None
         self._session_store: Optional[SessionStore] = None
         self._run_store: Optional[AgentRunStore] = None
+        self._execution_journal: Optional[ExecutionJournal] = None
         self._event_stream: Optional[EventStream] = None
         self._span_recorder: Optional[SpanRecorder] = None
 
@@ -271,6 +274,14 @@ class AutonomousAgent(Agent):
             ):
                 raise TypeError("run store must implement load and save")
         self._run_store = store
+
+    def set_execution_journal(self, journal: Optional[ExecutionJournal]) -> None:
+        """Set the opt-in journal used to reuse successful tool results."""
+        if journal is not None and any(
+            not callable(getattr(journal, name, None)) for name in ("load", "save")
+        ):
+            raise TypeError("execution journal must implement load and save")
+        self._execution_journal = journal
 
     def set_event_stream(self, stream: Optional[EventStream]) -> None:
         """Set the optional bounded stream for agent lifecycle events."""
@@ -1594,14 +1605,15 @@ class AutonomousAgent(Agent):
                     )
                 )
 
-                for tool_call in response.tool_calls[
-                    : self.autonomy_config.max_tool_calls_per_step
-                ]:
+                for tool_call_index, tool_call in enumerate(
+                    response.tool_calls[: self.autonomy_config.max_tool_calls_per_step]
+                ):
                     tool_result = self._execute_tool_call(
                         tool_call,
                         run_id=run_state.run_id if run_state is not None else None,
                         goal=goal,
                         step_num=step_num,
+                        tool_call_index=tool_call_index,
                         parent_span=model_span,
                     )
                     step.tool_results.append(tool_result)
@@ -2031,6 +2043,226 @@ class AutonomousAgent(Agent):
             is_error=True,
         )
 
+    @staticmethod
+    def _tool_error(
+        tool_call_id: str,
+        error_type: str,
+        message: str,
+        **details: Any,
+    ) -> ToolResult:
+        payload: Dict[str, Any] = {"errorType": error_type, "message": message}
+        if details:
+            payload["details"] = details
+        return ToolResult(
+            tool_call_id=tool_call_id,
+            content=json.dumps(payload),
+            is_error=True,
+        )
+
+    def _tool_replay_context(
+        self,
+        tool: Tool,
+        tool_call: ToolCall,
+        arguments: Mapping[str, Any],
+        *,
+        run_id: Optional[str],
+        step_num: Optional[int],
+        tool_call_index: Optional[int],
+    ) -> Optional[Tuple[str, str, str]]:
+        """Return a stable journal key only for explicitly replayable tools."""
+        if (
+            self._execution_journal is None
+            or tool.replay_policy != TOOL_REPLAY_REUSE_SUCCESS
+            or run_id is None
+            or step_num is None
+            or tool_call_index is None
+            or tool.requires_approval
+            or tool.name in self.autonomy_config.require_approval_for
+        ):
+            return None
+        if (
+            isinstance(step_num, bool)
+            or not isinstance(step_num, int)
+            or step_num < 0
+            or isinstance(tool_call_index, bool)
+            or not isinstance(tool_call_index, int)
+            or tool_call_index < 0
+        ):
+            return None
+        try:
+            payload = json.dumps(
+                {
+                    "agent_id": self.agent_id,
+                    "run_id": run_id,
+                    "step": step_num,
+                    "tool_call_index": tool_call_index,
+                    "tool": tool.name,
+                    "arguments": dict(arguments),
+                },
+                ensure_ascii=False,
+                allow_nan=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        except (TypeError, ValueError, OverflowError):
+            return None
+        digest = hashlib.sha256(payload).hexdigest()
+        execution_key = f"agent-tool-{digest}"
+        record_node = f"tool-{hashlib.sha256(tool.name.encode('utf-8')).hexdigest()}"
+        return execution_key, digest, record_node
+
+    def _load_replayed_tool_result(
+        self,
+        tool: Tool,
+        tool_call: ToolCall,
+        arguments: Mapping[str, Any],
+        *,
+        run_id: Optional[str],
+        step_num: Optional[int],
+        tool_call_index: Optional[int],
+    ) -> Result[Optional[ToolResult], Dict[str, Any]]:
+        """Load one successful result without invoking its handler."""
+        context = self._tool_replay_context(
+            tool,
+            tool_call,
+            arguments,
+            run_id=run_id,
+            step_num=step_num,
+            tool_call_index=tool_call_index,
+        )
+        if context is None:
+            return Result.ok(None)
+        execution_key, input_digest, record_node = context
+        journal = self._execution_journal
+        if journal is None:
+            return Result.ok(None)
+        try:
+            loaded = journal.load(execution_key, input_digest)
+        except Exception as exc:
+            return Result.err(
+                {
+                    "errorType": "TOOL_REPLAY_LOAD_FAILED",
+                    "message": "Tool replay journal could not be read.",
+                    "details": {"exception": type(exc).__name__},
+                }
+            )
+        if loaded.is_err():
+            cause = loaded.unwrap_err()
+            cause_type = cause.get("errorType") if isinstance(cause, Mapping) else None
+            return Result.err(
+                {
+                    "errorType": "TOOL_REPLAY_LOAD_FAILED",
+                    "message": "Tool replay journal rejected the lookup.",
+                    "details": {
+                        "cause": cause_type or "JOURNAL_ERROR",
+                        "execution_key": execution_key,
+                    },
+                }
+            )
+        record = loaded.unwrap()
+        if record is None:
+            return Result.ok(None)
+        if not isinstance(record, ExecutionRecord):
+            return Result.err(
+                {
+                    "errorType": "TOOL_REPLAY_RECORD_INVALID",
+                    "message": "Tool replay journal returned an invalid record.",
+                }
+            )
+        if (
+            record.execution_key != execution_key
+            or record.run_id != run_id
+            or record.workflow_name != "agent_tools"
+            or record.node_name != record_node
+            or record.step_count != step_num
+        ):
+            return Result.err(
+                {
+                    "errorType": "TOOL_REPLAY_RECORD_INVALID",
+                    "message": "Tool replay record metadata does not match the invocation.",
+                    "details": {"execution_key": execution_key},
+                }
+            )
+        output = record.output
+        if not isinstance(output, Mapping):
+            return Result.err(
+                {
+                    "errorType": "TOOL_REPLAY_RECORD_INVALID",
+                    "message": "Tool replay record output must be an object.",
+                }
+            )
+        content = output.get("content")
+        is_error = output.get("is_error")
+        if not isinstance(content, str) or is_error is not False:
+            return Result.err(
+                {
+                    "errorType": "TOOL_REPLAY_RECORD_INVALID",
+                    "message": "Tool replay record must contain a successful result.",
+                }
+            )
+        return Result.ok(
+            ToolResult(tool_call_id=tool_call.id, content=content, is_error=False)
+        )
+
+    def _save_replayed_tool_result(
+        self,
+        tool: Tool,
+        tool_call: ToolCall,
+        arguments: Mapping[str, Any],
+        tool_result: ToolResult,
+        *,
+        run_id: Optional[str],
+        step_num: Optional[int],
+        tool_call_index: Optional[int],
+    ) -> Result[None, Dict[str, Any]]:
+        """Persist only successful results; failed calls remain retryable."""
+        if tool_result.is_error:
+            return Result.ok(None)
+        context = self._tool_replay_context(
+            tool,
+            tool_call,
+            arguments,
+            run_id=run_id,
+            step_num=step_num,
+            tool_call_index=tool_call_index,
+        )
+        if context is None:
+            return Result.ok(None)
+        execution_key, input_digest, record_node = context
+        journal = self._execution_journal
+        if journal is None:
+            return Result.ok(None)
+        record = ExecutionRecord(
+            execution_key=execution_key,
+            run_id=run_id or "",
+            workflow_name="agent_tools",
+            node_name=record_node,
+            step_count=step_num or 0,
+            input_digest=input_digest,
+            output={"content": tool_result.content, "is_error": False},
+        )
+        try:
+            saved = journal.save(record)
+        except Exception as exc:
+            return Result.err(
+                {
+                    "errorType": "TOOL_REPLAY_SAVE_FAILED",
+                    "message": "Tool replay journal could not persist the result; the effect may have occurred.",
+                    "details": {"exception": type(exc).__name__},
+                }
+            )
+        if saved.is_err():
+            cause = saved.unwrap_err()
+            cause_type = cause.get("errorType") if isinstance(cause, Mapping) else None
+            return Result.err(
+                {
+                    "errorType": "TOOL_REPLAY_SAVE_FAILED",
+                    "message": "Tool replay journal rejected the result; the effect may have occurred.",
+                    "details": {"cause": cause_type or "JOURNAL_ERROR"},
+                }
+            )
+        return Result.ok(None)
+
     def _execute_tool_call(
         self,
         tool_call: ToolCall,
@@ -2039,6 +2271,7 @@ class AutonomousAgent(Agent):
         run_id: Optional[str] = None,
         goal: Optional[Goal] = None,
         step_num: Optional[int] = None,
+        tool_call_index: Optional[int] = None,
         parent_span: Optional[TraceSpan] = None,
     ) -> ToolResult:
         """Execute a single tool call with approval check."""
@@ -2072,8 +2305,57 @@ class AutonomousAgent(Agent):
             )
             if authorized.is_err():
                 return complete(authorized.unwrap_err())
-            exec_result = tool.execute(**authorized.unwrap())
-            return complete(self._tool_result_from_execution(tool_call, exec_result))
+            arguments = authorized.unwrap()
+            replayed = self._load_replayed_tool_result(
+                tool,
+                tool_call,
+                arguments,
+                run_id=run_id,
+                step_num=step_num,
+                tool_call_index=tool_call_index,
+            )
+            if replayed.is_err():
+                error = replayed.unwrap_err()
+                return complete(
+                    self._tool_error(
+                        tool_call.id,
+                        error.get("errorType", "TOOL_REPLAY_ERROR"),
+                        error.get("message", "Tool replay failed."),
+                        **(
+                            error.get("details", {})
+                            if isinstance(error.get("details"), Mapping)
+                            else {}
+                        ),
+                    )
+                )
+            if replayed.unwrap() is not None:
+                return complete(replayed.unwrap())
+            exec_result = tool.execute(**arguments)
+            result = self._tool_result_from_execution(tool_call, exec_result)
+            saved = self._save_replayed_tool_result(
+                tool,
+                tool_call,
+                arguments,
+                result,
+                run_id=run_id,
+                step_num=step_num,
+                tool_call_index=tool_call_index,
+            )
+            if saved.is_err():
+                error = saved.unwrap_err()
+                return complete(
+                    self._tool_error(
+                        tool_call.id,
+                        error.get("errorType", "TOOL_REPLAY_ERROR"),
+                        error.get("message", "Tool replay persistence failed."),
+                        **(
+                            error.get("details", {})
+                            if isinstance(error.get("details"), Mapping)
+                            else {}
+                        ),
+                    )
+                )
+            return complete(result)
         except Exception:
             self._finish_tool_span(tool_span, None)
             raise
@@ -2086,6 +2368,7 @@ class AutonomousAgent(Agent):
         run_id: Optional[str] = None,
         goal: Optional[Goal] = None,
         step_num: Optional[int] = None,
+        tool_call_index: Optional[int] = None,
         parent_span: Optional[TraceSpan] = None,
     ) -> ToolResult:
         """Execute a tool through its async handler without blocking the loop."""
@@ -2131,8 +2414,48 @@ class AutonomousAgent(Agent):
             )
             if authorized.is_err():
                 return complete(authorized.unwrap_err())
+            arguments = authorized.unwrap()
+            replay_context = self._tool_replay_context(
+                tool,
+                tool_call,
+                arguments,
+                run_id=run_id,
+                step_num=step_num,
+                tool_call_index=tool_call_index,
+            )
+            if replay_context is None:
+                replayed = Result.ok(None)
+            else:
+                replayed = await loop.run_in_executor(
+                    None,
+                    partial(
+                        self._load_replayed_tool_result,
+                        tool,
+                        tool_call,
+                        arguments,
+                        run_id=run_id,
+                        step_num=step_num,
+                        tool_call_index=tool_call_index,
+                    ),
+                )
+            if replayed.is_err():
+                error = replayed.unwrap_err()
+                return complete(
+                    self._tool_error(
+                        tool_call.id,
+                        error.get("errorType", "TOOL_REPLAY_ERROR"),
+                        error.get("message", "Tool replay failed."),
+                        **(
+                            error.get("details", {})
+                            if isinstance(error.get("details"), Mapping)
+                            else {}
+                        ),
+                    )
+                )
+            if replayed.unwrap() is not None:
+                return complete(replayed.unwrap())
             try:
-                exec_result = await tool.execute_async(**authorized.unwrap())
+                exec_result = await tool.execute_async(**arguments)
             except Exception as exc:
                 return complete(
                     ToolResult(
@@ -2150,7 +2473,38 @@ class AutonomousAgent(Agent):
                         is_error=True,
                     )
                 )
-            return complete(self._tool_result_from_execution(tool_call, exec_result))
+            result = self._tool_result_from_execution(tool_call, exec_result)
+            if replay_context is None or result.is_error:
+                saved = Result.ok(None)
+            else:
+                saved = await loop.run_in_executor(
+                    None,
+                    partial(
+                        self._save_replayed_tool_result,
+                        tool,
+                        tool_call,
+                        arguments,
+                        result,
+                        run_id=run_id,
+                        step_num=step_num,
+                        tool_call_index=tool_call_index,
+                    ),
+                )
+            if saved.is_err():
+                error = saved.unwrap_err()
+                return complete(
+                    self._tool_error(
+                        tool_call.id,
+                        error.get("errorType", "TOOL_REPLAY_ERROR"),
+                        error.get("message", "Tool replay persistence failed."),
+                        **(
+                            error.get("details", {})
+                            if isinstance(error.get("details"), Mapping)
+                            else {}
+                        ),
+                    )
+                )
+            return complete(result)
         except Exception:
             self._finish_tool_span(tool_span, None)
             raise
@@ -3349,7 +3703,9 @@ Instructions:
                     )
                     return self._approval_id_from_tool_result(tool_result)
 
-                async def execute_tool(tool_call: ToolCall) -> ToolResult:
+                async def execute_tool(
+                    tool_call: ToolCall, tool_call_index: int
+                ) -> ToolResult:
                     try:
                         return await self._execute_tool_call_async(
                             tool_call,
@@ -3358,6 +3714,7 @@ Instructions:
                             ),
                             goal=goal,
                             step_num=step_num,
+                            tool_call_index=tool_call_index,
                             parent_span=model_span,
                         )
                     except Exception as exc:
@@ -3378,8 +3735,8 @@ Instructions:
 
                 if run_state is not None:
                     tool_results = []
-                    for tool_call in tool_calls:
-                        tool_result = await execute_tool(tool_call)
+                    for tool_call_index, tool_call in enumerate(tool_calls):
+                        tool_result = await execute_tool(tool_call, tool_call_index)
                         tool_results.append((tool_call, tool_result))
                         pending_input_id = self._human_input_id_from_tool_result(
                             tool_result
@@ -3456,7 +3813,12 @@ Instructions:
                         zip(
                             tool_calls,
                             await asyncio.gather(
-                                *(execute_tool(tool_call) for tool_call in tool_calls)
+                                *(
+                                    execute_tool(tool_call, tool_call_index)
+                                    for tool_call_index, tool_call in enumerate(
+                                        tool_calls
+                                    )
+                                )
                             ),
                         )
                     )

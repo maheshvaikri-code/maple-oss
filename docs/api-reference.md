@@ -1355,6 +1355,47 @@ that call external systems still need idempotency keys or transactional
 coordination. Use `execution_journal.clear(run_id)` after retention is no
 longer required.
 
+### Bounded agent tool-result replay
+
+Durable agent runs can reuse a successful result for a tool that explicitly
+declares `replay_policy="reuse_success"`. Attach the same bounded execution
+journal used by workflows:
+
+```python
+from maple import (
+    FileAgentRunStore,
+    FileExecutionJournal,
+    TOOL_REPLAY_REUSE_SUCCESS,
+    Tool,
+)
+
+agent.set_run_store(FileAgentRunStore("./.maple-runs"))
+agent.set_execution_journal(FileExecutionJournal("./.maple-tool-replay"))
+agent.register_tool(
+    Tool(
+        name="write_record",
+        description="Write one record using the host-owned handler",
+        parameters={"type": "object", "additionalProperties": True},
+        handler=write_record,
+        replay_policy=TOOL_REPLAY_REUSE_SUCCESS,
+    )
+)
+```
+
+The journal key is derived from the agent, durable run, reasoning step, tool
+ordinal, tool name, and authorized JSON arguments. It does not include the
+provider's tool-call ID, so a regenerated ID can reuse a matching saved
+result. Only successful results are recorded; approval-required and human
+input tools retain their existing ownership contracts. Journal records are
+bounded and should be cleared with `execution_journal.clear(run_id)` after
+retention is no longer required.
+
+This is an opt-in crash-window guard, not exactly-once execution. A process
+failure after the handler returns but before the journal save can repeat the
+external effect, and a journal write failure returns a typed error that warns
+the effect may have occurred. Handlers that call external systems still need
+idempotency keys or transactional coordination.
+
 ### Durable tool approvals
 
 Approval-required autonomous tools can use a local durable approval store when

@@ -11,6 +11,7 @@ from maple.autonomy.approval import InMemoryApprovalStore
 from maple.autonomy.events import EventStream
 from maple.autonomy.interactions import InMemoryHumanInputStore
 from maple.autonomy.observability import DecisionLogger, SpanRecorder
+from maple.autonomy.replay import InMemoryExecutionJournal
 from maple.autonomy.runs import (
     AgentRunCheckpoint,
     FileAgentRunStore,
@@ -18,6 +19,7 @@ from maple.autonomy.runs import (
 )
 from maple.autonomy.sessions import SessionMessage
 from maple.autonomy.tools import Tool
+from maple.autonomy.tools import TOOL_REPLAY_REUSE_SUCCESS
 from maple.core.result import Result
 from maple.llm.provider import LLMProvider
 from maple.llm.registry import LLMProviderRegistry
@@ -249,6 +251,153 @@ def test_sync_resume_does_not_repeat_completed_tool_after_model_interruption():
     assert resumed.is_ok()
     assert resumed.unwrap().status == "completed"
     assert calls == ["called"]
+
+
+def test_sync_tool_replay_journal_reuses_success_after_checkpoint_failure():
+    class FailSecondSaveStore(InMemoryAgentRunStore):
+        def __init__(self):
+            super().__init__()
+            self.save_count = 0
+
+        def save(self, checkpoint, expected_version=None):
+            self.save_count += 1
+            if self.save_count == 2:
+                return Result.err(
+                    {
+                        "errorType": "TEST_CHECKPOINT_FAILURE",
+                        "message": "checkpoint failed after tool execution",
+                    }
+                )
+            return super().save(checkpoint, expected_version=expected_version)
+
+    run_store = FailSecondSaveStore()
+    journal = InMemoryExecutionJournal()
+    calls = []
+    tool_call = ToolCall(
+        id="replay-call",
+        name="write_value",
+        arguments={"value": "once"},
+    )
+    tool = Tool(
+        name="write_value",
+        description="Write one value",
+        parameters={"type": "object", "additionalProperties": True},
+        replay_policy=TOOL_REPLAY_REUSE_SUCCESS,
+        handler=lambda **kwargs: (calls.append(kwargs) or Result.ok({"written": True})),
+    )
+    first = make_agent(
+        [
+            LLMResponse(
+                content="write", tool_calls=[tool_call], finish_reason="tool_calls"
+            )
+        ]
+    )
+    first.set_run_store(run_store)
+    first.set_execution_journal(journal)
+    assert first.register_tool(tool).is_ok()
+
+    interrupted = first.pursue_goal(
+        "Perform one durable write", run_id="run-tool-replay"
+    )
+
+    assert interrupted.is_ok()
+    assert interrupted.unwrap().status == "failed"
+    assert calls == [{"value": "once"}]
+    checkpoint = run_store.load("run-tool-replay").unwrap()
+    assert checkpoint is not None
+    assert checkpoint.step_count == 0
+
+    restarted = make_agent(
+        [
+            LLMResponse(
+                content="retry write",
+                tool_calls=[tool_call],
+                finish_reason="tool_calls",
+            ),
+            LLMResponse(content="done", finish_reason="stop"),
+        ]
+    )
+    restarted.set_run_store(run_store)
+    restarted.set_execution_journal(journal)
+    assert restarted.register_tool(tool).is_ok()
+
+    resumed = restarted.resume_run("run-tool-replay")
+
+    assert resumed.is_ok()
+    assert resumed.unwrap().status == "completed"
+    assert calls == [{"value": "once"}]
+
+
+def test_async_tool_replay_journal_reuses_successful_result():
+    journal = InMemoryExecutionJournal()
+    calls = []
+    agent = make_agent([])
+    agent.set_execution_journal(journal)
+
+    async def handler(**kwargs):
+        calls.append(kwargs)
+        return Result.ok({"written": True})
+
+    tool = Tool(
+        name="async_write",
+        description="Write one value asynchronously",
+        parameters={"type": "object", "additionalProperties": True},
+        async_handler=handler,
+        handler=lambda **kwargs: Result.ok({"written": True}),
+        replay_policy=TOOL_REPLAY_REUSE_SUCCESS,
+    )
+    assert agent.register_tool(tool).is_ok()
+    first_call = ToolCall("async-replay-1", "async_write", {"value": "once"})
+    second_call = ToolCall("async-replay-2", "async_write", {"value": "once"})
+
+    first = asyncio.run(
+        agent._execute_tool_call_async(
+            first_call, run_id="async-replay-run", step_num=0, tool_call_index=0
+        )
+    )
+    second = asyncio.run(
+        agent._execute_tool_call_async(
+            second_call, run_id="async-replay-run", step_num=0, tool_call_index=0
+        )
+    )
+
+    assert not first.is_error
+    assert not second.is_error
+    assert second.tool_call_id == "async-replay-2"
+    assert calls == [{"value": "once"}]
+
+
+def test_tool_replay_rejects_malformed_journal_record_without_running_handler():
+    class MalformedJournal:
+        def load(self, execution_key, input_digest):
+            return Result.ok({"not": "an execution record"})
+
+        def save(self, record):
+            return Result.ok(record)
+
+    calls = []
+    agent = make_agent([])
+    agent.set_execution_journal(MalformedJournal())
+    assert agent.register_tool(
+        Tool(
+            name="replay_guard",
+            description="Guarded replay tool",
+            parameters={"type": "object"},
+            replay_policy=TOOL_REPLAY_REUSE_SUCCESS,
+            handler=lambda **kwargs: (calls.append(True) or Result.ok({"ok": True})),
+        )
+    ).is_ok()
+
+    result = agent._execute_tool_call(
+        ToolCall("malformed-replay", "replay_guard", {}),
+        run_id="malformed-replay-run",
+        step_num=0,
+        tool_call_index=0,
+    )
+
+    assert result.is_error
+    assert json.loads(result.content)["errorType"] == "TOOL_REPLAY_RECORD_INVALID"
+    assert calls == []
 
 
 def test_agent_publishes_bounded_lifecycle_events_with_usage_trailer():

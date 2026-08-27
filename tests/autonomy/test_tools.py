@@ -91,6 +91,16 @@ class TestTool:
         assert "math" in tool.tags
         assert "utility" in tool.tags
 
+    def test_invalid_replay_policy_is_rejected(self):
+        with pytest.raises(ValueError, match="replay_policy"):
+            Tool(
+                name="invalid_replay",
+                description="Invalid replay policy",
+                parameters={"type": "object"},
+                handler=lambda: Result.ok({"ok": True}),
+                replay_policy=[],
+            )
+
 
 class TestToolRegistry:
     def test_register_and_get(self):
