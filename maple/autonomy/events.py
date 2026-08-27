@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-import json
 import ipaddress
+import json
+import math
 import threading
 import time
 from collections import deque
@@ -106,12 +107,18 @@ class HttpEventExporter:
         )
         if len(normalized_endpoint.encode("utf-8")) > _MAX_EXPORT_PATH_BYTES:
             raise ValueError("endpoint URL is too large")
-        if (
-            not isinstance(timeout_seconds, (int, float))
-            or isinstance(timeout_seconds, bool)
-            or timeout_seconds <= 0
+        if not isinstance(timeout_seconds, (int, float)) or isinstance(
+            timeout_seconds, bool
         ):
             raise ValueError("timeout_seconds must be a positive number")
+        try:
+            normalized_timeout = float(timeout_seconds)
+        except (OverflowError, ValueError) as exc:
+            raise ValueError(
+                "timeout_seconds must be a finite positive number"
+            ) from exc
+        if not math.isfinite(normalized_timeout) or normalized_timeout <= 0:
+            raise ValueError("timeout_seconds must be a finite positive number")
         for value, name in (
             (max_event_bytes, "max_event_bytes"),
             (max_response_bytes, "max_response_bytes"),
@@ -120,7 +127,7 @@ class HttpEventExporter:
                 raise ValueError(f"{name} must be a positive integer")
         self.endpoint = normalized_endpoint
         self.auth_token = auth_token
-        self.timeout_seconds = float(timeout_seconds)
+        self.timeout_seconds = normalized_timeout
         self.max_event_bytes = max_event_bytes
         self.max_response_bytes = max_response_bytes
 

@@ -1,6 +1,7 @@
 """Tests for bounded event streaming and payload redaction."""
 
 import json
+import math
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -288,6 +289,12 @@ def test_http_event_exporter_is_bounded_and_requires_secure_remote_transport():
 
     with pytest.raises(ValueError):
         exporter.export(event)
+
+    for invalid_timeout in (math.nan, math.inf, -math.inf):
+        with pytest.raises(ValueError):
+            HttpEventExporter(
+                "http://127.0.0.1:1/events", timeout_seconds=invalid_timeout
+            )
 
 
 def test_http_event_exporter_failure_isolated_from_event_publish():
