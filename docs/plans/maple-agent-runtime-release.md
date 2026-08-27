@@ -144,6 +144,38 @@
 
 | 124 | Provider-neutral bounded retrieval reranking seam | Chief Architect / Backend / Security / QA / Release | `docs/adr/070-*`, `maple/autonomy/retrieval.py`, autonomy/root exports, retrieval regressions, API/README/parity docs, changelog, QA/review evidence | Host-supplied `RetrievalReranker.score(...)` can rerank bounded lexical or vector hits while preserving source references and original scores; candidate type/ID/uniqueness/score validation, finite callback scores, deterministic ties, redacted failures, and no implicit provider/network behavior | done: feature commit `aeb80bd`; focused retrieval suite `12 passed in 0.07s`; autonomy `349 passed in 16.38s`; exact tracked manifest `1311 passed, 1 skipped in 230.15s` across 108 tracked Python test files; isort/Black/Ruff/changed-boundary mypy/compile/diff pass; wheel/sdist build and Twine checks pass, wheel `104` entries, sdist `565` entries, isolated no-dependency export smoke pass; QA and code/security review pass; declared-project audit reports no known vulnerabilities; environment-wide dependency-governance veto remains; document connectors, managed stores, and semantic evaluation remain separate |
 
+| 125 | Bounded document connector and ingestion contract | Chief Architect / Backend / Security / QA / Release | `docs/adr/071-*`, `maple/autonomy/retrieval.py`, autonomy/root exports, retrieval regressions, API/README/parity docs, changelog, QA/review evidence | Host-owned cursor connector pages feed an explicit document sink; page/document/batch quotas, document/source validation, duplicate-ID and cursor-progress checks, bounded progress reporting, redacted connector/sink failures, and no implicit network/retry/transaction/rollback behavior | done: feature commit `0ea1084`; focused retrieval suite `18 passed in 0.07s`; full autonomy `355 passed in 16.97s`; exact tracked manifest `1317 passed, 1 skipped in 229.72s` across 108 tracked Python test files; isort/Black/Ruff/changed-boundary mypy/compile/diff pass; wheel/sdist build and Twine checks pass, wheel `104` entries, sdist `568` entries, isolated no-dependency export smoke pass; declared-project audit reports no known vulnerabilities; QA and code/security review pass; environment-wide dependency-governance veto remains; durable cursor checkpoints, managed-store adapters, connector rate limits, retries, transactions, rollback, and semantic evaluation remain separate |
+
+## Slice 125 closure
+
+**Date:** 2026-08-27
+
+Slice 125 is complete. The bounded host-owned connector/sink contract is
+implemented and documented in ADR-071. Evidence is green: the focused
+retrieval suite passed `18` tests, the full autonomy suite passed `355` tests,
+and the exact tracked manifest passed `1317` tests with `1` skip across `108`
+tracked Python test files. isort, Black, Ruff, changed-boundary mypy,
+compile, and diff checks passed. The final local archive candidate built
+`maple_oss-1.1.3-py3-none-any.whl` and `maple_oss-1.1.3.tar.gz` with exit `0`;
+Twine passed, with `104` wheel entries and `568` sdist entries; the isolated
+no-dependency connector export smoke passed. Declared-project pip-audit
+reported no known vulnerabilities and no runtime dependency was added.
+
+The environment-wide audit still reports `384` known vulnerabilities across
+`77` installed packages and remains a release-governance veto. No publication,
+deployment, cloud action, or website update was performed. Durable cursor
+checkpoints, managed-store adapters, connector rate limits, retries,
+transactions, rollback, durable remote event replay/aggregation, provider
+judge orchestration, and principal scopes remain the next parity slices.
+
+## Slice 125
+
+Implementation is intentionally limited to a provider-neutral connector seam.
+Hosts own file/API/managed-store clients and provide bounded cursor pages;
+MAPLE validates each page and feeds an explicit sink. Durable cursor storage,
+rate limits, retries, transactions, rollback, and managed-store adapters remain
+separate contracts.
+
 ## Slice 124 closure
 
 2026-08-27: Slice 124 is behaviorally and package-gate complete. The new
