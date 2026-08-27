@@ -5,16 +5,31 @@ from __future__ import annotations
 import ipaddress
 import json
 import math
+import os
+import tempfile
 import threading
 import time
 from collections import deque
-from dataclasses import dataclass
-from typing import Any, Callable, Deque, Dict, List, Mapping, Optional, Protocol, Tuple
+from dataclasses import dataclass, replace
+from pathlib import Path
+from typing import (
+    Any,
+    Callable,
+    Deque,
+    Dict,
+    List,
+    Mapping,
+    Optional,
+    Protocol,
+    Tuple,
+    Union,
+)
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
 from ..core.result import Result
+from .durable_leases import DurableRecordLease
 
 Error = Dict[str, Any]
 EventCallback = Callable[["AgentEvent"], None]
@@ -23,6 +38,10 @@ _DEFAULT_EXPORT_TIMEOUT_SECONDS = 5.0
 _DEFAULT_EXPORT_MAX_EVENT_BYTES = 1_048_576
 _DEFAULT_EXPORT_MAX_RESPONSE_BYTES = 64 * 1024
 _MAX_EXPORT_PATH_BYTES = 4_096
+DEFAULT_MAX_JOURNAL_BYTES = 16 * 1024 * 1024
+_EVENT_JOURNAL_VERSION = 1
+_MAX_EVENT_PAYLOAD_ITEMS = 10_000
+_MAX_EVENT_PAYLOAD_DEPTH = 32
 
 
 def _percentile(values: List[int], percentile: int) -> int:
@@ -386,8 +405,394 @@ class EventBatch:
         }
 
 
+class EventJournal(Protocol):
+    """Host-owned persistence contract for a bounded event window."""
+
+    def load(self) -> Result[List[AgentEvent], Error]:
+        """Load the retained events in sequence order."""
+
+    def append(self, event: AgentEvent) -> Result[AgentEvent, Error]:
+        """Durably append one event before it is published."""
+
+
+def _validate_event_value(value: Any, *, depth: int = 0) -> Optional[Error]:
+    if depth > _MAX_EVENT_PAYLOAD_DEPTH:
+        return _error(
+            "EVENT_JOURNAL_RECORD_INVALID",
+            "event payload is nested too deeply.",
+        )
+    if value is None or isinstance(value, (bool, int, str)):
+        return None
+    if isinstance(value, float):
+        if math.isfinite(value):
+            return None
+        return _error(
+            "EVENT_JOURNAL_RECORD_INVALID",
+            "event payload contains a non-finite number.",
+        )
+    if isinstance(value, list):
+        if len(value) > _MAX_EVENT_PAYLOAD_ITEMS:
+            return _error(
+                "EVENT_JOURNAL_RECORD_INVALID",
+                "event payload array exceeds the item limit.",
+            )
+        for item in value:
+            invalid = _validate_event_value(item, depth=depth + 1)
+            if invalid is not None:
+                return invalid
+        return None
+    if isinstance(value, dict):
+        if len(value) > _MAX_EVENT_PAYLOAD_ITEMS:
+            return _error(
+                "EVENT_JOURNAL_RECORD_INVALID",
+                "event payload object exceeds the item limit.",
+            )
+        for key, item in value.items():
+            if not isinstance(key, str):
+                return _error(
+                    "EVENT_JOURNAL_RECORD_INVALID",
+                    "event payload object keys must be strings.",
+                )
+            invalid = _validate_event_value(item, depth=depth + 1)
+            if invalid is not None:
+                return invalid
+        return None
+    return _error(
+        "EVENT_JOURNAL_RECORD_INVALID",
+        "event payload must be JSON-compatible.",
+    )
+
+
+def _validate_event_record(event: Any) -> Optional[Error]:
+    if not isinstance(event, AgentEvent):
+        return _error("EVENT_JOURNAL_RECORD_INVALID", "event must be an AgentEvent.")
+    if (
+        not isinstance(event.sequence, int)
+        or isinstance(event.sequence, bool)
+        or event.sequence <= 0
+    ):
+        return _error(
+            "EVENT_JOURNAL_RECORD_INVALID",
+            "event sequence must be a positive integer.",
+        )
+    if (
+        not isinstance(event.event_type, str)
+        or not event.event_type
+        or len(event.event_type) > 128
+        or any(ord(char) < 32 or ord(char) == 127 for char in event.event_type)
+    ):
+        return _error(
+            "EVENT_JOURNAL_RECORD_INVALID",
+            "event_type must be bounded and contain no control characters.",
+        )
+    if (
+        not isinstance(event.timestamp, (int, float))
+        or isinstance(event.timestamp, bool)
+        or not math.isfinite(float(event.timestamp))
+    ):
+        return _error(
+            "EVENT_JOURNAL_RECORD_INVALID",
+            "event timestamp must be finite.",
+        )
+    if event.run_id is not None and (
+        not isinstance(event.run_id, str)
+        or not event.run_id
+        or len(event.run_id) > 256
+        or any(ord(char) < 32 or ord(char) == 127 for char in event.run_id)
+    ):
+        return _error(
+            "EVENT_JOURNAL_RECORD_INVALID",
+            "run_id must be bounded and contain no control characters.",
+        )
+    invalid_payload = _validate_event_value(event.payload)
+    if invalid_payload is not None:
+        return invalid_payload
+    encoded = _json_size(event.as_dict())
+    if encoded.is_err():
+        return _error(
+            "EVENT_JOURNAL_RECORD_INVALID",
+            "event must be JSON serializable.",
+        )
+    return None
+
+
+def _event_from_dict(value: Any) -> Result[AgentEvent, Error]:
+    if not isinstance(value, Mapping):
+        return Result.err(
+            _error("EVENT_JOURNAL_RECORD_INVALID", "event record must be an object.")
+        )
+    required = ("sequence", "event_type", "timestamp", "payload", "run_id")
+    if any(field not in value for field in required):
+        return Result.err(
+            _error(
+                "EVENT_JOURNAL_RECORD_INVALID",
+                "event record is missing a required field.",
+            )
+        )
+    try:
+        event = AgentEvent(
+            sequence=value["sequence"],
+            event_type=value["event_type"],
+            timestamp=value["timestamp"],
+            payload=value["payload"],
+            run_id=value["run_id"],
+        )
+    except (TypeError, ValueError, OverflowError) as exc:
+        return Result.err(
+            _error(
+                "EVENT_JOURNAL_RECORD_INVALID",
+                "event record could not be constructed.",
+                reason=type(exc).__name__,
+            )
+        )
+    invalid = _validate_event_record(event)
+    if invalid is not None:
+        return Result.err(invalid)
+    return Result.ok(event)
+
+
+class FileEventJournal:
+    """Atomic, bounded JSON event journal for local process restarts."""
+
+    _FILENAME = "events.json"
+    _TEMP_PREFIX = ".maple-events-"
+
+    def __init__(
+        self,
+        directory: Union[str, Path],
+        *,
+        max_events: int = 1_000,
+        max_bytes: int = DEFAULT_MAX_JOURNAL_BYTES,
+        lease_ttl_seconds: float = 30.0,
+    ) -> None:
+        if (
+            not isinstance(max_events, int)
+            or isinstance(max_events, bool)
+            or max_events <= 0
+        ):
+            raise ValueError("max_events must be a positive integer")
+        if (
+            not isinstance(max_bytes, int)
+            or isinstance(max_bytes, bool)
+            or max_bytes <= 0
+        ):
+            raise ValueError("max_bytes must be a positive integer")
+        self.max_events = max_events
+        self.max_bytes = max_bytes
+        self.directory = Path(directory)
+        try:
+            self.directory.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise ValueError("event journal directory is unavailable") from exc
+        if not self.directory.is_dir():
+            raise ValueError("event journal path must be a directory")
+        self.path = self.directory / self._FILENAME
+        self._lock = threading.RLock()
+        try:
+            self._lease = DurableRecordLease(
+                self.directory,
+                namespace="event-journal",
+                holder_label="file-event-journal",
+                lease_ttl_seconds=lease_ttl_seconds,
+            )
+        except (OSError, TypeError, ValueError) as exc:
+            raise ValueError("event journal lease is unavailable") from exc
+
+    def _read_unlocked(self) -> Result[List[AgentEvent], Error]:
+        if not self.path.exists():
+            return Result.ok([])
+        try:
+            if self.path.stat().st_size > self.max_bytes:
+                return Result.err(
+                    _error(
+                        "EVENT_JOURNAL_LOAD_ERROR",
+                        "event journal exceeds the byte limit.",
+                    )
+                )
+            data = json.loads(self.path.read_text(encoding="utf-8"))
+            if (
+                not isinstance(data, Mapping)
+                or data.get("version") != _EVENT_JOURNAL_VERSION
+            ):
+                return Result.err(
+                    _error(
+                        "EVENT_JOURNAL_LOAD_ERROR",
+                        "event journal version is unsupported.",
+                    )
+                )
+            raw_events = data.get("events")
+            if not isinstance(raw_events, list) or len(raw_events) > self.max_events:
+                return Result.err(
+                    _error(
+                        "EVENT_JOURNAL_LOAD_ERROR",
+                        "event journal event count is invalid.",
+                    )
+                )
+            events: List[AgentEvent] = []
+            for raw_event in raw_events:
+                parsed = _event_from_dict(raw_event)
+                if parsed.is_err():
+                    return Result.err(
+                        _error(
+                            "EVENT_JOURNAL_LOAD_ERROR",
+                            "event journal contains an invalid event.",
+                        )
+                    )
+                event = parsed.unwrap()
+                if events and event.sequence <= events[-1].sequence:
+                    return Result.err(
+                        _error(
+                            "EVENT_JOURNAL_LOAD_ERROR",
+                            "event journal sequences are not strictly increasing.",
+                        )
+                    )
+                events.append(event)
+            encoded = self._encode(events)
+            if encoded.is_err():
+                return Result.err(
+                    _error(
+                        "EVENT_JOURNAL_LOAD_ERROR",
+                        "event journal content exceeds the byte limit.",
+                    )
+                )
+            return Result.ok(events)
+        except (OSError, TypeError, ValueError, OverflowError, json.JSONDecodeError):
+            return Result.err(
+                _error(
+                    "EVENT_JOURNAL_LOAD_ERROR",
+                    "event journal could not be loaded.",
+                )
+            )
+
+    def _encode(self, events: List[AgentEvent]) -> Result[str, Error]:
+        try:
+            encoded = json.dumps(
+                {
+                    "version": _EVENT_JOURNAL_VERSION,
+                    "events": [event.as_dict() for event in events],
+                },
+                ensure_ascii=False,
+                allow_nan=False,
+                separators=(",", ":"),
+            )
+        except (TypeError, ValueError, OverflowError):
+            return Result.err(
+                _error(
+                    "EVENT_JOURNAL_RECORD_INVALID",
+                    "event journal content is not JSON serializable.",
+                )
+            )
+        if len(encoded.encode("utf-8")) > self.max_bytes:
+            return Result.err(
+                _error(
+                    "EVENT_JOURNAL_SIZE",
+                    "event journal exceeds the byte limit.",
+                    max_bytes=self.max_bytes,
+                )
+            )
+        return Result.ok(encoded)
+
+    def _write_unlocked(self, events: List[AgentEvent]) -> Result[AgentEvent, Error]:
+        encoded = self._encode(events)
+        if encoded.is_err():
+            return Result.err(encoded.unwrap_err())
+        temporary_path: Optional[Path] = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=str(self.directory),
+                prefix=self._TEMP_PREFIX,
+                suffix=".tmp",
+                delete=False,
+            ) as handle:
+                temporary_path = Path(handle.name)
+                handle.write(encoded.unwrap())
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(str(temporary_path), str(self.path))
+            temporary_path = None
+            return Result.ok(events[-1])
+        except (OSError, TypeError, ValueError) as exc:
+            return Result.err(
+                _error(
+                    "EVENT_JOURNAL_SAVE_ERROR",
+                    "event journal could not be saved.",
+                    reason=type(exc).__name__,
+                )
+            )
+        finally:
+            if temporary_path is not None:
+                try:
+                    temporary_path.unlink()
+                except OSError:
+                    pass
+
+    def _run(
+        self,
+        operation: str,
+        callback: Callable[[], Result[Any, Error]],
+    ) -> Result[Any, Error]:
+        try:
+            return self._lease.run(
+                "stream",
+                operation,
+                callback,
+                acquire_error_type="EVENT_JOURNAL_LEASE_ERROR",
+                acquire_error_message="event journal lease could not be acquired.",
+                release_error_type="EVENT_JOURNAL_LEASE_RELEASE_ERROR",
+                release_error_message="event journal lease could not be released.",
+            )
+        except Exception as exc:
+            return Result.err(
+                _error(
+                    "EVENT_JOURNAL_ERROR",
+                    "event journal operation failed.",
+                    operation=operation,
+                    reason=type(exc).__name__,
+                )
+            )
+
+    def load(self) -> Result[List[AgentEvent], Error]:
+        """Load the bounded retained event window."""
+        with self._lock:
+            result = self._run("load", self._read_unlocked)
+        if result.is_err():
+            return Result.err(result.unwrap_err())
+        return Result.ok(result.unwrap())
+
+    def append(self, event: AgentEvent) -> Result[AgentEvent, Error]:
+        """Persist one event with monotonic sequence and bounded retention."""
+        invalid = _validate_event_record(event)
+        if invalid is not None:
+            return Result.err(invalid)
+
+        def operation() -> Result[AgentEvent, Error]:
+            current = self._read_unlocked()
+            if current.is_err():
+                return Result.err(current.unwrap_err())
+            events = current.unwrap()
+            if events and event.sequence <= events[-1].sequence:
+                return Result.err(
+                    _error(
+                        "EVENT_JOURNAL_CONFLICT",
+                        "event sequence is not newer than the journal tail.",
+                        event_sequence=event.sequence,
+                        latest_sequence=events[-1].sequence,
+                    )
+                )
+            retained = (events + [event])[-self.max_events :]
+            return self._write_unlocked(retained)
+
+        with self._lock:
+            result = self._run("append", operation)
+        if result.is_err():
+            return Result.err(result.unwrap_err())
+        return Result.ok(result.unwrap())
+
+
 class EventStream:
-    """Thread-safe bounded event stream with redacted callbacks."""
+    """Thread-safe bounded event stream with redacted callbacks and journaling."""
 
     def __init__(
         self,
@@ -397,12 +802,14 @@ class EventStream:
         max_subscribers: int = 1_000,
         redaction: Optional[RedactionPolicy] = None,
         exporter: Optional[EventExporter] = None,
+        journal: Optional[EventJournal] = None,
     ) -> None:
         self.max_events = max_events
         self.max_payload_bytes = max_payload_bytes
         self.max_subscribers = max_subscribers
         self.redaction = redaction or RedactionPolicy()
         self.exporter = exporter
+        self.journal = journal
         event_capacity = (
             max_events
             if isinstance(max_events, int)
@@ -418,12 +825,54 @@ class EventStream:
         self._published = 0
         self._subscriber_failures = 0
         self._exporter_failures = 0
+        self._journal_failures = 0
         self._publish_latency_total_ms = 0
         self._publish_latency_max_ms = 0
         self._publish_latency_samples: Deque[int] = deque(
             maxlen=min(event_capacity, _MAX_LATENCY_SAMPLES)
         )
         self._condition = threading.Condition(threading.RLock())
+        self._publish_lock = threading.Lock()
+        if self.journal is not None:
+            journal_load = getattr(self.journal, "load", None)
+            journal_append = getattr(self.journal, "append", None)
+            if not callable(journal_load) or not callable(journal_append):
+                raise ValueError("journal must expose load() and append(event)")
+            journal_max_events = getattr(self.journal, "max_events", None)
+            if journal_max_events is not None and journal_max_events != max_events:
+                raise ValueError("journal max_events must match stream max_events")
+            config_error = self._validate_config()
+            if config_error is not None:
+                raise ValueError(config_error["message"])
+            try:
+                loaded = self.journal.load()
+            except Exception as exc:
+                raise ValueError("event journal could not be loaded") from exc
+            if loaded.is_err():
+                raise ValueError("event journal could not be loaded")
+            self._hydrate(loaded.unwrap())
+
+    def _hydrate(self, loaded: Any) -> None:
+        if not isinstance(loaded, (list, tuple)) or len(loaded) > self.max_events:
+            raise ValueError("event journal returned an invalid event window")
+        hydrated: List[AgentEvent] = []
+        for event in loaded:
+            invalid = _validate_event_record(event)
+            if invalid is not None:
+                raise ValueError("event journal returned an invalid event")
+            if hydrated and event.sequence <= hydrated[-1].sequence:
+                raise ValueError("event journal returned non-monotonic events")
+            redacted = self.redaction.redact(event.payload)
+            if redacted.is_err():
+                raise ValueError("event journal payload failed redaction")
+            size = _json_size(redacted.unwrap())
+            if size.is_err() or size.unwrap() > self.max_payload_bytes:
+                raise ValueError("event journal payload exceeds stream limits")
+            hydrated.append(replace(event, payload=redacted.unwrap()))
+        with self._condition:
+            self._events.extend(hydrated)
+            if hydrated:
+                self._next_sequence = hydrated[-1].sequence + 1
 
     def _validate_config(self) -> Optional[Error]:
         if (
@@ -448,6 +897,14 @@ class EventStream:
             getattr(self.exporter, "export", None)
         ):
             return _error("EVENT_CONFIG_INVALID", "exporter must expose export(event).")
+        if self.journal is not None and (
+            not callable(getattr(self.journal, "load", None))
+            or not callable(getattr(self.journal, "append", None))
+        ):
+            return _error(
+                "EVENT_CONFIG_INVALID",
+                "journal must expose load() and append(event).",
+            )
         return self.redaction.validate()
 
     def publish(
@@ -468,7 +925,7 @@ class EventStream:
                     "EVENT_INPUT_INVALID", "event_type must be bounded and non-empty."
                 )
             )
-        if any(ord(char) < 32 for char in event_type):
+        if any(ord(char) < 32 or ord(char) == 127 for char in event_type):
             return Result.err(
                 _error(
                     "EVENT_INPUT_INVALID",
@@ -481,7 +938,9 @@ class EventStream:
             return Result.err(
                 _error("EVENT_INPUT_INVALID", "run_id must be bounded when provided.")
             )
-        if run_id is not None and any(ord(char) < 32 for char in run_id):
+        if run_id is not None and any(
+            ord(char) < 32 or ord(char) == 127 for char in run_id
+        ):
             return Result.err(
                 _error(
                     "EVENT_INPUT_INVALID", "run_id must not contain control characters."
@@ -501,21 +960,49 @@ class EventStream:
             )
 
         callbacks: List[EventCallback]
-        with self._condition:
-            if len(self._events) == self.max_events:
-                self._dropped += 1
-            event = AgentEvent(
-                sequence=self._next_sequence,
-                event_type=event_type,
-                timestamp=time.time(),
-                payload=redacted.unwrap(),
-                run_id=run_id,
-            )
-            self._next_sequence += 1
-            self._events.append(event)
-            callbacks = list(self._callbacks.values())
-            self._published += 1
-            self._condition.notify_all()
+        with self._publish_lock:
+            with self._condition:
+                event = AgentEvent(
+                    sequence=self._next_sequence,
+                    event_type=event_type,
+                    timestamp=time.time(),
+                    payload=redacted.unwrap(),
+                    run_id=run_id,
+                )
+            if self.journal is not None:
+                try:
+                    persisted = self.journal.append(event)
+                    if persisted.is_err():
+                        with self._condition:
+                            self._journal_failures += 1
+                        return Result.err(persisted.unwrap_err())
+                    if persisted.unwrap() != event:
+                        with self._condition:
+                            self._journal_failures += 1
+                        return Result.err(
+                            _error(
+                                "EVENT_JOURNAL_CONFLICT",
+                                "event journal returned a different event.",
+                            )
+                        )
+                except Exception as exc:
+                    with self._condition:
+                        self._journal_failures += 1
+                    return Result.err(
+                        _error(
+                            "EVENT_JOURNAL_ERROR",
+                            "event journal append failed.",
+                            reason=type(exc).__name__,
+                        )
+                    )
+            with self._condition:
+                if len(self._events) == self.max_events:
+                    self._dropped += 1
+                self._next_sequence += 1
+                self._events.append(event)
+                callbacks = list(self._callbacks.values())
+                self._published += 1
+                self._condition.notify_all()
         for callback in callbacks:
             try:
                 callback(event)
@@ -744,6 +1231,7 @@ class EventStream:
                 "published_events": self._published,
                 "subscriber_failures": self._subscriber_failures,
                 "exporter_failures": self._exporter_failures,
+                "journal_failures": self._journal_failures,
                 "publish_latency_total_ms": self._publish_latency_total_ms,
                 "publish_latency_max_ms": self._publish_latency_max_ms,
                 "publish_latency_avg_ms": (

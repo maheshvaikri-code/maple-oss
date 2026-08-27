@@ -77,9 +77,11 @@ separate.
 
 The same authenticated transport can now receive one bounded event at a time
 through `POST /v1/events` into a host-owned `EventStream`. The receiver assigns
-local sequence/timestamp values and re-applies event redaction and size limits;
-batching, durable replay, fleet aggregation, and remote trace search remain
-separate.
+local sequence/timestamp values and re-applies event redaction and size limits.
+An optional `FileEventJournal` atomically replays the bounded already-redacted
+local window across process restarts, with sequence continuity and fail-closed
+load/append validation. Remote batching, fleet aggregation, and remote trace
+search remain separate.
 
 The bounded session contract now also includes optional host-supplied summary
 compaction with a retained recent tail and optimistic version checks on the
@@ -102,7 +104,8 @@ finite timeouts, requires HTTPS for non-loopback endpoints, and performs no
 retry or persistence. A host can configure `RunServer(event_stream=...)` and
 use `RunClient.publish_event(...)` or point the exporter at `POST /v1/events`;
 the receiver assigns local sequence/timestamp values and re-applies the stream
-redaction and size boundary. Durable replay, batching, fleet aggregation, and
+redaction and size boundary. Local bounded replay is available through
+`FileEventJournal`; remote durable replay, batching, fleet aggregation, and
 hosted trace search remain deferred.
 
 The bounded human-input transport now also exposes optional authenticated

@@ -10,6 +10,14 @@
 
 ### Additions
 
+- **Bounded durable event journal**: `EventStream` can now attach a host-owned
+  `FileEventJournal` that atomically persists already-redacted events under a
+  bounded JSON window and fencing lease, then rehydrates retained events and
+  sequence continuity after restart. Malformed, oversized, non-monotonic, or
+  failed journal operations fail closed before callbacks or exporter delivery;
+  remote aggregation, batching, and exactly-once delivery remain outside the
+  contract.
+
 - **Bounded authenticated approval control transport**: `RunServer` and
   `RunClient` can now expose an authenticated `ApprovalStore` for bounded
   pending-list, inspection, and approve/deny decision operations with optional

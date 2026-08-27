@@ -11,6 +11,7 @@ from maple.autonomy.events import (
     AgentEvent,
     EventCursor,
     EventStream,
+    FileEventJournal,
     HttpEventExporter,
     RedactionPolicy,
 )
@@ -305,3 +306,120 @@ def test_http_event_exporter_failure_isolated_from_event_publish():
 
     assert published.is_ok()
     assert stream.metrics()["exporter_failures"] == 1
+
+
+def test_file_event_journal_rehydrates_redacted_events_and_sequence(tmp_path):
+    journal = FileEventJournal(tmp_path, max_events=2)
+    stream = EventStream(max_events=2, journal=journal)
+    first = stream.publish("one", {"secret": "not-persisted", "value": 1})
+    stream.publish("two", {"value": 2})
+    stream.publish("three", {"value": 3})
+
+    assert first.is_ok()
+    persisted = json.loads(journal.path.read_text(encoding="utf-8"))
+    assert [event["sequence"] for event in persisted["events"]] == [2, 3]
+    assert persisted["events"][0]["payload"] == {"value": 2}
+
+    restarted = EventStream(
+        max_events=2,
+        journal=FileEventJournal(tmp_path, max_events=2),
+    )
+    restored = restarted.read(EventCursor(sequence=1))
+    next_event = restarted.publish("four", {"value": 4})
+
+    assert restored.is_ok()
+    assert [event.sequence for event in restored.unwrap().events] == [2, 3]
+    assert next_event.is_ok()
+    assert next_event.unwrap().sequence == 4
+
+
+def test_file_event_journal_preserves_cursor_expiry_after_restart(tmp_path):
+    stream = EventStream(
+        max_events=2,
+        journal=FileEventJournal(tmp_path, max_events=2),
+    )
+    stream.publish("one", {})
+    stream.publish("two", {})
+    stream.publish("three", {})
+
+    restarted = EventStream(
+        max_events=2,
+        journal=FileEventJournal(tmp_path, max_events=2),
+    )
+    expired = restarted.read(EventCursor(sequence=0))
+
+    assert expired.is_err()
+    assert expired.unwrap_err()["errorType"] == "EVENT_CURSOR_EXPIRED"
+    assert expired.unwrap_err()["details"]["oldest_sequence"] == 2
+
+
+def test_file_event_journal_rejects_malformed_state_and_bounds_writes(tmp_path):
+    journal = FileEventJournal(tmp_path, max_events=2, max_bytes=160)
+    stream = EventStream(max_events=2, journal=journal)
+    callbacks = []
+    stream.subscribe(callbacks.append)
+
+    too_large = stream.publish("large", {"value": "x" * 200})
+
+    assert too_large.is_err()
+    assert too_large.unwrap_err()["errorType"] == "EVENT_JOURNAL_SIZE"
+    assert callbacks == []
+    assert stream.snapshot().unwrap() == []
+
+    journal.path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "events": [
+                    {
+                        "sequence": 2,
+                        "event_type": "two",
+                        "timestamp": 1.0,
+                        "payload": {},
+                        "run_id": None,
+                    },
+                    {
+                        "sequence": 1,
+                        "event_type": "one",
+                        "timestamp": 1.0,
+                        "payload": {},
+                        "run_id": None,
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError):
+        EventStream(max_events=2, journal=FileEventJournal(tmp_path, max_events=2))
+
+
+def test_journal_failure_prevents_callbacks_and_memory_publication():
+    class BrokenJournal:
+        max_events = 10
+
+        def load(self):
+            from maple.core.result import Result
+
+            return Result.ok([])
+
+        def append(self, event):
+            from maple.core.result import Result
+
+            return Result.err(
+                {
+                    "errorType": "EVENT_JOURNAL_SAVE_ERROR",
+                    "message": "journal unavailable",
+                }
+            )
+
+    received = []
+    stream = EventStream(max_events=10, journal=BrokenJournal())
+    stream.subscribe(received.append)
+    result = stream.publish("safe", {})
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "EVENT_JOURNAL_SAVE_ERROR"
+    assert received == []
+    assert stream.snapshot().unwrap() == []
+    assert stream.metrics()["journal_failures"] == 1

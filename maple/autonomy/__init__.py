@@ -55,11 +55,14 @@ from .evaluation import (
     RetrievalEvalCase,
 )
 from .events import (
+    DEFAULT_MAX_JOURNAL_BYTES,
     AgentEvent,
     EventBatch,
     EventCursor,
     EventExporter,
+    EventJournal,
     EventStream,
+    FileEventJournal,
     HttpEventExporter,
     RedactionPolicy,
 )
@@ -240,10 +243,13 @@ __all__ = [
     "FileAgentRunStore",
     "InMemoryAgentRunStore",
     "AgentEvent",
+    "DEFAULT_MAX_JOURNAL_BYTES",
     "EventBatch",
     "EventCursor",
     "EventExporter",
+    "EventJournal",
     "EventStream",
+    "FileEventJournal",
     "HttpEventExporter",
     "RedactionPolicy",
     "SpanRecorder",
