@@ -653,3 +653,28 @@ def test_subworkflow_malformed_child_checkpoint_fails_closed():
     assert result.is_ok()
     assert result.unwrap().status == "failed"
     assert result.unwrap().error["errorType"] == "SUBWORKFLOW_CHECKPOINT_INVALID"
+
+
+def test_subworkflow_mapping_limits_accept_boundary_and_reject_overflow():
+    child = Workflow("child_limits")
+    parent = Workflow("parent_limits")
+    mapping_255 = {f"parent-{i}": f"child-{i}" for i in range(255)}
+    mapping_256 = {f"parent-{i}": f"child-{i}" for i in range(256)}
+    mapping_257 = {f"parent-{i}": f"child-{i}" for i in range(257)}
+
+    assert parent.add_subworkflow("limit_255", child, input_map=mapping_255).is_ok()
+    assert parent.add_subworkflow("limit_256", child, input_map=mapping_256).is_ok()
+    overflow = parent.add_subworkflow("limit_257", child, input_map=mapping_257)
+    valid_key = "k" * 256
+    assert parent.add_subworkflow(
+        "key_256", child, input_map={valid_key: valid_key}
+    ).is_ok()
+    long_key = "k" * 257
+    invalid_key = parent.add_subworkflow(
+        "key_257", child, input_map={long_key: "child"}
+    )
+
+    assert overflow.is_err()
+    assert overflow.unwrap_err()["errorType"] == "SUBWORKFLOW_MAP_TOO_LARGE"
+    assert invalid_key.is_err()
+    assert invalid_key.unwrap_err()["errorType"] == "INVALID_SUBWORKFLOW_MAP"
