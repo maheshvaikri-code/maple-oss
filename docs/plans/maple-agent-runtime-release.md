@@ -150,7 +150,7 @@
 | 128 | Bounded durable event journal and restart replay | Chief Architect / Backend / Observability / Security / QA / Release | `docs/adr/074-*`, `maple/autonomy/events.py`, event/server regressions, API/README/parity docs, changelog, QA/review evidence | Optional host-owned `FileEventJournal` persists redacted bounded events through atomic JSON replacement and fencing leases; `EventStream` rehydrates the retained window and cursor sequence after restart; malformed/oversized/non-monotonic records fail closed; no unbounded log, multi-writer allocator, remote aggregation, or exactly-once delivery claim | done: feature commit `f30ae25`; fail-closed timestamp fix `032429f`; evidence normalization `2ae4a9c`; QA/review normalization `3409f39`; focused event suite `20 passed in 0.78s`; exact tracked manifest `1329 passed, 1 skipped in 270.82s` across 108 tracked Python test files; isort/Black/Ruff/changed-boundary mypy/compile/diff pass; clean `git archive HEAD` `1.1.3` wheel/sdist build and Twine checks exit `0`, wheel `104` entries, sdist `570` entries with zero workspace-only files, isolated no-dependency event-journal export smoke pass; declared-project pip-audit reports no known vulnerabilities; QA and code/security review pass; remote aggregation, batching, hosted tracing, and exactly-once delivery remain separate |
 | 129 | Bounded authenticated event batch transport | Chief Architect / Backend / Interoperability / Security / Observability / QA / Release | `docs/adr/075-*`, `maple/autonomy/server.py`, server/client event regressions, API/README/parity docs, changelog, QA/review evidence | Authenticated `POST /v1/events/batch` and `RunClient.publish_events(...)` accept 1–100 existing event envelopes, preserve request order and stream-owned redaction/sequence semantics, and return bounded per-item published/failed results; malformed batch structure fails before attempts; partial success, no retry/deduplication, and no durable remote queue or exactly-once claim are explicit | done: feature commit `c542828`; focused server/event suite `50 passed in 21.58s`; exact tracked manifest `1333 passed, 1 skipped in 284.61s` across `108` tracked Python test files; Black/isort/Ruff/changed-boundary mypy/compile/diff/secret/dangerous-construct gates passed; clean feature archive `c542828` built `1.1.3` wheel/sdist with exit `0`, Twine checks `PASSED`, wheel `104` entries, sdist `571` entries, and isolated no-dependency event-journal smoke passed; final closure archive `ab9d2e6` built with exit `0`, Twine checks `PASSED`, wheel `104` entries, sdist `573` entries, and no-dependency event batch/journal smoke passed; QA and code review filed; declared-project pip-audit reported no known vulnerabilities; environment-wide dependency-governance veto remains; durable remote replay, aggregation, backpressure, hosted tracing, and exactly-once effects remain separate |
 | 130 | Bounded durable event forwarding and remote aggregation | Chief Architect / Backend / Interoperability / Security / Observability / QA / Release | `docs/adr/076-*`, `maple/autonomy/events.py`, autonomy/root exports, event regressions, API/README/parity docs, changelog, QA/review evidence | Opt-in `EventForwarder` reads at most 100 retained events, sends them through an authenticated `HttpEventBatchSender`, and persists only the contiguous acknowledged prefix through an in-memory or atomic fenced `FileEventCursorStore`; cursor expiry, malformed acknowledgements, transport errors, and cursor-save failures fail closed; duplicate sends remain possible and no implicit retry, remote queue, ordering across forwarders, or exactly-once effect claim is made | done: feature commit `9e74115`; focused event suite `31 passed in 2.70s`; event/server suite `61 passed in 15.24s`; exact tracked manifest `1344 passed, 1 skipped in 245.95s` across `108` tracked Python test files; Black/isort/Ruff/changed-boundary mypy/compile/diff/secret/dangerous-construct gates passed; clean feature archive built with exit `0`, Twine checks `PASSED`, wheel `104` entries, sdist `574` entries, and isolated no-dependency forwarder smoke passed; final closure commit `3384c0d` archive rebuilt with exit `0`, Twine checks `PASSED`, wheel `104` entries, sdist `576` entries; QA and code review filed; declared-project pip-audit reported no known vulnerabilities; environment-wide dependency-governance veto remains; hosted scheduling, backpressure, remote deduplication, hosted aggregation/tracing, tenancy, sandboxing, and exactly-once effects remain separate |
-| 131 | Bounded structured evaluation trajectories | Chief Architect / Backend / Security / QA / Release | `docs/adr/077-*`, `maple/autonomy/evaluation.py`, autonomy/root exports, evaluation regressions, API/README/parity docs, changelog, QA/review evidence | Additive `EvalTrajectoryStep` records bounded tool arguments, results, status, and duration; `EvalCase.expected_trajectory` performs exact fixture matching; reports and optional judges receive re-redacted bounded observations; name-only observations remain compatible; no generated-code execution, semantic faithfulness, trace scoring, or hosted judge orchestration claim | in progress |
+| 131 | Bounded structured evaluation trajectories | Chief Architect / Backend / Security / QA / Release | `docs/adr/077-*`, `maple/autonomy/evaluation.py`, autonomy/root exports, evaluation regressions, API/README/parity docs, changelog, QA/review evidence | Additive `EvalTrajectoryStep` records bounded tool arguments, results, status, and duration; `EvalCase.expected_trajectory` performs exact fixture matching; reports and optional judges receive re-redacted bounded observations; name-only observations remain compatible; no generated-code execution, semantic faithfulness, trace scoring, or hosted judge orchestration claim | done: feature commit `ba2a268`; ADR normalization commit `3194c1e`; focused evaluation suite `24 passed in 0.26s`; evaluation/observability suite `44 passed in 0.40s`; exact tracked manifest `1348 passed, 1 skipped in 274.74s` across `108` tracked Python test files; Black/isort/Ruff/changed-boundary mypy/compile/diff/secret/dangerous-construct gates passed; clean final archive evidence and QA/review closure filed below; declared-project pip-audit reported no known vulnerabilities; environment-wide dependency-governance veto remains; async/provider-owned judges, calibration, trace scoring, semantic faithfulness, generated-code execution, and hosted evaluation remain separate |
 
 ## Slice 127 closure
 
@@ -292,6 +292,43 @@ dependency was added. The environment-wide audit still reports `384` known
 vulnerabilities across `77` installed packages and remains a release-governance
 veto. No publication, deployment, cloud action, or website update was
 performed.
+
+## Slice 131
+
+Add a provider-neutral, dependency-free structured trajectory contract to the
+existing deterministic evaluation harness. The host may supply bounded tool
+arguments, results, status, and duration for exact fixture matching. Reports
+and optional judges receive a separately redacted bounded copy. The existing
+name-only trajectory form remains compatible; execution, semantic scoring, and
+hosted trace evaluation remain outside the slice.
+
+Threat sketch: assets are tool arguments, tool results, fixture expectations,
+judge observations, and report output; entry points are host runner return
+values and serialized fixture data. The worst plausible abuse is secret
+disclosure or memory amplification through raw trajectory values, or a
+misleading pass caused by inconsistent names and structured steps. Typed JSON
+validation, per-step and whole-report bounds, redaction before exposure, exact
+name consistency, and no execution of trajectory data contain the blast radius.
+
+**Date:** 2026-08-27
+
+## Slice 131 closure
+
+Slice 131 is complete. `EvalTrajectoryStep` now records bounded JSON-safe tool
+arguments, results, status, and duration. `EvalCase.expected_trajectory`
+performs exact validated fixture matching, while `EvalObservation.trajectory`
+derives or checks tool names without breaking the existing name-only API.
+Actual trajectories are re-redacted and bounded before report or judge
+exposure. Invalid, inconsistent, oversized, or non-finite values fail closed
+per case. The slice does not execute generated code or claim semantic
+faithfulness, trace scoring, calibration, or hosted judge orchestration.
+
+Evidence is green: the focused evaluation suite passed `24` tests, the
+evaluation/observability suite passed `44` tests, and the exact tracked
+manifest passed `1348` tests with `1` skip across `108` tracked Python test
+files. Black, isort, Ruff, changed-boundary mypy, compile, diff, secret, and
+dangerous-construct checks passed. QA and code-review evidence is filed in
+`docs/qa/` and `docs/reviews/`.
 
 Slice 127 is complete. The authenticated dependency-free control plane now
 supports bounded approval listing, inspection, and approve/deny decisions with
