@@ -1695,17 +1695,22 @@ class AutonomousAgent(Agent):
                             name=tool_call.name,
                         )
                     )
-                    self._publish_run_event(
-                        goal,
-                        "tool.completed",
-                        {
-                            "step": step_num,
-                            "tool": tool_call.name,
-                            "tool_call_id": tool_call.id,
-                            "is_error": tool_result.is_error,
-                            "content_length": len(tool_result.content),
-                        },
+                    tool_event: Dict[str, Any] = {
+                        "step": step_num,
+                        "tool": tool_call.name,
+                        "tool_call_id": tool_call.id,
+                        "is_error": tool_result.is_error,
+                        "content_length": len(tool_result.content),
+                    }
+                    if model_span is not None:
+                        tool_event["trace_id"] = model_span.trace_id
+                        tool_event["span_id"] = model_span.span_id
+                    pending_approval_event_id = self._approval_id_from_tool_result(
+                        tool_result
                     )
+                    if pending_approval_event_id is not None:
+                        tool_event["approval_id"] = pending_approval_event_id
+                    self._publish_run_event(goal, "tool.completed", tool_event)
 
                     pending_input_id = self._human_input_id_from_tool_result(
                         tool_result
@@ -1961,6 +1966,7 @@ class AutonomousAgent(Agent):
         tool: Tool,
         *,
         skip_approval: bool = False,
+        parent_span: Optional[TraceSpan] = None,
     ) -> Result[Dict[str, Any], ToolResult]:
         """Resolve approval and return the arguments permitted to execute."""
         execution_arguments = tool_call.arguments
@@ -1978,6 +1984,8 @@ class AutonomousAgent(Agent):
                     tool_call_id=tool_call.id,
                     tool_name=tool_call.name,
                     arguments=dict(tool_call.arguments),
+                    trace_id=parent_span.trace_id if parent_span is not None else None,
+                    span_id=parent_span.span_id if parent_span is not None else None,
                 )
                 request_result = self._approval_store.create(request)
             except (TypeError, ValueError):
@@ -1998,12 +2006,17 @@ class AutonomousAgent(Agent):
                 )
             request = request_result.unwrap()
             if request.status == "pending":
+                approval_details: Dict[str, Any] = {"approval_id": request.approval_id}
+                if request.trace_id is not None:
+                    approval_details["trace_id"] = request.trace_id
+                if request.span_id is not None:
+                    approval_details["span_id"] = request.span_id
                 return Result.err(
                     self._approval_error(
                         tool_call.id,
                         "APPROVAL_PENDING",
                         "Tool execution is waiting for operator approval.",
-                        approval_id=request.approval_id,
+                        **approval_details,
                     )
                 )
             if request.status == "denied":
@@ -2370,7 +2383,10 @@ class AutonomousAgent(Agent):
                 return complete(self._request_human_input_tool_call(tool_call, run_id))
 
             authorized = self._authorize_tool_call(
-                tool_call, tool, skip_approval=skip_approval
+                tool_call,
+                tool,
+                skip_approval=skip_approval,
+                parent_span=parent_span,
             )
             if authorized.is_err():
                 return complete(authorized.unwrap_err())
@@ -2480,6 +2496,7 @@ class AutonomousAgent(Agent):
                     tool_call,
                     tool,
                     skip_approval=skip_approval,
+                    parent_span=parent_span,
                 ),
             )
             if authorized.is_err():
@@ -3763,17 +3780,22 @@ Instructions:
                             name=tool_call.name,
                         )
                     )
-                    self._publish_run_event(
-                        goal,
-                        "tool.completed",
-                        {
-                            "step": step_num,
-                            "tool": tool_call.name,
-                            "tool_call_id": tool_call.id,
-                            "is_error": tool_result.is_error,
-                            "content_length": len(tool_result.content),
-                        },
+                    tool_event: Dict[str, Any] = {
+                        "step": step_num,
+                        "tool": tool_call.name,
+                        "tool_call_id": tool_call.id,
+                        "is_error": tool_result.is_error,
+                        "content_length": len(tool_result.content),
+                    }
+                    if model_span is not None:
+                        tool_event["trace_id"] = model_span.trace_id
+                        tool_event["span_id"] = model_span.span_id
+                    pending_approval_event_id = self._approval_id_from_tool_result(
+                        tool_result
                     )
+                    if pending_approval_event_id is not None:
+                        tool_event["approval_id"] = pending_approval_event_id
+                    self._publish_run_event(goal, "tool.completed", tool_event)
                     self.memory.working.add(
                         key=f"tool:{tool_call.name}:{step_num}",
                         content=tool_result.content[:500],

@@ -10,6 +10,12 @@
 
 ### Additions
 
+- **Bounded approval trace correlation**: durable approval requests now retain
+  optional bounded `trace_id`/`span_id` context from their creating model span;
+  pending errors and normal sync/async tool lifecycle events expose the local
+  join without copying prompts, arguments, or results. Hosted trace search and
+  principal identity remain separate.
+
 - **Bounded remote event deduplication**: opt-in authenticated receivers can
   use `InMemoryEventDeduplicationStore` with stable `source_id` and source
   sequence values from `HttpEventBatchSender` or `RunClient.publish_events(...)`.

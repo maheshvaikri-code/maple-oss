@@ -1,5 +1,7 @@
 """Tests for durable approval request and decision storage."""
 
+import pytest
+
 from maple.autonomy.approval import (
     ApprovalRequest,
     FileApprovalStore,
@@ -122,6 +124,39 @@ def test_file_approval_survives_store_recreation(tmp_path):
         "content": '{"ok": true}',
         "is_error": False,
     }
+
+
+def test_approval_trace_correlation_survives_round_trip_and_file_restart(tmp_path):
+    request = ApprovalRequest(
+        approval_id="approval-correlated",
+        tool_call_id="call-1",
+        tool_name="write_state",
+        arguments={"key": "status"},
+        trace_id="trace-123",
+        span_id="span-456",
+    )
+    encoded = request.to_dict()
+    decoded = ApprovalRequest.from_dict(encoded)
+    store = FileApprovalStore(tmp_path)
+    assert store.create(request).is_ok()
+    restarted = store.get("approval-correlated")
+
+    assert decoded.trace_id == "trace-123"
+    assert decoded.span_id == "span-456"
+    assert restarted.is_ok()
+    assert restarted.unwrap().trace_id == "trace-123"
+    assert restarted.unwrap().span_id == "span-456"
+
+
+def test_invalid_approval_trace_correlation_is_rejected():
+    with pytest.raises(ValueError):
+        ApprovalRequest(
+            approval_id="approval-invalid-trace",
+            tool_call_id="call-1",
+            tool_name="write_state",
+            arguments={},
+            trace_id="bad\ntrace",
+        )
 
 
 def test_invalid_arguments_are_rejected_before_persistence():

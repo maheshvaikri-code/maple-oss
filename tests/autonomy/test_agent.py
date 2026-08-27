@@ -16,6 +16,7 @@ from maple.autonomy.agent import (
 )
 from maple.autonomy.approval import InMemoryApprovalStore
 from maple.autonomy.events import EventStream
+from maple.autonomy.observability import SpanRecorder
 from maple.core.result import Result
 from maple.llm.provider import LLMProvider
 from maple.llm.registry import LLMProviderRegistry
@@ -911,6 +912,9 @@ class TestAutonomousAgent:
         agent = AutonomousAgent(config, auto_config)
         store = InMemoryApprovalStore()
         agent.set_approval_store(store)
+        parent_span = (
+            SpanRecorder().start_span("agent.model", trace_id="trace-approval").unwrap()
+        )
         calls = []
 
         from maple.autonomy.tools import Tool
@@ -925,12 +929,19 @@ class TestAutonomousAgent:
             )
         )
 
-        pending = agent._execute_tool_call(ToolCall("call-durable", "dangerous", {}))
+        pending = agent._execute_tool_call(
+            ToolCall("call-durable", "dangerous", {}), parent_span=parent_span
+        )
         pending_payload = json.loads(pending.content)
         approval_id = pending_payload["details"]["approval_id"]
+        stored = store.get(approval_id).unwrap()
 
         assert pending.is_error is True
         assert pending_payload["errorType"] == "APPROVAL_PENDING"
+        assert pending_payload["details"]["trace_id"] == "trace-approval"
+        assert pending_payload["details"]["span_id"] == parent_span.span_id
+        assert stored.trace_id == "trace-approval"
+        assert stored.span_id == parent_span.span_id
         assert calls == []
         assert agent.decide_approval(approval_id, approved=True).is_ok()
 

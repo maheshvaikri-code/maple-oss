@@ -154,6 +154,8 @@ def approval_tool(calls):
 def test_sync_run_pauses_for_approval_and_resumes_after_restart():
     run_store = InMemoryAgentRunStore()
     approval_store = InMemoryApprovalStore()
+    events = EventStream(max_events=20)
+    spans = SpanRecorder(max_spans=10)
     calls = []
     first = make_agent(
         [
@@ -172,6 +174,8 @@ def test_sync_run_pauses_for_approval_and_resumes_after_restart():
     )
     first.set_run_store(run_store)
     first.set_approval_store(approval_store)
+    first.set_event_stream(events)
+    first.set_span_recorder(spans)
     assert first.register_tool(approval_tool(calls)).is_ok()
 
     started = first.pursue_goal("Write the value", run_id="run-approval")
@@ -184,6 +188,18 @@ def test_sync_run_pauses_for_approval_and_resumes_after_restart():
     assert checkpoint.status == "paused"
     assert checkpoint.pending_approval_id == approval_id
     assert calls == []
+    tool_event = next(
+        event
+        for event in events.snapshot().unwrap()
+        if event.event_type == "tool.completed"
+    )
+    model_span = spans.snapshot().unwrap()[0]
+    assert tool_event.payload["approval_id"] == approval_id
+    assert tool_event.payload["trace_id"] == model_span.trace_id
+    assert tool_event.payload["span_id"] == model_span.span_id
+    stored = approval_store.get(approval_id).unwrap()
+    assert stored.trace_id == model_span.trace_id
+    assert stored.span_id == model_span.span_id
     assert first.resume_run("run-approval").unwrap_err()["errorType"] == (
         "RUN_WAITING_APPROVAL"
     )
@@ -719,6 +735,7 @@ def test_async_run_pauses_for_approval_and_resumes_after_restart():
     run_store = InMemoryAgentRunStore()
     approval_store = InMemoryApprovalStore()
     events = EventStream(max_events=20)
+    spans = SpanRecorder(max_spans=10)
     calls = []
     first = make_agent(
         [
@@ -738,6 +755,7 @@ def test_async_run_pauses_for_approval_and_resumes_after_restart():
     first.set_run_store(run_store)
     first.set_approval_store(approval_store)
     first.set_event_stream(events)
+    first.set_span_recorder(spans)
     assert first.register_tool(approval_tool(calls)).is_ok()
 
     started = asyncio.run(
@@ -758,6 +776,18 @@ def test_async_run_pauses_for_approval_and_resumes_after_restart():
         "tool.completed",
         "run.paused",
     ]
+    tool_event = next(
+        event
+        for event in events.snapshot().unwrap()
+        if event.event_type == "tool.completed"
+    )
+    model_span = spans.snapshot().unwrap()[0]
+    assert tool_event.payload["approval_id"] == approval_id
+    assert tool_event.payload["trace_id"] == model_span.trace_id
+    assert tool_event.payload["span_id"] == model_span.span_id
+    stored = approval_store.get(approval_id).unwrap()
+    assert stored.trace_id == model_span.trace_id
+    assert stored.span_id == model_span.span_id
     waiting = asyncio.run(first.resume_run_async("async-run-approval"))
     assert waiting.is_err()
     assert waiting.unwrap_err()["errorType"] == "RUN_WAITING_APPROVAL"

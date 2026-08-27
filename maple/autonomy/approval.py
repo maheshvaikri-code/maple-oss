@@ -213,6 +213,23 @@ def _valid_text(value: Any, field_name: str) -> Optional[Error]:
     return None
 
 
+def _valid_correlation_id(value: Any, field_name: str) -> Optional[Error]:
+    if value is None:
+        return None
+    if (
+        not isinstance(value, str)
+        or not value
+        or len(value) > 128
+        or any(ord(char) < 32 or ord(char) == 127 for char in value)
+    ):
+        return _error(
+            "INVALID_APPROVAL_CORRELATION",
+            f"{field_name} must be a bounded string without control characters.",
+            field=field_name,
+        )
+    return None
+
+
 @dataclass(frozen=True)
 class ApprovalDecision:
     """Immutable operator decision recorded against an approval request."""
@@ -259,6 +276,8 @@ class ApprovalRequest:
     updated_at: float = 0.0
     decision: Optional[ApprovalDecision] = None
     execution_result: Optional[Dict[str, Any]] = None
+    trace_id: Optional[str] = None
+    span_id: Optional[str] = None
 
     def __post_init__(self) -> None:
         now = time.time()
@@ -272,6 +291,12 @@ class ApprovalRequest:
         if self.execution_result is not None and self.status != "consumed":
             raise ValueError("only consumed approvals can contain an execution result")
         object.__setattr__(self, "execution_result", normalized.unwrap())
+        for field_name, value in (
+            ("trace_id", self.trace_id),
+            ("span_id", self.span_id),
+        ):
+            if _valid_correlation_id(value, field_name):
+                raise ValueError(f"invalid {field_name}")
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -288,6 +313,8 @@ class ApprovalRequest:
                 if self.execution_result is not None
                 else None
             ),
+            "trace_id": self.trace_id,
+            "span_id": self.span_id,
         }
 
     @classmethod
@@ -351,6 +378,9 @@ class ApprovalRequest:
         updated_at = float(data.get("updated_at", time.time()))
         if not math.isfinite(created_at) or not math.isfinite(updated_at):
             raise ValueError("approval timestamps must be finite")
+        for field_name in ("trace_id", "span_id"):
+            if _valid_correlation_id(data.get(field_name), field_name):
+                raise ValueError(f"invalid {field_name}")
         return cls(
             approval_id=data["approval_id"],
             tool_call_id=data["tool_call_id"],
@@ -361,6 +391,8 @@ class ApprovalRequest:
             updated_at=updated_at,
             decision=decision,
             execution_result=execution_result.unwrap(),
+            trace_id=data.get("trace_id"),
+            span_id=data.get("span_id"),
         )
 
 

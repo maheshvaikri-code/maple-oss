@@ -1608,6 +1608,15 @@ the host cannot provide a synchronous callback. The agent creates a bounded
 pending request and never invokes the handler until the host records a decision
 and consumes the approval.
 
+When a durable approval is created while a local model `TraceSpan` is active,
+the request persists bounded optional `trace_id` and `span_id` values. They
+survive file-store restart and are included in the authenticated approval
+inspection envelope. Pending tool errors carry the same fields, and normal
+sync/async `tool.completed` events include the active model span plus the
+pending approval ID when applicable. This is an observational local join:
+prompts, arguments, results, hosted trace search, principal identity, and
+exactly-once effects remain outside the contract.
+
 ```python
 import json
 
