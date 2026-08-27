@@ -22,6 +22,8 @@ _GROUNDING_MAX_SOURCES = 256
 _EVAL_MAX_FIXTURE_VERSION = 32
 _EVAL_MAX_TRAJECTORY_TOOLS = 256
 _EVAL_MAX_TOOL_NAME_LENGTH = 256
+_EVAL_MAX_TRAJECTORY_STEP_BYTES = 65_536
+_EVAL_MAX_TRAJECTORY_DURATION_MS = 86_400_000.0
 _EVAL_MAX_JUDGE_RATIONALE_BYTES = 4_096
 _GROUNDING_STOPWORDS = frozenset(
     {
@@ -52,6 +54,81 @@ _GROUNDING_STOPWORDS = frozenset(
 
 
 @dataclass(frozen=True)
+class EvalTrajectoryStep:
+    """One bounded, JSON-safe tool step in an evaluation trajectory."""
+
+    tool_name: str
+    arguments: Any = field(default_factory=dict)
+    result: Any = None
+    status: str = "ok"
+    duration_ms: float = 0.0
+
+    def validate(self) -> Optional[Error]:
+        if (
+            not isinstance(self.tool_name, str)
+            or not self.tool_name
+            or len(self.tool_name) > _EVAL_MAX_TOOL_NAME_LENGTH
+            or any(ord(char) < 32 for char in self.tool_name)
+        ):
+            return {
+                "errorType": "EVAL_TRAJECTORY_STEP_INVALID",
+                "message": "trajectory tool_name must be bounded text.",
+            }
+        if not isinstance(self.status, str) or self.status not in (
+            "ok",
+            "error",
+            "cancelled",
+        ):
+            return {
+                "errorType": "EVAL_TRAJECTORY_STEP_INVALID",
+                "message": "trajectory status is invalid.",
+            }
+        try:
+            duration_is_finite = math.isfinite(float(self.duration_ms))
+        except (OverflowError, TypeError, ValueError):
+            duration_is_finite = False
+        if (
+            not isinstance(self.duration_ms, (int, float))
+            or isinstance(self.duration_ms, bool)
+            or not duration_is_finite
+            or self.duration_ms < 0.0
+            or self.duration_ms > _EVAL_MAX_TRAJECTORY_DURATION_MS
+        ):
+            return {
+                "errorType": "EVAL_TRAJECTORY_STEP_INVALID",
+                "message": "trajectory duration_ms is invalid or too large.",
+            }
+        try:
+            encoded = json.dumps(
+                {"arguments": self.arguments, "result": self.result},
+                ensure_ascii=False,
+                allow_nan=False,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        except (TypeError, ValueError, OverflowError):
+            return {
+                "errorType": "EVAL_TRAJECTORY_STEP_INVALID",
+                "message": "trajectory arguments and result must be JSON serializable.",
+            }
+        if len(encoded) > _EVAL_MAX_TRAJECTORY_STEP_BYTES:
+            return {
+                "errorType": "EVAL_TRAJECTORY_STEP_TOO_LARGE",
+                "message": "trajectory arguments and result exceed the byte limit.",
+            }
+        return None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Return the stable JSON-compatible fixture representation."""
+        return {
+            "tool_name": self.tool_name,
+            "arguments": self.arguments,
+            "result": self.result,
+            "status": self.status,
+            "duration_ms": self.duration_ms,
+        }
+
+
+@dataclass(frozen=True)
 class EvalCase:
     """One golden evaluation case with output and/or trajectory expectations."""
 
@@ -62,6 +139,7 @@ class EvalCase:
     expected_tool_names: Tuple[str, ...] = ()
     metadata: Mapping[str, Any] = field(default_factory=dict)
     fixture_version: int = 1
+    expected_trajectory: Tuple[EvalTrajectoryStep, ...] = ()
 
     def validate(self) -> Optional[Error]:
         if (
@@ -77,6 +155,7 @@ class EvalCase:
             self.expected_output is _UNSET
             and self.output_schema is None
             and not self.expected_tool_names
+            and not self.expected_trajectory
         ):
             return {
                 "errorType": "EVAL_CASE_INVALID",
@@ -108,6 +187,31 @@ class EvalCase:
                 "errorType": "EVAL_CASE_INVALID",
                 "message": "expected_tool_names exceeds the trajectory limit.",
             }
+        if (
+            not isinstance(self.expected_trajectory, tuple)
+            or len(self.expected_trajectory) > _EVAL_MAX_TRAJECTORY_TOOLS
+            or not all(
+                isinstance(step, EvalTrajectoryStep)
+                for step in self.expected_trajectory
+            )
+        ):
+            return {
+                "errorType": "EVAL_CASE_INVALID",
+                "message": "expected_trajectory must be a bounded tuple of steps.",
+            }
+        for step in self.expected_trajectory:
+            step_error = step.validate()
+            if step_error is not None:
+                return step_error
+        if self.expected_trajectory and self.expected_tool_names:
+            trajectory_names = tuple(
+                step.tool_name for step in self.expected_trajectory
+            )
+            if trajectory_names != tuple(self.expected_tool_names):
+                return {
+                    "errorType": "EVAL_CASE_INVALID",
+                    "message": "expected_tool_names must match expected_trajectory.",
+                }
         try:
             json.dumps(self.metadata, allow_nan=False)
         except (TypeError, ValueError):
@@ -310,10 +414,11 @@ class GroundednessEvalCase:
 
 @dataclass(frozen=True)
 class EvalObservation:
-    """Optional runner result carrying output and ordered tool names."""
+    """Optional runner result carrying output and a bounded tool trajectory."""
 
     output: Any
     tool_names: Tuple[str, ...] = ()
+    trajectory: Tuple[EvalTrajectoryStep, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -399,6 +504,7 @@ class EvalResult:
     fixture_version: int = 1
     judge_score: Optional[float] = None
     judge_rationale: Optional[str] = None
+    actual_trajectory: Tuple[EvalTrajectoryStep, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -441,6 +547,9 @@ class EvalReport:
                     "fixture_version": result.fixture_version,
                     "judge_score": result.judge_score,
                     "judge_rationale": result.judge_rationale,
+                    "actual_trajectory": [
+                        step.to_dict() for step in result.actual_trajectory
+                    ],
                 }
                 for result in self.results
             ],
@@ -475,6 +584,50 @@ class EvaluationHarness:
             return None
         return redacted.unwrap()
 
+    def _safe_trajectory(
+        self, trajectory: Tuple[EvalTrajectoryStep, ...]
+    ) -> Optional[Tuple[EvalTrajectoryStep, ...]]:
+        """Redact and bound trajectory fields before report or judge exposure."""
+        if not self._valid_trajectory(trajectory):
+            return None
+        safe_steps: List[EvalTrajectoryStep] = []
+        for step in trajectory:
+            safe = self._safe_output(step.to_dict())
+            if not isinstance(safe, Mapping):
+                return None
+            tool_name = safe.get("tool_name")
+            status = safe.get("status")
+            duration_ms = safe.get("duration_ms")
+            if (
+                not isinstance(tool_name, str)
+                or not isinstance(status, str)
+                or not isinstance(duration_ms, (int, float))
+                or isinstance(duration_ms, bool)
+            ):
+                return None
+            normalized = EvalTrajectoryStep(
+                tool_name=tool_name,
+                arguments=safe.get("arguments"),
+                result=safe.get("result"),
+                status=status,
+                duration_ms=duration_ms,
+            )
+            if normalized.validate() is not None:
+                return None
+            safe_steps.append(normalized)
+        try:
+            encoded = json.dumps(
+                [step.to_dict() for step in safe_steps],
+                ensure_ascii=False,
+                allow_nan=False,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        except (TypeError, ValueError, OverflowError):
+            return None
+        if len(encoded) > self.max_value_bytes:
+            return None
+        return tuple(safe_steps)
+
     def _safe_judge_rationale(self, value: str) -> Optional[str]:
         safe = self._safe_output(value)
         return safe if isinstance(safe, str) else None
@@ -490,6 +643,17 @@ class EvaluationHarness:
                 and len(name) <= _EVAL_MAX_TOOL_NAME_LENGTH
                 and not any(ord(char) < 32 for char in name)
                 for name in value
+            )
+        )
+
+    @staticmethod
+    def _valid_trajectory(value: Any) -> bool:
+        return (
+            isinstance(value, tuple)
+            and len(value) <= _EVAL_MAX_TRAJECTORY_TOOLS
+            and all(
+                isinstance(step, EvalTrajectoryStep) and step.validate() is None
+                for step in value
             )
         )
 
@@ -559,6 +723,8 @@ class EvaluationHarness:
             errors: List[Error] = []
             actual: Any = None
             tool_names: Tuple[str, ...] = ()
+            trajectory: Tuple[EvalTrajectoryStep, ...] = ()
+            safe_trajectory: Tuple[EvalTrajectoryStep, ...] = ()
             judge_score: Optional[float] = None
             judge_rationale: Optional[str] = None
             observation_valid = True
@@ -586,6 +752,41 @@ class EvaluationHarness:
                                 }
                             )
                             observation_valid = False
+                        trajectory = observation.trajectory
+                        if not self._valid_trajectory(trajectory):
+                            errors.append(
+                                {
+                                    "errorType": "EVAL_OBSERVATION_INVALID",
+                                    "message": "observed trajectory is invalid or unbounded.",
+                                }
+                            )
+                            observation_valid = False
+                        else:
+                            safe_trajectory_result = self._safe_trajectory(trajectory)
+                            if safe_trajectory_result is None:
+                                errors.append(
+                                    {
+                                        "errorType": "EVAL_OBSERVATION_INVALID",
+                                        "message": "observed trajectory exceeds the report bound.",
+                                    }
+                                )
+                                observation_valid = False
+                            else:
+                                safe_trajectory = safe_trajectory_result
+                            if trajectory:
+                                trajectory_names = tuple(
+                                    step.tool_name for step in trajectory
+                                )
+                                if tool_names and tuple(tool_names) != trajectory_names:
+                                    errors.append(
+                                        {
+                                            "errorType": "EVAL_OBSERVATION_INVALID",
+                                            "message": "tool_names must match trajectory tool names.",
+                                        }
+                                    )
+                                    observation_valid = False
+                                else:
+                                    tool_names = trajectory_names
                     else:
                         actual = observation
                     expected_checks = 0
@@ -630,11 +831,28 @@ class EvaluationHarness:
                                     ),
                                 }
                             )
+                    if case.expected_trajectory:
+                        expected_checks += 1
+                        observed_trajectory = (
+                            trajectory if self._valid_trajectory(trajectory) else ()
+                        )
+                        if tuple(
+                            step.to_dict() for step in observed_trajectory
+                        ) == tuple(step.to_dict() for step in case.expected_trajectory):
+                            passed_checks += 1
+                        else:
+                            errors.append(
+                                {
+                                    "errorType": "EVAL_TRAJECTORY_MISMATCH",
+                                    "message": "structured tool trajectory did not match expected steps.",
+                                }
+                            )
                     if judge is not None and observation_valid:
                         expected_checks += 1
                         judge_observation = EvalObservation(
                             output=self._safe_output(actual),
                             tool_names=tuple(tool_names),
+                            trajectory=tuple(safe_trajectory),
                         )
                         try:
                             judged = judge(case, judge_observation)
@@ -708,6 +926,7 @@ class EvaluationHarness:
                     fixture_version=case.fixture_version,
                     judge_score=judge_score,
                     judge_rationale=judge_rationale,
+                    actual_trajectory=tuple(safe_trajectory),
                 )
             )
         return Result.ok(EvalReport(results=tuple(results)))

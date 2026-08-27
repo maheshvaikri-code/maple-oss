@@ -6,6 +6,7 @@ from maple.autonomy.evaluation import (
     EvalCase,
     EvalJudgeResult,
     EvalObservation,
+    EvalTrajectoryStep,
     EvaluationHarness,
     GroundednessEvalCase,
     GroundednessObservation,
@@ -206,6 +207,114 @@ def test_evaluation_rejects_unbounded_runner_trajectories():
         [case],
         lambda value: EvalObservation("ok", ("tool",) * 257),
         judge=lambda fixture, observation: EvalJudgeResult(1.0, True),
+    )
+
+    assert report.is_ok()
+    assert report.unwrap().results[0].errors[0]["errorType"] == (
+        "EVAL_OBSERVATION_INVALID"
+    )
+
+
+def test_evaluation_matches_structured_trajectory_and_redacts_report():
+    expected_step = EvalTrajectoryStep(
+        "search",
+        arguments={"query": "MAPLE"},
+        result={"api_key": "hidden", "count": 1},
+        duration_ms=12.5,
+    )
+    case = EvalCase(
+        "structured-trajectory",
+        {"query": "MAPLE"},
+        expected_output={"answer": "ready"},
+        expected_trajectory=(expected_step,),
+        fixture_version=3,
+    )
+
+    report = EvaluationHarness().run(
+        [case],
+        lambda value: EvalObservation(
+            {"answer": "ready"},
+            trajectory=(expected_step,),
+        ),
+    )
+
+    assert report.is_ok()
+    result = report.unwrap().results[0]
+    assert result.passed
+    assert result.actual_trajectory[0].result["api_key"] == "[REDACTED]"
+    assert result.actual_trajectory[0].duration_ms == 12.5
+    assert (
+        report.unwrap().as_dict()["results"][0]["actual_trajectory"][0]["result"][
+            "api_key"
+        ]
+        == "[REDACTED]"
+    )
+
+
+def test_evaluation_passes_redacted_structured_trajectory_to_judge():
+    observed = []
+    case = EvalCase(
+        "judge-trajectory",
+        "input",
+        expected_trajectory=(EvalTrajectoryStep("lookup", {"token": "secret"}),),
+    )
+
+    def judge(fixture, observation):
+        observed.append(observation.trajectory[0].arguments)
+        return EvalJudgeResult(0.8, True)
+
+    report = EvaluationHarness().run(
+        [case],
+        lambda value: EvalObservation(
+            "ok",
+            trajectory=(EvalTrajectoryStep("lookup", {"token": "secret"}),),
+        ),
+        judge=judge,
+    )
+
+    assert report.is_ok()
+    assert report.unwrap().passed == 1
+    assert observed == [{"token": "[REDACTED]"}]
+
+
+def test_evaluation_rejects_invalid_structured_trajectory_contracts():
+    invalid_case = EvalCase(
+        "invalid-trajectory",
+        "input",
+        expected_trajectory=[EvalTrajectoryStep("tool")],
+    )
+    invalid_step = EvalCase(
+        "invalid-step",
+        "input",
+        expected_trajectory=(EvalTrajectoryStep("tool", duration_ms=float("inf")),),
+    )
+    invalid_case_result = EvaluationHarness().run([invalid_case], lambda value: "ok")
+    invalid_step_result = EvaluationHarness().run([invalid_step], lambda value: "ok")
+    mismatch = EvaluationHarness().run(
+        [EvalCase("mismatch", "input", expected_output="ok")],
+        lambda value: EvalObservation(
+            "ok",
+            tool_names=("other",),
+            trajectory=(EvalTrajectoryStep("tool"),),
+        ),
+    )
+
+    assert invalid_case_result.unwrap_err()["errorType"] == "EVAL_CASE_INVALID"
+    assert invalid_step_result.unwrap_err()["errorType"] == (
+        "EVAL_TRAJECTORY_STEP_INVALID"
+    )
+    assert mismatch.unwrap().results[0].errors[0]["errorType"] == (
+        "EVAL_OBSERVATION_INVALID"
+    )
+
+
+def test_evaluation_rejects_trajectory_report_overflow():
+    report = EvaluationHarness(max_value_bytes=64).run(
+        [EvalCase("bounded", "input", expected_output="ok")],
+        lambda value: EvalObservation(
+            "ok",
+            trajectory=(EvalTrajectoryStep("tool", {"value": "x" * 128}),),
+        ),
     )
 
     assert report.is_ok()

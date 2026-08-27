@@ -1133,9 +1133,10 @@ fleet aggregation, and hosted trace search remain host-owned or deferred.
 The evaluation harness runs local runners against versioned golden cases. A
 case can assert exact output, a bounded JSON schema, and an ordered tool
 trajectory. `fixture_version` defaults to 1 and is reported with each result;
-trajectory expectations are bounded to 256 tool names. Failures are recorded
-per case so one bad case does not abort the report; actual values are redacted
-and size-bounded before they are returned.
+trajectory expectations are bounded to 256 tool names or structured steps.
+Structured steps can include JSON-safe arguments, result, status, and duration;
+actual values are redacted and size-bounded before they are returned. Failures
+are recorded per case so one bad case does not abort the report.
 
 ```python
 from maple import EvalCase, EvalObservation, EvaluationHarness
@@ -1153,6 +1154,42 @@ report = EvaluationHarness().run(
     lambda value: EvalObservation(
         output={"answer": "ready"},
         tool_names=("search",),
+    ),
+)
+```
+
+For stronger trajectory fixtures, use `EvalTrajectoryStep`. The structured
+trajectory can stand alone; when `tool_names` is also supplied, the names must
+match the step order. Each step is bounded to 64 KiB and the trajectory to 256
+steps. Reports and optional judges receive the redacted trajectory, while exact
+fixture matching uses the validated host observation.
+
+```python
+from maple import EvalCase, EvalObservation, EvalTrajectoryStep, EvaluationHarness
+
+case = EvalCase(
+    case_id="lookup-trajectory-v1",
+    input={"query": "MAPLE"},
+    expected_trajectory=(
+        EvalTrajectoryStep(
+            "search",
+            arguments={"query": "MAPLE"},
+            result={"count": 1},
+            status="ok",
+        ),
+    ),
+)
+report = EvaluationHarness().run(
+    [case],
+    lambda value: EvalObservation(
+        output={"answer": "ready"},
+        trajectory=(
+            EvalTrajectoryStep(
+                "search",
+                arguments={"query": "MAPLE"},
+                result={"count": 1},
+            ),
+        ),
     ),
 )
 ```

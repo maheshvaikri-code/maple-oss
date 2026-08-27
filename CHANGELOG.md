@@ -10,6 +10,13 @@
 
 ### Additions
 
+- **Bounded structured evaluation trajectories**: `EvalTrajectoryStep` and
+  `EvalCase.expected_trajectory` can assert JSON-safe tool arguments, results,
+  status, and duration in versioned local fixtures. Observed trajectories are
+  redacted and bounded before report or judge exposure; the existing name-only
+  observation form remains compatible, and hosted trace scoring or semantic
+  faithfulness is not claimed.
+
 - **Bounded durable event forwarding**: `EventForwarder` reads at most 100
   events from a host-owned `EventStream`, sends them through the authenticated
   `HttpEventBatchSender`, and persists only the contiguous acknowledged prefix
