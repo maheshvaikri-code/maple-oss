@@ -70,16 +70,22 @@ retry-until-lucky behavior was used.
   do not mutate the store; file persistence remains atomic.
 - Dependency review: no new runtime dependency; implementation uses existing
   session contracts and the standard library.
-- Dependency audit command: `python -m pip_audit --progress-spinner off`.
-  Real result: `Found 383 known vulnerabilities in 77 packages`; it exited
-  `1`, and also listed local packages not auditable from PyPI. This is an
-  environment/release-governance finding, not silently accepted as clean.
+- Declared-project dependency audit command: `python -m pip_audit
+  --progress-spinner off --format json .`. Real result: `No known
+  vulnerabilities found`; it exited `0` after resolving 13 declared/transitive
+  runtime packages.
+- Environment-wide dependency audit command: `python -m pip_audit
+  --progress-spinner off`. Real result: `Found 383 known vulnerabilities in 77
+  packages`; it exited `1`, and also listed local packages not auditable from
+  PyPI. This remains a separate environment/release-governance finding, not a
+  runtime-package result silently accepted as clean.
 
-**Security verdict:** **VETO** for a final repository publication claim until
-dependency findings are dispositioned; no new Slice 117 security defect was
-found.
+**Security verdict:** pass for the declared runtime dependency set; **VETO**
+for a final repository publication claim until the environment-wide dependency
+findings are dispositioned under the repository's release policy. No new Slice
+117 security defect was found.
 
 **QA verdict:** pass for Slice 117 behavior, boundaries, static checks,
 regression coverage, and clean package evidence. Release remains conditional
-on dependency-governance disposition; no publication or website change was
-performed.
+on environment-wide dependency-governance disposition; no publication or
+website change was performed.

@@ -147,7 +147,9 @@ operation. QA and code review pass. Dependency governance remains a release
 veto because the environment audit found `383` vulnerabilities in `77`
 packages; no publication or website change was performed. Automatic/token-aware
 summarization, broader trace replay, and cross-process session leases remain
-separate future boundaries.
+separate future boundaries. The declared-project dependency audit reports no
+known vulnerabilities; the separate environment-wide audit remains a release
+veto with `383` findings across `77` packages until governance disposition.
 
 ## Slice 116 closure
 
