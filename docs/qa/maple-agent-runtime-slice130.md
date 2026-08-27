@@ -66,6 +66,11 @@ No runtime dependency was added. The project-scoped audit is clean; the
 environment-wide audit still reports `384` known vulnerabilities across `77`
 installed packages and remains a release-governance veto outside this slice.
 
+The final closure commit `3384c0d` was rebuilt from a clean tracked archive:
+`build_exit=0`, both Twine checks returned `PASSED`, the wheel contained `104`
+entries, the sdist contained `576` entries, and the isolated no-dependency
+forwarder smoke passed. No publication or external registry upload was run.
+
 ## Bugs found
 
 | # | Repro steps (minimal) | Severity | Fixed @ | Re-verified | Regression test |
