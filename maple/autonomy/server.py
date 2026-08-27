@@ -16,6 +16,7 @@ from urllib.parse import quote, unquote, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
 from ..core.result import Result
+from .events import EventStream
 from .handoffs import HandoffRecord, HandoffStore
 from .interactions import HumanInputRequest, HumanInputStore
 from .runs import AgentRunCheckpoint, AgentRunStore
@@ -619,9 +620,16 @@ def _status_for_error(error: Error) -> int:
         "HUMAN_INPUT_VALUE_INVALID",
         "HUMAN_INPUT_VALUE_TOO_DEEP",
         "HUMAN_INPUT_VALUE_TOO_LARGE",
+        "EVENT_CONFIG_INVALID",
+        "EVENT_INPUT_INVALID",
+        "EVENT_NON_JSON_PAYLOAD",
+        "EVENT_PAYLOAD_TOO_DEEP",
+        "EVENT_PAYLOAD_TOO_LARGE",
     }:
         return 400
     if error_type == "AGENT_REGISTRY_UNAVAILABLE":
+        return 503
+    if error_type == "EVENT_STREAM_UNAVAILABLE":
         return 503
     if error_type == "AGENT_RUN_STORE_UNAVAILABLE":
         return 503
@@ -771,6 +779,9 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 return
             if method == "GET" and path == ("healthz",):
                 self._write_json(200, {"status": "ok", "service": "maple-run-server"})
+                return
+            if method == "POST" and path == ("v1", "events"):
+                self._publish_event()
                 return
             if (
                 method == "POST"
@@ -993,6 +1004,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
         presented = self.headers.get("Authorization", "")
         expected = f"Bearer {expected_token}"
         if not hmac.compare_digest(presented, expected):
+            self._discard_bounded_request_body()
             self._write_json(
                 401,
                 {"error": _error("UNAUTHORIZED", "A valid bearer token is required.")},
@@ -1000,6 +1012,22 @@ class _RequestHandler(BaseHTTPRequestHandler):
             )
             return False
         return True
+
+    def _discard_bounded_request_body(self) -> None:
+        """Drain a bounded rejected body so the 401 response is not reset."""
+        raw_length = self.headers.get("Content-Length")
+        if raw_length is None:
+            return
+        try:
+            length = int(raw_length)
+        except (TypeError, ValueError):
+            return
+        if length < 0 or length > self.server.application.max_body_bytes:
+            return
+        try:
+            self.rfile.read(length)
+        except (OSError, TimeoutError):
+            return
 
     def _path_segments(self) -> Optional[Tuple[str, ...]]:
         raw_path = self.path.encode("utf-8", errors="replace")
@@ -1087,6 +1115,39 @@ class _RequestHandler(BaseHTTPRequestHandler):
             )
             return
         self._write_json(201, {"run": _agent_run_to_dict(result.unwrap())})
+
+    def _publish_event(self) -> None:
+        stream = self.server.application.event_stream
+        if stream is None:
+            self._write_error(
+                503,
+                _error(
+                    "EVENT_STREAM_UNAVAILABLE",
+                    "No event stream is configured.",
+                ),
+            )
+            return
+        body = self._read_body()
+        if "event_type" not in body or "payload" not in body:
+            self._write_error(
+                400,
+                _error(
+                    "EVENT_INPUT_INVALID",
+                    "event_type and payload are required.",
+                ),
+            )
+            return
+        result = stream.publish(
+            body["event_type"],
+            body["payload"],
+            run_id=body.get("run_id"),
+        )
+        if result.is_err():
+            self._write_error(
+                _status_for_error(result.unwrap_err()), result.unwrap_err()
+            )
+            return
+        self._write_json(201, {"event": result.unwrap().as_dict()})
 
     def _inspect_agent(self, agent_id: str, run_id: str) -> None:
         store = self.server.application.agent_run_store
@@ -1320,7 +1381,7 @@ class _ResponseWritten(Exception):
 
 
 class RunServer:
-    """Loopback-only HTTP server for configured workflow runs."""
+    """Loopback-only HTTP server for configured workflow and event runs."""
 
     def __init__(
         self,
@@ -1335,6 +1396,7 @@ class RunServer:
         agent_registry: Optional[AgentRegistry] = None,
         agent_run_store: Optional[AgentRunStore] = None,
         handoff_store: Optional[HandoffStore] = None,
+        event_stream: Optional[EventStream] = None,
     ) -> None:
         if not isinstance(registry, WorkflowRegistry):
             raise TypeError("registry must be a WorkflowRegistry")
@@ -1409,6 +1471,13 @@ class RunServer:
                     "handoff_store must implement create, get, accept, complete, "
                     "fail, and list_open"
                 )
+        if event_stream is not None:
+            if auth_token is None:
+                raise ValueError(
+                    "auth_token is required when event_stream is configured"
+                )
+            if not callable(getattr(event_stream, "publish", None)):
+                raise TypeError("event_stream must implement publish")
         self.registry = registry
         self.host = host
         self.port = port
@@ -1419,6 +1488,7 @@ class RunServer:
         self.agent_registry = agent_registry
         self.agent_run_store = agent_run_store
         self.handoff_store = handoff_store
+        self.event_stream = event_stream
         self._server: Optional[_MAPLEHTTPServer] = None
         self._thread: Optional[threading.Thread] = None
 
@@ -1594,6 +1664,40 @@ class RunClient:
         if run_id is not None:
             body["run_id"] = run_id
         return self._request("POST", ("v1", "agents", agent_id, "runs"), body)
+
+    def publish_event(
+        self,
+        event_type: str,
+        payload: Any,
+        *,
+        run_id: Optional[str] = None,
+    ) -> Result[Dict[str, Any], Error]:
+        """Publish one bounded event to a remote host-owned event stream."""
+        if (
+            not isinstance(event_type, str)
+            or not event_type
+            or len(event_type) > 128
+            or any(ord(char) < 32 for char in event_type)
+        ):
+            return Result.err(
+                _error(
+                    "EVENT_INPUT_INVALID",
+                    "event_type must be bounded and non-empty.",
+                )
+            )
+        if run_id is not None and (
+            not isinstance(run_id, str)
+            or not run_id
+            or len(run_id) > 256
+            or any(ord(char) < 32 for char in run_id)
+        ):
+            return Result.err(
+                _error("EVENT_INPUT_INVALID", "run_id must be bounded when provided.")
+            )
+        body: Dict[str, Any] = {"event_type": event_type, "payload": payload}
+        if run_id is not None:
+            body["run_id"] = run_id
+        return self._request("POST", ("v1", "events"), body)
 
     def inspect_agent_run(
         self, agent_id: str, run_id: str

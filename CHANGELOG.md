@@ -10,6 +10,14 @@
 
 ### Additions
 
+- **Bounded authenticated event ingestion**: the dependency-free
+  `RunServer`/`RunClient` contract can now receive one event at a time into a
+  host-owned `EventStream`. The receiver assigns local sequence/timestamp
+  values and re-applies the stream's redaction and payload limits; the existing
+  `HttpEventExporter` can target the route for a local round trip. Batching,
+  durable replay, fleet aggregation, and remote trace search remain outside
+  the contract. Focused server validation reports `20 passed`; full release
+  evidence is pending and no publication was performed.
 - **Bounded authenticated handoff transport**: the dependency-free
   `RunServer`/`RunClient` contract can expose a host-owned `HandoffStore` for
   digest-only create, inspect, list, accept, complete, and fail transitions.

@@ -1758,6 +1758,35 @@ missing resume callbacks return `501`. This adds no scheduler, retries,
 cancellation, principal scopes, remote event aggregation, or exactly-once
 side-effect guarantee; the host remains responsible for those policies.
 
+### Authenticated event transport
+
+When `event_stream=...` is configured, `RunServer` exposes the existing
+`EventStream` through `POST /v1/events`. Configuration requires a bearer token;
+`RunClient.publish_event(event_type, payload, run_id=...)` sends one bounded
+event at a time:
+
+```python
+from maple import EventStream, RunClient, RunServer
+
+events = EventStream(max_events=1_000, max_payload_bytes=64_000)
+with RunServer(registry, event_stream=events, auth_token="event-token") as server:
+    client = RunClient(server.url, auth_token="event-token")
+    published = client.publish_event(
+        "agent.completed",
+        {"status": "ok", "api_key": "redacted-at-the-boundary"},
+        run_id="run-1",
+    )
+```
+
+The endpoint also accepts the envelope emitted by `HttpEventExporter`; only
+`event_type`, `payload`, and optional `run_id` are used. The host assigns the
+receiving stream's sequence and timestamp, then applies the stream's redaction
+and payload limits before retention, subscriber delivery, or exporter delivery.
+Missing fields, malformed payloads, oversized bodies, and invalid event values
+return typed `400` errors; an absent stream returns `503`. This is a bounded
+authenticated ingestion seam for a host-owned stream, not batching, durable
+remote replay, fleet aggregation, or remote trace search.
+
 ### Handoff HTTP transport
 
 When `handoff_store=...` is configured, `RunServer` exposes the existing

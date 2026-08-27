@@ -10,6 +10,8 @@ from maple.autonomy import (
     AgentRegistry,
     AgentRun,
     AgentRunCheckpoint,
+    EventStream,
+    HttpEventExporter,
     HandoffRecord,
     HumanInputRequest,
     InMemoryHumanInputStore,
@@ -554,6 +556,98 @@ def test_durable_agent_transport_fails_closed_without_store_or_resume_handler():
     assert unavailable.unwrap_err()["errorType"] == "AGENT_RUN_STORE_UNAVAILABLE"
     assert unsupported.is_err()
     assert unsupported.unwrap_err()["errorType"] == "AGENT_RESUME_UNAVAILABLE"
+
+
+def test_authenticated_event_transport_ingests_redacted_events_and_preserves_local_order():
+    stream = EventStream(max_events=4)
+    with pytest.raises(ValueError):
+        RunServer(WorkflowRegistry(), event_stream=stream)
+
+    server = RunServer(
+        WorkflowRegistry(),
+        event_stream=stream,
+        auth_token="event-token",
+    )
+    base_url = server.start()
+    try:
+        client = RunClient(base_url, auth_token="event-token")
+        first = client.publish_event(
+            "remote.model.completed",
+            {"status": "ok", "secret": "not-retained"},
+            run_id="remote-run",
+        )
+        second = client.publish_event("remote.tool.completed", {"status": "ok"})
+        unauthorized = RunClient(base_url).publish_event("blocked", {})
+    finally:
+        server.close()
+
+    assert first.is_ok()
+    assert first.unwrap()["event"]["sequence"] == 1
+    assert first.unwrap()["event"]["payload"]["secret"] == "[REDACTED]"
+    assert second.is_ok()
+    retained = stream.snapshot().unwrap()
+    assert [event.sequence for event in retained] == [1, 2]
+    assert [event.event_type for event in retained] == [
+        "remote.model.completed",
+        "remote.tool.completed",
+    ]
+    assert unauthorized.is_err()
+    assert unauthorized.unwrap_err()["errorType"] == "UNAUTHORIZED"
+
+
+def test_event_transport_round_trips_the_existing_http_exporter_and_fails_closed():
+    destination = EventStream()
+    server = RunServer(
+        WorkflowRegistry(),
+        event_stream=destination,
+        auth_token="event-token",
+    )
+    base_url = server.start()
+    try:
+        exporter = HttpEventExporter(
+            f"{base_url}/v1/events",
+            auth_token="event-token",
+        )
+        source = EventStream(exporter=exporter)
+        published = source.publish(
+            "remote.model.chunk",
+            {"content": "metadata-only", "token": "private"},
+            run_id="exported-run",
+        )
+        unavailable = RunClient(base_url, auth_token="event-token")._request(
+            "POST", ("v1", "events"), {"event_type": "missing-payload"}
+        )
+    finally:
+        server.close()
+
+    assert published.is_ok()
+    assert source.metrics()["exporter_failures"] == 0
+    remote = destination.snapshot().unwrap()
+    assert len(remote) == 1
+    assert remote[0].event_type == "remote.model.chunk"
+    assert remote[0].payload["token"] == "[REDACTED]"
+    assert remote[0].run_id == "exported-run"
+    assert unavailable.is_err()
+    assert unavailable.unwrap_err()["errorType"] == "EVENT_INPUT_INVALID"
+
+
+def test_event_transport_reports_missing_stream_and_invalid_client_inputs():
+    server = RunServer(WorkflowRegistry(), auth_token="event-token")
+    base_url = server.start()
+    try:
+        client = RunClient(base_url, auth_token="event-token")
+        unavailable = client.publish_event("remote.event", {})
+        invalid_type = client.publish_event("", {})
+        invalid_run = client.publish_event("remote.event", {}, run_id="bad\nrun")
+    finally:
+        server.close()
+
+    assert unavailable.is_err()
+    assert unavailable.unwrap_err()["errorType"] == "EVENT_STREAM_UNAVAILABLE"
+    assert invalid_type.is_err()
+    assert invalid_type.unwrap_err()["errorType"] == "EVENT_INPUT_INVALID"
+    assert invalid_run.is_err()
+    assert invalid_run.unwrap_err()["errorType"] == "EVENT_INPUT_INVALID"
 
 
 def test_authenticated_handoff_transport_preserves_store_ownership_state():
