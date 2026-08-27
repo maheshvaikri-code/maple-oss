@@ -145,6 +145,24 @@
 | 124 | Provider-neutral bounded retrieval reranking seam | Chief Architect / Backend / Security / QA / Release | `docs/adr/070-*`, `maple/autonomy/retrieval.py`, autonomy/root exports, retrieval regressions, API/README/parity docs, changelog, QA/review evidence | Host-supplied `RetrievalReranker.score(...)` can rerank bounded lexical or vector hits while preserving source references and original scores; candidate type/ID/uniqueness/score validation, finite callback scores, deterministic ties, redacted failures, and no implicit provider/network behavior | done: feature commit `aeb80bd`; focused retrieval suite `12 passed in 0.07s`; autonomy `349 passed in 16.38s`; exact tracked manifest `1311 passed, 1 skipped in 230.15s` across 108 tracked Python test files; isort/Black/Ruff/changed-boundary mypy/compile/diff pass; wheel/sdist build and Twine checks pass, wheel `104` entries, sdist `565` entries, isolated no-dependency export smoke pass; QA and code/security review pass; declared-project audit reports no known vulnerabilities; environment-wide dependency-governance veto remains; document connectors, managed stores, and semantic evaluation remain separate |
 
 | 125 | Bounded document connector and ingestion contract | Chief Architect / Backend / Security / QA / Release | `docs/adr/071-*`, `maple/autonomy/retrieval.py`, autonomy/root exports, retrieval regressions, API/README/parity docs, changelog, QA/review evidence | Host-owned cursor connector pages feed an explicit document sink; page/document/batch quotas, document/source validation, duplicate-ID and cursor-progress checks, bounded progress reporting, redacted connector/sink failures, and no implicit network/retry/transaction/rollback behavior | done: feature commit `0ea1084`; focused retrieval suite `18 passed in 0.07s`; full autonomy `355 passed in 16.97s`; exact tracked manifest `1317 passed, 1 skipped in 229.72s` across 108 tracked Python test files; isort/Black/Ruff/changed-boundary mypy/compile/diff pass; wheel/sdist build and Twine checks pass, wheel `104` entries, sdist `568` entries, isolated no-dependency export smoke pass; declared-project audit reports no known vulnerabilities; QA and code/security review pass; environment-wide dependency-governance veto remains; durable cursor checkpoints, managed-store adapters, connector rate limits, retries, transactions, rollback, and semantic evaluation remain separate |
+| 126 | Bounded durable approval-outcome replay | Chief Architect / Backend / Security / QA / Release | `docs/adr/072-*`, `maple/autonomy/approval.py`, `maple/autonomy/agent.py`, approval/run regressions, API/README/parity docs, changelog, QA/review evidence | Built-in approval stores persist one bounded terminal tool outcome after a consumed approval; repeated execution and durable sync/async run resume replay the stored outcome without invoking the handler again; malformed/oversized outcomes, record conflicts, missing optional recorder capability, and consumed-without-outcome crash windows fail closed; external side effects remain at-least-once and no exactly-once claim is made | in progress: architecture recorded; implementation, regression, full-suite, static, package, QA, and review gates pending |
+
+## Slice 126
+
+The built-in approval stores gain an optional, bounded terminal-outcome
+recording seam. The approval claim remains single-use, but a successful or
+typed tool result is recorded after execution so a later run resume can reuse
+the result without calling the handler again. A consumed request with no
+recorded result is an explicit unrecoverable crash window for this local
+contract; MAPLE will not retry it or claim exactly-once external effects.
+
+Threat sketch: the assets are approval records, tool-result content, and
+external side effects; entry points are approval decisions, consumed-outcome
+recording, direct replay, and sync/async run resume; the worst plausible abuse
+is replaying an unbounded or tampered result or accidentally repeating a
+side-effecting handler. JSON/size validation, atomic built-in stores,
+idempotent recording, and fail-closed missing-outcome behavior contain that
+blast radius.
 
 ## Slice 125 closure
 
