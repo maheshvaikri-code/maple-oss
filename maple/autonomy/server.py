@@ -1669,15 +1669,17 @@ class _RequestHandler(BaseHTTPRequestHandler):
         self, store: HandoffStore, handoff_id: str, action: str
     ) -> None:
         body = self._read_body()
-        target_agent_id = body.get("target_agent_id")
+        target_agent_id = cast(str, body.get("target_agent_id"))
         if action == "accept":
             result = store.accept(handoff_id, target_agent_id)
         elif action == "complete":
             result = store.complete(
-                handoff_id, target_agent_id, body.get("target_goal_id")
+                handoff_id, target_agent_id, cast(str, body.get("target_goal_id"))
             )
         else:
-            result = store.fail(handoff_id, target_agent_id, body.get("error_type"))
+            result = store.fail(
+                handoff_id, target_agent_id, cast(str, body.get("error_type"))
+            )
         self._write_handoff_result(result, success_status=200)
 
     def _write_handoff_result(

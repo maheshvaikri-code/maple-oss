@@ -10,6 +10,10 @@
 
 ### Additions
 
+- **Whole-package type-gate hardening**: explicit `Result` narrowing, host/store
+  boundary casts, and executor callback annotations close the authoritative
+  `mypy maple/ --ignore-missing-imports` gate without changing runtime behavior.
+
 - **Bounded event-forwarder scheduling**: `EventForwarderScheduler` adds an
   explicit opt-in local polling worker over `EventForwarder` with one owned
   non-daemon worker, one active tick, finite intervals, and a bounded batch

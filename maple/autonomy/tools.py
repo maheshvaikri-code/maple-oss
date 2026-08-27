@@ -31,6 +31,7 @@ from typing import (
     Optional,
     Sequence,
     Type,
+    cast,
 )
 
 from ..core.result import Result
@@ -322,7 +323,7 @@ class Tool:
         )
         if output_guardrails.is_err():
             return Result.err(output_guardrails.unwrap_err())
-        return result
+        return cast(Result[Any, Dict[str, Any]], result)
 
     def execute(self, **kwargs: Any) -> Result[Any, Dict[str, Any]]:
         """Execute this tool with the given arguments."""
@@ -778,6 +779,7 @@ def create_handoff_tool(
             handoff_id = started.unwrap()
         pursue_with_context = getattr(target_agent, "pursue_goal_with_context", None)
         execution_error: Optional[Result[Dict[str, Any], Dict[str, Any]]] = None
+        target_result: Result[Any, Dict[str, Any]]
         try:
             if handoff_context:
                 if not callable(pursue_with_context):
@@ -852,6 +854,7 @@ def create_handoff_tool(
                     return Result.err(started.unwrap_err())
                 handoff_id = started.unwrap()
             execution_error: Optional[Result[Dict[str, Any], Dict[str, Any]]] = None
+            target_result: Result[Any, Dict[str, Any]]
             try:
                 if handoff_context:
                     if not callable(pursue_with_context_async):

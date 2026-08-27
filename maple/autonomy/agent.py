@@ -400,9 +400,14 @@ class AutonomousAgent(Agent):
                     "message": "The configured human input store does not support multi-round input.",
                 }
             )
+        continue_round_fn = cast(
+            Callable[..., Result[HumanInputRequest, Dict[str, Any]]], continue_round
+        )
         if actor_id is None:
-            return continue_round(interaction_id, prompt, input_schema)
-        return continue_round(interaction_id, prompt, input_schema, actor_id=actor_id)
+            return continue_round_fn(interaction_id, prompt, input_schema)
+        return continue_round_fn(
+            interaction_id, prompt, input_schema, actor_id=actor_id
+        )
 
     def decide_approval(
         self,
@@ -953,7 +958,9 @@ class AutonomousAgent(Agent):
     ) -> Result[Optional[AgentRunCheckpoint], Dict[str, Any]]:
         """Persist an async run cursor without blocking the event loop."""
         loop = asyncio.get_running_loop()
-        operation = partial(
+        operation: Callable[
+            [], Result[Optional[AgentRunCheckpoint], Dict[str, Any]]
+        ] = partial(
             self._checkpoint_run,
             state,
             goal,
@@ -2390,8 +2397,9 @@ class AutonomousAgent(Agent):
                         ),
                     )
                 )
-            if replayed.unwrap() is not None:
-                return complete(replayed.unwrap())
+            replayed_result = replayed.unwrap()
+            if replayed_result is not None:
+                return complete(replayed_result)
             exec_result = tool.execute(**arguments)
             result = self._tool_result_from_execution(tool_call, exec_result)
             saved = self._save_replayed_tool_result(
@@ -2485,6 +2493,7 @@ class AutonomousAgent(Agent):
                 step_num=step_num,
                 tool_call_index=tool_call_index,
             )
+            replayed: Result[Optional[ToolResult], Dict[str, Any]]
             if replay_context is None:
                 replayed = Result.ok(None)
             else:
@@ -2514,8 +2523,9 @@ class AutonomousAgent(Agent):
                         ),
                     )
                 )
-            if replayed.unwrap() is not None:
-                return complete(replayed.unwrap())
+            replayed_result = replayed.unwrap()
+            if replayed_result is not None:
+                return complete(replayed_result)
             try:
                 exec_result = await tool.execute_async(**arguments)
             except Exception as exc:
@@ -2536,6 +2546,7 @@ class AutonomousAgent(Agent):
                     )
                 )
             result = self._tool_result_from_execution(tool_call, exec_result)
+            saved: Result[None, Dict[str, Any]]
             if replay_context is None or result.is_error:
                 saved = Result.ok(None)
             else:

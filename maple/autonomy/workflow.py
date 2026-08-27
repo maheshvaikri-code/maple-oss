@@ -1417,8 +1417,9 @@ class Workflow:
                     latest_result = store.load(current.run_id)
                     if latest_result.is_err():
                         return Result.err(latest_result.unwrap_err())
-                    if latest_result.unwrap() is not None:
-                        current = latest_result.unwrap()
+                    latest_checkpoint = latest_result.unwrap()
+                    if latest_checkpoint is not None:
+                        current = latest_checkpoint
                     paused = replace(
                         current,
                         status="interrupted",
@@ -1442,8 +1443,9 @@ class Workflow:
                     )
                     if retry.is_err():
                         return self._fail(current, store, retry.unwrap_err())
-                    if retry.unwrap() is not None:
-                        current = retry.unwrap()
+                    retry_checkpoint = retry.unwrap()
+                    if retry_checkpoint is not None:
+                        current = retry_checkpoint
                         continue
                     return self._fail(current, store, node_error)
 
@@ -1455,8 +1457,9 @@ class Workflow:
                     )
                     if retry.is_err():
                         return self._fail(current, store, retry.unwrap_err())
-                    if retry.unwrap() is not None:
-                        current = retry.unwrap()
+                    retry_checkpoint = retry.unwrap()
+                    if retry_checkpoint is not None:
+                        current = retry_checkpoint
                         continue
                     return self._fail(current, store, node_error)
                 updates = output_result.unwrap()
@@ -1507,8 +1510,9 @@ class Workflow:
                     latest_result = store.load(current.run_id)
                     if latest_result.is_err():
                         return Result.err(latest_result.unwrap_err())
-                    if latest_result.unwrap() is not None:
-                        current = latest_result.unwrap()
+                    latest_checkpoint = latest_result.unwrap()
+                    if latest_checkpoint is not None:
+                        current = latest_checkpoint
                     return self._fail(current, store, parallel_result.unwrap_err())
                 branch_updates, current = parallel_result.unwrap()
                 conflicting_keys = [key for key in updates if key in branch_updates]

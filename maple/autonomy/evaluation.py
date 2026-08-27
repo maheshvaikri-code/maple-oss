@@ -855,46 +855,58 @@ class EvaluationHarness:
                             trajectory=tuple(safe_trajectory),
                         )
                         try:
-                            judged = judge(case, judge_observation)
-                            if isinstance(judged, Result):
-                                if judged.is_err():
+                            judged_value = judge(case, judge_observation)
+                            judged: Optional[EvalJudgeResult] = None
+                            if isinstance(judged_value, Result):
+                                if judged_value.is_err():
                                     errors.append(
                                         {
                                             "errorType": "EVAL_JUDGE_ERROR",
                                             "message": "judge returned an error.",
                                         }
                                     )
-                                    judged = None
                                 else:
-                                    judged = judged.unwrap()
-                            if judged is not None:
-                                if not isinstance(judged, EvalJudgeResult):
-                                    errors.append(
-                                        {
-                                            "errorType": "EVAL_JUDGE_RESULT_INVALID",
-                                            "message": (
-                                                "judge must return an EvalJudgeResult."
-                                            ),
-                                        }
-                                    )
-                                else:
-                                    judge_error = judged.validate()
-                                    if judge_error is not None:
-                                        errors.append(judge_error)
+                                    candidate = judged_value.unwrap()
+                                    if isinstance(candidate, EvalJudgeResult):
+                                        judged = candidate
                                     else:
-                                        judge_score = judged.score
-                                        judge_rationale = self._safe_judge_rationale(
-                                            judged.rationale
+                                        errors.append(
+                                            {
+                                                "errorType": "EVAL_JUDGE_RESULT_INVALID",
+                                                "message": (
+                                                    "judge must return an EvalJudgeResult."
+                                                ),
+                                            }
                                         )
-                                        if judged.passed:
-                                            passed_checks += 1
-                                        else:
-                                            errors.append(
-                                                {
-                                                    "errorType": "EVAL_JUDGE_FAILED",
-                                                    "message": "judge marked case as failed.",
-                                                }
-                                            )
+                            elif isinstance(judged_value, EvalJudgeResult):
+                                judged = judged_value
+                            else:
+                                errors.append(
+                                    {
+                                        "errorType": "EVAL_JUDGE_RESULT_INVALID",
+                                        "message": (
+                                            "judge must return an EvalJudgeResult."
+                                        ),
+                                    }
+                                )
+                            if judged is not None:
+                                judge_error = judged.validate()
+                                if judge_error is not None:
+                                    errors.append(judge_error)
+                                else:
+                                    judge_score = judged.score
+                                    judge_rationale = self._safe_judge_rationale(
+                                        judged.rationale
+                                    )
+                                    if judged.passed:
+                                        passed_checks += 1
+                                    else:
+                                        errors.append(
+                                            {
+                                                "errorType": "EVAL_JUDGE_FAILED",
+                                                "message": "judge marked case as failed.",
+                                            }
+                                        )
                         except Exception as exc:
                             errors.append(
                                 {
