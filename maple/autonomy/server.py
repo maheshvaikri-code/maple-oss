@@ -1119,6 +1119,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
     def _publish_event(self) -> None:
         stream = self.server.application.event_stream
         if stream is None:
+            self._discard_bounded_request_body()
             self._write_error(
                 503,
                 _error(
@@ -1176,6 +1177,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
         self._write_json(200, {"run": _agent_checkpoint_to_dict(checkpoint)})
 
     def _resume_agent(self, agent_id: str, run_id: str) -> None:
+        self._discard_bounded_request_body()
         registry = self.server.application.agent_registry
         if registry is None:
             self._write_error(
