@@ -145,7 +145,36 @@
 | 124 | Provider-neutral bounded retrieval reranking seam | Chief Architect / Backend / Security / QA / Release | `docs/adr/070-*`, `maple/autonomy/retrieval.py`, autonomy/root exports, retrieval regressions, API/README/parity docs, changelog, QA/review evidence | Host-supplied `RetrievalReranker.score(...)` can rerank bounded lexical or vector hits while preserving source references and original scores; candidate type/ID/uniqueness/score validation, finite callback scores, deterministic ties, redacted failures, and no implicit provider/network behavior | done: feature commit `aeb80bd`; focused retrieval suite `12 passed in 0.07s`; autonomy `349 passed in 16.38s`; exact tracked manifest `1311 passed, 1 skipped in 230.15s` across 108 tracked Python test files; isort/Black/Ruff/changed-boundary mypy/compile/diff pass; wheel/sdist build and Twine checks pass, wheel `104` entries, sdist `565` entries, isolated no-dependency export smoke pass; QA and code/security review pass; declared-project audit reports no known vulnerabilities; environment-wide dependency-governance veto remains; document connectors, managed stores, and semantic evaluation remain separate |
 
 | 125 | Bounded document connector and ingestion contract | Chief Architect / Backend / Security / QA / Release | `docs/adr/071-*`, `maple/autonomy/retrieval.py`, autonomy/root exports, retrieval regressions, API/README/parity docs, changelog, QA/review evidence | Host-owned cursor connector pages feed an explicit document sink; page/document/batch quotas, document/source validation, duplicate-ID and cursor-progress checks, bounded progress reporting, redacted connector/sink failures, and no implicit network/retry/transaction/rollback behavior | done: feature commit `0ea1084`; focused retrieval suite `18 passed in 0.07s`; full autonomy `355 passed in 16.97s`; exact tracked manifest `1317 passed, 1 skipped in 229.72s` across 108 tracked Python test files; isort/Black/Ruff/changed-boundary mypy/compile/diff pass; wheel/sdist build and Twine checks pass, wheel `104` entries, sdist `568` entries, isolated no-dependency export smoke pass; declared-project audit reports no known vulnerabilities; QA and code/security review pass; environment-wide dependency-governance veto remains; durable cursor checkpoints, managed-store adapters, connector rate limits, retries, transactions, rollback, and semantic evaluation remain separate |
-| 126 | Bounded durable approval-outcome replay | Chief Architect / Backend / Security / QA / Release | `docs/adr/072-*`, `maple/autonomy/approval.py`, `maple/autonomy/agent.py`, approval/run regressions, API/README/parity docs, changelog, QA/review evidence | Built-in approval stores persist one bounded terminal tool outcome after a consumed approval; repeated execution and durable sync/async run resume replay the stored outcome without invoking the handler again; malformed/oversized outcomes, record conflicts, missing optional recorder capability, and consumed-without-outcome crash windows fail closed; external side effects remain at-least-once and no exactly-once claim is made | in progress: architecture recorded; implementation, regression, full-suite, static, package, QA, and review gates pending |
+| 126 | Bounded durable approval-outcome replay | Chief Architect / Backend / Security / QA / Release | `docs/adr/072-*`, `maple/autonomy/approval.py`, `maple/autonomy/agent.py`, approval/run regressions, API/README/parity docs, changelog, QA/review evidence | Built-in approval stores persist one bounded terminal tool outcome after a consumed approval; repeated execution and durable sync/async run resume replay the stored outcome without invoking the handler again; malformed/oversized outcomes, record conflicts, missing optional recorder capability, and consumed-without-outcome crash windows fail closed; external side effects remain at-least-once and no exactly-once claim is made | done: feature commit `8ea5b6d`; focused approval/run/agent suite `66 passed in 0.43s`; autonomy suite `359 passed in 15.24s`; exact tracked manifest `1321 passed, 1 skipped in 231.38s` across 108 tracked Python test files; isort/Black/Ruff/changed-boundary mypy/compile/diff pass; clean `git archive HEAD` `1.1.3` wheel/sdist build and Twine checks exit `0`, wheel `104` entries, sdist `564` entries with zero workspace-only files, isolated clean-archive no-dependency approval replay export smoke pass; QA and code/security review pass; declared-project pip-audit reports no known vulnerabilities; environment-wide dependency-governance veto remains; distributed transactions, remote approval transport, sandboxing, scheduling, and exactly-once effects remain separate |
+
+## Slice 126 closure
+
+**Date:** 2026-08-27
+
+Slice 126 is complete. Built-in in-memory and file approval stores now persist
+one bounded terminal tool outcome after consumption, and direct execution plus
+sync/async durable run resume replay it without invoking the handler again.
+Malformed or oversized outcomes, conflicting recordings, recorder failures, and
+consumed approvals without outcomes fail closed with typed effect uncertainty.
+Custom stores without the optional recorder retain their prior single-use
+behavior. ADR-072, the public API/README/parity documentation, changelog, QA
+report, and review report are filed.
+
+Evidence is green: the focused approval/run/agent suite passed `66` tests, the
+full autonomy suite passed `359` tests, and the exact tracked manifest passed
+`1321` tests with `1` skip across `108` tracked Python test files. isort, Black,
+Ruff, changed-boundary mypy, compile, and diff checks passed. The final local
+clean `git archive HEAD` candidate built `maple_oss-1.1.3-py3-none-any.whl` and
+`maple_oss-1.1.3.tar.gz` with exit `0`; Twine passed, with `104` wheel entries
+and `564` sdist entries, zero workspace-only files, and a passing isolated
+no-dependency approval replay export smoke. Declared-project pip-audit reported
+no known vulnerabilities and no runtime dependency was added.
+
+The environment-wide audit still reports `384` known vulnerabilities across
+`77` installed packages and remains a release-governance veto. No publication,
+deployment, cloud action, or website update was performed. Distributed
+transactions, remote approval transport, sandboxing, scheduling, and
+exactly-once effects remain separate parity gaps.
 
 ## Slice 126
 
