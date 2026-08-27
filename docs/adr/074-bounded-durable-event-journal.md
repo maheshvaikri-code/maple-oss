@@ -53,4 +53,3 @@ restart without a runtime dependency. Persistence adds bounded synchronous
 local I/O to `publish`; a configured journal therefore makes disk availability
 part of the event publication success contract. Subscribers/exporters still
 remain best-effort observability side effects after the durable append.
-

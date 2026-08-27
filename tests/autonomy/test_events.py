@@ -408,8 +408,7 @@ def test_file_event_journal_rejects_nonfinite_and_unrepresentable_records(tmp_pa
     assert nonfinite.unwrap_err()["errorType"] == "EVENT_JOURNAL_RECORD_INVALID"
     assert oversized_timestamp.is_err()
     assert (
-        oversized_timestamp.unwrap_err()["errorType"]
-        == "EVENT_JOURNAL_RECORD_INVALID"
+        oversized_timestamp.unwrap_err()["errorType"] == "EVENT_JOURNAL_RECORD_INVALID"
     )
     assert not journal.path.exists()
 
