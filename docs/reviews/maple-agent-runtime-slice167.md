@@ -1,9 +1,9 @@
 # Code Review - authenticated remote handoff payload delivery
 
-**Review basis:** `599a9f8`, `aa27498`, `fa16c9f`, and `73af546`  
-**Brief:** `docs/briefs/maple-agent-runtime-slice167.md`  
-**ADR:** `docs/adr/112-remote-handoff-payload-delivery.md`  
-**Date:** 2026-08-28  
+**Review basis:** `599a9f8`, `aa27498`, `fa16c9f`, and `73af546`
+**Brief:** `docs/briefs/maple-agent-runtime-slice167.md`
+**ADR:** `docs/adr/112-remote-handoff-payload-delivery.md`
+**Date:** 2026-08-28
 **Role:** Code Reviewer
 
 ## Decision

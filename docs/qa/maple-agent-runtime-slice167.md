@@ -1,9 +1,9 @@
 # QA + Security Report - authenticated remote handoff payload delivery
 
-**QA Engineer** / **Security Reviewer** / **Date:** 2026-08-28  
-**Code candidate:** `fa16c9f` (`style(autonomy): format remote handoff target`)  
-**Design baseline:** `599a9f8`  
-**Implementation baseline:** `aa27498`  
+**QA Engineer** / **Security Reviewer** / **Date:** 2026-08-28
+**Code candidate:** `fa16c9f` (`style(autonomy): format remote handoff target`)
+**Design baseline:** `599a9f8`
+**Implementation baseline:** `aa27498`
 **Documentation baseline:** `73af546`
 
 ## Acceptance criteria verification
