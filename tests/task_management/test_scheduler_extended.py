@@ -110,10 +110,8 @@ class TestCapabilityMatching:
         assert result.is_ok()
 
     def test_unknown_matching_strategy(self, task_queue):
-        sched = _make_scheduler(task_queue, policy=SchedulingPolicy(capability_matching="magic"))
-        tid = _submit(task_queue, reqs=["compute"])
-        result = sched.schedule_task(tid)
-        assert result.is_err()
+        with pytest.raises(ValueError):
+            SchedulingPolicy(capability_matching="magic")
 
     def test_no_requirements_uses_load_balancing(self, task_queue):
         sched = _make_scheduler(task_queue, policy=SchedulingPolicy(capability_matching="first_match"))
@@ -159,10 +157,8 @@ class TestLoadBalancing:
         assert result.is_ok()
 
     def test_unknown_lb_strategy(self, task_queue):
-        sched = _make_scheduler(task_queue, policy=SchedulingPolicy(load_balancing="random"))
-        tid = _submit(task_queue)
-        result = sched.schedule_task(tid)
-        assert result.is_err()
+        with pytest.raises(ValueError):
+            SchedulingPolicy(load_balancing="random")
 
     def test_no_agents_available(self, task_queue):
         sched = _make_scheduler(task_queue, agents=[])
@@ -171,13 +167,8 @@ class TestLoadBalancing:
         assert result.is_err()
 
     def test_all_agents_at_capacity(self, task_queue):
-        sched = _make_scheduler(
-            task_queue,
-            policy=SchedulingPolicy(max_concurrent_per_agent=0),
-        )
-        tid = _submit(task_queue, reqs=["compute"])
-        result = sched.schedule_task(tid)
-        assert result.is_err()
+        with pytest.raises(ValueError):
+            SchedulingPolicy(max_concurrent_per_agent=0)
 
 
 # ---------------------------------------------------------------------------

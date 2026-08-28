@@ -16,6 +16,7 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 # Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
 # MAPLE - Multi Agent Protocol Language Engine
 
+import math
 import threading
 import time
 from dataclasses import dataclass
@@ -28,6 +29,15 @@ from ..discovery.capability_matcher import (
 )
 from ..discovery.registry import AgentInfo, AgentRegistry
 from .task_queue import Task, TaskPriority, TaskQueue, TaskStatus
+
+_VALID_LOAD_BALANCING = frozenset(
+    {"least_loaded", "round_robin", "capability_weighted"}
+)
+_VALID_CAPABILITY_MATCHING = frozenset({"best_match", "first_match", "weighted_score"})
+_VALID_RETRY_STRATEGIES = frozenset({"exponential_backoff", "linear", "immediate"})
+_MAX_CONCURRENT_PER_AGENT = 10_000
+_MIN_SCHEDULING_INTERVAL = 0.01
+_MAX_SCHEDULING_INTERVAL = 3_600.0
 
 
 @dataclass
@@ -44,6 +54,48 @@ class SchedulingPolicy:
     max_concurrent_per_agent: int = 5
     scheduling_interval: float = 1.0  # seconds
     preemption_enabled: bool = False
+
+    def __post_init__(self) -> None:
+        """Validate scheduler policy before a worker can consume it."""
+
+        if self.load_balancing not in _VALID_LOAD_BALANCING:
+            raise ValueError(
+                "load_balancing must be one of: "
+                + ", ".join(sorted(_VALID_LOAD_BALANCING))
+            )
+        if self.capability_matching not in _VALID_CAPABILITY_MATCHING:
+            raise ValueError(
+                "capability_matching must be one of: "
+                + ", ".join(sorted(_VALID_CAPABILITY_MATCHING))
+            )
+        if self.retry_strategy not in _VALID_RETRY_STRATEGIES:
+            raise ValueError(
+                "retry_strategy must be one of: "
+                + ", ".join(sorted(_VALID_RETRY_STRATEGIES))
+            )
+        if (
+            isinstance(self.max_concurrent_per_agent, bool)
+            or not isinstance(self.max_concurrent_per_agent, int)
+            or not 1 <= self.max_concurrent_per_agent <= _MAX_CONCURRENT_PER_AGENT
+        ):
+            raise ValueError(
+                "max_concurrent_per_agent must be an integer from 1 to "
+                f"{_MAX_CONCURRENT_PER_AGENT}"
+            )
+        if (
+            isinstance(self.scheduling_interval, bool)
+            or not isinstance(self.scheduling_interval, (int, float))
+            or not math.isfinite(self.scheduling_interval)
+            or not _MIN_SCHEDULING_INTERVAL
+            <= self.scheduling_interval
+            <= _MAX_SCHEDULING_INTERVAL
+        ):
+            raise ValueError(
+                "scheduling_interval must be finite and from "
+                f"{_MIN_SCHEDULING_INTERVAL} to {_MAX_SCHEDULING_INTERVAL} seconds"
+            )
+        if not isinstance(self.preemption_enabled, bool):
+            raise ValueError("preemption_enabled must be a boolean")
 
 
 @dataclass
