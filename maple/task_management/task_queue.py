@@ -26,6 +26,8 @@ from typing import Any, Callable, Dict, List, Optional
 
 from ..core.result import Result
 
+_MAX_TASK_QUEUE_SIZE = 100_000
+
 
 class TaskStatus(Enum):
     """Status of a task."""
@@ -98,6 +100,14 @@ class TaskQueue:
     """High-performance task queue with priority support."""
 
     def __init__(self, max_queue_size: int = 10000) -> None:
+        if (
+            isinstance(max_queue_size, bool)
+            or not isinstance(max_queue_size, int)
+            or not 1 <= max_queue_size <= _MAX_TASK_QUEUE_SIZE
+        ):
+            raise ValueError(
+                "max_queue_size must be an integer from 1 to " f"{_MAX_TASK_QUEUE_SIZE}"
+            )
         self.max_queue_size = max_queue_size
 
         # Multiple priority queues for different priority levels
@@ -108,6 +118,7 @@ class TaskQueue:
         # Task storage and tracking
         self.tasks: Dict[str, Task] = {}  # task_id -> Task
         self.task_callbacks: Dict[str, List[Callable[[Task], None]]] = {}
+        self._queued_count = 0
 
         # Threading and synchronization
         self._lock = threading.RLock()
@@ -188,7 +199,7 @@ class TaskQueue:
         with self._lock:
             # Check queue capacity
             queue = self.priority_queues[task.priority]
-            if queue.full():
+            if self._queued_count >= self.max_queue_size or queue.full():
                 return Result.err(f"Queue is full (max size: {self.max_queue_size})")
 
             # Store task
@@ -197,6 +208,7 @@ class TaskQueue:
 
             # Add to appropriate priority queue
             queue.put((task.priority.value, task.created_at, task))
+            self._queued_count += 1
 
             # Notify waiting consumers
             self._condition.notify()
@@ -225,6 +237,12 @@ class TaskQueue:
                     try:
                         # Non-blocking get
                         _, _, task = queue.get_nowait()
+                        self._queued_count -= 1
+
+                        # Status changes can leave a stale tuple in the
+                        # priority queue; never hand such a task to an agent.
+                        if task.status != TaskStatus.QUEUED:
+                            continue
 
                         # Check if agent can handle this task
                         if self._can_agent_handle_task(task, agent_capabilities):
@@ -242,6 +260,7 @@ class TaskQueue:
                         else:
                             # Put task back in queue
                             queue.put((priority.value, task.created_at, task))
+                            self._queued_count += 1
 
                     except Empty:
                         continue
@@ -354,6 +373,12 @@ class TaskQueue:
                     f"Task {task_id} has exceeded max retries ({task.max_retries})"
                 )
 
+            # Capacity failure must leave the failed task retryable and
+            # unchanged; callers can retry after another queued task drains.
+            queue = self.priority_queues[task.priority]
+            if self._queued_count >= self.max_queue_size or queue.full():
+                return Result.err(f"Queue is full (max size: {self.max_queue_size})")
+
             # Reset task state for retry
             task.status = TaskStatus.QUEUED
             task.assigned_agent = None
@@ -363,8 +388,8 @@ class TaskQueue:
             task.error = None
 
             # Re-enqueue
-            queue = self.priority_queues[task.priority]
             queue.put((task.priority.value, time.time(), task))
+            self._queued_count += 1
 
             self._condition.notify()
 

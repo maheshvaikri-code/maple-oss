@@ -19,6 +19,12 @@ class TestTaskSubmissionQueuing(unittest.TestCase):
         """Clean up test environment."""
         self.task_queue.stop()
     
+    def test_invalid_queue_capacity_fails_fast(self):
+        for capacity in (0, -1, True, 1.5, 100001):
+            with self.subTest(capacity=capacity):
+                with self.assertRaises(ValueError):
+                    TaskQueue(max_queue_size=capacity)
+
     def test_submit_basic_task(self):
         """Test submitting a basic task."""
         result = self.task_queue.submit_task(
@@ -242,6 +248,29 @@ class TestTaskSubmissionQueuing(unittest.TestCase):
         self.assertTrue(requeue_result.is_err())
         self.assertIn("exceeded max retries", requeue_result.unwrap_err())
     
+    def test_requeue_capacity_failure_preserves_task_state(self):
+        small_queue = TaskQueue(max_queue_size=1)
+        small_queue.start()
+
+        try:
+            first_id = small_queue.submit_task("first", {}).unwrap()
+            first = small_queue.get_next_task().unwrap()
+            self.assertEqual(first.task_id, first_id)
+            small_queue.update_task_status(first_id, TaskStatus.FAILED, error="retry me")
+
+            small_queue.submit_task("blocking", {}).unwrap()
+
+            result = small_queue.requeue_task(first_id)
+
+            self.assertTrue(result.is_err())
+            self.assertIn("Queue is full", result.unwrap_err())
+            task = small_queue.get_task(first_id).unwrap()
+            self.assertEqual(task.status, TaskStatus.FAILED)
+            self.assertEqual(task.retry_count, 0)
+            self.assertEqual(task.error, "retry me")
+        finally:
+            small_queue.stop()
+
     def test_queue_statistics(self):
         """Test queue statistics calculation."""
         # Submit various tasks
@@ -380,6 +409,48 @@ class TestTaskSubmissionQueuing(unittest.TestCase):
         finally:
             small_queue.stop()
     
+    def test_queue_capacity_is_global_across_priorities(self):
+        small_queue = TaskQueue(max_queue_size=3)
+        small_queue.start()
+
+        try:
+            for priority in (
+                TaskPriority.CRITICAL,
+                TaskPriority.NORMAL,
+                TaskPriority.BACKGROUND,
+            ):
+                result = small_queue.submit_task(
+                    "priority_task", {"priority": priority.value}, priority=priority
+                )
+                self.assertTrue(result.is_ok())
+
+            result = small_queue.submit_task(
+                "overflow_task", {}, priority=TaskPriority.HIGH
+            )
+
+            self.assertTrue(result.is_err())
+            self.assertIn("Queue is full", result.unwrap_err())
+        finally:
+            small_queue.stop()
+
+    def test_cancelled_queued_task_is_not_assigned(self):
+        task_id = self.task_queue.submit_task("cancelled", {}).unwrap()
+        self.assertTrue(self.task_queue.cancel_task(task_id).is_ok())
+
+        result = self.task_queue.get_next_task(timeout_seconds=0.01)
+
+        self.assertTrue(result.is_ok())
+        self.assertIsNone(result.unwrap())
+
+    def test_completed_queued_task_is_not_assigned(self):
+        task_id = self.task_queue.submit_task("completed", {}).unwrap()
+        self.assertTrue(self.task_queue.update_task_status(task_id, TaskStatus.COMPLETED).is_ok())
+
+        result = self.task_queue.get_next_task(timeout_seconds=0.01)
+
+        self.assertTrue(result.is_ok())
+        self.assertIsNone(result.unwrap())
+
     def test_task_cleanup(self):
         """Test automatic cleanup of old completed tasks."""
         # Submit and complete tasks
