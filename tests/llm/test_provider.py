@@ -252,6 +252,37 @@ class TestLLMProvider:
         assert seen["messages"] == [{"role": "user", "content": "hello"}]
         assert seen["stop"] == ["END"]
 
+    async def test_openai_async_completion_falls_back_without_async_client(self):
+        class Completions:
+            def create(self, **kwargs):
+                return SimpleNamespace(
+                    choices=[
+                        SimpleNamespace(
+                            message=SimpleNamespace(
+                                content="sync fallback", tool_calls=None
+                            ),
+                            finish_reason="stop",
+                        )
+                    ],
+                    usage=None,
+                    model="gpt-test",
+                    id="request-fallback",
+                )
+
+        provider = object.__new__(OpenAIProvider)
+        LLMProvider.__init__(provider, LLMConfig(provider="openai", model="gpt-test"))
+        provider.client = SimpleNamespace(
+            chat=SimpleNamespace(completions=Completions())
+        )
+        provider.async_client = None
+
+        result = await provider.complete_async(
+            [ChatMessage(role=ChatRole.USER, content="hello")]
+        )
+
+        assert result.is_ok()
+        assert result.unwrap().content == "sync fallback"
+
     async def test_anthropic_native_async_completion_uses_async_client(self):
         seen = {}
 

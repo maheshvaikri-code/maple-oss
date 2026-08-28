@@ -57,7 +57,9 @@ class OpenAIProvider(LLMProvider):
             if config.timeout:
                 client_kwargs["timeout"] = config.timeout
             self.client = cast(Any, openai.OpenAI)(**client_kwargs)
-            self.async_client = cast(Any, openai.AsyncOpenAI)(**client_kwargs)
+            async_client_type = getattr(openai, "AsyncOpenAI", None)
+            if async_client_type is not None:
+                self.async_client = cast(Any, async_client_type)(**client_kwargs)
         except ImportError:
             logger.warning(
                 "openai library not installed. Install with: " "pip install openai"
