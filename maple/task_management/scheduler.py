@@ -569,14 +569,23 @@ class TaskScheduler:
 
                     underloaded_agent_id, _ = underloaded.pop(0)
 
-                    # Reassign task
-                    reassign_result = self._assign_task_to_agent(
-                        task, underloaded_agent_id
+                    # Transfer ownership atomically; a normal assignment claim
+                    # must continue to reject already-owned tasks.
+                    reassign_result = self.task_queue.reassign_task(
+                        task.task_id,
+                        overloaded_agent_id,
+                        underloaded_agent_id,
                     )
                     if reassign_result.is_ok():
-                        # Remove from old agent
+                        # Update local load maps after the queue transition.
                         self.agent_loads[overloaded_agent_id] -= 1
                         self.agent_assignments[overloaded_agent_id].remove(task.task_id)
+                        self.agent_loads[underloaded_agent_id] = (
+                            self.agent_loads.get(underloaded_agent_id, 0) + 1
+                        )
+                        self.agent_assignments.setdefault(
+                            underloaded_agent_id, []
+                        ).append(task.task_id)
                         moves += 1
 
             return Result.ok(moves)

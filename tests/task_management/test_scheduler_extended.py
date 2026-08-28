@@ -239,6 +239,30 @@ class TestRebalance:
         assert result.is_ok()
         assert result.unwrap() == 0
 
+    def test_rebalance_transfers_assigned_task_to_underloaded_agent(self, task_queue):
+        agents = [FakeAgent("w1"), FakeAgent("w2")]
+        sched = _make_scheduler(
+            task_queue,
+            agents=agents,
+            match_result=Result.ok([FakeMatch("w1", 0.9), FakeMatch("w2", 0.8)]),
+        )
+        first_id = _submit(task_queue, reqs=["compute"])
+        second_id = _submit(task_queue, reqs=["compute"])
+        assert sched.schedule_task(first_id).unwrap() == "w1"
+        assert sched.schedule_task(second_id).unwrap() == "w1"
+
+        result = sched.rebalance_loads()
+
+        assert result.is_ok()
+        assert result.unwrap() == 1
+        assert sched.get_agent_load("w1") == 1
+        assert sched.get_agent_load("w2") == 1
+        owners = {
+            task_queue.get_task(task_id).unwrap().assigned_agent
+            for task_id in (first_id, second_id)
+        }
+        assert owners == {"w1", "w2"}
+
 
 # ---------------------------------------------------------------------------
 #  scheduling callbacks

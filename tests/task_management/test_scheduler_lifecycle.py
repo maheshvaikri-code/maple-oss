@@ -104,3 +104,23 @@ def test_queue_completion_accepts_running_owned_task_and_records_result():
         assert completed.result == {"value": 42}
     finally:
         task_queue.stop()
+
+
+def test_queue_reassignment_rejects_running_task_without_changing_owner():
+    task_queue = TaskQueue(max_queue_size=1)
+    task_queue.start()
+    try:
+        task_id = task_queue.submit_task("compute", {}).unwrap()
+        assert task_queue.get_next_task().is_ok()
+        assert task_queue.assign_task(task_id, "worker-1").is_ok()
+        assert task_queue.update_task_status(task_id, TaskStatus.RUNNING).is_ok()
+
+        result = task_queue.reassign_task(task_id, "worker-1", "worker-2")
+
+        assert result.is_err()
+        assert "running" in result.unwrap_err()
+        task = task_queue.get_task(task_id).unwrap()
+        assert task.assigned_agent == "worker-1"
+        assert task.status == TaskStatus.RUNNING
+    finally:
+        task_queue.stop()

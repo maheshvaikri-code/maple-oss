@@ -399,6 +399,32 @@ class TaskQueue:
 
             return self.update_task_status(task_id, TaskStatus.COMPLETED, result=result)
 
+    def reassign_task(
+        self, task_id: str, current_agent: str, new_agent: str
+    ) -> Result[Task, str]:
+        """Transfer an assigned but not running task to another agent."""
+
+        with self._lock:
+            if not current_agent or not new_agent:
+                return Result.err("Task reassignment agents cannot be empty")
+            if current_agent == new_agent:
+                return Result.err("Task reassignment requires a different agent")
+            if task_id not in self.tasks:
+                return Result.err(f"Task {task_id} not found")
+
+            task = self.tasks[task_id]
+            if task.status != TaskStatus.ASSIGNED:
+                return Result.err(
+                    f"Task {task_id} cannot be reassigned from status "
+                    f"{task.status.value}"
+                )
+            if task.assigned_agent != current_agent:
+                return Result.err(f"Task {task_id} is not assigned to {current_agent}")
+
+            task.assigned_agent = new_agent
+            self._notify_task_callbacks(task_id, task)
+            return Result.ok(task)
+
     def cancel_task(self, task_id: str) -> Result[Task, str]:
         """Cancel a task."""
         return self.update_task_status(task_id, TaskStatus.CANCELLED)
