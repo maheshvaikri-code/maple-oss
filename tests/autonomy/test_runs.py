@@ -10,6 +10,7 @@ from maple.agent.config import Config
 from maple.autonomy.agent import AutonomousAgent, AutonomousConfig
 from maple.autonomy.approval import InMemoryApprovalStore
 from maple.autonomy.events import EventStream
+from maple.autonomy.execution import CancellationToken
 from maple.autonomy.interactions import InMemoryHumanInputStore
 from maple.autonomy.observability import DecisionLogger, SpanRecorder
 from maple.autonomy.replay import InMemoryExecutionJournal
@@ -302,6 +303,24 @@ class ScriptedProvider(LLMProvider):
         return response if isinstance(response, Result) else Result.ok(response)
 
 
+class CancellingProvider(LLMProvider):
+    """Provider double that requests cancellation after one completed call."""
+
+    def __init__(self, config, token):
+        super().__init__(config)
+        self.token = token
+        self.calls = 0
+
+    def complete(
+        self, messages, tools=None, temperature=None, max_tokens=None, stop=None
+    ):
+        self.calls += 1
+        response = LLMResponse(content="provider returned", finish_reason="stop")
+        self._track_usage(response)
+        self.token.cancel()
+        return Result.ok(response)
+
+
 @pytest.fixture(autouse=True)
 def register_run_provider():
     original = dict(LLMProviderRegistry._providers)
@@ -321,6 +340,96 @@ def make_agent(responses, *, stream_model_events=False):
     agent = AutonomousAgent(config, autonomy_config)
     agent.llm = ScriptedProvider(autonomy_config.llm, responses)
     return agent
+
+
+def test_sync_cancellation_persists_terminal_checkpoint_and_emits_event():
+    token = CancellationToken()
+    store = InMemoryAgentRunStore()
+    events = EventStream(max_events=20)
+    agent = make_agent([])
+    agent.llm = CancellingProvider(agent.autonomy_config.llm, token)
+    agent.set_run_store(store)
+    agent.set_event_stream(events)
+
+    result = agent.pursue_goal(
+        "Cancel after the provider boundary",
+        run_id="run-cancel-sync",
+        cancellation=token,
+    )
+
+    assert result.is_ok()
+    goal = result.unwrap()
+    assert goal.status == "cancelled"
+    assert goal.result["errorType"] == "AGENT_RUN_CANCELLED"
+    checkpoint = store.load("run-cancel-sync").unwrap()
+    assert checkpoint is not None
+    assert checkpoint.status == "cancelled"
+    assert checkpoint.pending_approval_id is None
+    assert checkpoint.pending_input_id is None
+    assert checkpoint.error["errorType"] == "AGENT_RUN_CANCELLED"
+    retained = events.snapshot().unwrap()
+    assert [event.event_type for event in retained] == [
+        "run.started",
+        "run.cancelled",
+    ]
+    assert set(retained[-1].payload) == {
+        "agent_id",
+        "status",
+        "step_count",
+        "usage",
+    }
+    assert agent.llm.calls == 1
+
+    resumed = agent.resume_run("run-cancel-sync")
+    assert resumed.is_err()
+    assert resumed.unwrap_err()["errorType"] == "RUN_NOT_RESUMABLE"
+
+
+async def test_async_cancellation_persists_terminal_checkpoint():
+    token = CancellationToken()
+    store = InMemoryAgentRunStore()
+    agent = make_agent([])
+    agent.llm = CancellingProvider(agent.autonomy_config.llm, token)
+    agent.set_run_store(store)
+
+    result = await agent.pursue_goal_async(
+        "Cancel asynchronously after the provider boundary",
+        run_id="run-cancel-async",
+        cancellation=token,
+    )
+
+    assert result.is_ok()
+    assert result.unwrap().status == "cancelled"
+    checkpoint = store.load("run-cancel-async").unwrap()
+    assert checkpoint is not None
+    assert checkpoint.status == "cancelled"
+    assert checkpoint.error["errorType"] == "AGENT_RUN_CANCELLED"
+    assert agent.llm.calls == 1
+
+
+@pytest.mark.parametrize("resume", ["sync", "async"])
+async def test_cancelled_resume_preserves_paused_pending_interaction(resume):
+    store = InMemoryAgentRunStore()
+    stored = store.save(
+        make_checkpoint(status="paused", pending_approval_id="approval-1")
+    )
+    assert stored.is_ok()
+    before = store.load("run-1").unwrap()
+    token = CancellationToken()
+    token.cancel()
+    agent = make_agent([])
+    agent.set_run_store(store)
+
+    if resume == "sync":
+        result = agent.resume_run("run-1", cancellation=token)
+    else:
+        result = await agent.resume_run_async("run-1", cancellation=token)
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "AGENT_RUN_CANCELLED"
+    after = store.load("run-1").unwrap()
+    assert before is not None and after is not None
+    assert after.to_dict() == before.to_dict()
 
 
 def approval_tool(calls):

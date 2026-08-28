@@ -10,6 +10,15 @@
 
 ### Additions
 
+- **Cooperative native agent-run cancellation**: sync and async native goal
+  and resume entry points now accept the existing `CancellationToken`, stop
+  future ReAct turns, propagate cancellation to tools and trusted executors,
+  persist active durable runs as terminal `cancelled` checkpoints, and emit
+  bounded `run.cancelled` metadata. Cancellation does not hard-kill provider
+  calls or ordinary handlers; paused pending interactions remain unchanged if
+  cancellation is requested before resolution, and external effects remain
+  at-least-once.
+
 - **Authenticated agent-run history inspection**: the local control plane now
   exposes bounded retained checkpoint history through `RunClient` with the
   existing `agent:read` scope and metadata-only responses. Legacy stores,

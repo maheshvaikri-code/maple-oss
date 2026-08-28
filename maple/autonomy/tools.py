@@ -43,7 +43,7 @@ from .contracts import (
     validate_json_schema,
     validate_typed_value,
 )
-from .execution import ExecutionExecutor
+from .execution import CancellationToken, ExecutionExecutor
 from .handoffs import HandoffRecord, HandoffStore
 
 if TYPE_CHECKING:
@@ -325,8 +325,27 @@ class Tool:
             return Result.err(output_guardrails.unwrap_err())
         return cast(Result[Any, Dict[str, Any]], result)
 
-    def execute(self, **kwargs: Any) -> Result[Any, Dict[str, Any]]:
+    def execute(
+        self,
+        *,
+        cancellation: Optional[CancellationToken] = None,
+        **kwargs: Any,
+    ) -> Result[Any, Dict[str, Any]]:
         """Execute this tool with the given arguments."""
+        if cancellation is not None and not isinstance(cancellation, CancellationToken):
+            return Result.err(
+                {
+                    "errorType": "EXECUTION_CANCELLATION_INVALID",
+                    "message": "cancellation must be a CancellationToken or None.",
+                }
+            )
+        if cancellation is not None and cancellation.is_cancelled():
+            return Result.err(
+                {
+                    "errorType": "EXECUTION_CANCELLED",
+                    "message": f'Tool "{self.name}" cancellation was requested.',
+                }
+            )
         call_kwargs = kwargs
         if self.input_model is not None:
             input_validation = validate_typed_value(kwargs, self.input_model)
@@ -387,7 +406,10 @@ class Tool:
                 result = self.handler(**call_kwargs)
             else:
                 execution = self.executor.execute(
-                    self.name, self.handler, kwargs=call_kwargs
+                    self.name,
+                    self.handler,
+                    kwargs=call_kwargs,
+                    cancellation=cancellation,
                 )
                 if execution.is_err():
                     return Result.err(execution.unwrap_err())
@@ -409,6 +431,13 @@ class Tool:
             )
         if result.is_err():
             return result
+        if cancellation is not None and cancellation.is_cancelled():
+            return Result.err(
+                {
+                    "errorType": "EXECUTION_CANCELLED",
+                    "message": f'Tool "{self.name}" cancellation was requested.',
+                }
+            )
         output = result.unwrap()
         if self.output_model is not None:
             output_validation = validate_typed_value(output, self.output_model)
@@ -432,7 +461,12 @@ class Tool:
             return Result.err(output_guardrails.unwrap_err())
         return result
 
-    async def execute_async(self, **kwargs: Any) -> Result[Any, Dict[str, Any]]:
+    async def execute_async(
+        self,
+        *,
+        cancellation: Optional[CancellationToken] = None,
+        **kwargs: Any,
+    ) -> Result[Any, Dict[str, Any]]:
         """Execute an async handler without blocking the event loop.
 
         Tools without an async handler, or tools with an execution policy, use
@@ -441,9 +475,25 @@ class Tool:
         precedence over an optional async handler because its sync executor is
         the only contract that can enforce those bounds.
         """
+        if cancellation is not None and not isinstance(cancellation, CancellationToken):
+            return Result.err(
+                {
+                    "errorType": "EXECUTION_CANCELLATION_INVALID",
+                    "message": "cancellation must be a CancellationToken or None.",
+                }
+            )
+        if cancellation is not None and cancellation.is_cancelled():
+            return Result.err(
+                {
+                    "errorType": "EXECUTION_CANCELLED",
+                    "message": f'Tool "{self.name}" cancellation was requested.',
+                }
+            )
         if self.async_handler is None or self.executor is not None:
             loop = asyncio.get_running_loop()
-            return await loop.run_in_executor(None, lambda: self.execute(**kwargs))
+            return await loop.run_in_executor(
+                None, lambda: self.execute(cancellation=cancellation, **kwargs)
+            )
         prepared = self._prepare_arguments(kwargs)
         if prepared.is_err():
             return Result.err(prepared.unwrap_err())
@@ -455,6 +505,13 @@ class Tool:
                     "errorType": "TOOL_EXECUTION_ERROR",
                     "message": f'Tool "{self.name}" failed: {str(exc)}',
                     "details": {"tool": self.name},
+                }
+            )
+        if cancellation is not None and cancellation.is_cancelled():
+            return Result.err(
+                {
+                    "errorType": "EXECUTION_CANCELLED",
+                    "message": f'Tool "{self.name}" cancellation was requested.',
                 }
             )
         return self._finish_result(result)
@@ -497,24 +554,32 @@ class ToolRegistry:
         return [t.to_llm_definition() for t in self.list_tools(tags)]
 
     def execute(
-        self, name: str, arguments: Dict[str, Any]
+        self,
+        name: str,
+        arguments: Dict[str, Any],
+        *,
+        cancellation: Optional[CancellationToken] = None,
     ) -> Result[Any, Dict[str, Any]]:
         """Execute a tool by name."""
         tool_result = self.get(name)
         if tool_result.is_err():
             return Result.err(tool_result.unwrap_err())
         tool = tool_result.unwrap()
-        return tool.execute(**arguments)
+        return tool.execute(cancellation=cancellation, **arguments)
 
     async def execute_async(
-        self, name: str, arguments: Dict[str, Any]
+        self,
+        name: str,
+        arguments: Dict[str, Any],
+        *,
+        cancellation: Optional[CancellationToken] = None,
     ) -> Result[Any, Dict[str, Any]]:
         """Execute a tool through its async handler when one is available."""
         tool_result = self.get(name)
         if tool_result.is_err():
             return Result.err(tool_result.unwrap_err())
         tool = tool_result.unwrap()
-        return await tool.execute_async(**arguments)
+        return await tool.execute_async(cancellation=cancellation, **arguments)
 
 
 def _format_handoff_result(

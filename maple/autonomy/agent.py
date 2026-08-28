@@ -62,6 +62,7 @@ from .contracts import (
     structured_model_schema,
 )
 from .events import EventStream
+from .execution import CancellationToken
 from .interactions import HumanInputRequest, HumanInputStore
 from .memory import MemoryManager
 from .observability import DecisionTrace, SpanRecorder, TraceSpan
@@ -736,6 +737,91 @@ class AutonomousAgent(Agent):
             },
         }
 
+    @staticmethod
+    def _validate_cancellation(
+        cancellation: Optional[CancellationToken],
+    ) -> Result[Optional[CancellationToken], Dict[str, Any]]:
+        """Validate the host-owned cancellation signal at the API boundary."""
+        if cancellation is not None and not isinstance(cancellation, CancellationToken):
+            return Result.err(
+                {
+                    "errorType": "AGENT_CANCELLATION_INVALID",
+                    "message": "cancellation must be a CancellationToken or None.",
+                }
+            )
+        return Result.ok(cancellation)
+
+    @staticmethod
+    def _cancellation_error(run_id: Optional[str] = None) -> Dict[str, Any]:
+        """Return the bounded, stable error for a requested agent stop."""
+        error: Dict[str, Any] = {
+            "errorType": "AGENT_RUN_CANCELLED",
+            "message": "Agent run cancellation was requested.",
+        }
+        if run_id is not None:
+            error["details"] = {"run_id": run_id}
+        return error
+
+    @staticmethod
+    def _goal_status_for_error(error: Dict[str, Any]) -> str:
+        """Map loop control errors to the public in-memory goal status."""
+        error_type = error.get("errorType")
+        if error_type == "AGENT_RUN_PAUSED":
+            return "paused"
+        if error_type == "AGENT_RUN_CANCELLED":
+            return "cancelled"
+        return "failed"
+
+    def _cancel_run(
+        self,
+        state: Optional[_RunState],
+        goal: Goal,
+        messages: Sequence[ChatMessage],
+        *,
+        step_count: int,
+        output_retries_used: int,
+    ) -> Result[Any, Dict[str, Any]]:
+        """Persist and publish a cooperative cancellation outcome."""
+        error = self._cancellation_error(goal.run_id)
+        checkpoint = self._checkpoint_run(
+            state,
+            goal,
+            messages,
+            status="cancelled",
+            step_count=step_count,
+            output_retries_used=output_retries_used,
+            error=error,
+        )
+        if checkpoint.is_err():
+            return Result.err(checkpoint.unwrap_err())
+        self._publish_run_cancelled(goal, step_count)
+        return Result.err(error)
+
+    async def _cancel_run_async(
+        self,
+        state: Optional[_RunState],
+        goal: Goal,
+        messages: Sequence[ChatMessage],
+        *,
+        step_count: int,
+        output_retries_used: int,
+    ) -> Result[Any, Dict[str, Any]]:
+        """Persist and publish a cooperative cancellation outcome asynchronously."""
+        error = self._cancellation_error(goal.run_id)
+        checkpoint = await self._checkpoint_run_async(
+            state,
+            goal,
+            messages,
+            status="cancelled",
+            step_count=step_count,
+            output_retries_used=output_retries_used,
+            error=error,
+        )
+        if checkpoint.is_err():
+            return Result.err(checkpoint.unwrap_err())
+        self._publish_run_cancelled(goal, step_count)
+        return Result.err(error)
+
     def _new_run_state(
         self, run_id: Optional[str]
     ) -> Result[Optional[_RunState], Dict[str, Any]]:
@@ -1068,8 +1154,17 @@ class AutonomousAgent(Agent):
             }
         )
 
-    def resume_run(self, run_id: str) -> Result[Goal, Dict[str, Any]]:
+    def resume_run(
+        self,
+        run_id: str,
+        *,
+        cancellation: Optional[CancellationToken] = None,
+    ) -> Result[Goal, Dict[str, Any]]:
         """Resume a running or interaction-paused durable agent run."""
+        cancellation_result = self._validate_cancellation(cancellation)
+        if cancellation_result.is_err():
+            return Result.err(cancellation_result.unwrap_err())
+        cancellation = cancellation_result.unwrap()
         if self._run_store is None:
             return Result.err(
                 {
@@ -1093,7 +1188,7 @@ class AutonomousAgent(Agent):
                     "message": "Agent run checkpoint was not found.",
                 }
             )
-        if checkpoint.status in {"completed", "failed"}:
+        if checkpoint.status in {"completed", "failed", "cancelled"}:
             return Result.err(
                 {
                     "errorType": "RUN_NOT_RESUMABLE",
@@ -1101,6 +1196,15 @@ class AutonomousAgent(Agent):
                     "details": {"status": checkpoint.status},
                 }
             )
+        if (
+            cancellation is not None
+            and cancellation.is_cancelled()
+            and (
+                checkpoint.pending_approval_id is not None
+                or checkpoint.pending_input_id is not None
+            )
+        ):
+            return Result.err(self._cancellation_error(checkpoint.run_id))
 
         messages = list(checkpoint.messages)
         if checkpoint.pending_approval_id is not None:
@@ -1126,6 +1230,8 @@ class AutonomousAgent(Agent):
                         "message": "The pending approval request was not found.",
                     }
                 )
+            if cancellation is not None and cancellation.is_cancelled():
+                return Result.err(self._cancellation_error(checkpoint.run_id))
             pending_target = self._validate_pending_tool_target(
                 messages, request.tool_call_id
             )
@@ -1140,6 +1246,8 @@ class AutonomousAgent(Agent):
                     }
                 )
             if request.status == "approved":
+                if cancellation is not None and cancellation.is_cancelled():
+                    return Result.err(self._cancellation_error(checkpoint.run_id))
                 tool_result = self.execute_approved_tool(request.approval_id)
             elif request.status == "denied":
                 tool_result = self._approval_error(
@@ -1210,6 +1318,8 @@ class AutonomousAgent(Agent):
                         "message": "The pending human input request was not found.",
                     }
                 )
+            if cancellation is not None and cancellation.is_cancelled():
+                return Result.err(self._cancellation_error(checkpoint.run_id))
             pending_target = self._validate_pending_tool_target(
                 messages, input_request.tool_call_id
             )
@@ -1224,6 +1334,8 @@ class AutonomousAgent(Agent):
                     }
                 )
             if input_request.status in {"responded", "rejected"}:
+                if cancellation is not None and cancellation.is_cancelled():
+                    return Result.err(self._cancellation_error(checkpoint.run_id))
                 consumed_result = self._human_input_store.consume(
                     input_request.interaction_id
                 )
@@ -1302,16 +1414,13 @@ class AutonomousAgent(Agent):
             initial_messages=[message.to_chat_message() for message in messages],
             starting_step=checkpoint.step_count,
             output_retries_used=checkpoint.output_retries_used,
+            cancellation=cancellation,
         )
         if resumed.is_ok():
             goal.status = "completed"
             goal.result = resumed.unwrap()
         else:
-            goal.status = (
-                "paused"
-                if resumed.unwrap_err().get("errorType") == "AGENT_RUN_PAUSED"
-                else "failed"
-            )
+            goal.status = self._goal_status_for_error(resumed.unwrap_err())
             goal.result = resumed.unwrap_err()
         if goal.status != "paused" and goal.session_id is not None:
             session_turn = _SessionTurn(
@@ -1331,10 +1440,15 @@ class AutonomousAgent(Agent):
         session_id: Optional[str] = None,
         run_id: Optional[str] = None,
         context: Optional[Mapping[str, Any]] = None,
+        cancellation: Optional[CancellationToken] = None,
     ) -> Result[Goal, Dict[str, Any]]:
         """
         Main entry point: pursue a high-level goal using the ReAct loop.
         """
+        cancellation_result = self._validate_cancellation(cancellation)
+        if cancellation_result.is_err():
+            return Result.err(cancellation_result.unwrap_err())
+        cancellation = cancellation_result.unwrap()
         input_guardrail_events: List[GuardrailEvent] = []
         input_guardrails = run_guardrails(
             description,
@@ -1353,6 +1467,30 @@ class AutonomousAgent(Agent):
         if run_state_result.is_err():
             return Result.err(run_state_result.unwrap_err())
         run_state = run_state_result.unwrap()
+        if cancellation is not None and cancellation.is_cancelled():
+            goal = Goal(
+                goal_id=str(uuid.uuid4()),
+                description=description,
+                status="in_progress",
+                session_id=session_id,
+                run_id=run_state.run_id if run_state is not None else run_id,
+            )
+            self._active_goals[goal.goal_id] = goal
+            cancelled = self._cancel_run(
+                run_state,
+                goal,
+                (),
+                step_count=0,
+                output_retries_used=0,
+            )
+            if (
+                cancelled.is_err()
+                and cancelled.unwrap_err().get("errorType") == "AGENT_RUN_CANCELLED"
+            ):
+                goal.status = "cancelled"
+                goal.result = cancelled.unwrap_err()
+                return Result.ok(goal)
+            return Result.err(cancelled.unwrap_err())
         session_result = self._prepare_session_turn(description, session_id)
         if session_result.is_err():
             return Result.err(session_result.unwrap_err())
@@ -1377,16 +1515,13 @@ class AutonomousAgent(Agent):
                 ),
                 handoff_context=handoff_context,
                 initial_guardrail_events=input_guardrail_events,
+                cancellation=cancellation,
             )
             if result.is_ok():
                 goal.status = "completed"
                 goal.result = result.unwrap()
             else:
-                goal.status = (
-                    "paused"
-                    if result.unwrap_err().get("errorType") == "AGENT_RUN_PAUSED"
-                    else "failed"
-                )
+                goal.status = self._goal_status_for_error(result.unwrap_err())
                 goal.result = result.unwrap_err()
             if goal.status != "paused":
                 session_record = self._record_session_turn(session_turn, goal)
@@ -1411,6 +1546,7 @@ class AutonomousAgent(Agent):
         *,
         session_id: Optional[str] = None,
         run_id: Optional[str] = None,
+        cancellation: Optional[CancellationToken] = None,
     ) -> Result[Goal, Dict[str, Any]]:
         """Pursue a goal with bounded host-provided handoff context."""
         return self.pursue_goal(
@@ -1418,6 +1554,7 @@ class AutonomousAgent(Agent):
             session_id=session_id,
             run_id=run_id,
             context=context,
+            cancellation=cancellation,
         )
 
     async def pursue_goal_with_context_async(
@@ -1427,6 +1564,7 @@ class AutonomousAgent(Agent):
         *,
         session_id: Optional[str] = None,
         run_id: Optional[str] = None,
+        cancellation: Optional[CancellationToken] = None,
     ) -> Result["Goal", Dict[str, Any]]:
         """Pursue a goal asynchronously with bounded handoff context."""
         return await self.pursue_goal_async(
@@ -1434,6 +1572,7 @@ class AutonomousAgent(Agent):
             session_id=session_id,
             run_id=run_id,
             context=context,
+            cancellation=cancellation,
         )
 
     def _human_input_id_for_tool_call(self, run_id: str, tool_call: ToolCall) -> str:
@@ -1562,6 +1701,7 @@ class AutonomousAgent(Agent):
         output_retries_used: int = 0,
         handoff_context: Optional[Mapping[str, Any]] = None,
         initial_guardrail_events: Optional[Sequence[GuardrailEvent]] = None,
+        cancellation: Optional[CancellationToken] = None,
     ) -> Result[Any, Dict[str, Any]]:
         """
         ReAct (Reasoning + Acting) loop.
@@ -1579,6 +1719,14 @@ class AutonomousAgent(Agent):
                 handoff_context=handoff_context,
             )
         )
+        if cancellation is not None and cancellation.is_cancelled():
+            return self._cancel_run(
+                run_state,
+                goal,
+                messages,
+                step_count=starting_step,
+                output_retries_used=output_retries_used,
+            )
         initial_checkpoint = self._checkpoint_run(
             run_state,
             goal,
@@ -1598,6 +1746,14 @@ class AutonomousAgent(Agent):
         )
 
         for step_num in range(starting_step, self.autonomy_config.max_reasoning_steps):
+            if cancellation is not None and cancellation.is_cancelled():
+                return self._cancel_run(
+                    run_state,
+                    goal,
+                    messages,
+                    step_count=step_num,
+                    output_retries_used=output_retries_used,
+                )
             start_time = time.time()
 
             # THINK: Get LLM response
@@ -1612,6 +1768,15 @@ class AutonomousAgent(Agent):
             )
 
             if response_result.is_err():
+                if cancellation is not None and cancellation.is_cancelled():
+                    self._finish_model_span(model_span, "cancelled")
+                    return self._cancel_run(
+                        run_state,
+                        goal,
+                        messages,
+                        step_count=step_num,
+                        output_retries_used=output_retries_used,
+                    )
                 self._finish_model_span(model_span, "error")
                 return response_result
 
@@ -1620,6 +1785,15 @@ class AutonomousAgent(Agent):
             if usage_result.is_err():
                 self._finish_model_span(model_span, "error", response)
                 return Result.err(usage_result.unwrap_err())
+            if cancellation is not None and cancellation.is_cancelled():
+                self._finish_model_span(model_span, "cancelled", response)
+                return self._cancel_run(
+                    run_state,
+                    goal,
+                    messages,
+                    step_count=step_num,
+                    output_retries_used=output_retries_used,
+                )
             duration_ms = (time.time() - start_time) * 1000
             model_payload = {
                 "step": step_num,
@@ -1666,6 +1840,14 @@ class AutonomousAgent(Agent):
                             content=response.content or "",
                         )
                     )
+                    if cancellation is not None and cancellation.is_cancelled():
+                        return self._cancel_run(
+                            run_state,
+                            goal,
+                            messages,
+                            step_count=step_num + 1,
+                            output_retries_used=output_retries_used,
+                        )
                     completed_checkpoint = self._checkpoint_run(
                         run_state,
                         goal,
@@ -1686,6 +1868,14 @@ class AutonomousAgent(Agent):
                     output_retries_used,
                 ):
                     output_retries_used += 1
+                    if cancellation is not None and cancellation.is_cancelled():
+                        return self._cancel_run(
+                            run_state,
+                            goal,
+                            messages,
+                            step_count=step_num + 1,
+                            output_retries_used=output_retries_used,
+                        )
                     retry_checkpoint = self._checkpoint_run(
                         run_state,
                         goal,
@@ -1697,6 +1887,14 @@ class AutonomousAgent(Agent):
                     if retry_checkpoint.is_err():
                         return Result.err(retry_checkpoint.unwrap_err())
                     continue
+                if cancellation is not None and cancellation.is_cancelled():
+                    return self._cancel_run(
+                        run_state,
+                        goal,
+                        messages,
+                        step_count=step_num + 1,
+                        output_retries_used=output_retries_used,
+                    )
                 failed_checkpoint = self._checkpoint_run(
                     run_state,
                     goal,
@@ -1712,6 +1910,15 @@ class AutonomousAgent(Agent):
 
             # ACT: Execute tool calls
             if response.tool_calls:
+                if cancellation is not None and cancellation.is_cancelled():
+                    self._finish_model_span(model_span, "cancelled", response)
+                    return self._cancel_run(
+                        run_state,
+                        goal,
+                        messages,
+                        step_count=step_num,
+                        output_retries_used=output_retries_used,
+                    )
                 messages.append(
                     ChatMessage(
                         role=ChatRole.ASSISTANT,
@@ -1723,6 +1930,15 @@ class AutonomousAgent(Agent):
                 for tool_call_index, tool_call in enumerate(
                     response.tool_calls[: self.autonomy_config.max_tool_calls_per_step]
                 ):
+                    if cancellation is not None and cancellation.is_cancelled():
+                        self._finish_model_span(model_span, "cancelled", response)
+                        return self._cancel_run(
+                            run_state,
+                            goal,
+                            messages,
+                            step_count=step_num,
+                            output_retries_used=output_retries_used,
+                        )
                     tool_result = self._execute_tool_call(
                         tool_call,
                         run_id=run_state.run_id if run_state is not None else None,
@@ -1730,6 +1946,7 @@ class AutonomousAgent(Agent):
                         step_num=step_num,
                         tool_call_index=tool_call_index,
                         parent_span=model_span,
+                        cancellation=cancellation,
                     )
                     step.tool_results.append(tool_result)
 
@@ -1741,6 +1958,15 @@ class AutonomousAgent(Agent):
                             name=tool_call.name,
                         )
                     )
+                    if cancellation is not None and cancellation.is_cancelled():
+                        self._finish_model_span(model_span, "cancelled", response)
+                        return self._cancel_run(
+                            run_state,
+                            goal,
+                            messages,
+                            step_count=step_num + 1,
+                            output_retries_used=output_retries_used,
+                        )
                     tool_event: Dict[str, Any] = {
                         "step": step_num,
                         "tool": tool_call.name,
@@ -1846,6 +2072,15 @@ class AutonomousAgent(Agent):
                     )
                 )
 
+            if cancellation is not None and cancellation.is_cancelled():
+                return self._cancel_run(
+                    run_state,
+                    goal,
+                    messages,
+                    step_count=step_num + 1,
+                    output_retries_used=output_retries_used,
+                )
+
             # REFLECT: Every N steps, assess progress
             if (step_num + 1) % self.autonomy_config.reflection_frequency == 0:
                 reflection = self._reflect(goal, messages, step_num)
@@ -1863,6 +2098,14 @@ class AutonomousAgent(Agent):
                                 content=final_content or "",
                             )
                         )
+                        if cancellation is not None and cancellation.is_cancelled():
+                            return self._cancel_run(
+                                run_state,
+                                goal,
+                                messages,
+                                step_count=step_num + 1,
+                                output_retries_used=output_retries_used,
+                            )
                         completed_checkpoint = self._checkpoint_run(
                             run_state,
                             goal,
@@ -1883,6 +2126,14 @@ class AutonomousAgent(Agent):
                         output_retries_used,
                     ):
                         output_retries_used += 1
+                        if cancellation is not None and cancellation.is_cancelled():
+                            return self._cancel_run(
+                                run_state,
+                                goal,
+                                messages,
+                                step_count=step_num + 1,
+                                output_retries_used=output_retries_used,
+                            )
                         retry_checkpoint = self._checkpoint_run(
                             run_state,
                             goal,
@@ -1894,6 +2145,14 @@ class AutonomousAgent(Agent):
                         if retry_checkpoint.is_err():
                             return Result.err(retry_checkpoint.unwrap_err())
                         continue
+                    if cancellation is not None and cancellation.is_cancelled():
+                        return self._cancel_run(
+                            run_state,
+                            goal,
+                            messages,
+                            step_count=step_num + 1,
+                            output_retries_used=output_retries_used,
+                        )
                     failed_checkpoint = self._checkpoint_run(
                         run_state,
                         goal,
@@ -1907,6 +2166,14 @@ class AutonomousAgent(Agent):
                         return Result.err(failed_checkpoint.unwrap_err())
                     return final_result
 
+            if cancellation is not None and cancellation.is_cancelled():
+                return self._cancel_run(
+                    run_state,
+                    goal,
+                    messages,
+                    step_count=step_num + 1,
+                    output_retries_used=output_retries_used,
+                )
             running_checkpoint = self._checkpoint_run(
                 run_state,
                 goal,
@@ -1918,6 +2185,14 @@ class AutonomousAgent(Agent):
             if running_checkpoint.is_err():
                 return Result.err(running_checkpoint.unwrap_err())
 
+        if cancellation is not None and cancellation.is_cancelled():
+            return self._cancel_run(
+                run_state,
+                goal,
+                messages,
+                step_count=self.autonomy_config.max_reasoning_steps,
+                output_retries_used=output_retries_used,
+            )
         self._publish_run_event(
             goal,
             "run.failed",
@@ -2403,6 +2678,7 @@ class AutonomousAgent(Agent):
         step_num: Optional[int] = None,
         tool_call_index: Optional[int] = None,
         parent_span: Optional[TraceSpan] = None,
+        cancellation: Optional[CancellationToken] = None,
     ) -> ToolResult:
         """Execute a single tool call with approval check."""
         tool_span = (
@@ -2464,7 +2740,7 @@ class AutonomousAgent(Agent):
             replayed_result = replayed.unwrap()
             if replayed_result is not None:
                 return complete(replayed_result)
-            exec_result = tool.execute(**arguments)
+            exec_result = tool.execute(cancellation=cancellation, **arguments)
             result = self._tool_result_from_execution(tool_call, exec_result)
             saved = self._save_replayed_tool_result(
                 tool,
@@ -2504,6 +2780,7 @@ class AutonomousAgent(Agent):
         step_num: Optional[int] = None,
         tool_call_index: Optional[int] = None,
         parent_span: Optional[TraceSpan] = None,
+        cancellation: Optional[CancellationToken] = None,
     ) -> ToolResult:
         """Execute a tool through its async handler without blocking the loop."""
         tool_span = (
@@ -2592,7 +2869,9 @@ class AutonomousAgent(Agent):
             if replayed_result is not None:
                 return complete(replayed_result)
             try:
-                exec_result = await tool.execute_async(**arguments)
+                exec_result = await tool.execute_async(
+                    cancellation=cancellation, **arguments
+                )
             except Exception as exc:
                 return complete(
                     ToolResult(
@@ -3336,6 +3615,18 @@ Instructions:
             },
         )
 
+    def _publish_run_cancelled(self, goal: Goal, step_count: int) -> None:
+        """Publish the terminal usage trailer for a cooperative stop."""
+        self._publish_run_event(
+            goal,
+            "run.cancelled",
+            {
+                "status": "cancelled",
+                "step_count": step_count,
+                "usage": self._run_event_usage(goal),
+            },
+        )
+
     def get_active_goals(self) -> Dict[str, Goal]:
         """Get all active goals."""
         return dict(self._active_goals)
@@ -3349,8 +3640,13 @@ Instructions:
         session_id: Optional[str] = None,
         run_id: Optional[str] = None,
         context: Optional[Mapping[str, Any]] = None,
+        cancellation: Optional[CancellationToken] = None,
     ) -> Result["Goal", Dict[str, Any]]:
         """Async entry point with optional durable run checkpoints."""
+        cancellation_result = self._validate_cancellation(cancellation)
+        if cancellation_result.is_err():
+            return Result.err(cancellation_result.unwrap_err())
+        cancellation = cancellation_result.unwrap()
         input_guardrail_events: List[GuardrailEvent] = []
         input_guardrails = run_guardrails(
             description,
@@ -3369,6 +3665,30 @@ Instructions:
         if run_state_result.is_err():
             return Result.err(run_state_result.unwrap_err())
         run_state = run_state_result.unwrap()
+        if cancellation is not None and cancellation.is_cancelled():
+            goal = Goal(
+                goal_id=str(uuid.uuid4()),
+                description=description,
+                status="in_progress",
+                session_id=session_id,
+                run_id=run_state.run_id if run_state is not None else run_id,
+            )
+            self._active_goals[goal.goal_id] = goal
+            cancelled = await self._cancel_run_async(
+                run_state,
+                goal,
+                (),
+                step_count=0,
+                output_retries_used=0,
+            )
+            if (
+                cancelled.is_err()
+                and cancelled.unwrap_err().get("errorType") == "AGENT_RUN_CANCELLED"
+            ):
+                goal.status = "cancelled"
+                goal.result = cancelled.unwrap_err()
+                return Result.ok(goal)
+            return Result.err(cancelled.unwrap_err())
         session_result = await self._prepare_session_turn_async(description, session_id)
         if session_result.is_err():
             return Result.err(session_result.unwrap_err())
@@ -3393,16 +3713,13 @@ Instructions:
                 ),
                 handoff_context=handoff_context,
                 initial_guardrail_events=input_guardrail_events,
+                cancellation=cancellation,
             )
             if result.is_ok():
                 goal.status = "completed"
                 goal.result = result.unwrap()
             else:
-                goal.status = (
-                    "paused"
-                    if result.unwrap_err().get("errorType") == "AGENT_RUN_PAUSED"
-                    else "failed"
-                )
+                goal.status = self._goal_status_for_error(result.unwrap_err())
                 goal.result = result.unwrap_err()
             if goal.status != "paused":
                 session_record = await self._record_session_turn_async(
@@ -3422,8 +3739,17 @@ Instructions:
                 }
             )
 
-    async def resume_run_async(self, run_id: str) -> Result[Goal, Dict[str, Any]]:
+    async def resume_run_async(
+        self,
+        run_id: str,
+        *,
+        cancellation: Optional[CancellationToken] = None,
+    ) -> Result[Goal, Dict[str, Any]]:
         """Resume an interaction-paused run through async boundaries."""
+        cancellation_result = self._validate_cancellation(cancellation)
+        if cancellation_result.is_err():
+            return Result.err(cancellation_result.unwrap_err())
+        cancellation = cancellation_result.unwrap()
         if self._run_store is None:
             return Result.err(
                 {
@@ -3449,7 +3775,7 @@ Instructions:
                     "message": "Agent run checkpoint was not found.",
                 }
             )
-        if checkpoint.status in {"completed", "failed"}:
+        if checkpoint.status in {"completed", "failed", "cancelled"}:
             return Result.err(
                 {
                     "errorType": "RUN_NOT_RESUMABLE",
@@ -3457,6 +3783,15 @@ Instructions:
                     "details": {"status": checkpoint.status},
                 }
             )
+        if (
+            cancellation is not None
+            and cancellation.is_cancelled()
+            and (
+                checkpoint.pending_approval_id is not None
+                or checkpoint.pending_input_id is not None
+            )
+        ):
+            return Result.err(self._cancellation_error(checkpoint.run_id))
 
         messages = list(checkpoint.messages)
         if checkpoint.pending_approval_id is not None:
@@ -3486,6 +3821,8 @@ Instructions:
                         "message": "The pending approval request was not found.",
                     }
                 )
+            if cancellation is not None and cancellation.is_cancelled():
+                return Result.err(self._cancellation_error(checkpoint.run_id))
             pending_target = self._validate_pending_tool_target(
                 messages, request.tool_call_id
             )
@@ -3500,6 +3837,8 @@ Instructions:
                     }
                 )
             if request.status == "approved":
+                if cancellation is not None and cancellation.is_cancelled():
+                    return Result.err(self._cancellation_error(checkpoint.run_id))
                 tool_result = await loop.run_in_executor(
                     None, partial(self.execute_approved_tool, request.approval_id)
                 )
@@ -3581,6 +3920,8 @@ Instructions:
                         "message": "The pending human input request was not found.",
                     }
                 )
+            if cancellation is not None and cancellation.is_cancelled():
+                return Result.err(self._cancellation_error(checkpoint.run_id))
             pending_target = self._validate_pending_tool_target(
                 messages, input_request.tool_call_id
             )
@@ -3595,6 +3936,8 @@ Instructions:
                     }
                 )
             if input_request.status in {"responded", "rejected"}:
+                if cancellation is not None and cancellation.is_cancelled():
+                    return Result.err(self._cancellation_error(checkpoint.run_id))
                 consumed_result = await loop.run_in_executor(
                     None,
                     partial(human_input_store.consume, input_request.interaction_id),
@@ -3679,16 +4022,13 @@ Instructions:
             initial_messages=[message.to_chat_message() for message in messages],
             starting_step=checkpoint.step_count,
             output_retries_used=checkpoint.output_retries_used,
+            cancellation=cancellation,
         )
         if resumed.is_ok():
             goal.status = "completed"
             goal.result = resumed.unwrap()
         else:
-            goal.status = (
-                "paused"
-                if resumed.unwrap_err().get("errorType") == "AGENT_RUN_PAUSED"
-                else "failed"
-            )
+            goal.status = self._goal_status_for_error(resumed.unwrap_err())
             goal.result = resumed.unwrap_err()
         if goal.status != "paused" and goal.session_id is not None:
             session_turn = _SessionTurn(
@@ -3712,6 +4052,7 @@ Instructions:
         output_retries_used: int = 0,
         handoff_context: Optional[Mapping[str, Any]] = None,
         initial_guardrail_events: Optional[Sequence[GuardrailEvent]] = None,
+        cancellation: Optional[CancellationToken] = None,
     ) -> Result[Any, Dict[str, Any]]:
         """Async ReAct loop with optional bounded durable checkpoints."""
         messages = (
@@ -3723,6 +4064,14 @@ Instructions:
                 handoff_context=handoff_context,
             )
         )
+        if cancellation is not None and cancellation.is_cancelled():
+            return await self._cancel_run_async(
+                run_state,
+                goal,
+                messages,
+                step_count=starting_step,
+                output_retries_used=output_retries_used,
+            )
         initial_checkpoint = await self._checkpoint_run_async(
             run_state,
             goal,
@@ -3742,6 +4091,14 @@ Instructions:
             {"status": "running", "step_count": starting_step},
         )
         for step_num in range(starting_step, self.autonomy_config.max_reasoning_steps):
+            if cancellation is not None and cancellation.is_cancelled():
+                return await self._cancel_run_async(
+                    run_state,
+                    goal,
+                    messages,
+                    step_count=step_num,
+                    output_retries_used=output_retries_used,
+                )
             start_time = time.time()
 
             tool_defs = self.tool_registry.get_llm_definitions()
@@ -3754,6 +4111,15 @@ Instructions:
                 span=model_span,
             )
             if response_result.is_err():
+                if cancellation is not None and cancellation.is_cancelled():
+                    self._finish_model_span(model_span, "cancelled")
+                    return await self._cancel_run_async(
+                        run_state,
+                        goal,
+                        messages,
+                        step_count=step_num,
+                        output_retries_used=output_retries_used,
+                    )
                 self._finish_model_span(model_span, "error")
                 return response_result
 
@@ -3762,6 +4128,15 @@ Instructions:
             if usage_result.is_err():
                 self._finish_model_span(model_span, "error", response)
                 return Result.err(usage_result.unwrap_err())
+            if cancellation is not None and cancellation.is_cancelled():
+                self._finish_model_span(model_span, "cancelled", response)
+                return await self._cancel_run_async(
+                    run_state,
+                    goal,
+                    messages,
+                    step_count=step_num,
+                    output_retries_used=output_retries_used,
+                )
             duration_ms = (time.time() - start_time) * 1000
             model_payload = {
                 "step": step_num,
@@ -3803,6 +4178,14 @@ Instructions:
                             content=response.content or "",
                         )
                     )
+                    if cancellation is not None and cancellation.is_cancelled():
+                        return await self._cancel_run_async(
+                            run_state,
+                            goal,
+                            messages,
+                            step_count=step_num + 1,
+                            output_retries_used=output_retries_used,
+                        )
                     completed_checkpoint = await self._checkpoint_run_async(
                         run_state,
                         goal,
@@ -3823,6 +4206,14 @@ Instructions:
                     output_retries_used,
                 ):
                     output_retries_used += 1
+                    if cancellation is not None and cancellation.is_cancelled():
+                        return await self._cancel_run_async(
+                            run_state,
+                            goal,
+                            messages,
+                            step_count=step_num + 1,
+                            output_retries_used=output_retries_used,
+                        )
                     retry_checkpoint = await self._checkpoint_run_async(
                         run_state,
                         goal,
@@ -3834,6 +4225,14 @@ Instructions:
                     if retry_checkpoint.is_err():
                         return Result.err(retry_checkpoint.unwrap_err())
                     continue
+                if cancellation is not None and cancellation.is_cancelled():
+                    return await self._cancel_run_async(
+                        run_state,
+                        goal,
+                        messages,
+                        step_count=step_num + 1,
+                        output_retries_used=output_retries_used,
+                    )
                 failed_checkpoint = await self._checkpoint_run_async(
                     run_state,
                     goal,
@@ -3848,6 +4247,15 @@ Instructions:
                 return final_result
 
             if response.tool_calls:
+                if cancellation is not None and cancellation.is_cancelled():
+                    self._finish_model_span(model_span, "cancelled", response)
+                    return await self._cancel_run_async(
+                        run_state,
+                        goal,
+                        messages,
+                        step_count=step_num,
+                        output_retries_used=output_retries_used,
+                    )
                 messages.append(
                     ChatMessage(
                         role=ChatRole.ASSISTANT,
@@ -3906,6 +4314,7 @@ Instructions:
                             step_num=step_num,
                             tool_call_index=tool_call_index,
                             parent_span=model_span,
+                            cancellation=cancellation,
                         )
                     except Exception as exc:
                         return ToolResult(
@@ -3926,8 +4335,26 @@ Instructions:
                 if run_state is not None:
                     tool_results = []
                     for tool_call_index, tool_call in enumerate(tool_calls):
+                        if cancellation is not None and cancellation.is_cancelled():
+                            self._finish_model_span(model_span, "cancelled", response)
+                            return await self._cancel_run_async(
+                                run_state,
+                                goal,
+                                messages,
+                                step_count=step_num,
+                                output_retries_used=output_retries_used,
+                            )
                         tool_result = await execute_tool(tool_call, tool_call_index)
                         tool_results.append((tool_call, tool_result))
+                        if cancellation is not None and cancellation.is_cancelled():
+                            self._finish_model_span(model_span, "cancelled", response)
+                            return await self._cancel_run_async(
+                                run_state,
+                                goal,
+                                messages,
+                                step_count=step_num + 1,
+                                output_retries_used=output_retries_used,
+                            )
                         pending_input_id = self._human_input_id_from_tool_result(
                             tool_result
                         )
@@ -4014,6 +4441,15 @@ Instructions:
                     )
                     for tool_call, tool_result in tool_results:
                         append_tool_result(tool_call, tool_result)
+                        if cancellation is not None and cancellation.is_cancelled():
+                            self._finish_model_span(model_span, "cancelled", response)
+                            return await self._cancel_run_async(
+                                run_state,
+                                goal,
+                                messages,
+                                step_count=step_num + 1,
+                                output_retries_used=output_retries_used,
+                            )
                 self._finish_model_span(model_span, "ok", response)
             else:
                 messages.append(
@@ -4021,6 +4457,15 @@ Instructions:
                         role=ChatRole.ASSISTANT,
                         content=response.content or "",
                     )
+                )
+
+            if cancellation is not None and cancellation.is_cancelled():
+                return await self._cancel_run_async(
+                    run_state,
+                    goal,
+                    messages,
+                    step_count=step_num + 1,
+                    output_retries_used=output_retries_used,
                 )
 
             if (step_num + 1) % self.autonomy_config.reflection_frequency == 0:
@@ -4039,6 +4484,14 @@ Instructions:
                                 content=final_content or "",
                             )
                         )
+                        if cancellation is not None and cancellation.is_cancelled():
+                            return await self._cancel_run_async(
+                                run_state,
+                                goal,
+                                messages,
+                                step_count=step_num + 1,
+                                output_retries_used=output_retries_used,
+                            )
                         completed_checkpoint = await self._checkpoint_run_async(
                             run_state,
                             goal,
@@ -4059,6 +4512,14 @@ Instructions:
                         output_retries_used,
                     ):
                         output_retries_used += 1
+                        if cancellation is not None and cancellation.is_cancelled():
+                            return await self._cancel_run_async(
+                                run_state,
+                                goal,
+                                messages,
+                                step_count=step_num + 1,
+                                output_retries_used=output_retries_used,
+                            )
                         retry_checkpoint = await self._checkpoint_run_async(
                             run_state,
                             goal,
@@ -4070,6 +4531,14 @@ Instructions:
                         if retry_checkpoint.is_err():
                             return Result.err(retry_checkpoint.unwrap_err())
                         continue
+                    if cancellation is not None and cancellation.is_cancelled():
+                        return await self._cancel_run_async(
+                            run_state,
+                            goal,
+                            messages,
+                            step_count=step_num + 1,
+                            output_retries_used=output_retries_used,
+                        )
                     failed_checkpoint = await self._checkpoint_run_async(
                         run_state,
                         goal,
@@ -4083,6 +4552,14 @@ Instructions:
                         return Result.err(failed_checkpoint.unwrap_err())
                     return final_result
 
+            if cancellation is not None and cancellation.is_cancelled():
+                return await self._cancel_run_async(
+                    run_state,
+                    goal,
+                    messages,
+                    step_count=step_num + 1,
+                    output_retries_used=output_retries_used,
+                )
             running_checkpoint = await self._checkpoint_run_async(
                 run_state,
                 goal,
@@ -4094,6 +4571,14 @@ Instructions:
             if running_checkpoint.is_err():
                 return Result.err(running_checkpoint.unwrap_err())
 
+        if cancellation is not None and cancellation.is_cancelled():
+            return await self._cancel_run_async(
+                run_state,
+                goal,
+                messages,
+                step_count=self.autonomy_config.max_reasoning_steps,
+                output_retries_used=output_retries_used,
+            )
         max_steps_error = {
             "errorType": "MAX_STEPS_REACHED",
             "message": (

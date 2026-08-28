@@ -2199,6 +2199,31 @@ started = await agent.pursue_goal_async("Review this request", run_id="review-2"
 recovered = await restarted_agent.resume_run_async("review-2")
 ```
 
+Native goal hosts may pass the existing thread-safe `CancellationToken` to
+either sync or async pursue/resume entry point:
+
+```python
+from maple import CancellationToken
+
+token = CancellationToken()
+started = agent.pursue_goal("Review this request", cancellation=token)
+token.cancel()  # cooperative request; current provider/handler work may finish
+```
+
+When cancellation is observed, the returned `Goal` has `status ==
+"cancelled"` and a bounded `AGENT_RUN_CANCELLED` result. Active durable runs
+persist a terminal `cancelled` checkpoint and emit metadata-only
+`run.cancelled` lifecycle metadata. Cancellation is checked before future
+model, tool, reflection, and checkpoint turns; it does not hard-kill an
+in-flight provider call or arbitrary non-executor handler, and external
+effects remain at-least-once. Executor-backed tools receive the token and can
+return `EXECUTION_CANCELLED`. If a paused run is cancelled before its pending
+approval or human-input record is resolved, `resume_run()` returns the typed
+error without consuming or mutating that pending interaction, leaving it
+paused for explicit host control. Invalid token values return
+`AGENT_CANCELLATION_INVALID`; omitting `cancellation` preserves existing
+behavior.
+
 When a tool requires durable approval, the run returns a `Goal` with
 `status == "paused"` and an `AGENT_RUN_PAUSED` result containing the bounded
 `run_id` and `approval_id`. After `decide_approval`, `resume_run()` replaces
@@ -2210,7 +2235,7 @@ must be made idempotent by the handler when required.
 
 Checkpoint parsing and store writes fail closed on inconsistent interaction
 state: a `paused` checkpoint must identify exactly one pending approval or
-human-input request, while `running`, `completed`, and `failed` checkpoints
+human-input request, while `running`, `completed`, `failed`, and `cancelled` checkpoints
 must identify none. A checkpoint cannot carry both pending IDs. This validation
 happens before an in-memory or file-backed store mutates its current record;
 it does not claim distributed recovery or exactly-once external effects.

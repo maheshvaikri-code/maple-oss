@@ -16,6 +16,7 @@ from maple.autonomy.agent import (
 )
 from maple.autonomy.approval import InMemoryApprovalStore
 from maple.autonomy.events import EventStream
+from maple.autonomy.execution import CancellationToken
 from maple.autonomy.observability import SpanRecorder
 from maple.core.result import Result
 from maple.llm.provider import LLMProvider
@@ -141,6 +142,54 @@ class TestAutonomousAgent:
         assert agent.llm is not None
         assert agent.memory is not None
         assert agent.tool_registry is not None
+
+    def test_pre_cancelled_goal_returns_without_calling_model(self):
+        provider = MockLLMProvider(make_llm_config())
+        agent = AutonomousAgent(make_config(), make_auto_config())
+        agent.llm = provider
+        token = CancellationToken()
+        token.cancel()
+
+        result = agent.pursue_goal("Stop before starting", cancellation=token)
+
+        assert result.is_ok()
+        assert result.unwrap().status == "cancelled"
+        assert result.unwrap().result["errorType"] == "AGENT_RUN_CANCELLED"
+        assert provider._call_index == 0
+
+    async def test_pre_cancelled_async_goal_returns_without_calling_model(self):
+        provider = MockLLMProvider(make_llm_config())
+        agent = AutonomousAgent(make_config(), make_auto_config())
+        agent.llm = provider
+        token = CancellationToken()
+        token.cancel()
+
+        result = await agent.pursue_goal_async(
+            "Stop before starting asynchronously", cancellation=token
+        )
+
+        assert result.is_ok()
+        assert result.unwrap().status == "cancelled"
+        assert result.unwrap().result["errorType"] == "AGENT_RUN_CANCELLED"
+        assert provider._call_index == 0
+
+    def test_invalid_cancellation_is_rejected_at_agent_boundary(self):
+        agent = AutonomousAgent(make_config(), make_auto_config())
+
+        result = agent.pursue_goal("Reject invalid cancellation", cancellation=object())
+
+        assert result.is_err()
+        assert result.unwrap_err()["errorType"] == "AGENT_CANCELLATION_INVALID"
+
+    async def test_invalid_async_cancellation_is_rejected_at_agent_boundary(self):
+        agent = AutonomousAgent(make_config(), make_auto_config())
+
+        result = await agent.pursue_goal_async(
+            "Reject invalid cancellation asynchronously", cancellation=object()
+        )
+
+        assert result.is_err()
+        assert result.unwrap_err()["errorType"] == "AGENT_CANCELLATION_INVALID"
 
     def test_handoff_context_is_added_as_bounded_data_message(self):
         agent = AutonomousAgent(make_config(), make_auto_config())

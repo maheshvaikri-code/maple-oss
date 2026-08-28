@@ -3,6 +3,7 @@
 import pytest
 
 from maple.autonomy.agent import Goal
+from maple.autonomy.execution import CancellationToken
 from maple.autonomy.tools import (
     Tool,
     ToolRegistry,
@@ -57,6 +58,35 @@ class TestTool:
         result = tool.execute()
         assert result.is_err()
         assert "boom" in result.unwrap_err()["message"]
+
+    def test_execute_rejects_invalid_cancellation(self):
+        result = make_tool().execute(cancellation=object())
+
+        assert result.is_err()
+        assert result.unwrap_err()["errorType"] == "EXECUTION_CANCELLATION_INVALID"
+
+    async def test_execute_async_rejects_invalid_cancellation(self):
+        result = await make_tool().execute_async(cancellation=object())
+
+        assert result.is_err()
+        assert result.unwrap_err()["errorType"] == "EXECUTION_CANCELLATION_INVALID"
+
+    def test_execute_accepts_cancelled_token_without_calling_handler(self):
+        token = CancellationToken()
+        token.cancel()
+        called = []
+        tool = Tool(
+            name="cancelled",
+            description="Cancelled tool",
+            parameters={"type": "object"},
+            handler=lambda: called.append(True) or Result.ok({"ok": True}),
+        )
+
+        result = tool.execute(cancellation=token)
+
+        assert result.is_err()
+        assert result.unwrap_err()["errorType"] == "EXECUTION_CANCELLED"
+        assert called == []
 
     async def test_execute_async_preserves_executor_boundary(self):
         from maple.autonomy.execution import ExecutionPolicy, TrustedLocalExecutor

@@ -134,6 +134,42 @@ def test_tool_can_opt_into_trusted_executor():
     assert result.unwrap() == {"status": "ok"}
 
 
+def test_tool_propagates_cancellation_to_trusted_executor():
+    token = CancellationToken()
+    started = threading.Event()
+    finished = threading.Event()
+    holder = {}
+
+    def cooperative_handler():
+        started.set()
+        while not token.is_cancelled():
+            time.sleep(0.002)
+        finished.set()
+        return Result.ok({"status": "stopped"})
+
+    tool = Tool(
+        name="bounded_cancel",
+        description="Bounded cancellation test",
+        parameters={"type": "object"},
+        handler=cooperative_handler,
+        result_schema={"type": "object", "required": ["status"]},
+        executor=TrustedLocalExecutor(ExecutionPolicy(timeout_seconds=1)),
+    )
+
+    thread = threading.Thread(
+        target=lambda: holder.setdefault("result", tool.execute(cancellation=token))
+    )
+    thread.start()
+    assert started.wait(0.5)
+    token.cancel()
+    thread.join(0.5)
+
+    assert not thread.is_alive()
+    assert holder["result"].is_err()
+    assert holder["result"].unwrap_err()["errorType"] == "EXECUTION_CANCELLED"
+    assert finished.wait(0.5)
+
+
 def test_cancellation_before_start_does_not_call_handler():
     token = CancellationToken()
     token.cancel()
