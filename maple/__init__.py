@@ -196,6 +196,7 @@ from .autonomy.server import (
     RunServer,
     WorkflowRegistry,
 )
+from .autonomy.agent_transport import AutonomousAgentRemoteAdapter
 from .autonomy.sessions import (
     DEFAULT_MAX_MESSAGE_BYTES,
     DEFAULT_MAX_MESSAGES,
@@ -491,6 +492,7 @@ __all__ = [
     "Principal",
     "RemoteHandoffResult",
     "RemoteHandoffTarget",
+    "AutonomousAgentRemoteAdapter",
     "DEFAULT_MAX_RECORD_BYTES",
     "DEFAULT_MAX_RECORDS",
     "DEFAULT_MAX_RUN_RECORDS",
