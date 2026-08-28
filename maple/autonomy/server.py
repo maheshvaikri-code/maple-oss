@@ -6,6 +6,7 @@ import hmac
 import ipaddress
 import json
 import math
+import re
 import threading
 import uuid
 from dataclasses import dataclass
@@ -50,6 +51,9 @@ _MAX_AGENT_CONTEXT_DEPTH = 8
 _MAX_AGENT_CONTEXT_STRING_LENGTH = 8_192
 _MAX_AGENT_CONTEXT_BYTES = 32 * 1024
 _AGENT_RUN_STATUSES = frozenset({"cancelled", "completed", "paused", "failed"})
+_PRINCIPAL_ID_PATTERN = r"^[A-Za-z0-9_.:-]{1,128}$"
+_SCOPE_PATTERN = r"^(?:\*|[a-z][a-z0-9_.-]{0,63}:(?:[a-z][a-z0-9_.-]{0,63}|\*))$"
+_REQUIRED_SCOPE_PATTERN = r"^[a-z][a-z0-9_.-]{0,63}:[a-z][a-z0-9_.-]{0,63}$"
 
 
 def _error(error_type: str, message: str, **details: Any) -> Error:
@@ -66,6 +70,82 @@ def _validate_auth_token(auth_token: Optional[str]) -> None:
         raise ValueError("auth_token must be a non-empty string when provided")
     if any(ord(character) < 0x20 or ord(character) == 0x7F for character in auth_token):
         raise ValueError("auth_token must not contain control characters")
+
+
+@dataclass(frozen=True)
+class Principal:
+    """Host-configured identity and scope set for the local control plane.
+
+    This is an authorization value, not a token issuer or identity provider.
+    Hosts may attach it to the single configured bearer-token boundary to
+    narrow what that token can do. A scope ending in ``:*`` grants the
+    corresponding scope family; ``*`` preserves the legacy all-routes
+    behavior when no narrower principal is configured.
+    """
+
+    principal_id: str
+    scopes: Tuple[str, ...] = ("*",)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.principal_id, str) or not re.fullmatch(
+            _PRINCIPAL_ID_PATTERN, self.principal_id
+        ):
+            raise ValueError("principal_id must be a bounded identifier")
+        if (
+            not isinstance(self.scopes, tuple)
+            or not self.scopes
+            or len(self.scopes) > 64
+        ):
+            raise ValueError("scopes must be a tuple of 1-64 values")
+        for scope in self.scopes:
+            if not isinstance(scope, str) or not re.fullmatch(_SCOPE_PATTERN, scope):
+                raise ValueError("scopes must be bounded lowercase scope names")
+
+    def allows(self, required_scope: str) -> bool:
+        """Return whether this principal grants one required scope."""
+
+        if not isinstance(required_scope, str) or not re.fullmatch(
+            _REQUIRED_SCOPE_PATTERN, required_scope
+        ):
+            return False
+        if "*" in self.scopes or required_scope in self.scopes:
+            return True
+        family = required_scope.split(":", 1)[0]
+        return f"{family}:*" in self.scopes
+
+
+def _required_scope(method: str, path: Tuple[str, ...]) -> Optional[str]:
+    """Map known control-plane routes to host-owned authorization scopes."""
+
+    if method == "GET" and path == ("healthz",):
+        return "health:read"
+    if path[0:2] == ("v1", "events"):
+        return "event:publish" if method == "POST" else "event:read"
+    if path[0:2] == ("v1", "agents"):
+        if method == "GET":
+            return "agent:read"
+        if method == "POST" and len(path) == 4:
+            return "agent:invoke"
+        if method == "POST" and len(path) == 6 and path[5] == "resume":
+            return "agent:resume"
+        if method == "POST" and len(path) == 6 and path[5] == "cancel":
+            return "agent:cancel"
+    if path[0:2] == ("v1", "handoffs"):
+        return "handoff:read" if method == "GET" else "handoff:write"
+    if path[0:2] == ("v1", "interactions"):
+        if method == "GET":
+            return "interaction:read"
+        if method == "POST" and len(path) == 4 and path[3] == "consume":
+            return "interaction:consume"
+        return "interaction:write"
+    if path[0:2] == ("v1", "approvals"):
+        return "approval:read" if method == "GET" else "approval:decide"
+    if path[0:2] == ("v1", "workflows"):
+        if method == "GET":
+            return "workflow:read"
+        if method == "POST":
+            return "workflow:invoke"
+    return None
 
 
 def _validate_event_input(event_type: Any, run_id: Optional[Any]) -> Optional[Error]:
@@ -892,6 +972,8 @@ class _RequestHandler(BaseHTTPRequestHandler):
             path = self._path_segments()
             if path is None:
                 return
+            if not self._authorize_scope(method, path):
+                return
             if method == "GET" and path == ("healthz",):
                 self._write_json(200, {"status": "ok", "service": "maple-run-server"})
                 return
@@ -1240,6 +1322,27 @@ class _RequestHandler(BaseHTTPRequestHandler):
             )
             return False
         return True
+
+    def _authorize_scope(self, method: str, path: Tuple[str, ...]) -> bool:
+        required_scope = _required_scope(method, path)
+        principal = self.server.application.auth_principal
+        if required_scope is None or principal is None:
+            return True
+        if principal.allows(required_scope):
+            return True
+        self._discard_bounded_request_body()
+        self._write_json(
+            403,
+            {
+                "error": _error(
+                    "FORBIDDEN",
+                    "The authenticated principal lacks the required scope.",
+                    principal_id=principal.principal_id,
+                    required_scope=required_scope,
+                )
+            },
+        )
+        return False
 
     def _discard_bounded_request_body(self, *, allow_oversized: bool = False) -> None:
         """Drain a bounded rejected body before closing the connection."""
@@ -1851,6 +1954,7 @@ class RunServer:
         max_body_bytes: int = _DEFAULT_MAX_BODY_BYTES,
         max_response_bytes: int = _DEFAULT_MAX_RESPONSE_BYTES,
         auth_token: Optional[str] = None,
+        auth_principal: Optional[Principal] = None,
         approval_store: Optional[ApprovalStore] = None,
         human_input_store: Optional[HumanInputStore] = None,
         agent_registry: Optional[AgentRegistry] = None,
@@ -1883,6 +1987,10 @@ class RunServer:
         ):
             raise ValueError("server limits must be positive integers")
         _validate_auth_token(auth_token)
+        if auth_principal is not None and not isinstance(auth_principal, Principal):
+            raise TypeError("auth_principal must be a Principal")
+        if auth_principal is not None and auth_token is None:
+            raise ValueError("auth_token is required when auth_principal is configured")
         if approval_store is not None:
             if auth_token is None:
                 raise ValueError(
@@ -1978,6 +2086,7 @@ class RunServer:
         self.max_body_bytes = max_body_bytes
         self.max_response_bytes = max_response_bytes
         self._auth_token = auth_token
+        self._auth_principal = auth_principal
         self.approval_store = approval_store
         self.human_input_store = human_input_store
         self.agent_registry = agent_registry
@@ -1992,6 +2101,16 @@ class RunServer:
     def auth_token(self) -> Optional[str]:
         """Return the configured bearer token without exposing a setter."""
         return self._auth_token
+
+    @property
+    def principal(self) -> Optional[Principal]:
+        """Return the host-configured bearer principal scope policy."""
+        return self._auth_principal
+
+    @property
+    def auth_principal(self) -> Optional[Principal]:
+        """Return the configured principal without exposing a setter."""
+        return self._auth_principal
 
     @property
     def url(self) -> str:

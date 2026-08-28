@@ -22,6 +22,7 @@ from maple.autonomy import (
     InMemoryEventDeduplicationStore,
     InMemoryHandoffStore,
     InMemoryHumanInputStore,
+    Principal,
     RunClient,
     RunServer,
     Workflow,
@@ -225,6 +226,47 @@ def test_authenticated_run_client_round_trips_workflow_operations():
     assert unauthorized[1]["error"]["errorType"] == "UNAUTHORIZED"
     assert wrong_token.is_err()
     assert wrong_token.unwrap_err()["errorType"] == "UNAUTHORIZED"
+
+
+def test_run_server_enforces_host_configured_principal_scopes():
+    registry = WorkflowRegistry()
+    assert registry.register(_workflow()).is_ok()
+    server = RunServer(
+        registry,
+        auth_token="scoped-token",
+        auth_principal=Principal(
+            "operator",
+            ("health:read", "workflow:read"),
+        ),
+    )
+    base_url = server.start()
+
+    try:
+        client = RunClient(base_url, auth_token="scoped-token")
+        health = client.healthz()
+        inspect_missing = client.inspect("echo", "not-created")
+        invoke = client.run("echo", {"value": "blocked"})
+    finally:
+        server.close()
+
+    assert health.is_ok()
+    assert inspect_missing.is_err()
+    assert inspect_missing.unwrap_err()["errorType"] == "RUN_NOT_FOUND"
+    assert invoke.is_err()
+    assert invoke.unwrap_err()["errorType"] == "FORBIDDEN"
+
+
+def test_principal_scope_families_and_configuration_fail_closed():
+    principal = Principal("operator", ("workflow:*",))
+
+    assert principal.allows("workflow:invoke")
+    assert not principal.allows("approval:read")
+    with pytest.raises(ValueError):
+        Principal("operator", ("Workflow:read",))
+    with pytest.raises(ValueError):
+        Principal("operator", ())
+    with pytest.raises(ValueError):
+        RunServer(WorkflowRegistry(), auth_principal=principal)
 
 
 def test_run_client_bounds_inputs_and_normalizes_transport_errors():
