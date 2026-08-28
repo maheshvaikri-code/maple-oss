@@ -65,7 +65,7 @@ Most agent frameworks give you either **infrastructure** (messaging, security, f
 - **Durable Agent-Run History (preview)** — Built-in in-memory and file-backed run stores retain bounded, version-ordered checkpoint snapshots through `history()`; file stores persist an atomic `.history` sidecar for local inspection after restart. History is detached data only and does not restore checkpoints, re-run handlers, or claim exactly-once effects.
 - **Authenticated Agent-Run History Inspection (preview)** — The loopback control plane can expose the retained history through `RunClient.inspect_agent_run_history()` with `agent:read`, a bounded limit, metadata-only responses, cross-agent checks, and explicit legacy-store/invalid-query failures; it remains inspection-only.
 - **Event Streaming and Redaction (preview)** — Publish bounded sequenced events with ring retention, cursor-based reads with explicit eviction errors, cooperative cancellation for waiters, wait/snapshot consumers, subscriber isolation, recursive credential redaction, provider request correlation in agent metadata, opt-in metadata-only `model.chunk` events from sync/async provider stream aggregation, optional atomic `FileEventJournal` restart replay of already-redacted events, optional `HttpEventExporter` delivery, and authenticated `RunServer`/`RunClient` single-event or bounded batch ingestion into a host-owned stream; `EventForwarder` adds explicit bounded remote aggregation with a durable cursor and at-least-once semantics, and `EventForwarderScheduler` adds opt-in bounded local polling with cooperative shutdown and metrics, while remote delivery remains bounded and cannot fail a run.
-- **Bounded Remote Event Deduplication (preview)** — Opt an authenticated event receiver into `InMemoryEventDeduplicationStore`; `HttpEventBatchSender(source_id=...)` and `RunClient.publish_events(..., source_id=...)` carry bounded source IDs and source sequences so matching retries replay the existing redacted destination event, while conflicting or concurrent claims fail closed. Capacity, TTL, process restart, and multi-store boundaries remain explicit; durable distributed deduplication and exactly-once effects are not claimed.
+- **Bounded Remote Event Deduplication (preview)** — Opt an authenticated event receiver into `InMemoryEventDeduplicationStore` for process-local protection or `FileEventDeduplicationStore` for bounded atomic restart and local cross-process persistence; `HttpEventBatchSender(source_id=...)` and `RunClient.publish_events(..., source_id=...)` carry bounded source IDs and source sequences so matching retries replay the existing redacted destination event, while conflicting or concurrent claims fail closed. Capacity, TTL, multi-store, distributed coordination, and exactly-once effects remain explicit and are not claimed.
 - **Evaluation Harness (preview)** — Run versioned deterministic golden cases with output-schema checks, exact outputs, structured bounded tool trajectories, bounded reports, and redacted actual values; sync or async runners and host-supplied sync/async judges are supported sequentially without selecting a provider, retrying callbacks, or claiming semantic faithfulness.
 - **Retrieval/Citation Evaluation (preview)** — Score lexical or vector retrieval against bounded golden source URIs with deterministic source-level precision, recall, and F1; generated-answer faithfulness remains a separate calibrated evaluation.
 - **Grounded-Answer Evaluation (preview)** — Score bounded answer claims against supplied source text with deterministic lexical overlap and typed threshold failures; this is an explicit proxy, not semantic entailment or an LLM judge.
@@ -659,14 +659,35 @@ host-controlled polling; a stop timeout is surfaced when a sender is still
 blocking rather than pretending the worker was interrupted.
 
 For a receiver that may see an accepted batch again after a lost response or
-cursor write, configure `event_deduplication_store=...` on `RunServer` with an
-authenticated `InMemoryEventDeduplicationStore`. The sender's `source_id` must
-remain stable across restarts; each forwarded source sequence is then claimed
-once within the store's capacity and TTL. A matching completed claim is
-acknowledged without publishing a second destination event, while a conflicting
-payload or concurrent pending claim fails closed. This is bounded in-memory
-duplicate suppression only: process restart, eviction, multiple stores, and
-downstream side effects remain outside the contract.
+cursor write, configure `event_deduplication_store=...` on `RunServer`. The
+sender's `source_id` must remain stable across restarts; each forwarded source
+sequence is then claimed once within the store's capacity and TTL. A matching
+completed claim is acknowledged without publishing a second destination event,
+while a conflicting payload or concurrent pending claim fails closed. Use the
+in-memory store for one process, or the file-backed store for bounded atomic
+restart and local cross-process replay protection:
+
+```python
+from maple import FileEventDeduplicationStore, RunServer
+
+deduplication = FileEventDeduplicationStore(
+    ".maple-event-deduplication",
+    max_entries=10_000,
+    ttl_seconds=3_600.0,
+)
+server = RunServer(
+    workflow_registry,
+    event_stream=destination,
+    event_deduplication_store=deduplication,
+    auth_token="forward-token",
+)
+```
+
+The file store retains only source fingerprints and already-redacted
+destination events, fences operations with a local durable lease, and uses
+atomic replacement. Expiry or capacity can reopen a replay window; shared
+multi-node coordination, downstream idempotency, and exactly-once effects
+remain outside the contract.
 
 ### Artifacts and code blocks
 

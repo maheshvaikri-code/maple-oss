@@ -199,7 +199,10 @@ a stable `source_id` plus each source event's sequence; matching completed
 claims replay the redacted destination event, while conflicting content and
 concurrent pending claims fail closed. Capacity, TTL, process restart, and
 multi-store deployments can still permit duplicates, so durable distributed
-deduplication and exactly-once effects remain separate.
+deduplication and exactly-once effects remain separate. `FileEventDeduplicationStore`
+adds bounded atomic restart persistence and a local cross-process fencing lease;
+it is still not a shared multi-node coordinator or an exactly-once side-effect
+protocol.
 
 The bounded session contract now also includes optional host-supplied summary
 compaction with a retained recent tail and optimistic version checks on the

@@ -48,11 +48,14 @@ DEFAULT_FORWARD_INTERVAL_SECONDS = 1.0
 DEFAULT_MAX_FORWARD_BATCHES_PER_TICK = 1
 DEFAULT_MAX_EVENT_DEDUP_ENTRIES = 10_000
 DEFAULT_EVENT_DEDUP_TTL_SECONDS = 3_600.0
+DEFAULT_MAX_EVENT_DEDUP_BYTES = 16 * 1024 * 1024
 _EVENT_JOURNAL_VERSION = 1
 _EVENT_CURSOR_VERSION = 1
+_EVENT_DEDUPLICATION_VERSION = 1
 _MAX_EVENT_PAYLOAD_ITEMS = 10_000
 _MAX_EVENT_PAYLOAD_DEPTH = 32
 _MAX_EVENT_SOURCE_ID_LENGTH = 256
+_MAX_EVENT_DEDUP_BYTES = 256 * 1024 * 1024
 
 logger = logging.getLogger(__name__)
 
@@ -1883,6 +1886,531 @@ class InMemoryEventDeduplicationStore:
                 "retained_claims": len(self._records),
                 "max_entries": self.max_entries,
             }
+
+
+class FileEventDeduplicationStore:
+    """Bounded durable deduplication for one local event receiver.
+
+    The store persists only source identity, a content fingerprint, expiry,
+    and the already-redacted destination event. A durable lease serializes
+    local processes using the same directory. Expiry and bounded retention
+    are deliberate; this remains an at-least-once replay guard rather than an
+    exactly-once side-effect protocol.
+    """
+
+    _FILENAME = "deduplication.json"
+    _TEMP_PREFIX = ".maple-event-deduplication-"
+    _MAX_ENTRIES = 100_000
+    _MAX_TTL_SECONDS = 7 * 24 * 60 * 60.0
+
+    def __init__(
+        self,
+        directory: Union[str, Path],
+        *,
+        max_entries: int = DEFAULT_MAX_EVENT_DEDUP_ENTRIES,
+        ttl_seconds: float = DEFAULT_EVENT_DEDUP_TTL_SECONDS,
+        max_bytes: int = DEFAULT_MAX_EVENT_DEDUP_BYTES,
+        lease_ttl_seconds: float = 30.0,
+        clock: Callable[[], float] = time.time,
+    ) -> None:
+        if (
+            not isinstance(max_entries, int)
+            or isinstance(max_entries, bool)
+            or not 1 <= max_entries <= self._MAX_ENTRIES
+        ):
+            raise ValueError("max_entries must be between 1 and 100000")
+        if (
+            not isinstance(ttl_seconds, (int, float))
+            or isinstance(ttl_seconds, bool)
+            or not 0 < float(ttl_seconds) <= self._MAX_TTL_SECONDS
+            or not math.isfinite(float(ttl_seconds))
+        ):
+            raise ValueError("ttl_seconds must be finite and within seven days")
+        if (
+            not isinstance(max_bytes, int)
+            or isinstance(max_bytes, bool)
+            or not 1 <= max_bytes <= _MAX_EVENT_DEDUP_BYTES
+        ):
+            raise ValueError(
+                f"max_bytes must be between 1 and {_MAX_EVENT_DEDUP_BYTES}"
+            )
+        if not callable(clock):
+            raise TypeError("clock must be callable")
+        self.max_entries = max_entries
+        self.ttl_seconds = float(ttl_seconds)
+        self.max_bytes = max_bytes
+        self._clock = clock
+        self.directory = Path(directory).expanduser().resolve()
+        try:
+            self.directory.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise ValueError("event deduplication directory is unavailable") from exc
+        if not self.directory.is_dir():
+            raise ValueError("event deduplication path must be a directory")
+        self.path = self.directory / self._FILENAME
+        self._lock = threading.RLock()
+        try:
+            self._lease = DurableRecordLease(
+                self.directory,
+                namespace="event-deduplication",
+                holder_label="file-event-deduplication",
+                lease_ttl_seconds=lease_ttl_seconds,
+            )
+        except (OSError, TypeError, ValueError) as exc:
+            raise ValueError("event deduplication lease is unavailable") from exc
+
+    @staticmethod
+    def _valid_fingerprint(value: Any) -> bool:
+        return (
+            isinstance(value, str)
+            and len(value) == 64
+            and all(character in "0123456789abcdef" for character in value)
+        )
+
+    @staticmethod
+    def _load_error(message: str) -> Error:
+        return _error("EVENT_DEDUPLICATION_LOAD_ERROR", message)
+
+    @staticmethod
+    def _save_error(message: str, **details: Any) -> Error:
+        return _error("EVENT_DEDUPLICATION_SAVE_ERROR", message, **details)
+
+    def _now(self) -> Result[float, Error]:
+        try:
+            now = float(self._clock())
+        except (OverflowError, TypeError, ValueError):
+            return Result.err(
+                _error(
+                    "EVENT_DEDUPLICATION_CLOCK_INVALID",
+                    "deduplication clock is invalid.",
+                )
+            )
+        if not math.isfinite(now):
+            return Result.err(
+                _error(
+                    "EVENT_DEDUPLICATION_CLOCK_INVALID",
+                    "deduplication clock is invalid.",
+                )
+            )
+        return Result.ok(now)
+
+    @staticmethod
+    def _record_to_dict(
+        key: Tuple[str, int], record: _EventDeduplicationRecord
+    ) -> Dict[str, Any]:
+        return {
+            "source_id": key[0],
+            "source_sequence": key[1],
+            "fingerprint": record.fingerprint,
+            "event": record.event.as_dict() if record.event is not None else None,
+            "expires_at": record.expires_at,
+        }
+
+    def _read_unlocked(
+        self,
+    ) -> Result["OrderedDict[Tuple[str, int], _EventDeduplicationRecord]", Error]:
+        records: "OrderedDict[Tuple[str, int], _EventDeduplicationRecord]" = (
+            OrderedDict()
+        )
+        if not self.path.exists():
+            return Result.ok(records)
+        try:
+            if self.path.stat().st_size > self.max_bytes:
+                return Result.err(
+                    self._load_error(
+                        "event deduplication state exceeds the byte limit."
+                    )
+                )
+            data = json.loads(self.path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, TypeError, ValueError, json.JSONDecodeError):
+            return Result.err(
+                self._load_error("event deduplication state could not be loaded.")
+            )
+        if (
+            not isinstance(data, Mapping)
+            or data.get("version") != _EVENT_DEDUPLICATION_VERSION
+            or not isinstance(data.get("records"), list)
+            or len(data["records"]) > self.max_entries
+        ):
+            return Result.err(self._load_error("event deduplication state is invalid."))
+        for raw_record in data["records"]:
+            if not isinstance(raw_record, Mapping):
+                return Result.err(self._load_error("deduplication record is invalid."))
+            source_id = raw_record.get("source_id")
+            source_sequence = raw_record.get("source_sequence")
+            if not isinstance(source_id, str) or validate_event_source_id(source_id):
+                return Result.err(
+                    self._load_error("deduplication record identity is invalid.")
+                )
+            if (
+                not isinstance(source_sequence, int)
+                or isinstance(source_sequence, bool)
+                or source_sequence <= 0
+            ):
+                return Result.err(
+                    self._load_error("deduplication record identity is invalid.")
+                )
+            key = (source_id, source_sequence)
+            if key in records:
+                return Result.err(
+                    self._load_error(
+                        "deduplication state contains duplicate identities."
+                    )
+                )
+            fingerprint = raw_record.get("fingerprint")
+            if not isinstance(fingerprint, str) or not self._valid_fingerprint(
+                fingerprint
+            ):
+                return Result.err(
+                    self._load_error("deduplication fingerprint is invalid.")
+                )
+            expires_at = raw_record.get("expires_at")
+            if (
+                not isinstance(expires_at, (int, float))
+                or isinstance(expires_at, bool)
+                or not math.isfinite(float(expires_at))
+            ):
+                return Result.err(self._load_error("deduplication expiry is invalid."))
+            raw_event = raw_record.get("event")
+            event: Optional[AgentEvent] = None
+            if raw_event is not None:
+                parsed = _event_from_dict(raw_event)
+                if parsed.is_err():
+                    return Result.err(
+                        self._load_error("deduplication event is invalid.")
+                    )
+                event = parsed.unwrap()
+            records[key] = _EventDeduplicationRecord(
+                fingerprint=fingerprint,
+                event=event,
+                expires_at=float(expires_at),
+            )
+        encoded = self._encode(records)
+        if encoded.is_err():
+            return Result.err(
+                self._load_error("deduplication state exceeds its limits.")
+            )
+        return Result.ok(records)
+
+    def _encode(
+        self,
+        records: "OrderedDict[Tuple[str, int], _EventDeduplicationRecord]",
+    ) -> Result[str, Error]:
+        if len(records) > self.max_entries:
+            return Result.err(
+                _error(
+                    "EVENT_DEDUPLICATION_CAPACITY",
+                    "event deduplication entry limit reached.",
+                    max_entries=self.max_entries,
+                )
+            )
+        try:
+            encoded = json.dumps(
+                {
+                    "version": _EVENT_DEDUPLICATION_VERSION,
+                    "records": [
+                        self._record_to_dict(key, record)
+                        for key, record in records.items()
+                    ],
+                },
+                ensure_ascii=False,
+                allow_nan=False,
+                separators=(",", ":"),
+            )
+        except (TypeError, ValueError, OverflowError):
+            return Result.err(
+                self._save_error("event deduplication state is not serializable.")
+            )
+        if len(encoded.encode("utf-8")) > self.max_bytes:
+            return Result.err(
+                _error(
+                    "EVENT_DEDUPLICATION_SIZE",
+                    "event deduplication state exceeds the byte limit.",
+                    max_bytes=self.max_bytes,
+                )
+            )
+        return Result.ok(encoded)
+
+    def _write_unlocked(
+        self,
+        records: "OrderedDict[Tuple[str, int], _EventDeduplicationRecord]",
+    ) -> Result[None, Error]:
+        encoded = self._encode(records)
+        if encoded.is_err():
+            return Result.err(encoded.unwrap_err())
+        temporary_path: Optional[Path] = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=str(self.directory),
+                prefix=self._TEMP_PREFIX,
+                suffix=".tmp",
+                delete=False,
+            ) as handle:
+                temporary_path = Path(handle.name)
+                handle.write(encoded.unwrap())
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(str(temporary_path), str(self.path))
+            temporary_path = None
+            return Result.ok(None)
+        except (OSError, TypeError, ValueError) as exc:
+            return Result.err(
+                self._save_error(
+                    "event deduplication state could not be saved.",
+                    reason=type(exc).__name__,
+                )
+            )
+        finally:
+            if temporary_path is not None:
+                try:
+                    temporary_path.unlink()
+                except OSError:
+                    pass
+
+    @staticmethod
+    def _purge_expired(
+        records: "OrderedDict[Tuple[str, int], _EventDeduplicationRecord]",
+        now: float,
+    ) -> bool:
+        expired = [key for key, record in records.items() if record.expires_at <= now]
+        for key in expired:
+            records.pop(key, None)
+        return bool(expired)
+
+    def _run(
+        self,
+        operation: str,
+        callback: Callable[[], Result[Any, Error]],
+    ) -> Result[Any, Error]:
+        try:
+            return self._lease.run(
+                "store",
+                operation,
+                callback,
+                acquire_error_type="EVENT_DEDUPLICATION_LEASE_ERROR",
+                acquire_error_message="event deduplication lease could not be acquired.",
+                release_error_type="EVENT_DEDUPLICATION_LEASE_RELEASE_ERROR",
+                release_error_message="event deduplication lease could not be released.",
+            )
+        except Exception as exc:
+            return Result.err(
+                _error(
+                    "EVENT_DEDUPLICATION_ERROR",
+                    "event deduplication operation failed.",
+                    operation=operation,
+                    reason=type(exc).__name__,
+                )
+            )
+
+    def claim(
+        self,
+        source_id: str,
+        source_sequence: int,
+        event: AgentEvent,
+    ) -> Result[Optional[AgentEvent], Error]:
+        """Durably reserve a source event or return its copied destination."""
+        key_error = InMemoryEventDeduplicationStore._validate_key(
+            source_id, source_sequence
+        )
+        if key_error is not None:
+            return Result.err(key_error)
+        if not isinstance(event, AgentEvent) or event.sequence != source_sequence:
+            return Result.err(
+                _error(
+                    "EVENT_DEDUPLICATION_INPUT_INVALID",
+                    "event sequence must match source_sequence.",
+                )
+            )
+        event_error = _validate_event_record(event)
+        if event_error is not None:
+            return Result.err(
+                _error(
+                    "EVENT_DEDUPLICATION_INPUT_INVALID",
+                    "event is invalid for deduplication.",
+                )
+            )
+        fingerprint_result = _event_deduplication_fingerprint(event)
+        if fingerprint_result.is_err():
+            return Result.err(fingerprint_result.unwrap_err())
+        fingerprint = fingerprint_result.unwrap()
+        key = (source_id, source_sequence)
+
+        def operation() -> Result[Optional[AgentEvent], Error]:
+            now_result = self._now()
+            if now_result.is_err():
+                return Result.err(now_result.unwrap_err())
+            current = self._read_unlocked()
+            if current.is_err():
+                return Result.err(current.unwrap_err())
+            records = current.unwrap()
+            self._purge_expired(records, now_result.unwrap())
+            existing = records.get(key)
+            if existing is not None:
+                if existing.fingerprint != fingerprint:
+                    return Result.err(
+                        _error(
+                            "EVENT_DEDUPLICATION_CONFLICT",
+                            "source sequence was previously claimed with different content.",
+                        )
+                    )
+                if existing.event is None:
+                    return Result.err(
+                        _error(
+                            "EVENT_DEDUPLICATION_IN_PROGRESS",
+                            "source sequence is currently being published.",
+                        )
+                    )
+                return Result.ok(_event_from_dict(existing.event.as_dict()).unwrap())
+            if len(records) >= self.max_entries:
+                evictable = next(
+                    (
+                        candidate_key
+                        for candidate_key, candidate in records.items()
+                        if candidate.event is not None
+                    ),
+                    None,
+                )
+                if evictable is None:
+                    return Result.err(
+                        _error(
+                            "EVENT_DEDUPLICATION_CAPACITY",
+                            "event deduplication has no completed claim available for eviction.",
+                            max_entries=self.max_entries,
+                        )
+                    )
+                records.pop(evictable, None)
+            expires_at = now_result.unwrap() + self.ttl_seconds
+            if not math.isfinite(expires_at):
+                return Result.err(
+                    _error(
+                        "EVENT_DEDUPLICATION_CLOCK_INVALID",
+                        "deduplication expiry is invalid.",
+                    )
+                )
+            records[key] = _EventDeduplicationRecord(
+                fingerprint=fingerprint,
+                event=None,
+                expires_at=expires_at,
+            )
+            saved = self._write_unlocked(records)
+            if saved.is_err():
+                return Result.err(saved.unwrap_err())
+            return Result.ok(None)
+
+        with self._lock:
+            result = self._run("claim", operation)
+        return (
+            Result.err(result.unwrap_err())
+            if result.is_err()
+            else Result.ok(result.unwrap())
+        )
+
+    def complete(
+        self, source_id: str, source_sequence: int, event: AgentEvent
+    ) -> Result[AgentEvent, Error]:
+        """Durably complete a claim with a copied destination event."""
+        key_error = InMemoryEventDeduplicationStore._validate_key(
+            source_id, source_sequence
+        )
+        if key_error is not None:
+            return Result.err(key_error)
+        if not isinstance(event, AgentEvent):
+            return Result.err(
+                _error("EVENT_DEDUPLICATION_INPUT_INVALID", "event is invalid.")
+            )
+        event_error = _validate_event_record(event)
+        if event_error is not None:
+            return Result.err(
+                _error(
+                    "EVENT_DEDUPLICATION_INPUT_INVALID",
+                    "destination event is invalid.",
+                )
+            )
+        copied_event_result = _event_from_dict(event.as_dict())
+        if copied_event_result.is_err():
+            return Result.err(
+                _error(
+                    "EVENT_DEDUPLICATION_INPUT_INVALID",
+                    "destination event is invalid.",
+                )
+            )
+        copied_event = copied_event_result.unwrap()
+        key = (source_id, source_sequence)
+
+        def operation() -> Result[AgentEvent, Error]:
+            now_result = self._now()
+            if now_result.is_err():
+                return Result.err(now_result.unwrap_err())
+            current = self._read_unlocked()
+            if current.is_err():
+                return Result.err(current.unwrap_err())
+            records = current.unwrap()
+            purged = self._purge_expired(records, now_result.unwrap())
+            existing = records.get(key)
+            if existing is None:
+                if purged:
+                    saved = self._write_unlocked(records)
+                    if saved.is_err():
+                        return Result.err(saved.unwrap_err())
+                return Result.err(
+                    _error(
+                        "EVENT_DEDUPLICATION_CLAIM_MISSING",
+                        "event has no active deduplication claim.",
+                    )
+                )
+            if existing.event is not None:
+                return Result.ok(_event_from_dict(existing.event.as_dict()).unwrap())
+            records[key] = _EventDeduplicationRecord(
+                fingerprint=existing.fingerprint,
+                event=copied_event,
+                expires_at=existing.expires_at,
+            )
+            saved = self._write_unlocked(records)
+            if saved.is_err():
+                return Result.err(saved.unwrap_err())
+            return Result.ok(_event_from_dict(copied_event.as_dict()).unwrap())
+
+        with self._lock:
+            result = self._run("complete", operation)
+        return (
+            Result.err(result.unwrap_err())
+            if result.is_err()
+            else Result.ok(result.unwrap())
+        )
+
+    def abort(self, source_id: str, source_sequence: int) -> Result[None, Error]:
+        """Durably release a pending claim without removing a completed event."""
+        key_error = InMemoryEventDeduplicationStore._validate_key(
+            source_id, source_sequence
+        )
+        if key_error is not None:
+            return Result.err(key_error)
+        key = (source_id, source_sequence)
+
+        def operation() -> Result[None, Error]:
+            now_result = self._now()
+            if now_result.is_err():
+                return Result.err(now_result.unwrap_err())
+            current = self._read_unlocked()
+            if current.is_err():
+                return Result.err(current.unwrap_err())
+            records = current.unwrap()
+            changed = self._purge_expired(records, now_result.unwrap())
+            existing = records.get(key)
+            if existing is not None and existing.event is None:
+                records.pop(key, None)
+                changed = True
+            if changed:
+                saved = self._write_unlocked(records)
+                if saved.is_err():
+                    return Result.err(saved.unwrap_err())
+            return Result.ok(None)
+
+        with self._lock:
+            result = self._run("abort", operation)
+        return Result.err(result.unwrap_err()) if result.is_err() else Result.ok(None)
 
 
 class FileEventJournal:

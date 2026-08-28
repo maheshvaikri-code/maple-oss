@@ -1348,17 +1348,38 @@ stop-timeout result; the worker remains owned until it returns.
 
 To suppress a repeated accepted batch at an authenticated receiver, configure
 `RunServer(event_stream=..., event_deduplication_store=..., auth_token=...)`
-with `InMemoryEventDeduplicationStore`. Keep the `source_id` stable across
-forwarder restarts. The sender includes each source sequence; a matching
-completed claim returns the previously redacted destination event without
-publishing another one. Changed content for the same `(source_id, sequence)`
-returns `EVENT_DEDUPLICATION_CONFLICT`, and a concurrent pending claim returns
+with `InMemoryEventDeduplicationStore` for one process or
+`FileEventDeduplicationStore` for bounded restart and local cross-process
+persistence. Keep the `source_id` stable across forwarder restarts. The sender
+includes each source sequence; a matching completed claim returns the
+previously redacted destination event without publishing another one. Changed
+content for the same `(source_id, sequence)` returns
+`EVENT_DEDUPLICATION_CONFLICT`, and a concurrent pending claim returns
 `EVENT_DEDUPLICATION_IN_PROGRESS`.
 
-The store is bounded by `max_entries` and finite `ttl_seconds`, retains only a
-content digest plus redacted destination event, and is process-local. Eviction,
-expiration, restart, and multiple receiver stores can allow duplicates again;
-durable distributed deduplication and exactly-once side effects are not claimed.
+```python
+from maple import FileEventDeduplicationStore, RunServer
+
+deduplication = FileEventDeduplicationStore(
+    ".maple-event-deduplication",
+    max_entries=10_000,
+    ttl_seconds=3_600.0,
+)
+server = RunServer(
+    workflow_registry,
+    event_stream=destination,
+    event_deduplication_store=deduplication,
+    auth_token="forward-token",
+)
+```
+
+Both stores are bounded by `max_entries` and finite `ttl_seconds`, retain only
+a content digest plus an already-redacted destination event, and use the same
+claim/complete/abort protocol. The file store also bounds persisted state with
+`max_bytes`, validates the full versioned JSON document, and fences local
+operations with a durable lease. Expiry, capacity, a separate receiver store,
+or a multi-node failure can allow duplicates again; durable distributed
+deduplication and exactly-once side effects are not claimed.
 
 For incremental consumers, persist an `EventCursor` and use bounded reads. A
 cursor older than the retained ring fails with `EVENT_CURSOR_EXPIRED` rather

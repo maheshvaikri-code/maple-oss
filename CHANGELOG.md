@@ -10,6 +10,13 @@
 
 ### Additions
 
+- **Durable receiver-side event deduplication**: authenticated event receivers
+  can use `FileEventDeduplicationStore` to persist bounded source claims and
+  completed redacted destination events across local process restarts. Atomic
+  writes and a durable local lease fence concurrent operations; expiry,
+  capacity, multi-node coordination, and exactly-once external effects remain
+  outside the contract.
+
 - **Authenticated remote handoff result delivery**: `RunClient.complete_handoff`
   can submit a bounded JSON result through the authenticated completion route,
   and `get_handoff_result()` can retrieve it through the explicit

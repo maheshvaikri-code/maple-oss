@@ -17,6 +17,7 @@ from maple.autonomy.events import (
     EventForwardReport,
     EventStream,
     FileEventCursorStore,
+    FileEventDeduplicationStore,
     FileEventJournal,
     HttpEventBatchSender,
     HttpEventExporter,
@@ -875,6 +876,151 @@ def test_event_deduplication_store_claims_completes_and_replays_redacted_events(
     assert store.metrics() == {"retained_claims": 1, "max_entries": 2}
 
 
+def test_file_event_deduplication_store_replays_completed_claim_after_restart(tmp_path):
+    now = [100.0]
+    source_event = AgentEvent(
+        sequence=1,
+        event_type="agent.completed",
+        timestamp=0.0,
+        payload={"secret": "source-only", "status": "ok"},
+        run_id="run-1",
+    )
+    destination_event = AgentEvent(
+        sequence=7,
+        event_type="agent.completed",
+        timestamp=1.0,
+        payload={"status": "ok"},
+        run_id="run-1",
+    )
+    store = FileEventDeduplicationStore(
+        tmp_path, ttl_seconds=10.0, clock=lambda: now[0]
+    )
+
+    assert store.claim("source-a", 1, source_event).unwrap() is None
+    completed = store.complete("source-a", 1, destination_event)
+    assert completed.is_ok()
+
+    restarted = FileEventDeduplicationStore(
+        tmp_path, ttl_seconds=10.0, clock=lambda: now[0]
+    )
+    replayed = restarted.claim("source-a", 1, source_event)
+
+    assert replayed.is_ok()
+    assert replayed.unwrap() == destination_event
+    assert replayed.unwrap() is not destination_event
+    persisted = json.loads(restarted.path.read_text(encoding="utf-8"))
+    assert "source-only" not in str(persisted)
+    assert persisted["records"][0]["event"]["payload"] == {"status": "ok"}
+
+
+def test_file_event_deduplication_store_fences_pending_claims_and_allows_abort(
+    tmp_path,
+):
+    source_event = AgentEvent(
+        sequence=1,
+        event_type="agent.started",
+        timestamp=0.0,
+        payload={"status": "ok"},
+    )
+    first = FileEventDeduplicationStore(tmp_path)
+    second = FileEventDeduplicationStore(tmp_path)
+
+    assert first.claim("source-a", 1, source_event).unwrap() is None
+    pending = second.claim("source-a", 1, source_event)
+    assert pending.is_err()
+    assert pending.unwrap_err()["errorType"] == "EVENT_DEDUPLICATION_IN_PROGRESS"
+    assert first.abort("source-a", 1).is_ok()
+    assert second.claim("source-a", 1, source_event).unwrap() is None
+
+
+def test_file_event_deduplication_store_rejects_bad_state_without_repairing_file(
+    tmp_path,
+):
+    store = FileEventDeduplicationStore(tmp_path)
+    store.path.write_text(
+        json.dumps({"version": 1, "records": [{"source_id": "bad"}]}),
+        encoding="utf-8",
+    )
+    before = store.path.read_bytes()
+    source_event = AgentEvent(
+        sequence=1,
+        event_type="agent.completed",
+        timestamp=0.0,
+        payload={},
+    )
+
+    result = store.claim("source-a", 1, source_event)
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "EVENT_DEDUPLICATION_LOAD_ERROR"
+    assert store.path.read_bytes() == before
+
+
+def test_file_event_deduplication_store_bounds_capacity_and_expiry_without_partial_write(
+    tmp_path,
+):
+    now = [100.0]
+    source_one = AgentEvent(
+        sequence=1,
+        event_type="one",
+        timestamp=0.0,
+        payload={},
+    )
+    source_two = AgentEvent(
+        sequence=2,
+        event_type="two",
+        timestamp=0.0,
+        payload={},
+    )
+    store = FileEventDeduplicationStore(
+        tmp_path, max_entries=1, ttl_seconds=1.0, clock=lambda: now[0]
+    )
+    assert store.claim("source-a", 1, source_one).is_ok()
+    before = store.path.read_bytes()
+    capacity = store.claim("source-b", 2, source_two)
+    assert capacity.is_err()
+    assert capacity.unwrap_err()["errorType"] == "EVENT_DEDUPLICATION_CAPACITY"
+    assert store.path.read_bytes() == before
+
+    now[0] = 102.0
+    expired = store.claim("source-b", 2, source_two)
+    assert expired.is_ok()
+    assert expired.unwrap() is None
+
+
+def test_file_event_deduplication_store_serializes_concurrent_local_instances(
+    tmp_path,
+):
+    source_event = AgentEvent(
+        sequence=1,
+        event_type="agent.completed",
+        timestamp=0.0,
+        payload={"status": "ok"},
+    )
+    stores = [FileEventDeduplicationStore(tmp_path) for _ in range(2)]
+    results = [None, None]
+
+    def claim(index):
+        results[index] = stores[index].claim("source-a", 1, source_event)
+
+    threads = [threading.Thread(target=claim, args=(index,)) for index in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=5.0)
+
+    assert all(result is not None for result in results)
+    assert sum(result.is_ok() and result.unwrap() is None for result in results) == 1
+    assert (
+        sum(
+            result.is_err()
+            and result.unwrap_err()["errorType"] == "EVENT_DEDUPLICATION_IN_PROGRESS"
+            for result in results
+        )
+        == 1
+    )
+
+
 def test_http_event_batch_sender_deduplicates_replayed_source_sequences():
     from maple.autonomy import RunClient, RunServer, WorkflowRegistry
 
@@ -911,6 +1057,42 @@ def test_http_event_batch_sender_deduplicates_replayed_source_sequences():
     remote_events = remote.unwrap()["batch"]["events"]
     assert len(remote_events) == 1
     assert remote_events[0]["payload"]["secret"] == "[REDACTED]"
+
+
+def test_http_event_batch_sender_replays_durable_claim_after_receiver_restart(
+    tmp_path,
+):
+    from maple.autonomy import RunServer, WorkflowRegistry
+
+    destination = EventStream(max_events=10)
+    durable_store = FileEventDeduplicationStore(tmp_path / "dedup")
+    source = EventStream(max_events=10)
+    source.publish("one", {"secret": "hidden"})
+    events = source.snapshot().unwrap()
+    sender = None
+
+    for server_index in range(2):
+        server = RunServer(
+            WorkflowRegistry(),
+            event_stream=destination,
+            event_deduplication_store=durable_store,
+            auth_token="forward-token",
+        )
+        base_url = server.start()
+        try:
+            sender = HttpEventBatchSender(
+                f"{base_url}/v1/events/batch",
+                auth_token="forward-token",
+                source_id="source-a",
+            )
+            delivered = sender.send(events)
+        finally:
+            server.close()
+        assert delivered.is_ok(), f"receiver restart {server_index} failed"
+
+    assert sender is not None
+    assert delivered.unwrap().published == (0,)
+    assert len(destination.snapshot().unwrap()) == 1
 
 
 def test_file_event_forwarder_replays_authenticated_batches_after_restart(tmp_path):
