@@ -1497,6 +1497,43 @@ provider = router.create(
 )
 ```
 
+### Multimodal image messages (preview)
+
+`ChatMessage.content` accepts its existing string form or a bounded list of
+text and `ImageContent` parts. Image sources must be HTTPS URLs or validated
+base64 data URIs; MAPLE never fetches, decodes into executable content, or
+otherwise executes an image source. The OpenAI-compatible adapter accepts both
+source forms. The Anthropic adapter accepts base64 data URIs and fails closed
+for remote URLs because it does not fetch them on MAPLE's behalf.
+
+```python
+import base64
+
+from maple import ChatMessage, ChatRole, ImageContent
+
+image = ImageContent(
+    source="data:image/png;base64," + base64.b64encode(b"image-bytes").decode(),
+    detail="high",
+)
+message = ChatMessage(
+    role=ChatRole.USER,
+    content=["Describe this image.", image],
+)
+```
+
+Provider selection can make the requirement explicit. A provider descriptor
+must declare `image_input=True`; providers that do not make that declaration
+are not selected for the request:
+
+```python
+requirements = ProviderRequirements(image_input=True)
+```
+
+Image content is persisted in sessions and durable run checkpoints as bounded
+JSON-safe `{type: "image", source, mime_type, detail}` data. Audio, video,
+automatic image fetching, image generation, and provider-specific media
+transcoding remain separate contracts.
+
 ## Interoperability and Doctor CLI (preview)
 
 `InteropEnvelope` is a strict versioned JSON envelope for adapter round-trip

@@ -10,6 +10,14 @@
 
 ### Additions
 
+- **Bounded multimodal image content**: `ChatMessage` now accepts bounded
+  text/image parts through `ImageContent`, with HTTPS or validated base64 data
+  URI sources. OpenAI-compatible and Anthropic adapters format supported
+  inputs, session/run persistence keeps image parts JSON-safe, and
+  `ProviderRequirements(image_input=True)` enables explicit capability
+  routing. MAPLE performs no media fetch or execution; audio/video and
+  provider-specific transcoding remain separate.
+
 - **Bounded agent-as-tool delegation**: `create_agent_tool(...)` lets a
   manager agent invoke a specialist through the normal `Tool` surface while
   retaining orchestration ownership. Results are reduced to bounded
