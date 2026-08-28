@@ -396,6 +396,75 @@ class TestAutonomousAgent:
         assert result.is_ok()
         assert result.unwrap().result == {"answer": "42"}
 
+    def test_guardrail_events_are_published_with_bounded_trace_metadata(self):
+        config = make_config()
+        auto_config = make_auto_config(
+            response_schema={
+                "type": "object",
+                "required": ["answer"],
+                "properties": {"answer": {"type": "string"}},
+            },
+            input_guardrails=[lambda value: True],
+            output_guardrails=[lambda value: value.get("answer") == "42"],
+        )
+        agent = AutonomousAgent(config, auto_config)
+        agent.llm = MockLLMProvider(
+            auto_config.llm,
+            responses=[LLMResponse(content='{"answer":"42"}', finish_reason="stop")],
+        )
+        events = EventStream(max_events=20)
+        agent.set_event_stream(events)
+        agent.set_span_recorder(SpanRecorder(max_spans=10))
+
+        result = agent.pursue_goal("Return a secret-free answer")
+
+        assert result.is_ok()
+        goal = result.unwrap()
+        lifecycle = [
+            event
+            for event in events.snapshot().unwrap()
+            if event.event_type.startswith("guardrail.")
+        ]
+        assert [event.event_type for event in lifecycle] == [
+            "guardrail.started",
+            "guardrail.passed",
+            "guardrail.started",
+            "guardrail.passed",
+        ]
+        assert lifecycle[0].payload == {
+            "stage": "agent:input",
+            "index": 0,
+            "status": "started",
+            "trace_id": goal.goal_id,
+            "agent_id": "auto-test-agent",
+        }
+        assert lifecycle[-1].payload["stage"] == "agent:output"
+        assert lifecycle[-1].payload["trace_id"] == goal.goal_id
+        assert isinstance(lifecycle[-1].payload["span_id"], str)
+        assert "secret" not in json.dumps(lifecycle[-1].payload)
+
+    def test_async_guardrail_events_use_the_same_lifecycle_contract(self):
+        config = make_config()
+        auto_config = make_auto_config(output_guardrails=[lambda value: True])
+        agent = AutonomousAgent(config, auto_config)
+        events = EventStream(max_events=20)
+        agent.set_event_stream(events)
+
+        result = asyncio.run(agent.pursue_goal_async("Complete asynchronously"))
+
+        assert result.is_ok()
+        lifecycle = [
+            event
+            for event in events.snapshot().unwrap()
+            if event.event_type.startswith("guardrail.")
+        ]
+        assert [event.event_type for event in lifecycle] == [
+            "guardrail.started",
+            "guardrail.passed",
+        ]
+        assert lifecycle[-1].payload["stage"] == "agent:output"
+        assert lifecycle[-1].payload["trace_id"] == result.unwrap().goal_id
+
     def test_output_model_returns_validated_pydantic_instance(self):
         config = make_config()
         auto_config = make_auto_config(output_model=TypedAnswer)

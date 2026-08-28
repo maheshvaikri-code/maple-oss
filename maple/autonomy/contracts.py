@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Mapping, Optional, Type, Union
 
 from ..core.result import Result
@@ -10,6 +11,60 @@ from ..core.result import Result
 Error = Dict[str, Any]
 GuardrailResult = Union[Result[None, Error], bool, None]
 Guardrail = Callable[[Any], GuardrailResult]
+_MAX_GUARDRAIL_EVENT_TEXT = 128
+_GUARDRAIL_EVENT_STATUSES = ("started", "passed", "rejected", "failed")
+
+
+@dataclass(frozen=True)
+class GuardrailEvent:
+    """Bounded metadata for one guardrail lifecycle transition."""
+
+    stage: str
+    index: int
+    status: str
+    trace_id: Optional[str] = None
+    span_id: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.stage, str)
+            or not self.stage
+            or len(self.stage) > _MAX_GUARDRAIL_EVENT_TEXT
+            or any(ord(char) < 32 for char in self.stage)
+        ):
+            raise ValueError("guardrail event stage must be bounded text")
+        if (
+            isinstance(self.index, bool)
+            or not isinstance(self.index, int)
+            or self.index < 0
+        ):
+            raise ValueError("guardrail event index must be a non-negative integer")
+        if self.status not in _GUARDRAIL_EVENT_STATUSES:
+            raise ValueError("guardrail event status is invalid")
+        for name, value in (("trace_id", self.trace_id), ("span_id", self.span_id)):
+            if value is not None and (
+                not isinstance(value, str)
+                or not value
+                or len(value) > _MAX_GUARDRAIL_EVENT_TEXT
+                or any(ord(char) < 32 for char in value)
+            ):
+                raise ValueError(f"guardrail event {name} must be bounded text")
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Return metadata without copying the guarded value or error payload."""
+        payload: Dict[str, Any] = {
+            "stage": self.stage,
+            "index": self.index,
+            "status": self.status,
+        }
+        if self.trace_id is not None:
+            payload["trace_id"] = self.trace_id
+        if self.span_id is not None:
+            payload["span_id"] = self.span_id
+        return payload
+
+
+GuardrailObserver = Callable[[GuardrailEvent], None]
 
 
 def _error(error_type: str, message: str, **details: Any) -> Error:
@@ -346,11 +401,38 @@ def run_guardrails(
     guardrails: List[Guardrail],
     *,
     stage: str,
+    observer: Optional[GuardrailObserver] = None,
+    trace_id: Optional[str] = None,
+    span_id: Optional[str] = None,
 ) -> Result[None, Error]:
-    """Run guardrails in order and fail closed on a malformed guardrail."""
+    """Run guardrails in order and fail closed on a malformed guardrail.
+
+    The optional observer receives only bounded lifecycle metadata. Observer
+    failures are isolated and never change the guardrail decision.
+    """
+
+    def emit(index: int, status: str) -> None:
+        if observer is None:
+            return
+        try:
+            observer(
+                GuardrailEvent(
+                    stage=stage,
+                    index=index,
+                    status=status,
+                    trace_id=trace_id,
+                    span_id=span_id,
+                )
+            )
+        except Exception:
+            # Observability must not weaken the fail-closed policy boundary.
+            return
+
     for index, guardrail in enumerate(guardrails):
+        emit(index, "started")
         checker = getattr(guardrail, "check", guardrail)
         if not callable(checker):
+            emit(index, "failed")
             return Result.err(
                 _error(
                     "GUARDRAIL_ERROR",
@@ -362,6 +444,7 @@ def run_guardrails(
         try:
             result = checker(value)
         except Exception as exc:
+            emit(index, "failed")
             return Result.err(
                 _error(
                     "GUARDRAIL_ERROR",
@@ -375,6 +458,7 @@ def run_guardrails(
             if result.is_err():
                 error = result.unwrap_err()
                 if isinstance(error, dict):
+                    emit(index, "rejected")
                     return Result.err(
                         _error(
                             "GUARDRAIL_REJECTED",
@@ -384,6 +468,7 @@ def run_guardrails(
                             cause=error.get("errorType", "GUARDRAIL_REJECTED"),
                         )
                     )
+                emit(index, "rejected")
                 return Result.err(
                     _error(
                         "GUARDRAIL_REJECTED",
@@ -392,10 +477,13 @@ def run_guardrails(
                         index=index,
                     )
                 )
+            emit(index, "passed")
             continue
         if result is None or result is True:
+            emit(index, "passed")
             continue
         if result is False:
+            emit(index, "rejected")
             return Result.err(
                 _error(
                     "GUARDRAIL_REJECTED",
@@ -404,6 +492,7 @@ def run_guardrails(
                     index=index,
                 )
             )
+        emit(index, "failed")
         return Result.err(
             _error(
                 "GUARDRAIL_ERROR",

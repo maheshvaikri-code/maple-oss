@@ -33,6 +33,8 @@ from .artifacts import (
 )
 from .contracts import (
     Guardrail,
+    GuardrailEvent,
+    GuardrailObserver,
     parse_structured_output,
     parse_typed_output,
     run_guardrails,
@@ -235,6 +237,8 @@ __all__ = [
     "discover_mcp_tools",
     "register_mcp_tools",
     "Guardrail",
+    "GuardrailEvent",
+    "GuardrailObserver",
     "parse_structured_output",
     "parse_typed_output",
     "run_guardrails",

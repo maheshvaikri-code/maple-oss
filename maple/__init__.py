@@ -50,6 +50,8 @@ from .autonomy.artifacts import (
 )
 from .autonomy.contracts import (
     Guardrail,
+    GuardrailEvent,
+    GuardrailObserver,
     parse_structured_output,
     parse_typed_output,
     run_guardrails,
@@ -333,6 +335,8 @@ __all__ = [
     "WorkflowRun",
     "RetryPolicy",
     "Guardrail",
+    "GuardrailEvent",
+    "GuardrailObserver",
     "parse_structured_output",
     "parse_typed_output",
     "run_guardrails",

@@ -55,6 +55,7 @@ from ..llm.types import (
 from .approval import ApprovalRequest, ApprovalStore
 from .contracts import (
     Guardrail,
+    GuardrailEvent,
     parse_structured_output,
     parse_typed_output,
     run_guardrails,
@@ -1298,10 +1299,13 @@ class AutonomousAgent(Agent):
         """
         Main entry point: pursue a high-level goal using the ReAct loop.
         """
+        input_guardrail_events: List[GuardrailEvent] = []
         input_guardrails = run_guardrails(
             description,
             self.autonomy_config.input_guardrails,
             stage="agent:input",
+            observer=input_guardrail_events.append,
+            trace_id=run_id,
         )
         if input_guardrails.is_err():
             return Result.err(input_guardrails.unwrap_err())
@@ -1336,6 +1340,7 @@ class AutonomousAgent(Agent):
                     session_turn.messages if session_turn is not None else None
                 ),
                 handoff_context=handoff_context,
+                initial_guardrail_events=input_guardrail_events,
             )
             if result.is_ok():
                 goal.status = "completed"
@@ -1520,6 +1525,7 @@ class AutonomousAgent(Agent):
         starting_step: int = 0,
         output_retries_used: int = 0,
         handoff_context: Optional[Mapping[str, Any]] = None,
+        initial_guardrail_events: Optional[Sequence[GuardrailEvent]] = None,
     ) -> Result[Any, Dict[str, Any]]:
         """
         ReAct (Reasoning + Acting) loop.
@@ -1547,6 +1553,8 @@ class AutonomousAgent(Agent):
         )
         if initial_checkpoint.is_err():
             return Result.err(initial_checkpoint.unwrap_err())
+        for event in initial_guardrail_events or ():
+            self._publish_guardrail_event(goal, event)
         self._publish_run_event(
             goal,
             "run.resumed" if starting_step else "run.started",
@@ -1612,7 +1620,9 @@ class AutonomousAgent(Agent):
 
             # Check if done (no tool calls and finish_reason == "stop")
             if not response.tool_calls and response.finish_reason == "stop":
-                final_result = self._finalize_output(response.content)
+                final_result = self._finalize_output(
+                    response.content, goal=goal, span=model_span
+                )
                 if final_result.is_ok():
                     messages.append(
                         ChatMessage(
@@ -1807,7 +1817,9 @@ class AutonomousAgent(Agent):
                     return Result.err(reflection["_maple_error"])
                 if reflection.get("should_stop"):
                     final_content = reflection.get("conclusion", response.content)
-                    final_result = self._finalize_output(final_content)
+                    final_result = self._finalize_output(
+                        final_content, goal=goal, span=model_span
+                    )
                     if final_result.is_ok():
                         messages.append(
                             ChatMessage(
@@ -2717,7 +2729,13 @@ Instructions:
             f"5. If you cannot complete the goal, explain why.\n{output_instruction}"
         )
 
-    def _finalize_output(self, content: Optional[str]) -> Result[Any, Dict[str, Any]]:
+    def _finalize_output(
+        self,
+        content: Optional[str],
+        *,
+        goal: Optional[Goal] = None,
+        span: Optional[TraceSpan] = None,
+    ) -> Result[Any, Dict[str, Any]]:
         """Parse structured output and apply output guardrails at the boundary."""
         if self.autonomy_config.output_model is not None:
             parsed = parse_typed_output(content, self.autonomy_config.output_model)
@@ -2731,6 +2749,13 @@ Instructions:
             parsed.unwrap(),
             self.autonomy_config.output_guardrails,
             stage="agent:output",
+            observer=(
+                (lambda event: self._publish_guardrail_event(goal, event, span))
+                if goal is not None
+                else None
+            ),
+            trace_id=(goal.run_id or goal.goal_id) if goal is not None else None,
+            span_id=span.span_id if span is not None else None,
         )
         if guardrails.is_err():
             return Result.err(guardrails.unwrap_err())
@@ -2935,6 +2960,17 @@ Instructions:
                 "agent event dropped: %s",
                 result.unwrap_err().get("errorType", "EVENT_ERROR"),
             )
+
+    def _publish_guardrail_event(
+        self, goal: Goal, event: GuardrailEvent, span: Optional[TraceSpan] = None
+    ) -> None:
+        """Publish bounded guardrail metadata without affecting run outcome."""
+        payload = event.to_dict()
+        if "trace_id" not in payload:
+            payload["trace_id"] = goal.run_id or goal.goal_id
+        if span is not None and "span_id" not in payload:
+            payload["span_id"] = span.span_id
+        self._publish_run_event(goal, f"guardrail.{event.status}", payload)
 
     def _publish_model_chunk(
         self,
@@ -3279,10 +3315,13 @@ Instructions:
         context: Optional[Mapping[str, Any]] = None,
     ) -> Result["Goal", Dict[str, Any]]:
         """Async entry point with optional durable run checkpoints."""
+        input_guardrail_events: List[GuardrailEvent] = []
         input_guardrails = run_guardrails(
             description,
             self.autonomy_config.input_guardrails,
             stage="agent:input",
+            observer=input_guardrail_events.append,
+            trace_id=run_id,
         )
         if input_guardrails.is_err():
             return Result.err(input_guardrails.unwrap_err())
@@ -3317,6 +3356,7 @@ Instructions:
                     session_turn.messages if session_turn is not None else None
                 ),
                 handoff_context=handoff_context,
+                initial_guardrail_events=input_guardrail_events,
             )
             if result.is_ok():
                 goal.status = "completed"
@@ -3625,6 +3665,7 @@ Instructions:
         starting_step: int = 0,
         output_retries_used: int = 0,
         handoff_context: Optional[Mapping[str, Any]] = None,
+        initial_guardrail_events: Optional[Sequence[GuardrailEvent]] = None,
     ) -> Result[Any, Dict[str, Any]]:
         """Async ReAct loop with optional bounded durable checkpoints."""
         messages = (
@@ -3647,6 +3688,8 @@ Instructions:
         if initial_checkpoint.is_err():
             return Result.err(initial_checkpoint.unwrap_err())
 
+        for event in initial_guardrail_events or ():
+            self._publish_guardrail_event(goal, event)
         self._publish_run_event(
             goal,
             "run.resumed" if starting_step else "run.started",
@@ -3704,7 +3747,9 @@ Instructions:
             self._log_decision(goal, step, response, duration_ms, span=model_span)
 
             if not response.tool_calls and response.finish_reason == "stop":
-                final_result = self._finalize_output(response.content)
+                final_result = self._finalize_output(
+                    response.content, goal=goal, span=model_span
+                )
                 if final_result.is_ok():
                     messages.append(
                         ChatMessage(
@@ -3938,7 +3983,9 @@ Instructions:
                     return Result.err(reflection["_maple_error"])
                 if reflection.get("should_stop"):
                     final_content = reflection.get("conclusion", response.content)
-                    final_result = self._finalize_output(final_content)
+                    final_result = self._finalize_output(
+                        final_content, goal=goal, span=model_span
+                    )
                     if final_result.is_ok():
                         messages.append(
                             ChatMessage(

@@ -1,8 +1,10 @@
 """Tests for typed JSON-schema and guardrail boundaries."""
 
+import pytest
 from pydantic import BaseModel
 
 from maple.autonomy.contracts import (
+    GuardrailEvent,
     parse_structured_output,
     parse_typed_output,
     run_guardrails,
@@ -102,6 +104,66 @@ def test_guardrail_rejects_and_exception_fails_closed():
     assert rejected.unwrap_err()["errorType"] == "GUARDRAIL_REJECTED"
     assert failed_closed.is_err()
     assert failed_closed.unwrap_err()["errorType"] == "GUARDRAIL_ERROR"
+
+
+def test_guardrail_lifecycle_is_ordered_and_trace_linked_without_the_value():
+    events = []
+    result = run_guardrails(
+        {"secret": "do-not-copy"},
+        [lambda value: True, lambda value: Result.ok(None)],
+        stage="agent:input",
+        observer=events.append,
+        trace_id="trace-1",
+        span_id="span-1",
+    )
+
+    assert result.is_ok()
+    assert [event.status for event in events] == [
+        "started",
+        "passed",
+        "started",
+        "passed",
+    ]
+    assert events[0].to_dict() == {
+        "stage": "agent:input",
+        "index": 0,
+        "status": "started",
+        "trace_id": "trace-1",
+        "span_id": "span-1",
+    }
+    assert "secret" not in events[0].to_dict()
+
+
+def test_guardrail_lifecycle_marks_rejection_and_isolates_observer_failure():
+    events = []
+
+    def broken_observer(event):
+        events.append(event)
+        raise RuntimeError("observer must not change policy")
+
+    result = run_guardrails(
+        "blocked",
+        [lambda value: False, lambda value: True],
+        stage="agent:input",
+        observer=broken_observer,
+    )
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "GUARDRAIL_REJECTED"
+    assert [event.status for event in events] == ["started", "rejected"]
+
+
+def test_guardrail_event_rejects_unbounded_metadata():
+    with pytest.raises(ValueError, match="bounded text"):
+        GuardrailEvent(stage="x" * 129, index=0, status="started")
+
+    with pytest.raises(ValueError, match="bounded text"):
+        GuardrailEvent(
+            stage="agent:input",
+            index=0,
+            status="started",
+            trace_id="x" * 129,
+        )
 
 
 def test_tool_validates_input_output_and_guardrails_before_returning():
