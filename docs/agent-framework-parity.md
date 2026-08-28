@@ -163,7 +163,10 @@ host-owned synchronous handlers. Agent IDs, task/context/session/run inputs,
 JSON-safe results, and handler exceptions are bounded and typed. A configured
 `AgentRunStore` exposes redacted checkpoint inspection, while an explicit
 `resume_handler` and `cancel_handler` callbacks enable remote resume and
-cooperative cancellation through the same normalized result envelope.
+cooperative cancellation through the same normalized result envelope. The
+additive `run_agent_typed()`, `resume_agent_run_typed()`, and
+`cancel_agent_run_typed()` methods now return validated `AgentRun` values while
+the raw dictionary methods remain compatible.
 Messages and reasoning steps stay off-wire. Token propagation, checkpoint
 mutation, hard termination, scheduling, retries, principal scopes, remote
 event aggregation, and exactly-once effects remain host-owned or deferred.

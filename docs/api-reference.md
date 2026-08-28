@@ -933,6 +933,40 @@ still repeat a side effect, so this is bounded at-least-once coordination and
 not a distributed exactly-once protocol. Remote scheduling, push notification,
 remote durable resume, and identity federation remain separate contracts.
 
+### Typed remote agent-run lifecycle
+
+The raw remote agent methods retain their dictionary envelopes for compatibility.
+Call the additive typed methods when the caller wants the same validated
+`AgentRun` object used by host handlers:
+
+```python
+from maple import RunClient
+
+client = RunClient("https://agents.example", auth_token="host-token")
+started = client.run_agent_typed(
+    "researcher",
+    "Summarize the release risks",
+    {"project": "MAPLE"},
+    session_id="release-session",
+    run_id="release-run-v1",
+)
+if started.is_ok():
+    run = started.unwrap()
+    print(run.status, run.result)
+
+resumed = client.resume_agent_run_typed("researcher", "release-run-v1")
+cancelled = client.cancel_agent_run_typed("researcher", "release-run-v1")
+```
+
+The typed methods validate the remote `run` envelope, agent/run identity,
+JSON-safe result/error data, and supported status before returning an
+`AgentRun`. A valid failed or cancelled run is returned as data on the typed
+run; transport and malformed-response errors are returned as `Result.err`, and
+typed cancellation requires a `cancelled` status. The raw methods remain
+available for callers that need the full wire envelope. This is response
+normalization only: it does not add remote checkpoint persistence, retries,
+scheduling, push notification, identity federation, or exactly-once effects.
+
 ### Manager-style agent-as-tool delegation
 
 `create_agent_tool` exposes a specialist as a normal `Tool` while the calling

@@ -10,6 +10,13 @@
 
 ### Additions
 
+- **Typed remote agent-run lifecycle**: additive `RunClient` start, resume,
+  and cooperative-cancel methods now normalize authenticated remote envelopes
+  into validated `AgentRun` values. Existing raw dictionary methods remain
+  compatible; malformed identities and unexpected cancel statuses fail closed.
+  Remote persistence, retries, scheduling, push delivery, and exactly-once
+  effects remain outside the contract.
+
 - **Authenticated remote handoff payload delivery**: `RemoteHandoffTarget`
   adapts the existing bounded `RunClient.run_agent(...)` contract into
   `create_handoff_tool(...)`, forwarding only allowlisted task/context and
