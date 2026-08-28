@@ -32,7 +32,7 @@ Most agent frameworks give you either **infrastructure** (messaging, security, f
 
 ## Key Features
 
-### Autonomous Agentic AI (v1.1.1)
+### Autonomous Agentic AI (v1.1.3)
 
 - **ReAct Reasoning Loop** — Agents think, act, and reflect autonomously. Built-in backtracking when approaches fail.
 - **Pluggable LLM Providers** — OpenAI, Anthropic Claude, or any compatible API (vLLM, Ollama, Together AI).
