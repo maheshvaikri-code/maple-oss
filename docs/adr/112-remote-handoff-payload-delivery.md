@@ -1,6 +1,6 @@
 # ADR-112: Adapt authenticated agent transport into remote handoffs
 
-**Date:** 2026-08-28 · **Status:** accepted  
+**Date:** 2026-08-28 · **Status:** accepted
 **Deciders:** Chief Architect, Product Owner, Backend Engineer, Interop
 Engineer, Security Reviewer
 
