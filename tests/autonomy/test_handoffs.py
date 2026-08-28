@@ -1,13 +1,17 @@
 """Tests for bounded local handoff identity and ownership records."""
 
+import asyncio
+import threading
+
 import pytest
 
+from maple.autonomy.execution import CancellationToken
 from maple.autonomy.handoffs import (
     FileHandoffStore,
     HandoffRecord,
     InMemoryHandoffStore,
 )
-from maple.autonomy.tools import create_handoff_tool
+from maple.autonomy.tools import create_agent_tool, create_handoff_tool
 from maple.core.result import Result
 
 
@@ -31,6 +35,59 @@ class HandoffTarget:
 class AsyncHandoffTarget(HandoffTarget):
     async def pursue_goal_async(self, description):
         return self.pursue_goal(description)
+
+
+class CancellationAwareTarget:
+    agent_id = "cooperative-specialist"
+
+    def __init__(self):
+        self.started = threading.Event()
+        self.received_token = None
+
+    def pursue_goal(self, description, *, cancellation=None):
+        self.received_token = cancellation
+        self.started.set()
+        assert cancellation is not None
+        cancellation.wait(2)
+        return Result.ok(
+            type(
+                "Goal",
+                (),
+                {
+                    "goal_id": "cancelled-child",
+                    "status": "cancelled",
+                    "result": None,
+                },
+            )()
+        )
+
+
+class AsyncCancellationAwareTarget:
+    agent_id = "async-cooperative-specialist"
+
+    def __init__(self):
+        self.started = threading.Event()
+        self.received_token = None
+
+    async def pursue_goal(self, description, *, cancellation=None):
+        self.received_token = cancellation
+        self.started.set()
+        assert cancellation is not None
+        await asyncio.get_running_loop().run_in_executor(None, cancellation.wait, 2)
+        return Result.ok(
+            type(
+                "Goal",
+                (),
+                {
+                    "goal_id": "cancelled-child",
+                    "status": "cancelled",
+                    "result": None,
+                },
+            )()
+        )
+
+    async def pursue_goal_async(self, description, *, cancellation=None):
+        return await self.pursue_goal(description, cancellation=cancellation)
 
 
 def make_record(handoff_id="handoff-1"):
@@ -161,3 +218,121 @@ async def test_async_handoff_persists_ownership_without_blocking_target_dispatch
     assert result.is_ok()
     handoff_id = result.unwrap()["handoff_id"]
     assert store.get(handoff_id).unwrap().status == "completed"
+
+
+def test_agent_tool_propagates_cancellation_to_native_child():
+    target = CancellationAwareTarget()
+    token = CancellationToken()
+    tool = create_agent_tool(target, requires_approval=False)
+    outcome = []
+
+    worker = threading.Thread(
+        target=lambda: outcome.append(tool.execute(cancellation=token, task="stop"))
+    )
+    worker.start()
+    assert target.started.wait(1)
+    token.cancel()
+    worker.join(timeout=2)
+
+    assert not worker.is_alive()
+    assert target.received_token is token
+    assert len(outcome) == 1
+    assert outcome[0].is_err()
+    assert outcome[0].unwrap_err()["errorType"] == "EXECUTION_CANCELLED"
+
+
+def test_handoff_tool_propagates_cancellation_to_native_child():
+    target = CancellationAwareTarget()
+    token = CancellationToken()
+    tool = create_handoff_tool(target, requires_approval=False)
+    outcome = []
+
+    worker = threading.Thread(
+        target=lambda: outcome.append(tool.execute(cancellation=token, task="stop"))
+    )
+    worker.start()
+    assert target.started.wait(1)
+    token.cancel()
+    worker.join(timeout=2)
+
+    assert not worker.is_alive()
+    assert target.received_token is token
+    assert len(outcome) == 1
+    assert outcome[0].is_err()
+    assert outcome[0].unwrap_err()["errorType"] == "EXECUTION_CANCELLED"
+
+
+def test_cancelled_handoff_finalizes_durable_record_as_failed():
+    target = CancellationAwareTarget()
+    token = CancellationToken()
+    store = InMemoryHandoffStore()
+    tool = create_handoff_tool(
+        target,
+        requires_approval=False,
+        handoff_store=store,
+        source_agent_id="source",
+    )
+    outcome = []
+
+    worker = threading.Thread(
+        target=lambda: outcome.append(tool.execute(cancellation=token, task="stop"))
+    )
+    worker.start()
+    assert target.started.wait(1)
+    token.cancel()
+    worker.join(timeout=2)
+
+    assert not worker.is_alive()
+    assert len(outcome) == 1
+    assert outcome[0].is_err()
+    handoff_id = outcome[0].unwrap_err()["details"]["handoff_id"]
+    record = store.get(handoff_id).unwrap()
+    assert record is not None
+    assert record.status == "failed"
+    assert record.error_type == "EXECUTION_CANCELLED"
+
+
+def test_legacy_handoff_target_remains_compatible_with_parent_token():
+    token = CancellationToken()
+    tool = create_handoff_tool(HandoffTarget(), requires_approval=False)
+
+    result = tool.execute(cancellation=token, task="legacy")
+
+    assert result.is_ok()
+    assert result.unwrap()["status"] == "completed"
+
+
+@pytest.mark.asyncio
+async def test_async_agent_tool_propagates_cancellation_to_native_child():
+    target = AsyncCancellationAwareTarget()
+    token = CancellationToken()
+    tool = create_agent_tool(target, requires_approval=False)
+    running = asyncio.create_task(tool.execute_async(cancellation=token, task="stop"))
+
+    assert await asyncio.get_running_loop().run_in_executor(
+        None, target.started.wait, 1
+    )
+    token.cancel()
+    result = await running
+
+    assert target.received_token is token
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "EXECUTION_CANCELLED"
+
+
+@pytest.mark.asyncio
+async def test_async_handoff_tool_propagates_cancellation_to_native_child():
+    target = AsyncCancellationAwareTarget()
+    token = CancellationToken()
+    tool = create_handoff_tool(target, requires_approval=False)
+    running = asyncio.create_task(tool.execute_async(cancellation=token, task="stop"))
+
+    assert await asyncio.get_running_loop().run_in_executor(
+        None, target.started.wait, 1
+    )
+    token.cancel()
+    result = await running
+
+    assert target.received_token is token
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "EXECUTION_CANCELLED"

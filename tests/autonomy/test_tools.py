@@ -65,11 +65,68 @@ class TestTool:
         assert result.is_err()
         assert result.unwrap_err()["errorType"] == "EXECUTION_CANCELLATION_INVALID"
 
+    def test_cancellation_aware_handler_receives_exact_token(self):
+        token = CancellationToken()
+        received = []
+
+        def handler(*, cancellation=None):
+            received.append(cancellation)
+            return Result.ok({"ok": True})
+
+        tool = Tool(
+            name="aware",
+            description="Cancellation-aware tool",
+            parameters={"type": "object"},
+            handler=handler,
+            accepts_cancellation=True,
+        )
+
+        result = tool.execute(cancellation=token)
+
+        assert result.is_ok()
+        assert received == [token]
+
+    def test_cancellation_aware_executor_configuration_fails_closed(self):
+        from maple.autonomy.execution import TrustedLocalExecutor
+
+        with pytest.raises(ValueError, match="cannot be combined"):
+            Tool(
+                name="invalid-aware-executor",
+                description="Invalid cancellation-aware executor tool",
+                parameters={"type": "object"},
+                handler=lambda: Result.ok({"ok": True}),
+                executor=TrustedLocalExecutor(),
+                accepts_cancellation=True,
+            )
+
     async def test_execute_async_rejects_invalid_cancellation(self):
         result = await make_tool().execute_async(cancellation=object())
 
         assert result.is_err()
         assert result.unwrap_err()["errorType"] == "EXECUTION_CANCELLATION_INVALID"
+
+    @pytest.mark.asyncio
+    async def test_async_cancellation_aware_handler_receives_exact_token(self):
+        token = CancellationToken()
+        received = []
+
+        async def handler(*, cancellation=None):
+            received.append(cancellation)
+            return Result.ok({"ok": True})
+
+        tool = Tool(
+            name="async-aware",
+            description="Async cancellation-aware tool",
+            parameters={"type": "object"},
+            handler=lambda: Result.ok({"ok": True}),
+            async_handler=handler,
+            accepts_cancellation=True,
+        )
+
+        result = await tool.execute_async(cancellation=token)
+
+        assert result.is_ok()
+        assert received == [token]
 
     def test_execute_accepts_cancelled_token_without_calling_handler(self):
         token = CancellationToken()

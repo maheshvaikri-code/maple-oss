@@ -15,6 +15,7 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 
 import asyncio
 import hashlib
+import inspect
 import json
 import logging
 import math
@@ -58,6 +59,46 @@ MAX_HANDOFF_CONTEXT_STRING_LENGTH = 8_192
 MAX_HANDOFF_CONTEXT_BYTES = 32_768
 TOOL_REPLAY_DISABLED = "disabled"
 TOOL_REPLAY_REUSE_SUCCESS = "reuse_success"
+
+
+def _callable_accepts_cancellation(handler: Callable[..., Any]) -> bool:
+    """Return whether a callable explicitly accepts the cancellation keyword."""
+    try:
+        signature = inspect.signature(handler)
+    except (TypeError, ValueError):
+        return False
+    parameter = signature.parameters.get("cancellation")
+    if parameter is not None and parameter.kind in {
+        inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        inspect.Parameter.KEYWORD_ONLY,
+    }:
+        return True
+    return any(
+        item.kind is inspect.Parameter.VAR_KEYWORD
+        for item in signature.parameters.values()
+    )
+
+
+def _invoke_delegated(
+    handler: Callable[..., Any],
+    args: Sequence[Any],
+    cancellation: Optional[CancellationToken],
+) -> Any:
+    """Invoke a child method with a token only when its signature supports it."""
+    if cancellation is not None and _callable_accepts_cancellation(handler):
+        return handler(*args, cancellation=cancellation)
+    return handler(*args)
+
+
+def _delegation_cancelled(target_id: str) -> Result[Any, Dict[str, Any]]:
+    """Return a bounded cancellation result without exposing child data."""
+    return Result.err(
+        {
+            "errorType": "EXECUTION_CANCELLED",
+            "message": "Delegated agent cancellation was requested.",
+            "details": {"agent_id": target_id},
+        }
+    )
 
 
 def _handoff_context_error(message: str, **details: Any) -> Dict[str, Any]:
@@ -201,6 +242,7 @@ class Tool:
         None
     )
     replay_policy: str = TOOL_REPLAY_DISABLED
+    accepts_cancellation: bool = False
     _input_model_schema: Optional[Dict[str, Any]] = field(
         default=None, init=False, repr=False
     )
@@ -212,6 +254,10 @@ class Tool:
             TOOL_REPLAY_REUSE_SUCCESS,
         }:
             raise ValueError("replay_policy must be 'disabled' or 'reuse_success'")
+        if not isinstance(self.accepts_cancellation, bool):
+            raise ValueError("accepts_cancellation must be boolean")
+        if self.accepts_cancellation and self.executor is not None:
+            raise ValueError("accepts_cancellation cannot be combined with an executor")
         if self.input_model is not None:
             schema = structured_model_schema(self.input_model)
             if schema.is_err():
@@ -403,7 +449,10 @@ class Tool:
             return Result.err(input_guardrails.unwrap_err())
         try:
             if self.executor is None:
-                result = self.handler(**call_kwargs)
+                if self.accepts_cancellation:
+                    result = self.handler(cancellation=cancellation, **call_kwargs)
+                else:
+                    result = self.handler(**call_kwargs)
             else:
                 execution = self.executor.execute(
                     self.name,
@@ -498,7 +547,12 @@ class Tool:
         if prepared.is_err():
             return Result.err(prepared.unwrap_err())
         try:
-            result = await self.async_handler(**prepared.unwrap())
+            if self.accepts_cancellation:
+                result = await self.async_handler(
+                    cancellation=cancellation, **prepared.unwrap()
+                )
+            else:
+                result = await self.async_handler(**prepared.unwrap())
         except Exception as exc:
             return Result.err(
                 {
@@ -889,12 +943,17 @@ def create_agent_tool(
         return Result.ok(nested_context)
 
     def invoke_sync(
-        task: str, context: Optional[Dict[str, Any]] = None
+        task: str,
+        context: Optional[Dict[str, Any]] = None,
+        *,
+        cancellation: Optional[CancellationToken] = None,
     ) -> Result[Dict[str, Any], Dict[str, Any]]:
         context_result = prepare_context(context)
         if context_result.is_err():
             return Result.err(context_result.unwrap_err())
         nested_context = context_result.unwrap()
+        if cancellation is not None and cancellation.is_cancelled():
+            return _delegation_cancelled(target_id)
         pursue_with_context = getattr(target_agent, "pursue_goal_with_context", None)
         try:
             if nested_context:
@@ -906,9 +965,11 @@ def create_agent_tool(
                             "details": {"agent_id": target_id},
                         }
                     )
-                target_result = pursue_with_context(task, nested_context)
+                target_result = _invoke_delegated(
+                    pursue_with_context, (task, nested_context), cancellation
+                )
             else:
-                target_result = pursue_goal(task)
+                target_result = _invoke_delegated(pursue_goal, (task,), cancellation)
         except Exception as exc:
             return Result.err(
                 {
@@ -929,12 +990,17 @@ def create_agent_tool(
     if callable(pursue_goal_async):
 
         async def invoke_async(
-            task: str, context: Optional[Dict[str, Any]] = None
+            task: str,
+            context: Optional[Dict[str, Any]] = None,
+            *,
+            cancellation: Optional[CancellationToken] = None,
         ) -> Result[Dict[str, Any], Dict[str, Any]]:
             context_result = prepare_context(context)
             if context_result.is_err():
                 return Result.err(context_result.unwrap_err())
             nested_context = context_result.unwrap()
+            if cancellation is not None and cancellation.is_cancelled():
+                return _delegation_cancelled(target_id)
             try:
                 if nested_context:
                     if not callable(pursue_with_context_async):
@@ -945,11 +1011,15 @@ def create_agent_tool(
                                 "details": {"agent_id": target_id},
                             }
                         )
-                    target_result = await pursue_with_context_async(
-                        task, nested_context
+                    target_result = await _invoke_delegated(
+                        pursue_with_context_async,
+                        (task, nested_context),
+                        cancellation,
                     )
                 else:
-                    target_result = await pursue_goal_async(task)
+                    target_result = await _invoke_delegated(
+                        pursue_goal_async, (task,), cancellation
+                    )
             except Exception as exc:
                 return Result.err(
                     {
@@ -992,6 +1062,7 @@ def create_agent_tool(
         handler=invoke_sync,
         async_handler=async_handler,
         requires_approval=requires_approval,
+        accepts_cancellation=True,
         tags=["delegation", "agent-as-tool"],
     )
 
@@ -1072,7 +1143,10 @@ def create_handoff_tool(
     )
 
     def handoff_handler(
-        task: str, context: Optional[Dict[str, Any]] = None
+        task: str,
+        context: Optional[Dict[str, Any]] = None,
+        *,
+        cancellation: Optional[CancellationToken] = None,
     ) -> Result[Dict[str, Any], Dict[str, Any]]:
         context_result = _normalize_handoff_context(context)
         if context_result.is_err():
@@ -1098,38 +1172,48 @@ def create_handoff_tool(
         pursue_with_context = getattr(target_agent, "pursue_goal_with_context", None)
         execution_error: Optional[Result[Dict[str, Any], Dict[str, Any]]] = None
         target_result: Result[Any, Dict[str, Any]]
-        try:
-            if handoff_context:
-                if not callable(pursue_with_context):
-                    target_result = Result.err(
-                        {
-                            "errorType": "HANDOFF_CONTEXT_UNSUPPORTED",
-                            "message": "Target agent does not declare context-aware handoff.",
-                            "details": {"agent_id": target_id},
-                        }
-                    )
-                    execution_error = target_result
+        if cancellation is not None and cancellation.is_cancelled():
+            execution_error = _delegation_cancelled(target_id)
+            target_result = execution_error
+        else:
+            try:
+                if handoff_context:
+                    if not callable(pursue_with_context):
+                        target_result = Result.err(
+                            {
+                                "errorType": "HANDOFF_CONTEXT_UNSUPPORTED",
+                                "message": "Target agent does not declare context-aware handoff.",
+                                "details": {"agent_id": target_id},
+                            }
+                        )
+                        execution_error = target_result
+                    else:
+                        target_result = _invoke_delegated(
+                            pursue_with_context, (task, handoff_context), cancellation
+                        )
                 else:
-                    target_result = pursue_with_context(task, handoff_context)
-            else:
-                target_result = pursue_goal(task)
-        except Exception as exc:
-            target_result = Result.err(
-                {
-                    "errorType": "HANDOFF_TARGET_ERROR",
-                    "message": "Delegated agent execution failed.",
-                    "details": {
-                        "agent_id": target_id,
-                        "exception": type(exc).__name__,
-                    },
-                }
-            )
-            execution_error = target_result
+                    target_result = _invoke_delegated(
+                        pursue_goal, (task,), cancellation
+                    )
+            except Exception as exc:
+                target_result = Result.err(
+                    {
+                        "errorType": "HANDOFF_TARGET_ERROR",
+                        "message": "Delegated agent execution failed.",
+                        "details": {
+                            "agent_id": target_id,
+                            "exception": type(exc).__name__,
+                        },
+                    }
+                )
+                execution_error = target_result
         formatted = (
             execution_error
             if execution_error is not None
             else _format_handoff_result(target_result, target_id)
         )
+        if cancellation is not None and cancellation.is_cancelled():
+            formatted = _delegation_cancelled(target_id)
         if handoff_store is not None and handoff_id is not None:
             return _finish_persisted_handoff(
                 handoff_store, handoff_id, target_id, formatted
@@ -1146,7 +1230,10 @@ def create_handoff_tool(
     if callable(pursue_goal_async):
 
         async def async_handoff_handler(
-            task: str, context: Optional[Dict[str, Any]] = None
+            task: str,
+            context: Optional[Dict[str, Any]] = None,
+            *,
+            cancellation: Optional[CancellationToken] = None,
         ) -> Result[Dict[str, Any], Dict[str, Any]]:
             context_result = _normalize_handoff_context(context)
             if context_result.is_err():
@@ -1173,40 +1260,50 @@ def create_handoff_tool(
                 handoff_id = started.unwrap()
             execution_error: Optional[Result[Dict[str, Any], Dict[str, Any]]] = None
             target_result: Result[Any, Dict[str, Any]]
-            try:
-                if handoff_context:
-                    if not callable(pursue_with_context_async):
-                        target_result = Result.err(
-                            {
-                                "errorType": "HANDOFF_CONTEXT_UNSUPPORTED",
-                                "message": "Target agent does not declare async context-aware handoff.",
-                                "details": {"agent_id": target_id},
-                            }
-                        )
-                        execution_error = target_result
+            if cancellation is not None and cancellation.is_cancelled():
+                execution_error = _delegation_cancelled(target_id)
+                target_result = execution_error
+            else:
+                try:
+                    if handoff_context:
+                        if not callable(pursue_with_context_async):
+                            target_result = Result.err(
+                                {
+                                    "errorType": "HANDOFF_CONTEXT_UNSUPPORTED",
+                                    "message": "Target agent does not declare async context-aware handoff.",
+                                    "details": {"agent_id": target_id},
+                                }
+                            )
+                            execution_error = target_result
+                        else:
+                            target_result = await _invoke_delegated(
+                                pursue_with_context_async,
+                                (task, handoff_context),
+                                cancellation,
+                            )
                     else:
-                        target_result = await pursue_with_context_async(
-                            task, handoff_context
+                        target_result = await _invoke_delegated(
+                            pursue_goal_async, (task,), cancellation
                         )
-                else:
-                    target_result = await pursue_goal_async(task)
-            except Exception as exc:
-                target_result = Result.err(
-                    {
-                        "errorType": "HANDOFF_TARGET_ERROR",
-                        "message": "Delegated agent execution failed.",
-                        "details": {
-                            "agent_id": target_id,
-                            "exception": type(exc).__name__,
-                        },
-                    }
-                )
-                execution_error = target_result
+                except Exception as exc:
+                    target_result = Result.err(
+                        {
+                            "errorType": "HANDOFF_TARGET_ERROR",
+                            "message": "Delegated agent execution failed.",
+                            "details": {
+                                "agent_id": target_id,
+                                "exception": type(exc).__name__,
+                            },
+                        }
+                    )
+                    execution_error = target_result
             formatted = (
                 execution_error
                 if execution_error is not None
                 else _format_handoff_result(target_result, target_id)
             )
+            if cancellation is not None and cancellation.is_cancelled():
+                formatted = _delegation_cancelled(target_id)
             if handoff_store is not None and handoff_id is not None:
                 finalized = await _run_handoff_store_async(
                     lambda: _finish_persisted_handoff(
@@ -1245,6 +1342,7 @@ def create_handoff_tool(
         handler=handoff_handler,
         async_handler=async_handler,
         requires_approval=requires_approval,
+        accepts_cancellation=True,
         tags=["delegation", "handoff"],
     )
 
