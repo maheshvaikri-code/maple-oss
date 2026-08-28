@@ -988,6 +988,24 @@ def test_file_event_deduplication_store_bounds_capacity_and_expiry_without_parti
     assert expired.unwrap() is None
 
 
+def test_file_event_deduplication_store_rejects_oversized_state_without_mutation(
+    tmp_path,
+):
+    store = FileEventDeduplicationStore(tmp_path, max_bytes=128)
+    source_event = AgentEvent(
+        sequence=1,
+        event_type="agent.completed",
+        timestamp=0.0,
+        payload={},
+    )
+
+    result = store.claim("source-a", 1, source_event)
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "EVENT_DEDUPLICATION_SIZE"
+    assert not store.path.exists()
+
+
 def test_file_event_deduplication_store_serializes_concurrent_local_instances(
     tmp_path,
 ):
@@ -1065,13 +1083,13 @@ def test_http_event_batch_sender_replays_durable_claim_after_receiver_restart(
     from maple.autonomy import RunServer, WorkflowRegistry
 
     destination = EventStream(max_events=10)
-    durable_store = FileEventDeduplicationStore(tmp_path / "dedup")
     source = EventStream(max_events=10)
     source.publish("one", {"secret": "hidden"})
     events = source.snapshot().unwrap()
     sender = None
 
     for server_index in range(2):
+        durable_store = FileEventDeduplicationStore(tmp_path / "dedup")
         server = RunServer(
             WorkflowRegistry(),
             event_stream=destination,
