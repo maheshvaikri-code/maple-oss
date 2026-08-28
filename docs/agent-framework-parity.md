@@ -288,6 +288,12 @@ authoritative; the transport records decisions but never consumes or executes a
 tool. Hosted identity, notifications, scheduling, tenancy, and exactly-once
 effects remain separate.
 
+Slice 176 closes the human-input portion of the earlier notification gap with
+an authenticated `interaction:notify` push boundary. The remaining P0 work is
+approval-specific push delivery, hosted identity/principal policy, durable
+distributed queues, and side-effect semantics; the new notifier is one-shot
+and host-owned rather than a durable delivery guarantee.
+
 ## Highest-value gaps before a publish claim
 
 The next implementation work should be ordered by runtime correctness, not by

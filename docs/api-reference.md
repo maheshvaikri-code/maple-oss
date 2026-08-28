@@ -2287,6 +2287,43 @@ authorization returns a typed fail-closed error. `AutonomousAgent` forwards
 local caller-owned hooks, not credential verification or a remote transport;
 remote authentication and transport remain follow-on responsibilities.
 
+#### Remote human-input push delivery
+
+Use `HttpHumanInputNotifier` when a host wants each persisted human-input
+`created`, `responded`, or `continued` transition delivered to another MAPLE
+host. The sender makes one bounded `POST` to the complete endpoint URL and
+requires an explicit JSON acknowledgement; it never retries, queues, or
+deduplicates. Loopback HTTP is allowed for local composition, while a
+non-loopback endpoint must use HTTPS.
+
+```python
+from maple import FileHumanInputStore, HttpHumanInputNotifier
+
+input_store = FileHumanInputStore(
+    "./.maple-input",
+    notifier=HttpHumanInputNotifier(
+        "http://127.0.0.1:8787/v1/interactions/notifications",
+        auth_token="operator-token",
+    ),
+)
+```
+
+Configure the receiver with `RunServer(...,
+human_input_notification_handler=handler, auth_token="operator-token")`.
+The route is `POST /v1/interactions/notifications` and expects
+`{"notification": <HumanInputNotification.to_dict()>}`. It returns
+`{"accepted": true, "notification": {"event_type": ..., "interaction_id": ...}}`
+and requires the distinct `interaction:notify` scope when a `Principal` is
+configured. `RunClient.publish_human_input_notification(notification)` sends
+the same envelope and validates the acknowledgement. Invalid or future-shaped
+fields are parsed at the boundary; response values are not accepted into the
+notification. Missing authentication returns `401`, a missing scope returns
+`403`, malformed/oversized input returns `400`/`413`, an unavailable callback
+returns `501`, and callback or HTTP failures return typed `5xx` errors. The
+notification is not persisted by the receiver, and delivery is at most one
+request attempt per local callback; hosts own queue, retry, deduplication,
+identity, TLS, and side-effect policy.
+
 ### Bounded conversation sessions
 
 `SessionMessage` and `SessionSnapshot` provide a JSON-safe turn-history

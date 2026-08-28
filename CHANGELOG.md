@@ -10,6 +10,15 @@
 
 ### Additions
 
+- **Remote human-input push delivery**: `HttpHumanInputNotifier` and the
+  authenticated `POST /v1/interactions/notifications` route connect persisted
+  human-input lifecycle notifications across processes under the distinct
+  `interaction:notify` scope. Notifications are bounded and omit response
+  values; sender/receiver acknowledgements, HTTPS policy, typed failures, and
+  one-attempt/no-retry semantics are explicit. Approval push delivery,
+  durable queues, identity federation, and exactly-once effects remain outside
+  this slice.
+
 - **Authenticated remote durable checkpoint transfer**: compatible hosts can
   export complete JSON-safe non-terminal agent checkpoints and restore them
   through additive `RunClient` methods under the distinct `agent:restore`

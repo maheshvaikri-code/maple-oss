@@ -113,6 +113,12 @@ one-time consumption remain store-owned; hosted identity, TLS termination,
 automatic scheduling, and exactly-once effects remain outside the local
 contract.
 
+Remote human-input push delivery is available as an explicit host-owned
+boundary through `HttpHumanInputNotifier` and the authenticated
+`interaction:notify` route. It makes one bounded attempt, omits response data,
+and does not provide a durable queue, retry, deduplication, hosted identity,
+or exactly-once effects.
+
 ### Production Infrastructure
 
 - **Result\<T,E\> Error Handling** — Rust-inspired type-safe results. No silent failures, no uncaught exceptions. Chain with `.map()`, `.and_then()`, `.map_err()`.
