@@ -4,6 +4,9 @@ from maple.autonomy.retrieval import (
     ChunkingPolicy,
     Document,
     DocumentBatch,
+    DocumentCursorCheckpoint,
+    FileDocumentCursorCheckpointStore,
+    InMemoryDocumentCursorCheckpointStore,
     InMemoryLexicalRetriever,
     InMemoryVectorRetriever,
     RetrievalHit,
@@ -107,6 +110,124 @@ def test_document_connector_returns_resume_cursor_at_batch_quota():
         "complete": False,
     }
     assert calls == [(None, 10)]
+
+
+def test_document_connector_resumes_from_in_memory_checkpoint():
+    pages = {
+        None: DocumentBatch((make_document("doc-a"),), "cursor-1"),
+        "cursor-1": DocumentBatch((make_document("doc-b"),), None),
+    }
+    calls = []
+
+    class Connector:
+        def fetch(self, cursor, *, limit):
+            calls.append((cursor, limit))
+            return Result.ok(pages[cursor])
+
+    checkpoint = InMemoryDocumentCursorCheckpointStore()
+    first = ingest_documents(
+        Connector(),
+        InMemoryLexicalRetriever(),
+        batch_size=10,
+        max_batches=1,
+        checkpoint_store=checkpoint,
+    )
+    second = ingest_documents(
+        Connector(),
+        InMemoryLexicalRetriever(),
+        batch_size=10,
+        checkpoint_store=checkpoint,
+    )
+
+    assert first.is_ok()
+    assert first.unwrap().to_dict() == {
+        "documents_ingested": 1,
+        "batches_fetched": 1,
+        "next_cursor": "cursor-1",
+        "complete": False,
+    }
+    assert second.is_ok()
+    assert second.unwrap().to_dict() == {
+        "documents_ingested": 1,
+        "batches_fetched": 1,
+        "next_cursor": None,
+        "complete": True,
+    }
+    assert calls == [(None, 10), ("cursor-1", 10)]
+    assert checkpoint.load().unwrap() == DocumentCursorCheckpoint(
+        complete=True, revision=2
+    )
+
+
+def test_file_document_checkpoint_survives_restart_and_fences_stale_writes(
+    tmp_path,
+):
+    store = FileDocumentCursorCheckpointStore(tmp_path)
+    saved = store.save(DocumentCursorCheckpoint(cursor="next", revision=1))
+    restarted = FileDocumentCursorCheckpointStore(tmp_path)
+
+    assert saved.is_ok()
+    assert restarted.load().unwrap() == DocumentCursorCheckpoint(
+        cursor="next", revision=1
+    )
+    stale = restarted.save(DocumentCursorCheckpoint(cursor="other", revision=1))
+    assert stale.is_err()
+    assert stale.unwrap_err()["errorType"] == "RETRIEVAL_CHECKPOINT_CONFLICT"
+    cleared = restarted.clear()
+    assert cleared.is_ok()
+    assert cleared.unwrap() == DocumentCursorCheckpoint(revision=2)
+
+
+def test_completed_document_checkpoint_short_circuits_connector():
+    class Connector:
+        def fetch(self, cursor, *, limit):
+            raise AssertionError("completed streams must not fetch")
+
+    result = ingest_documents(
+        Connector(),
+        InMemoryLexicalRetriever(),
+        checkpoint_store=InMemoryDocumentCursorCheckpointStore(
+            DocumentCursorCheckpoint(complete=True, revision=4)
+        ),
+    )
+
+    assert result.is_ok()
+    assert result.unwrap().to_dict() == {
+        "documents_ingested": 0,
+        "batches_fetched": 0,
+        "next_cursor": None,
+        "complete": True,
+    }
+
+
+def test_document_checkpoint_load_fails_closed_on_corrupt_file(tmp_path):
+    checkpoint_path = tmp_path / "checkpoint.json"
+    checkpoint_path.write_text("{not-json", encoding="utf-8")
+
+    class Connector:
+        def fetch(self, cursor, *, limit):
+            raise AssertionError("corrupt checkpoints must stop before fetch")
+
+    result = ingest_documents(
+        Connector(),
+        InMemoryLexicalRetriever(),
+        checkpoint_store=FileDocumentCursorCheckpointStore(tmp_path),
+    )
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "RETRIEVAL_CHECKPOINT_LOAD_ERROR"
+
+
+def test_document_checkpoint_rejects_explicit_cursor_source_of_truth():
+    result = ingest_documents(
+        object(),
+        InMemoryLexicalRetriever(),
+        cursor="explicit",
+        checkpoint_store=InMemoryDocumentCursorCheckpointStore(),
+    )
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "RETRIEVAL_CHECKPOINT_INPUT_INVALID"
 
 
 def test_document_connector_rejects_over_limit_pages_without_sink_mutation():

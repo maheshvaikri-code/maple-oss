@@ -914,7 +914,14 @@ provider-neutral connector seam. A connector returns bounded cursor pages, and
 `ingest_documents(...)` sends each validated page to an explicit sink:
 
 ```python
-from maple import Document, DocumentBatch, InMemoryLexicalRetriever, SourceRef, ingest_documents
+from maple import (
+    Document,
+    DocumentBatch,
+    FileDocumentCursorCheckpointStore,
+    InMemoryLexicalRetriever,
+    SourceRef,
+    ingest_documents,
+)
 from maple.core.result import Result
 
 source = SourceRef(uri="memory://connector")
@@ -930,16 +937,28 @@ class Connector:
 
 
 sink = InMemoryLexicalRetriever()
-report = ingest_documents(Connector(), sink, batch_size=50, max_documents=500)
+checkpoint_store = FileDocumentCursorCheckpointStore("./maple-checkpoints")
+report = ingest_documents(
+    Connector(),
+    sink,
+    batch_size=50,
+    max_documents=500,
+    checkpoint_store=checkpoint_store,
+)
 if report.is_ok():
     print(report.unwrap().to_dict())
 ```
 
 Connector pages are capped at `100` documents, one call is capped at `10,000`
 documents and `100` batches, and repeated IDs or stalled cursors fail closed.
-The helper performs no network calls, retries, transactions, rollback, or
-managed-store selection; the host owns those policies and can resume using the
-reported cursor.
+`InMemoryDocumentCursorCheckpointStore` and
+`FileDocumentCursorCheckpointStore` provide optional bounded restart state;
+file writes are atomic and revision-fenced, and `clear()` resets the cursor
+while retaining the fencing revision. A checkpoint advances only after the
+page's sink writes succeed, so restart behavior is explicitly at-least-once
+at the connector-to-sink boundary. The helper performs no network calls,
+retries, transactions, rollback, or managed-store selection; without a
+checkpoint store, the host can resume using the reported cursor.
 
 ## Event Streaming and Redaction (preview)
 

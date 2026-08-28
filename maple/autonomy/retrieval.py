@@ -4,12 +4,16 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import re
+import tempfile
 import threading
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import (
     Any,
+    Callable,
     Dict,
     List,
     Mapping,
@@ -23,6 +27,7 @@ from typing import (
 )
 
 from ..core.result import Result
+from .durable_leases import DurableRecordLease
 
 Error = Dict[str, Any]
 _TOKEN_PATTERN = re.compile(r"\w+", re.UNICODE)
@@ -30,6 +35,8 @@ _MAX_RERANK_CANDIDATES = 100
 _MAX_CONNECTOR_BATCH_SIZE = 100
 _MAX_CONNECTOR_DOCUMENTS = 10_000
 _MAX_CONNECTOR_BATCHES = 100
+_DEFAULT_MAX_CHECKPOINT_BYTES = 4_096
+_CHECKPOINT_VERSION = 1
 
 
 def _error(error_type: str, message: str, **details: Any) -> Error:
@@ -210,6 +217,368 @@ class DocumentIngestor(Protocol):
 
     def add_document(self, document: Document) -> Result[List[DocumentChunk], Error]:
         """Add a document and return its generated chunks."""
+
+
+@dataclass(frozen=True)
+class DocumentCursorCheckpoint:
+    """One bounded durable position for a document connector stream."""
+
+    cursor: Optional[str] = None
+    complete: bool = False
+    revision: int = 0
+
+    def validate(self) -> Optional[Error]:
+        if self.cursor is not None and _validate_identifier(self.cursor, "cursor"):
+            return _error(
+                "RETRIEVAL_CHECKPOINT_INVALID",
+                "checkpoint cursor must be a bounded string.",
+            )
+        if not isinstance(self.complete, bool):
+            return _error(
+                "RETRIEVAL_CHECKPOINT_INVALID",
+                "checkpoint complete must be a boolean.",
+            )
+        if (
+            not isinstance(self.revision, int)
+            or isinstance(self.revision, bool)
+            or self.revision < 0
+        ):
+            return _error(
+                "RETRIEVAL_CHECKPOINT_INVALID",
+                "checkpoint revision must be a non-negative integer.",
+            )
+        if self.complete and self.cursor is not None:
+            return _error(
+                "RETRIEVAL_CHECKPOINT_INVALID",
+                "a complete checkpoint must not retain a cursor.",
+            )
+        return None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Return the JSON-safe checkpoint representation."""
+        return {
+            "cursor": self.cursor,
+            "complete": self.complete,
+            "revision": self.revision,
+        }
+
+    @classmethod
+    def from_dict(
+        cls, data: Mapping[str, Any]
+    ) -> Result["DocumentCursorCheckpoint", Error]:
+        """Parse and validate a persisted checkpoint mapping."""
+        if not isinstance(data, Mapping):
+            return Result.err(
+                _error("RETRIEVAL_CHECKPOINT_INVALID", "checkpoint record is invalid.")
+            )
+        checkpoint = cls(
+            cursor=data.get("cursor"),
+            complete=data.get("complete", False),
+            revision=data.get("revision", 0),
+        )
+        error = checkpoint.validate()
+        if error is not None:
+            return Result.err(error)
+        return Result.ok(checkpoint)
+
+
+class DocumentCursorCheckpointStore(Protocol):
+    """Host-owned durable position contract for connector ingestion."""
+
+    def load(self) -> Result[DocumentCursorCheckpoint, Error]:
+        """Load the latest checkpoint or an empty initial position."""
+
+    def save(
+        self, checkpoint: DocumentCursorCheckpoint
+    ) -> Result[DocumentCursorCheckpoint, Error]:
+        """Persist the next revision without allowing stale writers."""
+
+    def clear(self) -> Result[DocumentCursorCheckpoint, Error]:
+        """Reset the stream position while retaining fencing revision."""
+
+
+class InMemoryDocumentCursorCheckpointStore:
+    """Thread-safe one-process checkpoint storage for a connector stream."""
+
+    def __init__(self, checkpoint: Optional[DocumentCursorCheckpoint] = None) -> None:
+        if checkpoint is not None and (
+            not isinstance(checkpoint, DocumentCursorCheckpoint)
+            or checkpoint.validate() is not None
+        ):
+            raise ValueError("checkpoint is invalid")
+        self._checkpoint = checkpoint or DocumentCursorCheckpoint()
+        self._lock = threading.RLock()
+
+    def load(self) -> Result[DocumentCursorCheckpoint, Error]:
+        """Return the current immutable checkpoint."""
+        with self._lock:
+            return Result.ok(self._checkpoint)
+
+    def save(
+        self, checkpoint: DocumentCursorCheckpoint
+    ) -> Result[DocumentCursorCheckpoint, Error]:
+        """Persist one strictly next revision."""
+        if not isinstance(checkpoint, DocumentCursorCheckpoint):
+            return Result.err(
+                _error(
+                    "RETRIEVAL_CHECKPOINT_INVALID",
+                    "checkpoint must be a DocumentCursorCheckpoint.",
+                )
+            )
+        error = checkpoint.validate()
+        if error is not None:
+            return Result.err(error)
+        with self._lock:
+            expected = self._checkpoint.revision + 1
+            if checkpoint.revision != expected:
+                return Result.err(
+                    _error(
+                        "RETRIEVAL_CHECKPOINT_CONFLICT",
+                        "checkpoint revision is stale or skipped.",
+                        expected_revision=expected,
+                        requested_revision=checkpoint.revision,
+                    )
+                )
+            self._checkpoint = checkpoint
+            return Result.ok(checkpoint)
+
+    def clear(self) -> Result[DocumentCursorCheckpoint, Error]:
+        """Reset the cursor and advance the fencing revision."""
+        with self._lock:
+            self._checkpoint = DocumentCursorCheckpoint(
+                revision=self._checkpoint.revision + 1
+            )
+            return Result.ok(self._checkpoint)
+
+
+class FileDocumentCursorCheckpointStore:
+    """Atomic, bounded, cross-process checkpoint storage for one stream."""
+
+    _FILENAME = "checkpoint.json"
+    _TEMP_PREFIX = ".maple-retrieval-checkpoint-"
+
+    def __init__(
+        self,
+        directory: Union[str, Path],
+        *,
+        max_bytes: int = _DEFAULT_MAX_CHECKPOINT_BYTES,
+        lease_ttl_seconds: float = 30.0,
+    ) -> None:
+        if (
+            not isinstance(max_bytes, int)
+            or isinstance(max_bytes, bool)
+            or not 512 <= max_bytes <= 1_048_576
+        ):
+            raise ValueError("max_bytes must be between 512 and 1048576")
+        self.max_bytes = max_bytes
+        self.directory = Path(directory)
+        try:
+            self.directory.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise ValueError("retrieval checkpoint directory is unavailable") from exc
+        if not self.directory.is_dir():
+            raise ValueError("retrieval checkpoint path must be a directory")
+        self.path = self.directory / self._FILENAME
+        self._lock = threading.RLock()
+        try:
+            self._lease = DurableRecordLease(
+                self.directory,
+                namespace="retrieval-connector",
+                holder_label="document-checkpoint",
+                lease_ttl_seconds=lease_ttl_seconds,
+            )
+        except (OSError, TypeError, ValueError) as exc:
+            raise ValueError("retrieval checkpoint lease is unavailable") from exc
+
+    def _read_unlocked(self) -> Result[DocumentCursorCheckpoint, Error]:
+        if not self.path.exists():
+            return Result.ok(DocumentCursorCheckpoint())
+        try:
+            if self.path.stat().st_size > self.max_bytes:
+                return Result.err(
+                    _error(
+                        "RETRIEVAL_CHECKPOINT_LOAD_ERROR",
+                        "retrieval checkpoint exceeds the byte limit.",
+                    )
+                )
+            data = json.loads(self.path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, TypeError, ValueError, json.JSONDecodeError):
+            return Result.err(
+                _error(
+                    "RETRIEVAL_CHECKPOINT_LOAD_ERROR",
+                    "retrieval checkpoint could not be loaded.",
+                )
+            )
+        version = data.get("version") if isinstance(data, Mapping) else None
+        if (
+            not isinstance(version, int)
+            or isinstance(version, bool)
+            or version != _CHECKPOINT_VERSION
+        ):
+            return Result.err(
+                _error(
+                    "RETRIEVAL_CHECKPOINT_LOAD_ERROR",
+                    "retrieval checkpoint version is invalid.",
+                )
+            )
+        parsed = DocumentCursorCheckpoint.from_dict(data.get("checkpoint", {}))
+        if parsed.is_err():
+            return Result.err(
+                _error(
+                    "RETRIEVAL_CHECKPOINT_LOAD_ERROR",
+                    "retrieval checkpoint record is invalid.",
+                )
+            )
+        return parsed
+
+    def _encode(self, checkpoint: DocumentCursorCheckpoint) -> Result[str, Error]:
+        try:
+            encoded = json.dumps(
+                {"version": _CHECKPOINT_VERSION, "checkpoint": checkpoint.to_dict()},
+                ensure_ascii=False,
+                allow_nan=False,
+                separators=(",", ":"),
+            )
+        except (TypeError, ValueError, OverflowError):
+            return Result.err(
+                _error(
+                    "RETRIEVAL_CHECKPOINT_SAVE_ERROR",
+                    "retrieval checkpoint is not serializable.",
+                )
+            )
+        if len(encoded.encode("utf-8")) > self.max_bytes:
+            return Result.err(
+                _error(
+                    "RETRIEVAL_CHECKPOINT_SIZE",
+                    "retrieval checkpoint exceeds the byte limit.",
+                )
+            )
+        return Result.ok(encoded)
+
+    def _write_unlocked(
+        self, checkpoint: DocumentCursorCheckpoint
+    ) -> Result[DocumentCursorCheckpoint, Error]:
+        encoded = self._encode(checkpoint)
+        if encoded.is_err():
+            return Result.err(encoded.unwrap_err())
+        temporary_path: Optional[Path] = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=str(self.directory),
+                prefix=self._TEMP_PREFIX,
+                suffix=".tmp",
+                delete=False,
+            ) as handle:
+                temporary_path = Path(handle.name)
+                handle.write(encoded.unwrap())
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(str(temporary_path), str(self.path))
+            temporary_path = None
+            return Result.ok(checkpoint)
+        except (OSError, TypeError, ValueError) as exc:
+            return Result.err(
+                _error(
+                    "RETRIEVAL_CHECKPOINT_SAVE_ERROR",
+                    "retrieval checkpoint could not be saved.",
+                    reason=type(exc).__name__,
+                )
+            )
+        finally:
+            if temporary_path is not None:
+                try:
+                    temporary_path.unlink()
+                except OSError:
+                    pass
+
+    def _run(
+        self,
+        operation: str,
+        callback: Callable[[], Result[Any, Error]],
+    ) -> Result[Any, Error]:
+        try:
+            return self._lease.run(
+                "checkpoint",
+                operation,
+                callback,
+                acquire_error_type="RETRIEVAL_CHECKPOINT_LEASE_ERROR",
+                acquire_error_message="retrieval checkpoint lease could not be acquired.",
+                release_error_type="RETRIEVAL_CHECKPOINT_LEASE_RELEASE_ERROR",
+                release_error_message="retrieval checkpoint lease could not be released.",
+            )
+        except Exception as exc:
+            return Result.err(
+                _error(
+                    "RETRIEVAL_CHECKPOINT_ERROR",
+                    "retrieval checkpoint operation failed.",
+                    operation=operation,
+                    reason=type(exc).__name__,
+                )
+            )
+
+    def load(self) -> Result[DocumentCursorCheckpoint, Error]:
+        """Load the checkpoint under a fencing lease."""
+        with self._lock:
+            result = self._run("load", self._read_unlocked)
+        if result.is_err():
+            return Result.err(result.unwrap_err())
+        return Result.ok(result.unwrap())
+
+    def save(
+        self, checkpoint: DocumentCursorCheckpoint
+    ) -> Result[DocumentCursorCheckpoint, Error]:
+        """Atomically save one strictly next revision."""
+        if not isinstance(checkpoint, DocumentCursorCheckpoint):
+            return Result.err(
+                _error(
+                    "RETRIEVAL_CHECKPOINT_INVALID",
+                    "checkpoint must be a DocumentCursorCheckpoint.",
+                )
+            )
+        error = checkpoint.validate()
+        if error is not None:
+            return Result.err(error)
+
+        def operation() -> Result[DocumentCursorCheckpoint, Error]:
+            current = self._read_unlocked()
+            if current.is_err():
+                return Result.err(current.unwrap_err())
+            expected = current.unwrap().revision + 1
+            if checkpoint.revision != expected:
+                return Result.err(
+                    _error(
+                        "RETRIEVAL_CHECKPOINT_CONFLICT",
+                        "checkpoint revision is stale or skipped.",
+                        expected_revision=expected,
+                        requested_revision=checkpoint.revision,
+                    )
+                )
+            return self._write_unlocked(checkpoint)
+
+        with self._lock:
+            result = self._run("save", operation)
+        if result.is_err():
+            return Result.err(result.unwrap_err())
+        return Result.ok(result.unwrap())
+
+    def clear(self) -> Result[DocumentCursorCheckpoint, Error]:
+        """Reset the cursor and advance the fencing revision."""
+
+        def operation() -> Result[DocumentCursorCheckpoint, Error]:
+            current = self._read_unlocked()
+            if current.is_err():
+                return Result.err(current.unwrap_err())
+            return self._write_unlocked(
+                DocumentCursorCheckpoint(revision=current.unwrap().revision + 1)
+            )
+
+        with self._lock:
+            result = self._run("clear", operation)
+        if result.is_err():
+            return Result.err(result.unwrap_err())
+        return Result.ok(result.unwrap())
 
 
 @dataclass(frozen=True)
@@ -407,6 +776,7 @@ def ingest_documents(
     batch_size: int = _MAX_CONNECTOR_BATCH_SIZE,
     max_documents: int = 1_000,
     max_batches: int = _MAX_CONNECTOR_BATCHES,
+    checkpoint_store: Optional[DocumentCursorCheckpointStore] = None,
 ) -> Result[ConnectorIngestReport, Error]:
     """Ingest bounded connector pages into an explicit host-owned sink.
 
@@ -450,6 +820,13 @@ def ingest_documents(
         return Result.err(
             _error("RETRIEVAL_CONNECTOR_INVALID", "cursor must be a bounded string.")
         )
+    if checkpoint_store is not None and cursor is not None:
+        return Result.err(
+            _error(
+                "RETRIEVAL_CHECKPOINT_INPUT_INVALID",
+                "cursor cannot be combined with checkpoint_store.",
+            )
+        )
     fetch = getattr(connector, "fetch", None)
     add_document = getattr(sink, "add_document", None)
     if not callable(fetch):
@@ -461,7 +838,93 @@ def ingest_documents(
             _error("RETRIEVAL_SINK_INVALID", "sink must expose add_document(...).")
         )
 
-    current_cursor = cursor
+    checkpoint_revision = 0
+    if checkpoint_store is not None:
+        load_checkpoint = getattr(checkpoint_store, "load", None)
+        save_checkpoint = getattr(checkpoint_store, "save", None)
+        if not callable(load_checkpoint) or not callable(save_checkpoint):
+            return Result.err(
+                _error(
+                    "RETRIEVAL_CHECKPOINT_INVALID",
+                    "checkpoint_store must expose load(...) and save(...).",
+                )
+            )
+        load_checkpoint_method = cast(Callable[[], Any], load_checkpoint)
+        save_checkpoint_method = cast(Callable[..., Any], save_checkpoint)
+        try:
+            loaded_result = load_checkpoint_method()
+        except Exception:
+            return Result.err(
+                _error(
+                    "RETRIEVAL_CHECKPOINT_LOAD_ERROR",
+                    "retrieval checkpoint could not be loaded.",
+                )
+            )
+        if not isinstance(loaded_result, Result) or loaded_result.is_err():
+            return Result.err(
+                _error(
+                    "RETRIEVAL_CHECKPOINT_LOAD_ERROR",
+                    "retrieval checkpoint could not be loaded.",
+                )
+            )
+        loaded_checkpoint = loaded_result.unwrap()
+        if not isinstance(loaded_checkpoint, DocumentCursorCheckpoint):
+            return Result.err(
+                _error(
+                    "RETRIEVAL_CHECKPOINT_LOAD_ERROR",
+                    "retrieval checkpoint record is invalid.",
+                )
+            )
+        checkpoint_error = loaded_checkpoint.validate()
+        if checkpoint_error is not None:
+            return Result.err(
+                _error(
+                    "RETRIEVAL_CHECKPOINT_LOAD_ERROR",
+                    "retrieval checkpoint record is invalid.",
+                )
+            )
+        if loaded_checkpoint.complete:
+            return Result.ok(
+                ConnectorIngestReport(
+                    documents_ingested=0,
+                    batches_fetched=0,
+                    next_cursor=None,
+                    complete=True,
+                )
+            )
+        current_cursor = loaded_checkpoint.cursor
+        checkpoint_revision = loaded_checkpoint.revision
+    else:
+        current_cursor = cursor
+
+    def persist_checkpoint(next_cursor: Optional[str]) -> Optional[Error]:
+        nonlocal checkpoint_revision
+        if checkpoint_store is None:
+            return None
+        checkpoint = DocumentCursorCheckpoint(
+            cursor=next_cursor,
+            complete=next_cursor is None,
+            revision=checkpoint_revision + 1,
+        )
+        try:
+            saved_result = save_checkpoint_method(checkpoint)
+        except Exception:
+            return _error(
+                "RETRIEVAL_CHECKPOINT_SAVE_ERROR",
+                "retrieval checkpoint could not be saved.",
+            )
+        if (
+            not isinstance(saved_result, Result)
+            or saved_result.is_err()
+            or saved_result.unwrap() != checkpoint
+        ):
+            return _error(
+                "RETRIEVAL_CHECKPOINT_SAVE_ERROR",
+                "retrieval checkpoint could not be saved.",
+            )
+        checkpoint_revision += 1
+        return None
+
     documents_ingested = 0
     batches_fetched = 0
     seen_document_ids: Set[str] = set()
@@ -541,6 +1004,9 @@ def ingest_documents(
             seen_document_ids.add(document.document_id)
             documents_ingested += 1
         batches_fetched += 1
+        checkpoint_error = persist_checkpoint(batch.next_cursor)
+        if checkpoint_error is not None:
+            return Result.err(checkpoint_error)
         if batch.next_cursor is None:
             return Result.ok(
                 ConnectorIngestReport(

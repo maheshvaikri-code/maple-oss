@@ -10,6 +10,14 @@
 
 ### Additions
 
+- **Bounded durable retrieval cursor checkpoints**: `ingest_documents(...)`
+  can resume from host-owned in-memory or atomic file checkpoints with strict
+  revision fencing and a bounded cursor payload. Completed streams short-circuit
+  safely, corrupt state fails closed, and checkpoint advancement occurs only
+  after sink writes, preserving explicit at-least-once semantics. Managed-store
+  adapters, connector-specific rate limits, retries, transactions, and rollback
+  remain outside the contract.
+
 - **Bounded async evaluation judges**: `EvaluationHarness.run_async(...)` now
   accepts synchronous or awaitable runners and host-owned judges in deterministic
   case order, reusing the existing validation/redaction bounds and preserving
