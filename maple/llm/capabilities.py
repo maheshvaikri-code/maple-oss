@@ -18,6 +18,7 @@ class ProviderCapabilities:
 
     tools: bool = False
     streaming: bool = False
+    async_completion: bool = False
     structured_output: bool = False
     image_input: bool = False
     max_context_tokens: Optional[int] = None
@@ -27,6 +28,8 @@ class ProviderCapabilities:
         if requirements.tools and not self.tools:
             return False
         if requirements.streaming and not self.streaming:
+            return False
+        if requirements.async_completion and not self.async_completion:
             return False
         if requirements.structured_output and not self.structured_output:
             return False
@@ -46,6 +49,7 @@ class ProviderRequirements:
 
     tools: bool = False
     streaming: bool = False
+    async_completion: bool = False
     structured_output: bool = False
     image_input: bool = False
     min_context_tokens: int = 0
@@ -60,7 +64,13 @@ class ProviderRequirements:
                 "errorType": "PROVIDER_REQUIREMENTS_INVALID",
                 "message": "min_context_tokens must be a non-negative integer.",
             }
-        for name in ("tools", "streaming", "structured_output", "image_input"):
+        for name in (
+            "tools",
+            "streaming",
+            "async_completion",
+            "structured_output",
+            "image_input",
+        ):
             if not isinstance(getattr(self, name), bool):
                 return {
                     "errorType": "PROVIDER_REQUIREMENTS_INVALID",

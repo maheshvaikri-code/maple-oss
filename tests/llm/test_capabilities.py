@@ -71,6 +71,27 @@ def test_router_selects_image_capable_provider_only_for_image_requirements():
     assert [descriptor.name for descriptor in result.unwrap()] == ["vision"]
 
 
+def test_router_selects_native_async_provider_only_for_async_requirements():
+    router = ProviderRouter()
+    router.register(
+        "sync-fallback",
+        MockProvider,
+        ProviderCapabilities(streaming=True),
+        priority=2,
+    )
+    router.register(
+        "native-async",
+        MockProvider,
+        ProviderCapabilities(async_completion=True),
+        priority=1,
+    )
+
+    result = router.select(ProviderRequirements(async_completion=True))
+
+    assert result.is_ok()
+    assert [descriptor.name for descriptor in result.unwrap()] == ["native-async"]
+
+
 def test_router_falls_back_when_high_priority_provider_initialization_fails():
     router = ProviderRouter()
     router.register(
