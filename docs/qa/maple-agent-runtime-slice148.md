@@ -41,10 +41,15 @@ packages skipped. This remains a release veto outside this slice.
 
 ## Package evidence
 
-The final clean archive must build wheel and sdist, pass Twine checks, install
-without dependencies into an isolated target, run an episodic-search export
-smoke test, and contain no workspace-only files. Exact results are recorded
-after that run.
+The final `git archive HEAD` snapshot built successfully as `maple-oss-1.1.3`:
+
+- build exit: `0`;
+- wheel: `104` archive entries;
+- sdist: `629` archive entries;
+- `twine check`: both artifacts passed;
+- `pip install --no-deps --target ...`: exit `0`;
+- isolated export smoke: `clean_archive_episodic_search_smoke=passed`;
+- workspace-only archive entries: `0`.
 
 ## QA decision
 
