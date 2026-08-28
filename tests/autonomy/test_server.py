@@ -1287,6 +1287,49 @@ def test_authenticated_handoff_transport_preserves_store_ownership_state():
     assert unauthorized.unwrap_err()["errorType"] == "UNAUTHORIZED"
 
 
+def test_authenticated_handoff_transport_redacts_persisted_result():
+    store = InMemoryHandoffStore()
+    record = HandoffRecord.pending(
+        "remote-result",
+        "source",
+        "target",
+        "a" * 64,
+        "b" * 64,
+    )
+    assert store.create(record).is_ok()
+    assert store.accept("remote-result", "target").is_ok()
+    assert store.complete(
+        "remote-result",
+        "target",
+        "target-goal",
+        result={
+            "agent_id": "target",
+            "goal_id": "target-goal",
+            "status": "completed",
+            "result": {"secret": "local-only"},
+        },
+    ).is_ok()
+
+    server = RunServer(
+        WorkflowRegistry(),
+        handoff_store=store,
+        auth_token="handoff-token",
+    )
+    base_url = server.start()
+    try:
+        inspected = RunClient(base_url, auth_token="handoff-token").get_handoff(
+            "remote-result"
+        )
+    finally:
+        server.close()
+
+    assert inspected.is_ok()
+    payload = inspected.unwrap()["handoff"]
+    assert payload["status"] == "completed"
+    assert "result" not in payload
+    assert "local-only" not in str(payload)
+
+
 def test_handoff_transport_fails_closed_without_store_and_bounds_client_inputs():
     server = RunServer(WorkflowRegistry(), auth_token="token")
     base_url = server.start()

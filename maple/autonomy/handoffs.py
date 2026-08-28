@@ -22,6 +22,7 @@ _MAX_IDENTIFIER_LENGTH = 256
 _MAX_ERROR_TYPE_LENGTH = 128
 _MAX_LIST_LIMIT = 100
 _MAX_RECORD_BYTES = 262_144
+_MAX_RESULT_BYTES = 65_536
 _LEASE_TTL_SECONDS = 30.0
 _DIGEST_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 _STATUSES = frozenset({"pending", "accepted", "completed", "failed"})
@@ -56,6 +57,27 @@ def _finite_number(value: Any) -> bool:
         return False
 
 
+def _copy_result(value: Any) -> Optional[Dict[str, Any]]:
+    """Copy one bounded JSON object retained on a completed handoff."""
+    if value is None:
+        return None
+    if not isinstance(value, Mapping):
+        raise ValueError("handoff result must be an object or null")
+    try:
+        encoded = json.dumps(
+            dict(value), ensure_ascii=False, allow_nan=False, separators=(",", ":")
+        )
+        encoded_bytes = encoded.encode("utf-8")
+        if len(encoded_bytes) > _MAX_RESULT_BYTES:
+            raise ValueError("handoff result exceeds the configured byte limit")
+        copied = json.loads(encoded)
+    except (TypeError, ValueError, OverflowError, RecursionError, UnicodeError) as exc:
+        raise ValueError("handoff result must be JSON serializable") from exc
+    if not isinstance(copied, dict):
+        raise ValueError("handoff result must be an object")
+    return copied
+
+
 @dataclass(frozen=True)
 class HandoffRecord:
     """Durable local handoff identity with explicit ownership state."""
@@ -71,6 +93,7 @@ class HandoffRecord:
     error_type: Optional[str] = None
     created_at: float = 0.0
     updated_at: float = 0.0
+    result: Optional[Dict[str, Any]] = None
 
     @classmethod
     def pending(
@@ -126,6 +149,13 @@ class HandoffRecord:
             self.error_type, max_length=_MAX_ERROR_TYPE_LENGTH
         ):
             return _error("HANDOFF_RECORD_INVALID", "error_type must be bounded text.")
+        try:
+            _copy_result(self.result)
+        except ValueError:
+            return _error(
+                "HANDOFF_RECORD_INVALID",
+                "result must be a bounded JSON object or null.",
+            )
         if not _finite_number(self.created_at) or not _finite_number(self.updated_at):
             return _error("HANDOFF_RECORD_INVALID", "timestamps must be finite.")
         if self.status == "pending":
@@ -139,6 +169,11 @@ class HandoffRecord:
                     "HANDOFF_RECORD_INVALID",
                     "pending handoffs cannot contain an error.",
                 )
+            if self.result is not None:
+                return _error(
+                    "HANDOFF_RECORD_INVALID",
+                    "pending handoffs cannot contain a result.",
+                )
         elif self.status == "accepted":
             if self.owner_id != self.target_agent_id or self.target_goal_id is not None:
                 return _error(
@@ -149,6 +184,11 @@ class HandoffRecord:
                 return _error(
                     "HANDOFF_RECORD_INVALID",
                     "accepted handoffs cannot contain an error.",
+                )
+            if self.result is not None:
+                return _error(
+                    "HANDOFF_RECORD_INVALID",
+                    "accepted handoffs cannot contain a result.",
                 )
         elif self.status == "completed":
             if self.owner_id != self.source_agent_id or self.target_goal_id is None:
@@ -171,11 +211,16 @@ class HandoffRecord:
                     "HANDOFF_RECORD_INVALID",
                     "failed handoffs must return ownership with an error.",
                 )
+            if self.result is not None:
+                return _error(
+                    "HANDOFF_RECORD_INVALID",
+                    "failed handoffs cannot contain a result.",
+                )
         return None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self, *, include_result: bool = True) -> Dict[str, Any]:
         """Return a JSON-compatible record without task or context contents."""
-        return {
+        payload: Dict[str, Any] = {
             "handoff_id": self.handoff_id,
             "source_agent_id": self.source_agent_id,
             "target_agent_id": self.target_agent_id,
@@ -188,6 +233,9 @@ class HandoffRecord:
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
+        if include_result:
+            payload["result"] = _copy_result(self.result)
+        return payload
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "HandoffRecord":
@@ -208,6 +256,10 @@ class HandoffRecord:
         )
         if any(name not in data for name in required):
             raise ValueError("handoff record is missing a required field")
+        try:
+            result = _copy_result(data.get("result"))
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
         record = cls(
             handoff_id=data["handoff_id"],
             source_agent_id=data["source_agent_id"],
@@ -218,6 +270,7 @@ class HandoffRecord:
             owner_id=data["owner_id"],
             target_goal_id=data["target_goal_id"],
             error_type=data["error_type"],
+            result=result,
             created_at=data["created_at"],
             updated_at=data["updated_at"],
         )
@@ -239,7 +292,12 @@ class HandoffStore(Protocol):
     ) -> Result[HandoffRecord, Error]: ...
 
     def complete(
-        self, handoff_id: str, target_agent_id: str, target_goal_id: str
+        self,
+        handoff_id: str,
+        target_agent_id: str,
+        target_goal_id: str,
+        *,
+        result: Optional[Mapping[str, Any]] = None,
     ) -> Result[HandoffRecord, Error]: ...
 
     def fail(
@@ -343,11 +401,26 @@ class InMemoryHandoffStore:
         )
 
     def complete(
-        self, handoff_id: str, target_agent_id: str, target_goal_id: str
+        self,
+        handoff_id: str,
+        target_agent_id: str,
+        target_goal_id: str,
+        *,
+        result: Optional[Mapping[str, Any]] = None,
     ) -> Result[HandoffRecord, Error]:
         goal_error = _validate_id(target_goal_id, "target_goal_id")
         if goal_error is not None:
             return Result.err(goal_error)
+        try:
+            copied_result = _copy_result(result)
+        except ValueError as exc:
+            return Result.err(
+                _error(
+                    "HANDOFF_RESULT_INVALID",
+                    "handoff result is invalid.",
+                    reason=str(exc),
+                )
+            )
         return self._transition(
             handoff_id,
             target_agent_id,
@@ -356,6 +429,7 @@ class InMemoryHandoffStore:
                 status="completed",
                 owner_id=record.source_agent_id,
                 target_goal_id=target_goal_id,
+                result=copied_result,
                 updated_at=time.time(),
             ),
             expected_status="accepted",
@@ -602,16 +676,32 @@ class FileHandoffStore:
         return self._transition(handoff_id, target_agent_id, "accept")
 
     def complete(
-        self, handoff_id: str, target_agent_id: str, target_goal_id: str
+        self,
+        handoff_id: str,
+        target_agent_id: str,
+        target_goal_id: str,
+        *,
+        result: Optional[Mapping[str, Any]] = None,
     ) -> Result[HandoffRecord, Error]:
         goal_error = _validate_id(target_goal_id, "target_goal_id")
         if goal_error is not None:
             return Result.err(goal_error)
+        try:
+            copied_result = _copy_result(result)
+        except ValueError as exc:
+            return Result.err(
+                _error(
+                    "HANDOFF_RESULT_INVALID",
+                    "handoff result is invalid.",
+                    reason=str(exc),
+                )
+            )
         return self._transition(
             handoff_id,
             target_agent_id,
             "complete",
             target_goal_id=target_goal_id,
+            result=copied_result,
         )
 
     def fail(
@@ -635,6 +725,7 @@ class FileHandoffStore:
         *,
         target_goal_id: Optional[str] = None,
         error_type: Optional[str] = None,
+        result: Optional[Mapping[str, Any]] = None,
     ) -> Result[HandoffRecord, Error]:
         identifier_error = _validate_id(handoff_id, "handoff_id")
         if identifier_error is not None:
@@ -651,6 +742,7 @@ class FileHandoffStore:
                 operation,
                 target_goal_id=target_goal_id,
                 error_type=error_type,
+                result=result,
             ),
         )
 
@@ -662,6 +754,7 @@ class FileHandoffStore:
         *,
         target_goal_id: Optional[str],
         error_type: Optional[str],
+        result: Optional[Mapping[str, Any]],
     ) -> Result[HandoffRecord, Error]:
         try:
             with self._lock:
@@ -708,6 +801,7 @@ class FileHandoffStore:
                         status="completed",
                         owner_id=record.source_agent_id,
                         target_goal_id=target_goal_id,
+                        result=dict(result) if result is not None else None,
                         updated_at=time.time(),
                     )
                 else:

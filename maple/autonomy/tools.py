@@ -101,6 +101,14 @@ def _delegation_cancelled(target_id: str) -> Result[Any, Dict[str, Any]]:
     )
 
 
+@dataclass(frozen=True)
+class _PersistedHandoffStart:
+    """State returned after creating or replaying one persisted handoff."""
+
+    handoff_id: str
+    replay_result: Optional[Dict[str, Any]] = None
+
+
 def _handoff_context_error(message: str, **details: Any) -> Dict[str, Any]:
     error: Dict[str, Any] = {
         "errorType": "HANDOFF_CONTEXT_INVALID",
@@ -715,22 +723,61 @@ def _handoff_store_error(
     )
 
 
+def _handoff_identifier_error(value: Any) -> Optional[Dict[str, Any]]:
+    if value is None:
+        return None
+    if (
+        not isinstance(value, str)
+        or not value
+        or len(value) > 256
+        or any(ord(char) < 32 for char in value)
+    ):
+        return {
+            "errorType": "HANDOFF_INPUT_INVALID",
+            "message": "handoff_id must be bounded text.",
+        }
+    return None
+
+
+def _handoff_store_accepts_result(store: HandoffStore) -> bool:
+    try:
+        signature = inspect.signature(store.complete)
+    except (TypeError, ValueError):
+        return False
+    result_parameter = signature.parameters.get("result")
+    if (
+        result_parameter is not None
+        and result_parameter.kind is not inspect.Parameter.POSITIONAL_ONLY
+    ):
+        return True
+    return any(
+        item.kind is inspect.Parameter.VAR_KEYWORD
+        for item in signature.parameters.values()
+    )
+
+
 def _start_persisted_handoff(
     store: HandoffStore,
     source_agent_id: str,
     target_agent_id: str,
     task: str,
     context: Mapping[str, Any],
-) -> Result[str, Dict[str, Any]]:
+    *,
+    handoff_id: Optional[str] = None,
+    persist_result: bool = False,
+) -> Result[_PersistedHandoffStart, Dict[str, Any]]:
+    identifier_error = _handoff_identifier_error(handoff_id)
+    if identifier_error is not None:
+        return Result.err(identifier_error)
     task_digest = _handoff_digest(task)
     context_digest = _handoff_digest(context) if context else None
     if task_digest is None or (context and context_digest is None):
         return _handoff_store_error("create")
-    handoff_id = uuid.uuid4().hex
+    chosen_handoff_id = handoff_id or uuid.uuid4().hex
     try:
         created = store.create(
             HandoffRecord.pending(
-                handoff_id,
+                chosen_handoff_id,
                 source_agent_id,
                 target_agent_id,
                 task_digest,
@@ -739,12 +786,57 @@ def _start_persisted_handoff(
         )
         if created.is_err():
             return _handoff_store_error("create", created)
-        accepted = store.accept(handoff_id, target_agent_id)
+        record = created.unwrap()
+        if record.status == "completed":
+            if persist_result and record.result is not None:
+                replay_result = record.result
+                if (
+                    replay_result.get("agent_id") != target_agent_id
+                    or replay_result.get("status") != "completed"
+                    or not isinstance(replay_result.get("goal_id"), str)
+                    or replay_result.get("goal_id") != record.target_goal_id
+                ):
+                    return Result.err(
+                        {
+                            "errorType": "HANDOFF_RESULT_INVALID",
+                            "message": "Stored handoff result cannot be replayed safely.",
+                            "details": {"handoff_id": chosen_handoff_id},
+                        }
+                    )
+                return Result.ok(
+                    _PersistedHandoffStart(
+                        chosen_handoff_id, replay_result=dict(replay_result)
+                    )
+                )
+            return Result.err(
+                {
+                    "errorType": "HANDOFF_REPLAY_UNAVAILABLE",
+                    "message": "The handoff is already completed without a replayable result.",
+                    "details": {"handoff_id": chosen_handoff_id},
+                }
+            )
+        if record.status == "accepted":
+            return Result.err(
+                {
+                    "errorType": "HANDOFF_IN_PROGRESS",
+                    "message": "The handoff is already accepted by the target.",
+                    "details": {"handoff_id": chosen_handoff_id},
+                }
+            )
+        if record.status == "failed":
+            return Result.err(
+                {
+                    "errorType": "HANDOFF_ALREADY_FAILED",
+                    "message": "The handoff already has a terminal failure.",
+                    "details": {"handoff_id": chosen_handoff_id},
+                }
+            )
+        accepted = store.accept(chosen_handoff_id, target_agent_id)
         if accepted.is_err():
             return _handoff_store_error("accept", accepted)
     except Exception:
         return _handoff_store_error("create")
-    return Result.ok(handoff_id)
+    return Result.ok(_PersistedHandoffStart(chosen_handoff_id))
 
 
 def _finish_persisted_handoff(
@@ -752,6 +844,8 @@ def _finish_persisted_handoff(
     handoff_id: str,
     target_agent_id: str,
     formatted: Result[Dict[str, Any], Dict[str, Any]],
+    *,
+    persist_result: bool = False,
 ) -> Result[Dict[str, Any], Dict[str, Any]]:
     try:
         if formatted.is_ok():
@@ -759,6 +853,13 @@ def _finish_persisted_handoff(
             if not isinstance(target_goal_id, str):
                 finalized = store.fail(
                     handoff_id, target_agent_id, "HANDOFF_TARGET_INVALID"
+                )
+            elif persist_result and formatted.unwrap().get("status") == "completed":
+                finalized = store.complete(
+                    handoff_id,
+                    target_agent_id,
+                    target_goal_id,
+                    result=formatted.unwrap(),
                 )
             else:
                 finalized = store.complete(handoff_id, target_agent_id, target_goal_id)
@@ -1080,6 +1181,7 @@ def create_handoff_tool(
     allowed_context_keys: Optional[Sequence[str]] = None,
     handoff_store: Optional[HandoffStore] = None,
     source_agent_id: Optional[str] = None,
+    persist_result: bool = False,
 ) -> Tool:
     """Create a bounded tool that delegates one task to another agent.
 
@@ -1089,7 +1191,9 @@ def create_handoff_tool(
     expose ``pursue_goal_with_context``; legacy targets remain compatible when
     no context is supplied. When ``handoff_store`` is provided, a bounded
     identity record transfers ownership from ``source_agent_id`` (or ``host``)
-    to the target before execution and returns ownership after completion.
+    to the target before execution and returns ownership after completion. When
+    ``persist_result`` is enabled, an explicit ``handoff_id`` can replay a
+    completed bounded result without invoking the target again.
     """
     target_id = getattr(target_agent, "agent_id", None)
     pursue_goal = getattr(target_agent, "pursue_goal", None)
@@ -1104,6 +1208,8 @@ def create_handoff_tool(
         raise ValueError("target_agent must expose a callable pursue_goal method")
     if not isinstance(requires_approval, bool):
         raise ValueError("requires_approval must be boolean")
+    if not isinstance(persist_result, bool):
+        raise ValueError("persist_result must be boolean")
     source_id = "host" if source_agent_id is None else source_agent_id
     if (
         not isinstance(source_id, str)
@@ -1117,6 +1223,16 @@ def create_handoff_tool(
         for method in ("create", "get", "accept", "complete", "fail", "list_open")
     ):
         raise ValueError("handoff_store does not implement the handoff contract")
+    if persist_result and handoff_store is None:
+        raise ValueError("persist_result requires a handoff_store")
+    if (
+        persist_result
+        and handoff_store is not None
+        and not _handoff_store_accepts_result(handoff_store)
+    ):
+        raise ValueError(
+            "persist_result requires a handoff_store with result completion support"
+        )
     if allowed_context_keys is None:
         allowed_keys: frozenset[str] = frozenset()
     else:
@@ -1149,6 +1265,7 @@ def create_handoff_tool(
     def handoff_handler(
         task: str,
         context: Optional[Dict[str, Any]] = None,
+        handoff_id: Optional[str] = None,
         *,
         cancellation: Optional[CancellationToken] = None,
     ) -> Result[Dict[str, Any], Dict[str, Any]]:
@@ -1165,14 +1282,32 @@ def create_handoff_tool(
                     "details": {"keys": denied_keys},
                 }
             )
-        handoff_id: Optional[str] = None
+        if handoff_id is not None and handoff_store is None:
+            return Result.err(
+                {
+                    "errorType": "HANDOFF_STORE_UNAVAILABLE",
+                    "message": "handoff_id requires a configured handoff store.",
+                }
+            )
+        active_handoff_id: Optional[str] = None
         if handoff_store is not None:
             started = _start_persisted_handoff(
-                handoff_store, source_id, target_id, task, handoff_context
+                handoff_store,
+                source_id,
+                target_id,
+                task,
+                handoff_context,
+                handoff_id=handoff_id,
+                persist_result=persist_result,
             )
             if started.is_err():
                 return Result.err(started.unwrap_err())
-            handoff_id = started.unwrap()
+            started_state = started.unwrap()
+            active_handoff_id = started_state.handoff_id
+            if started_state.replay_result is not None:
+                payload = dict(started_state.replay_result)
+                payload["handoff_id"] = active_handoff_id
+                return Result.ok(payload)
         pursue_with_context = getattr(target_agent, "pursue_goal_with_context", None)
         execution_error: Optional[Result[Dict[str, Any], Dict[str, Any]]] = None
         target_result: Result[Any, Dict[str, Any]]
@@ -1218,9 +1353,13 @@ def create_handoff_tool(
         )
         if cancellation is not None and cancellation.is_cancelled():
             formatted = _delegation_cancelled(target_id)
-        if handoff_store is not None and handoff_id is not None:
+        if handoff_store is not None and active_handoff_id is not None:
             return _finish_persisted_handoff(
-                handoff_store, handoff_id, target_id, formatted
+                handoff_store,
+                active_handoff_id,
+                target_id,
+                formatted,
+                persist_result=persist_result,
             )
         return formatted
 
@@ -1236,6 +1375,7 @@ def create_handoff_tool(
         async def async_handoff_handler(
             task: str,
             context: Optional[Dict[str, Any]] = None,
+            handoff_id: Optional[str] = None,
             *,
             cancellation: Optional[CancellationToken] = None,
         ) -> Result[Dict[str, Any], Dict[str, Any]]:
@@ -1252,16 +1392,34 @@ def create_handoff_tool(
                         "details": {"keys": denied_keys},
                     }
                 )
-            handoff_id: Optional[str] = None
+            if handoff_id is not None and handoff_store is None:
+                return Result.err(
+                    {
+                        "errorType": "HANDOFF_STORE_UNAVAILABLE",
+                        "message": "handoff_id requires a configured handoff store.",
+                    }
+                )
+            active_handoff_id: Optional[str] = None
             if handoff_store is not None:
                 started = await _run_handoff_store_async(
                     lambda: _start_persisted_handoff(
-                        handoff_store, source_id, target_id, task, handoff_context
+                        handoff_store,
+                        source_id,
+                        target_id,
+                        task,
+                        handoff_context,
+                        handoff_id=handoff_id,
+                        persist_result=persist_result,
                     )
                 )
                 if started.is_err():
                     return Result.err(started.unwrap_err())
-                handoff_id = started.unwrap()
+                started_state = started.unwrap()
+                active_handoff_id = started_state.handoff_id
+                if started_state.replay_result is not None:
+                    payload = dict(started_state.replay_result)
+                    payload["handoff_id"] = active_handoff_id
+                    return Result.ok(payload)
             execution_error: Optional[Result[Dict[str, Any], Dict[str, Any]]] = None
             target_result: Result[Any, Dict[str, Any]]
             if cancellation is not None and cancellation.is_cancelled():
@@ -1308,10 +1466,14 @@ def create_handoff_tool(
             )
             if cancellation is not None and cancellation.is_cancelled():
                 formatted = _delegation_cancelled(target_id)
-            if handoff_store is not None and handoff_id is not None:
+            if handoff_store is not None and active_handoff_id is not None:
                 finalized = await _run_handoff_store_async(
                     lambda: _finish_persisted_handoff(
-                        handoff_store, handoff_id, target_id, formatted
+                        handoff_store,
+                        active_handoff_id,
+                        target_id,
+                        formatted,
+                        persist_result=persist_result,
                     )
                 )
                 return finalized
@@ -1337,6 +1499,14 @@ def create_handoff_tool(
                     "description": (
                         "Optional bounded context. Only allowlisted keys cross "
                         "to a context-aware target."
+                    ),
+                },
+                "handoff_id": {
+                    "type": "string",
+                    "maxLength": 256,
+                    "description": (
+                        "Optional caller-owned ID for replaying a completed "
+                        "persisted handoff."
                     ),
                 },
             },

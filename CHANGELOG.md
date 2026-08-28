@@ -10,6 +10,15 @@
 
 ### Additions
 
+- **Opt-in durable handoff-result replay**: `create_handoff_tool` can now
+  persist a bounded successful result in the local `InMemoryHandoffStore` or
+  `FileHandoffStore` and replay it on a matching explicit `handoff_id` without
+  invoking the target again. Sync and async paths share the same ownership and
+  cancellation boundaries; failed, cancelled, active, result-less, and
+  malformed records do not replay, older records remain loadable, and the
+  authenticated remote handoff API remains digest-only. In-flight child-run
+  restore, remote result delivery, and exactly-once effects remain separate.
+
 - **Opt-in agent-as-tool result replay**: `create_agent_tool` now exposes the
   existing `replay_policy` contract so trusted, non-approval manager calls can
   reuse bounded successful child results from a parent `ExecutionJournal` after

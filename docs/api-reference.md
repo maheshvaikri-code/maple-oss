@@ -843,6 +843,36 @@ result = handoff.execute(task="Summarize the release risks")
 # A successful result includes a bounded handoff_id.
 ```
 
+For a trusted local retry path, set `persist_result=True` and provide a
+caller-owned `handoff_id`. Completed results are copied as bounded JSON in the
+local store; repeating the same task/context and ID replays that successful
+result without invoking the target again. Failed, cancelled, active, and
+result-less records never replay as success, and a task/context mismatch is
+rejected by the store:
+
+```python
+handoff = create_handoff_tool(
+    specialist,
+    handoff_store=FileHandoffStore(".maple-handoffs"),
+    source_agent_id="orchestrator",
+    persist_result=True,
+)
+first = handoff.execute(
+    task="Summarize the release risks",
+    handoff_id="release-risk-summary-v1",
+)
+retry = handoff.execute(
+    task="Summarize the release risks",
+    handoff_id="release-risk-summary-v1",
+)
+```
+
+Result persistence is disabled by default and requires the built-in stores or
+a custom store whose `complete` method accepts the `result=` keyword. The
+authenticated `RunServer` handoff API remains digest-only and never emits the
+stored result. This is local successful-result replay, not in-flight child-run
+restore, remote result delivery, or exactly-once side-effect execution.
+
 `InMemoryHandoffStore` is available for local tests. Store failures fail closed
 and finalization failures do not claim success. The store is an identity/state
 journal, not a remote queue, scheduler, notification service, or exactly-once

@@ -392,7 +392,7 @@ def _agent_checkpoint_history_to_dict(
 
 
 def _handoff_to_dict(record: HandoffRecord) -> Dict[str, Any]:
-    payload = record.to_dict()
+    payload = record.to_dict(include_result=False)
     if not isinstance(payload, dict):
         raise TypeError("handoff record serialization must return an object")
     return cast(Dict[str, Any], payload)
