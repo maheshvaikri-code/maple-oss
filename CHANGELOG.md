@@ -10,6 +10,14 @@
 
 ### Additions
 
+- **Bounded agent-as-tool delegation**: `create_agent_tool(...)` lets a
+  manager agent invoke a specialist through the normal `Tool` surface while
+  retaining orchestration ownership. Results are reduced to bounded
+  agent/goal/status/result fields, optional context is explicitly allowlisted,
+  sync and declared async target contracts are supported, and approval is
+  enabled by default. Remote routing, child-run replay, retries, and
+  exactly-once effects remain outside the local contract.
+
 - **Bounded connector rate limiting**: `ingest_documents(...)` accepts an
   optional host-owned `DocumentConnectorRateLimiter`; the in-memory trailing
   window implementation admits bounded fetches and returns a sanitized typed

@@ -706,6 +706,43 @@ journal, not a remote queue, scheduler, notification service, or exactly-once
 side-effect mechanism; remote routing/authentication, hard target cancellation,
 and distributed delivery remain separate capabilities.
 
+### Manager-style agent-as-tool delegation
+
+`create_agent_tool` exposes a specialist as a normal `Tool` while the calling
+agent keeps orchestration ownership. It does not create a `HandoffRecord` or
+transfer ownership. Approval is required by default because the nested agent
+may use tools of its own:
+
+```python
+from maple import create_agent_tool
+
+specialist_tool = create_agent_tool(
+    specialist,
+    allowed_context_keys=["project", "constraints"],
+)
+manager.register_tool(specialist_tool)
+
+result = specialist_tool.execute(
+    task="Summarize the release risks",
+    context={"project": "MAPLE", "constraints": {"max_words": 200}},
+)
+assert result.is_ok()
+assert result.unwrap()["status"] == "completed"
+```
+
+The bounded result contains only `agent_id`, `goal_id`, `status`, and `result`;
+child prompts, traces, provider objects, and raw child errors are not forwarded.
+Context is copied before filtering. A key outside `allowed_context_keys` returns
+`AGENT_TOOL_CONTEXT_KEY_DENIED`, and non-empty context sent to a target without
+`pursue_goal_with_context(...)` returns `AGENT_TOOL_CONTEXT_UNSUPPORTED`.
+Target failures, raised exceptions, and malformed goals return typed
+`AGENT_TOOL_TARGET_FAILED`, `AGENT_TOOL_TARGET_ERROR`, or
+`AGENT_TOOL_TARGET_INVALID` errors without the child payload. When the target
+declares `pursue_goal_async(...)`, `await specialist_tool.execute_async(...)`
+uses that contract; otherwise the normal synchronous compatibility path runs in
+the tool executor. Remote routing, durable child-run replay, automatic retries,
+and exactly-once effects remain outside this local contract.
+
 ### Per-goal token accounting and budgets
 
 `Goal.token_usage` aggregates provider-reported prompt, completion, and total
