@@ -37,7 +37,7 @@ cloud action, or website update was performed.
 A clean `git archive HEAD` snapshot built successfully as `maple-oss-1.1.3`:
 
 - wheel: `104` archive entries;
-- sdist: `616` archive entries;
+- sdist: `617` archive entries;
 - `twine check`: both artifacts passed;
 - `pip install --no-deps --target ...`: passed;
 - isolated export smoke for `ProviderCapabilities`,
