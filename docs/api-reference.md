@@ -576,6 +576,13 @@ owners, empty agent IDs, and already-terminal tasks fail without changing
 state. `TaskScheduler.task_completed(...)` uses this transition and releases
 its local assignment/load bookkeeping only after the queue accepts it.
 
+`TaskQueue.reassign_task(task_id, current_agent, new_agent)` is the local
+rebalancing transition. It changes ownership only for an `ASSIGNED` task whose
+recorded owner matches `current_agent`; empty or equal agent IDs, missing tasks,
+wrong owners, and `RUNNING` or terminal tasks fail without mutation.
+`TaskScheduler.rebalance_loads()` uses this path and updates local load maps
+only after the queue transfer succeeds.
+
 ## Trusted Local Execution (preview)
 
 `TrustedLocalExecutor` is an explicit boundary for trusted Python handlers. It

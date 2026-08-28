@@ -44,6 +44,7 @@ Most agent frameworks give you either **infrastructure** (messaging, security, f
 - **Lifecycle-Safe Local Task Scheduling (preview)** - `TaskScheduler` uses an atomic `TaskQueue.assign_task` claim, rejects duplicate ownership, and physically requeues scheduler failures through bounded retry admission.
 - **Fail-Fast Scheduler Policy Bounds (preview)** - `SchedulingPolicy` validates strategy names, agent concurrency, finite scheduling intervals, and boolean preemption before a worker starts.
 - **Ownership-Checked Task Completion (preview)** - `TaskQueue.complete_task` requires the assigned agent and an active task state before recording completion; `TaskScheduler.task_completed` releases load only after that authoritative transition succeeds.
+- **Atomic Task Reassignment (preview)** - `TaskQueue.reassign_task` lets local rebalancing transfer an `ASSIGNED` task between owners while rejecting running, stale, duplicate, or invalid transfers.
 
 - **ReAct Reasoning Loop** — Agents think, act, and reflect autonomously. Built-in backtracking when approaches fail.
 - **Pluggable LLM Providers** — OpenAI, Anthropic Claude, or any compatible API (vLLM, Ollama, Together AI).

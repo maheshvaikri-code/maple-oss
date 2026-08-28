@@ -33,6 +33,10 @@
   `RUNNING`; `TaskScheduler.task_completed()` releases local load only after
   that queue transition succeeds.
 
+- **Atomic task reassignment**: `TaskQueue.reassign_task()` now gives local
+  rebalancing an ownership-transfer boundary for `ASSIGNED` tasks, while
+  `RUNNING` tasks and stale or mismatched owners remain protected.
+
 - **Bounded episodic memory**: `EpisodicMemory` now validates bounded task
   IDs and serialized event size, retains a configurable newest-event window
   per task, rejects malformed or oversized records before persistence, and

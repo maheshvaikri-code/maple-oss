@@ -67,6 +67,12 @@ is released after the queue records `COMPLETED`. This is a local lifecycle
 invariant, not a distributed lease, durable queue, or exactly-once side-effect
 guarantee.
 
+Local rebalancing uses a separate atomic ownership transfer for `ASSIGNED`
+tasks. It cannot move `RUNNING` tasks or bypass the current owner check, so
+load maps and queue ownership remain aligned within one process. Worker
+heartbeats, crash reconciliation, distributed leases, and hosted scheduling
+remain separate.
+
 `SchedulingPolicy` also rejects invalid strategy names and unbounded worker
 configuration before a scheduler starts. The local limits are explicit and
 finite; policy distribution, durable schedule state, distributed leases, and
