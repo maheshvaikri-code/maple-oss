@@ -1518,6 +1518,18 @@ fallback so existing integrations continue to work; MAPLE does not claim that
 fallback is non-blocking. This boundary performs no implicit retry, provider
 selection, or concurrent fan-out.
 
+When a caller cannot accept that fallback, require a declaration from the
+provider descriptor before creating it:
+
+```python
+requirements = ProviderRequirements(async_completion=True)
+provider = router.create(configs, requirements)
+```
+
+The router matches this requirement only against
+`ProviderCapabilities(async_completion=True)`. It does not inspect arbitrary
+provider methods or infer non-blocking behavior from an inherited method.
+
 ### Multimodal image messages (preview)
 
 `ChatMessage.content` accepts its existing string form or a bounded list of

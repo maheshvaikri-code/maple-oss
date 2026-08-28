@@ -10,6 +10,12 @@
 
 ### Additions
 
+- **Explicit async-completion capability routing**: provider descriptors can
+  declare `ProviderCapabilities(async_completion=True)`, and callers can use
+  `ProviderRequirements(async_completion=True)` to reject providers that only
+  offer the synchronous compatibility fallback. MAPLE does not infer this
+  capability from arbitrary methods.
+
 - **Native async provider completion**: built-in OpenAI-compatible and Anthropic
   adapters now await their optional async SDK clients from `complete_async(...)`.
   SDKs without an async client retain the explicit base-provider synchronous

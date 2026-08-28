@@ -30,6 +30,11 @@ handoff, and event routes. Remaining principal-scope gaps in the rows below
 refer to delegated child-run identity, remote delivery, and policy evaluation,
 not the local route gate itself.
 
+Provider requirements can also explicitly require a declared native async
+completion capability. This prevents an async caller that needs a non-blocking
+provider from selecting a descriptor that only inherits the synchronous
+compatibility fallback.
+
 | Capability | MAPLE status and evidence | What the comparison set makes visible | Release action |
 |---|---|---|---|
 | Agent loop, tool calling, and tool schemas | **Native** — `AutonomousAgent`, `Tool`, `ToolRegistry`, ReAct reasoning, bounded arguments, approval-aware execution | All five expose an agent/tool loop as a primary developer surface | Keep stable; add more provider-contract fixtures only when needed |
