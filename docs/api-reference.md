@@ -583,6 +583,13 @@ wrong owners, and `RUNNING` or terminal tasks fail without mutation.
 `TaskScheduler.rebalance_loads()` uses this path and updates local load maps
 only after the queue transfer succeeds.
 
+Before `TaskQueue.assign_task()` is attempted, `TaskScheduler` reserves one
+local capacity slot under its scheduler lock. A rejected queue claim removes
+that reservation, while an accepted claim keeps it as the agent assignment.
+This prevents concurrent local schedulers from exceeding
+`SchedulingPolicy.max_concurrent_per_agent`; it does not provide distributed
+quota coordination or worker liveness detection.
+
 ## Trusted Local Execution (preview)
 
 `TrustedLocalExecutor` is an explicit boundary for trusted Python handlers. It

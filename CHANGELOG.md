@@ -37,6 +37,10 @@
   rebalancing an ownership-transfer boundary for `ASSIGNED` tasks, while
   `RUNNING` tasks and stale or mismatched owners remain protected.
 
+- **Atomic scheduler capacity admission**: `TaskScheduler` now reserves
+  per-agent capacity before the queue claim and rolls back rejected claims, so
+  concurrent schedulers cannot over-admit past the configured limit.
+
 - **Bounded episodic memory**: `EpisodicMemory` now validates bounded task
   IDs and serialized event size, retains a configurable newest-event window
   per task, rejects malformed or oversized records before persistence, and

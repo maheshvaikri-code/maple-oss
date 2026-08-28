@@ -73,6 +73,11 @@ load maps and queue ownership remain aligned within one process. Worker
 heartbeats, crash reconciliation, distributed leases, and hosted scheduling
 remain separate.
 
+Scheduler capacity is reserved under the local scheduler lock before the queue
+claim and rolled back if that claim fails. This closes concurrent local
+over-admission for `max_concurrent_per_agent`; it is not a distributed quota,
+worker heartbeat, or hosted admission service.
+
 `SchedulingPolicy` also rejects invalid strategy names and unbounded worker
 configuration before a scheduler starts. The local limits are explicit and
 finite; policy distribution, durable schedule state, distributed leases, and
