@@ -8,9 +8,9 @@
 
 | # | Slice | Role | Files touched | Proven by (tests) | Status |
 |---|---|---|---|---|---|
-| 1 | Add bounded claim/complete/abort contracts and memory/file stores | Backend / Security | `maple/autonomy/invocations.py`, autonomy exports, store tests | Key/digest validation, detached replay, conflict/in-progress behavior, expiry/capacity, file restart/corruption/fencing | todo |
-| 2 | Integrate keyed named and capability-routed invocations | Backend / Interop | `maple/autonomy/server.py`, client/server regressions | Claim before handler, complete after normalization, missing-store fail-closed, route identity, legacy wire compatibility | todo |
-| 3 | Close public contract and release gates | Tech Writer / Code Reviewer / QA / Release | README, API reference, parity ledger, changelog, `docs/reviews/`, `docs/qa/`, release plan | Focused/tracked tests, static/security checks, clean archive, install/import | todo |
+| 1 | Add bounded claim/complete/abort contracts and memory/file stores | Backend / Security | `maple/autonomy/invocations.py`, autonomy exports, store tests | Key/digest validation, detached replay, conflict/in-progress behavior, expiry/capacity, file restart/corruption/fencing | done: `d824940`; store suite `12 passed` |
+| 2 | Integrate keyed named and capability-routed invocations | Backend / Interop | `maple/autonomy/server.py`, client/server regressions | Claim before handler, complete after normalization, missing-store fail-closed, route identity, legacy wire compatibility | done: `1c19544`; transport suite `71 passed` |
+| 3 | Close public contract and release gates | Tech Writer / Code Reviewer / QA / Release | README, API reference, parity ledger, changelog, `docs/reviews/`, `docs/qa/`, release plan | Focused/tracked tests, static/security checks, clean archive, install/import | in progress: public docs updated; full suite and clean archive pending |
 
 ## Threat sketch
 
@@ -42,6 +42,6 @@ authentication, scope checks, and fail-closed conflicts limit the blast radius.
 
 ## Status snapshot
 
-G0 and G1 are recorded; implementation begins with the bounded store contract.
-Publication authorization, cloud actions, and website changes remain outside
-this plan.
+G0 and G1 are recorded. Store and transport implementation is complete; G2
+public-contract closure is in progress. Publication authorization, cloud
+actions, and website changes remain outside this plan.

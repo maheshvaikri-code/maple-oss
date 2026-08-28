@@ -10,6 +10,14 @@
 
 ### Additions
 
+- **Bounded agent-invocation idempotency**: named-agent and capability-routed
+  `RunClient` calls accept an optional bounded `idempotency_key`. A configured
+  in-memory or atomic fenced file store claims before handler execution and
+  replays matching completed success or error envelopes, while concurrent and
+  conflicting requests fail closed. Requests without a key preserve the
+  existing wire and execution path; distributed coordination, automatic
+  retries, and exactly-once external effects remain outside the contract.
+
 - **Bounded agent capability discovery and routing**: `AgentRegistry` now
   retains bounded public capability labels, exposes deterministic descriptor
   listing, and routes exact capability requests to the lexicographically first

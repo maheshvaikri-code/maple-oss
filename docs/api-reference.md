@@ -2841,6 +2841,59 @@ identity federation, push notification, or exactly-once side-effect guarantee.
 The native `AutonomousAgentRemoteAdapter.register(..., capabilities=...)`
 option forwards the same metadata to the registry.
 
+### Bounded agent-invocation idempotency
+
+Named and capability-routed calls accept an optional caller-owned
+`idempotency_key`. A host must configure an
+`AgentInvocationDeduplicationStore` for keyed calls; otherwise the server
+returns `AGENT_INVOCATION_STORE_UNAVAILABLE` (`503`) rather than executing
+without the requested replay boundary:
+
+```python
+from maple import (
+    InMemoryAgentInvocationDeduplicationStore,
+    RunClient,
+    RunServer,
+)
+
+invocations = InMemoryAgentInvocationDeduplicationStore(ttl_seconds=3_600)
+with RunServer(
+    WorkflowRegistry(),
+    agent_registry=agents,
+    agent_invocation_store=invocations,
+    auth_token="local-token",
+) as server:
+    client = RunClient(server.url, auth_token="local-token")
+    first = client.route_agent(
+        "research", "find release notes", idempotency_key="request-42"
+    )
+    retry = client.route_agent(
+        "research", "find release notes", idempotency_key="request-42"
+    )
+```
+
+The key is a non-empty, control-free string of at most 256 UTF-8 bytes. The
+server hashes the normalized target, task, context, session, and run fields;
+the key is not itself the request digest. A matching completed request
+replays a detached bounded response, while a concurrent duplicate returns
+`AGENT_INVOCATION_IN_PROGRESS` (`409`). Reusing a key for a different target
+or normalized request returns `AGENT_INVOCATION_CONFLICT` (`409`) and does not
+invoke the handler. Normalized errors are retained and replayed too.
+
+`InMemoryAgentInvocationDeduplicationStore` provides thread-safe process-local
+claims. `FileAgentInvocationDeduplicationStore(directory=...)` adds bounded
+atomic restart persistence and local cross-process fencing. Both stores have
+finite entry and TTL limits; the file store also bounds state and response
+bytes. Only the target, key, digest, expiry, and normalized response envelope
+are retained—raw task and context values are not persisted. Completed records
+can expire or be evicted, after which a later request may execute again.
+
+The field is opt-in: requests without it retain the existing wire shape and
+execution path. This is bounded retry protection, not distributed
+coordination, automatic retry, failover, queueing, caller/tenant identity
+binding, resume/cancel idempotency, or an exactly-once external side-effect
+guarantee.
+
 ### Authenticated event transport
 
 When `event_stream=...` is configured, `RunServer` exposes the existing
