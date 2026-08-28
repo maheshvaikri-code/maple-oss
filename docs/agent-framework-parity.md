@@ -61,6 +61,11 @@ physical bounded retry admission. This closes a local task-loss boundary; it
 does not provide durable scheduling, distributed leases, or hosted worker
 coordination.
 
+`SchedulingPolicy` also rejects invalid strategy names and unbounded worker
+configuration before a scheduler starts. The local limits are explicit and
+finite; policy distribution, durable schedule state, distributed leases, and
+hosted scheduler administration remain separate.
+
 Working-memory admission is also bounded in the local runtime: budgets accept
 1..1,000,000 estimated tokens, storage retains at most 4,096 entries, keys are
 limited to 256 UTF-8 bytes, and invalid or non-fitting entries fail before

@@ -42,6 +42,7 @@ Most agent frameworks give you either **infrastructure** (messaging, security, f
 
 - **Bounded Global Task Queue Admission (preview)** - `TaskQueue` validates a `1..100,000` capacity and enforces one queued-item budget across all priorities; stale cancelled or completed tuples are discarded before assignment, and full requeues leave task state unchanged.
 - **Lifecycle-Safe Local Task Scheduling (preview)** - `TaskScheduler` uses an atomic `TaskQueue.assign_task` claim, rejects duplicate ownership, and physically requeues scheduler failures through bounded retry admission.
+- **Fail-Fast Scheduler Policy Bounds (preview)** - `SchedulingPolicy` validates strategy names, agent concurrency, finite scheduling intervals, and boolean preemption before a worker starts.
 
 - **ReAct Reasoning Loop** — Agents think, act, and reflect autonomously. Built-in backtracking when approaches fail.
 - **Pluggable LLM Providers** — OpenAI, Anthropic Claude, or any compatible API (vLLM, Ollama, Together AI).

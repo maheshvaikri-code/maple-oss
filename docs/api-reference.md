@@ -559,6 +559,15 @@ this claim and routes a failed assignment through `FAILED` plus
 `requeue_task()`, so changing only a status cannot silently lose the physical
 queue entry. Retry admission remains bounded by the task's `max_retries`.
 
+`SchedulingPolicy` validates configuration at construction. The supported
+load-balancing strategies are `least_loaded`, `round_robin`, and
+`capability_weighted`; capability matching supports `best_match`, `first_match`,
+and `weighted_score`; retry strategies support `exponential_backoff`, `linear`,
+and `immediate`. `max_concurrent_per_agent` is an integer from `1` through
+`10,000`, `scheduling_interval` is finite and from `0.01` through `3,600`
+seconds, and `preemption_enabled` must be a boolean. Invalid values raise
+`ValueError` before a scheduler worker can consume the policy.
+
 ## Trusted Local Execution (preview)
 
 `TrustedLocalExecutor` is an explicit boundary for trusted Python handlers. It

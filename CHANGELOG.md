@@ -24,6 +24,10 @@
   duplicate ownership and physically requeues scheduler assignment failures
   through the existing bounded retry path.
 
+- **Fail-fast scheduler policy bounds**: `SchedulingPolicy` now rejects
+  unknown strategies, invalid concurrency limits, non-finite or out-of-range
+  scheduling intervals, and non-boolean preemption flags before worker start.
+
 - **Bounded episodic memory**: `EpisodicMemory` now validates bounded task
   IDs and serialized event size, retains a configurable newest-event window
   per task, rejects malformed or oversized records before persistence, and
