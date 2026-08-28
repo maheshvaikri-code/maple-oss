@@ -54,10 +54,21 @@ tests.
 
 ## Package gate
 
-Pending on the release-candidate documentation commit. No publication,
-deployment, cloud action, or website update is authorized or performed.
+The clean archive candidate at `cf191ad` passed the local package gate:
+
+- `python -m build --wheel --sdist`: passed; produced
+  `maple_oss-1.1.3-py3-none-any.whl` and `maple_oss-1.1.3.tar.gz`.
+- `python -m twine check`: both artifacts `PASSED`.
+- Isolated no-dependency wheel install and `import maple`: passed.
+- Clean source archive: `762` entries; wheel: `104` entries; sdist: `676`
+  entries with root `maple_oss-1.1.3`.
+- `archive_untracked_entries=0` by construction from `git archive`; temporary
+  gate artifacts were outside the repository.
+
+The package gate was local-only. No publication, deployment, cloud action, or
+website update is authorized or performed.
 
 ## QA disposition
 
-Behavior, static, and targeted security gates pass. The package gate must run
-from the final committed release tip before publication can be considered.
+Behavior, static, targeted security, and local package gates pass. Publication
+still requires explicit human authorization and remains outside this task.
