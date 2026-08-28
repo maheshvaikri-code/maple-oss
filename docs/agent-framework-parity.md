@@ -294,6 +294,13 @@ approval-specific push delivery, hosted identity/principal policy, durable
 distributed queues, and side-effect semantics; the new notifier is one-shot
 and host-owned rather than a durable delivery guarantee.
 
+Slice 177 closes the approval-specific portion with an authenticated
+`approval:notify` push boundary and optional in-memory/file-store notifier
+hooks. Approval arguments are available to the operator, while execution
+outcomes remain excluded; both notification seams are one-shot and host-owned.
+The remaining P0 work is hosted identity/principal policy, durable distributed
+queues, replay/deduplication, and a side-effect policy for remote coordination.
+
 ## Highest-value gaps before a publish claim
 
 The next implementation work should be ordered by runtime correctness, not by

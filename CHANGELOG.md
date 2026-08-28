@@ -10,6 +10,15 @@
 
 ### Additions
 
+- **Remote approval push delivery**: `ApprovalNotification`,
+  `HttpApprovalNotifier`, optional in-memory/file-store notifier hooks, and the
+  authenticated `POST /v1/approvals/notifications` route connect approval
+  lifecycle events across processes under the distinct `approval:notify`
+  scope. Notifications include bounded tool arguments but omit execution
+  outcomes; sender/receiver acknowledgement, HTTPS policy, typed failures, and
+  one-attempt/no-retry semantics are explicit. Durable queues, identity
+  federation, and exactly-once effects remain outside this slice.
+
 - **Remote human-input push delivery**: `HttpHumanInputNotifier` and the
   authenticated `POST /v1/interactions/notifications` route connect persisted
   human-input lifecycle notifications across processes under the distinct

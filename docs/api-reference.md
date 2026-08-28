@@ -2324,6 +2324,43 @@ notification is not persisted by the receiver, and delivery is at most one
 request attempt per local callback; hosts own queue, retry, deduplication,
 identity, TLS, and side-effect policy.
 
+#### Remote approval push delivery
+
+Use `HttpApprovalNotifier` when a host wants each persisted approval
+`created`, `approved`, or `denied` transition delivered to another MAPLE host.
+The sender makes one bounded `POST` to the complete endpoint URL and requires
+an explicit JSON acknowledgement; loopback HTTP is allowed, while a
+non-loopback endpoint must use HTTPS. Approval arguments are included so the
+operator can make a decision, but `execution_result` is never included.
+
+```python
+from maple import FileApprovalStore, HttpApprovalNotifier
+
+approval_store = FileApprovalStore(
+    "./.maple-approvals",
+    notifier=HttpApprovalNotifier(
+        "http://127.0.0.1:8787/v1/approvals/notifications",
+        auth_token="operator-token",
+    ),
+)
+```
+
+Configure the receiver with `RunServer(...,
+approval_notification_handler=handler, auth_token="operator-token")`.
+The route is `POST /v1/approvals/notifications` and expects
+`{"notification": <ApprovalNotification.to_dict()>}`. It returns
+`{"accepted": true, "notification": {"event_type": ..., "approval_id": ...}}`
+and requires the distinct `approval:notify` scope when a `Principal` is
+configured. `RunClient.publish_approval_notification(notification)` sends the
+same envelope and validates the acknowledgement. Invalid or future-shaped
+fields are parsed at the boundary; execution outcomes are not accepted into
+the notification. Missing authentication returns `401`, a missing scope
+returns `403`, malformed/oversized input returns `400`/`413`, an unavailable
+callback returns `501`, and callback or HTTP failures return typed `5xx`
+errors. The receiver never mutates its approval store, and delivery is at most
+one request attempt per local callback; hosts own queue, retry, deduplication,
+identity, TLS, and side-effect policy.
+
 ### Bounded conversation sessions
 
 `SessionMessage` and `SessionSnapshot` provide a JSON-safe turn-history

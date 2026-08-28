@@ -86,7 +86,7 @@ Most agent frameworks give you either **infrastructure** (messaging, security, f
 - **Native Agent Remote Adapter (preview)** — Bind an `AutonomousAgent`-compatible runtime and its caller-owned `AgentRunStore` to `AgentRegistry` with `AutonomousAgentRemoteAdapter`, exposing native start and durable resume through the authenticated `RunServer`/`RunClient` contract. Native checkpoint state stays host-owned; cancellation, distributed routing, scheduling, notifications, and exactly-once effects require separate explicit contracts.
 - **Bounded Agent Capability Discovery and Routing (preview)** — Register bounded public capability labels, inspect deterministic agent descriptors through authenticated `RunClient.list_agents()` / `list_agents_typed()`, and invoke the lexicographically first exact capability match with `route_agent()` / `route_agent_typed()`. Native remote adapters can advertise capabilities; retries, failover, load balancing, distributed scheduling, identity federation, notifications, and exactly-once effects remain outside the contract.
 - **Bounded Agent-Invocation Idempotency (preview)** — Add an optional caller-owned `idempotency_key` to named or capability-routed calls, backed by a host-configured thread-safe memory store or atomic fenced file store. Matching completed responses replay, concurrent duplicates fail closed, and conflicting request content is rejected; absent keys remain compatible, while distributed coordination and exactly-once external effects remain outside the contract.
-- **Bounded Approval HTTP Transport (preview)** — Expose an authenticated `ApprovalStore` control plane through `RunServer`/`RunClient` for bounded pending-list, inspection, and approve/deny decisions with optional bounded edited arguments; the transport never consumes or executes an approval, and hosted identity, notifications, scheduling, tenancy, and exactly-once effects remain host-owned.
+- **Bounded Approval HTTP Transport (preview)** — Expose an authenticated `ApprovalStore` control plane through `RunServer`/`RunClient` for bounded pending-list, inspection, and approve/deny decisions with optional bounded edited arguments; optional approval lifecycle push uses a distinct `approval:notify` route and excludes execution outcomes; the transport never consumes or executes an approval, and hosted identity, queues, scheduling, tenancy, and exactly-once effects remain host-owned.
 - **Bounded Event HTTP Transport (preview)** — Receive single events or 1–100 event batches through authenticated `RunServer`/`RunClient` routes into a host-owned `EventStream`, preserving local sequence, timestamp, redaction, retention-gap, and subscriber/exporter behavior; batch responses report indexed partial failures, local restart replay is available through the optional `FileEventJournal`, while fleet aggregation and remote trace search remain outside the contract.
 - **Bounded Workflow Fan-Out/Fan-In (preview)** — Run independent workflow branches concurrently with isolated state snapshots, deterministic collision-free merging, checkpointed join boundaries, and durable bounded retry waves for failed branches.
 - **Bounded Workflow Execution Journal (preview)** — Record normalized node outputs before checkpoint commits and recover persisted running checkpoints after a crash-window failure through deterministic execution keys and bounded in-memory or atomic file journals; arbitrary external side effects still require idempotent handlers.
@@ -118,6 +118,13 @@ boundary through `HttpHumanInputNotifier` and the authenticated
 `interaction:notify` route. It makes one bounded attempt, omits response data,
 and does not provide a durable queue, retry, deduplication, hosted identity,
 or exactly-once effects.
+
+Remote approval push delivery is available through `ApprovalNotification`,
+`HttpApprovalNotifier`, and the authenticated `approval:notify` route. It
+delivers bounded `created`, `approved`, and `denied` lifecycle data including
+tool arguments but never execution outcomes; it is one-shot and host-owned,
+with no queue, retry, deduplication, hosted identity, or exactly-once effect
+claim.
 
 ### Production Infrastructure
 
