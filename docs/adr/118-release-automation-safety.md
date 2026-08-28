@@ -32,8 +32,7 @@ will record candidate evidence and every remaining human or governance gate.
 
 - Positive: release automation cannot create an unreviewed version bump or
   push the wrong branch; mismatched tags fail before artifact creation.
-- Negative / debt accepted: action references are still major-version tags and
-  require a separate pinning slice; registry security tooling and dependency
-  findings remain release gates.
+- Negative / debt accepted: pinned action commits require deliberate refreshes;
+  registry security tooling and dependency findings remain release gates.
 - Invalidation triggers: a supported release service with a reviewed,
   human-approved version-bump flow may reopen the removed dispatch path.

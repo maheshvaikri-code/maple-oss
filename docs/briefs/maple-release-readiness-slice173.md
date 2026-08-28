@@ -20,9 +20,8 @@ and leave too much release authority inside automation.
 - **Non-goals:** creating tags, pushing branches, publishing to PyPI or GitHub,
   changing the website, selecting a cloud provider, or remediating the known
   environment-wide dependency audit findings.
-- Deferred: action SHA pinning and hosted identity/notification/sandbox
-  capabilities remain separate follow-up work after their exact upstream
-  references and security scope are established.
+- Deferred: periodic action refresh and hosted identity/notification/sandbox
+  capabilities remain separate follow-up work.
 
 ## Acceptance criteria
 
