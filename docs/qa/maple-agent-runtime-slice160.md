@@ -42,6 +42,17 @@ Result: `1482 passed, 1 skipped in 228.90s (0:03:48)`.
 
 ## QA disposition
 
-Behavior and static gates pass. Package evidence is recorded after the final
-documentation closure commit; no publication, deployment, cloud action, or
-website update is authorized or performed.
+Behavior and static gates pass. The exact committed candidate package gate at
+`35816ac372421ef2dba5732ec544f5c97044390d` reported:
+
+- `python -m build --wheel --sdist`: passed; `maple_oss-1.1.3-py3-none-any.whl`
+  and `maple_oss-1.1.3.tar.gz` were produced.
+- `python -m twine check`: passed.
+- Isolated wheel install and `import maple`: passed.
+- Clean archive counts: source archive `754` entries, wheel `104` entries,
+  sdist `668` entries (`maple_oss-1.1.3` root).
+- Untracked workspace entries: `0` by construction from `git archive`; the
+  temporary package directory was removed after verification.
+
+No publication, deployment, cloud action, or website update is authorized or
+performed.
