@@ -466,7 +466,12 @@ class AutonomousAgent(Agent):
             },
         }
 
-    def execute_approved_tool(self, approval_id: str) -> ToolResult:
+    def execute_approved_tool(
+        self,
+        approval_id: str,
+        *,
+        cancellation: Optional[CancellationToken] = None,
+    ) -> ToolResult:
         """Consume and execute, or replay, one approved durable tool request.
 
         Built-in approval stores record the bounded terminal tool outcome after
@@ -474,6 +479,12 @@ class AutonomousAgent(Agent):
         the handler again. If an optional custom store does not implement
         ``record_execution``, its existing single-use behavior is retained.
         """
+        if cancellation is not None and cancellation.is_cancelled():
+            return self._approval_error(
+                approval_id,
+                "AGENT_RUN_CANCELLED",
+                "Agent run cancellation was requested.",
+            )
         if self._approval_store is None:
             return self._approval_error(
                 approval_id,
@@ -511,6 +522,12 @@ class AutonomousAgent(Agent):
                 error_type,
                 "Approval request is not executable.",
             )
+        if cancellation is not None and cancellation.is_cancelled():
+            return self._approval_error(
+                request.tool_call_id,
+                "AGENT_RUN_CANCELLED",
+                "Agent run cancellation was requested.",
+            )
         consumed_result = self._approval_store.consume(approval_id)
         if consumed_result.is_err():
             return self._approval_error(
@@ -530,6 +547,7 @@ class AutonomousAgent(Agent):
                 arguments=effective_arguments,
             ),
             skip_approval=True,
+            cancellation=cancellation,
         )
         recorder = getattr(self._approval_store, "record_execution", None)
         if not callable(recorder):
@@ -1248,7 +1266,10 @@ class AutonomousAgent(Agent):
             if request.status == "approved":
                 if cancellation is not None and cancellation.is_cancelled():
                     return Result.err(self._cancellation_error(checkpoint.run_id))
-                tool_result = self.execute_approved_tool(request.approval_id)
+                tool_result = self.execute_approved_tool(
+                    request.approval_id,
+                    cancellation=cancellation,
+                )
             elif request.status == "denied":
                 tool_result = self._approval_error(
                     request.tool_call_id,
@@ -2691,6 +2712,15 @@ class AutonomousAgent(Agent):
             self._finish_tool_span(tool_span, result)
             return result
 
+        if cancellation is not None and cancellation.is_cancelled():
+            return complete(
+                self._tool_error(
+                    tool_call.id,
+                    "AGENT_RUN_CANCELLED",
+                    "Agent run cancellation was requested.",
+                )
+            )
+
         try:
             tool_result = self.tool_registry.get(tool_call.name)
             if tool_result.is_err():
@@ -2792,6 +2822,15 @@ class AutonomousAgent(Agent):
         def complete(result: ToolResult) -> ToolResult:
             self._finish_tool_span(tool_span, result)
             return result
+
+        if cancellation is not None and cancellation.is_cancelled():
+            return complete(
+                self._tool_error(
+                    tool_call.id,
+                    "AGENT_RUN_CANCELLED",
+                    "Agent run cancellation was requested.",
+                )
+            )
 
         try:
             tool_result = self.tool_registry.get(tool_call.name)
@@ -3840,7 +3879,12 @@ Instructions:
                 if cancellation is not None and cancellation.is_cancelled():
                     return Result.err(self._cancellation_error(checkpoint.run_id))
                 tool_result = await loop.run_in_executor(
-                    None, partial(self.execute_approved_tool, request.approval_id)
+                    None,
+                    partial(
+                        self.execute_approved_tool,
+                        request.approval_id,
+                        cancellation=cancellation,
+                    ),
                 )
             elif request.status == "denied":
                 tool_result = self._approval_error(
