@@ -34,8 +34,7 @@ cloud action, or website update was performed.
 ## Full regression evidence
 
 - Exact tracked test manifest: `1400 passed, 1 skipped in 231.02s`.
-- `git diff --check 84f8afa..HEAD`: pending the final documentation commit;
-  the committed range is checked again before closure.
+- `git diff --check 84f8afa..HEAD`: passed.
 
 ## Dependency evidence
 
@@ -45,9 +44,19 @@ packages skipped. This remains a release veto outside this slice.
 
 ## Package evidence
 
-The final clean archive must build wheel and sdist, pass Twine checks, install
-without dependencies into an isolated target, and run a no-dependency memory
-archive smoke test. Exact artifact counts are recorded after that run.
+The final `git archive HEAD` snapshot built successfully as `maple-oss-1.1.3`:
+
+- build exit: `0`;
+- wheel: `104` archive entries;
+- sdist: `623` archive entries;
+- `twine check`: both artifacts passed;
+- `pip install --no-deps --target ...`: exit `0`;
+- isolated export smoke: `clean_archive_memory_archive_boundary_smoke=passed`;
+- workspace-only archive entries: `0`.
+
+The first local smoke expression used an invalid one-line provider test double;
+the corrected smoke against the installed clean artifact passed as recorded
+above.
 
 ## QA decision
 
