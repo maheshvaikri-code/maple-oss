@@ -45,12 +45,22 @@ cloud action, or website update was performed.
 
 ## Package evidence
 
-The final clean archive package evidence will be recorded after the final
-documentation closure commit.
+The clean `git archive HEAD` package candidate built successfully as
+`maple_oss-1.1.3`:
+
+- `python -m build --wheel --sdist`: exit `0`;
+- wheel: `104` archive entries;
+- sdist: `640` archive entries;
+- `twine check`: both artifacts `PASSED`;
+- `pip install --no-deps --target ...`: exit `0`;
+- isolated export smoke: `clean_archive_scheduler_policy_smoke=passed`;
+- workspace-only archive entries: `0`.
+
+The exact-`HEAD` archive is rebuilt after this QA and release-plan closure
+metadata is committed.
 
 ## QA decision
 
-The policy validation boundary is functionally ready for preview release once
-the final exact test, static, security, and clean-archive gates are recorded.
-The overall publish hold remains in place for environment-wide dependency
+The policy validation boundary is functionally ready for preview release. The
+overall publish hold remains in place for environment-wide dependency
 governance, unavailable Bandit, and the required independent verifier session.

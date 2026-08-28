@@ -35,7 +35,7 @@ scheduler administration, or a force-cancellation guarantee.
 
 ## Decision
 
-Approve the policy-validation implementation for preview release readiness,
-subject to final exact-suite, static/security, and clean-archive package gates
-and retained overall publish controls. No publication, deployment, cloud
-action, or website update was performed.
+Approve the policy-validation implementation for preview release readiness;
+the exact-suite, static/security, and clean-archive package gates are recorded
+in the QA record. Retained overall publish controls still apply. No
+publication, deployment, cloud action, or website update was performed.
