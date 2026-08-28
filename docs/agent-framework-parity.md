@@ -35,6 +35,12 @@ completion capability. This prevents an async caller that needs a non-blocking
 provider from selecting a descriptor that only inherits the synchronous
 compatibility fallback.
 
+Working-memory admission is also bounded in the local runtime: budgets accept
+1..1,000,000 estimated tokens, storage retains at most 4,096 entries, keys are
+limited to 256 UTF-8 bytes, and invalid or non-fitting entries fail before
+mutation. This improves the local memory boundary while automatic/token-aware
+summarization, managed context windows, and hosted memory remain separate.
+
 | Capability | MAPLE status and evidence | What the comparison set makes visible | Release action |
 |---|---|---|---|
 | Agent loop, tool calling, and tool schemas | **Native** — `AutonomousAgent`, `Tool`, `ToolRegistry`, ReAct reasoning, bounded arguments, approval-aware execution | All five expose an agent/tool loop as a primary developer surface | Keep stable; add more provider-contract fixtures only when needed |

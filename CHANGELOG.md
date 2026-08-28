@@ -10,6 +10,12 @@
 
 ### Additions
 
+- **Bounded working-memory admission**: `WorkingMemory` validates bounded
+  budgets, UTF-8 keys and content, and finite relevance metadata before
+  mutation. It bounds memory to 1,000,000 estimated tokens and 4,096 entries,
+  rejects an entry that cannot fit without evicting existing context, and
+  preserves oldest-entry eviction for accepted entries.
+
 - **Explicit async-completion capability routing**: provider descriptors can
   declare `ProviderCapabilities(async_completion=True)`, and callers can use
   `ProviderRequirements(async_completion=True)` to reject providers that only

@@ -35,6 +35,7 @@ Most agent frameworks give you either **infrastructure** (messaging, security, f
 ### Autonomous Agentic AI (v1.1.3)
 
 - **Native Async Provider Completion (preview)** - Async agent loops can await native OpenAI-compatible and Anthropic completion clients when the optional SDK exposes them. Providers without an async client retain the explicit base-provider fallback; `ProviderRequirements(async_completion=True)` can require a declared native async provider; no hidden retry, provider selection, or concurrency claim is made.
+- **Bounded Working Memory Admission (preview)** - Working-memory budgets are bounded to 1..1,000,000 estimated tokens and 4,096 entries; UTF-8 text, keys, and relevance metadata are validated before admission, and entries too large to fit fail without mutating the existing context.
 
 - **ReAct Reasoning Loop** — Agents think, act, and reflect autonomously. Built-in backtracking when approaches fail.
 - **Pluggable LLM Providers** — OpenAI, Anthropic Claude, or any compatible API (vLLM, Ollama, Together AI).

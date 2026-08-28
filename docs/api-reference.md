@@ -2000,6 +2000,42 @@ Without `session_id`, existing agent behavior is unchanged. Full ReAct trace
 replay, tool-result replay, automatic/token-aware compaction, authentication,
 and cross-process turn leases remain separate capabilities.
 
+### Bounded working-memory admission (preview)
+
+`WorkingMemory` provides a small in-process context store with explicit
+admission bounds. The constructor accepts `max_tokens` from `1` through
+`1,000,000`. The store retains at most `4,096` entries. Keys must be
+non-empty text without control characters and no more than `256` UTF-8 bytes;
+content must be valid text encodable as UTF-8; and `relevance` must be a finite
+number in the inclusive range `0..1`.
+
+```python
+from maple.autonomy import WorkingMemory
+
+memory = WorkingMemory(max_tokens=8)
+accepted = memory.add("task", "bounded context", relevance=0.8)
+assert accepted.is_ok()
+
+rejected = memory.add("too-large", "x" * 40)
+assert rejected.is_err()
+assert memory.get_context()[0]["key"] == "task"
+```
+
+Token usage is a deterministic local estimate: the ceiling of UTF-8 byte
+length divided by four, with empty content using zero tokens. It is not a
+provider tokenizer or billing estimate. When an accepted entry would exceed
+the token budget or entry-count limit, the oldest entries are evicted until it
+fits. An entry larger than the complete token budget is rejected before any
+eviction or append. Invalid or rejected input leaves the existing context
+unchanged.
+
+`add()` returns stable typed errors: `MEMORY_KEY_INVALID`,
+`MEMORY_CONTENT_INVALID`, `MEMORY_RELEVANCE_INVALID`, or
+`MEMORY_ENTRY_TOO_LARGE`. Invalid `max_tokens` raises `ValueError`. The store
+is not thread-safe; callers sharing an instance across threads must provide
+external synchronization. This API does not summarize, persist, automatically
+compact, or manage memory across processes.
+
 ### Durable agent runs (preview)
 
 Attach an `InMemoryAgentRunStore` or `FileAgentRunStore` to persist a bounded
