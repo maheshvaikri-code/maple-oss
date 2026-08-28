@@ -13,7 +13,7 @@
 | 2 | Retrieve a completed result only through the dedicated least-privilege scope | Focused transport test verifies `handoff:result` delivery, ordinary inspection redaction, and `FORBIDDEN` without the dedicated scope | Yes |
 | 3 | Fail closed for pending, accepted, invalid, oversized, and missing-result states | Focused transport tests verify `HANDOFF_RESULT_UNAVAILABLE`, `HANDOFF_RESULT_INVALID`, HTTP 400, and no store mutation | Yes |
 | 4 | Preserve existing custom-store completion compatibility | Regression test exercises a legacy three-argument `complete()` implementation; focused suite is green | Yes |
-| 5 | Keep the public contract and release artifacts synchronized | README, API reference, parity ledger, changelog, ADR, release plan, and code review are present; package evidence is finalized below | Yes |
+| 5 | Keep the public contract and release artifacts synchronized | README, API reference, parity ledger, changelog, ADR, release plan, and code review are present; final package evidence is recorded below | Yes |
 
 ## Regression
 
@@ -67,8 +67,24 @@ secret_danger_scan=passed
 **Security verdict:** Pass for slice-specific findings; publication remains
 vetoed by the pre-existing dependency-audit/tooling governance condition.
 
+## Package gate
+
+The package was built from a file-backed `git archive` of committed HEAD
+`0c3dc15`, so untracked workspace files were excluded.
+
+```text
+source_archive_entries=774
+build_exit=0
+twine_exit=0
+wheel_entries=104
+sdist_entries=688
+install_exit=0
+isolated_import=passed
+```
+
 ## Release disposition
 
-The change is ready for local package validation and staged release review.
+The change is ready for staged release review. The dependency-governance veto
+above still prevents publication authorization.
 No publication, deployment, cloud action, registry write, or website update
 was performed.
