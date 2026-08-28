@@ -116,6 +116,58 @@ class AnthropicProvider(LLMProvider):
                 }
             )
 
+    async def complete_async(
+        self,
+        messages: List[ChatMessage],
+        tools: Optional[List[ToolDefinition]] = None,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+        stop: Optional[List[str]] = None,
+    ) -> Result[LLMResponse, Dict[str, Any]]:
+        """Complete through the native async Anthropic client."""
+
+        if not self.async_client:
+            return await super().complete_async(
+                messages,
+                tools=tools,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                stop=stop,
+            )
+        formatted = self._format_messages(messages)
+        if formatted.is_err():
+            return Result.err(formatted.unwrap_err())
+        system_prompt, conversation = formatted.unwrap()
+        try:
+            kwargs: Dict[str, Any] = {
+                "model": self.config.model,
+                "messages": conversation,
+                "max_tokens": max_tokens or self.config.max_tokens,
+                "temperature": (
+                    temperature if temperature is not None else self.config.temperature
+                ),
+            }
+            if system_prompt:
+                kwargs["system"] = system_prompt
+            if stop:
+                kwargs["stop_sequences"] = stop
+            if tools:
+                kwargs["tools"] = [self._format_tool(tool) for tool in tools]
+            response = await cast(Any, self.async_client).messages.create(**kwargs)
+            llm_response = self._parse_response(response)
+            self._track_usage(llm_response)
+            return Result.ok(llm_response)
+        except Exception as exc:
+            return Result.err(
+                {
+                    "errorType": classify_provider_exception(
+                        exc, fallback="LLM_COMPLETION_ERROR"
+                    ),
+                    "message": "Anthropic async completion failed.",
+                    "details": {"exception": type(exc).__name__},
+                }
+            )
+
     async def stream(
         self,
         messages: List[ChatMessage],

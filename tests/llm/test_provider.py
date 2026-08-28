@@ -216,6 +216,72 @@ class TestLLMProvider:
         assert remote.is_err()
         assert remote.unwrap_err()["errorType"] == "LLM_UNSUPPORTED_CONTENT"
 
+    async def test_openai_native_async_completion_uses_async_client(self):
+        seen = {}
+
+        class AsyncCompletions:
+            async def create(self, **kwargs):
+                seen.update(kwargs)
+                return SimpleNamespace(
+                    choices=[
+                        SimpleNamespace(
+                            message=SimpleNamespace(
+                                content="async result", tool_calls=None
+                            ),
+                            finish_reason="stop",
+                        )
+                    ],
+                    usage=None,
+                    model="gpt-test",
+                    id="request-1",
+                )
+
+        provider = object.__new__(OpenAIProvider)
+        LLMProvider.__init__(provider, LLMConfig(provider="openai", model="gpt-test"))
+        provider.async_client = SimpleNamespace(
+            chat=SimpleNamespace(completions=AsyncCompletions())
+        )
+
+        result = await provider.complete_async(
+            [ChatMessage(role=ChatRole.USER, content="hello")],
+            stop=["END"],
+        )
+
+        assert result.is_ok()
+        assert result.unwrap().content == "async result"
+        assert seen["messages"] == [{"role": "user", "content": "hello"}]
+        assert seen["stop"] == ["END"]
+
+    async def test_anthropic_native_async_completion_uses_async_client(self):
+        seen = {}
+
+        class AsyncMessages:
+            async def create(self, **kwargs):
+                seen.update(kwargs)
+                return SimpleNamespace(
+                    content=[SimpleNamespace(type="text", text="async result")],
+                    usage=None,
+                    model="claude-test",
+                    stop_reason="end_turn",
+                    id="request-2",
+                )
+
+        provider = object.__new__(AnthropicProvider)
+        LLMProvider.__init__(
+            provider, LLMConfig(provider="anthropic", model="claude-test")
+        )
+        provider.async_client = SimpleNamespace(messages=AsyncMessages())
+
+        result = await provider.complete_async(
+            [ChatMessage(role=ChatRole.USER, content="hello")],
+            stop=["END"],
+        )
+
+        assert result.is_ok()
+        assert result.unwrap().content == "async result"
+        assert seen["messages"] == [{"role": "user", "content": "hello"}]
+        assert seen["stop_sequences"] == ["END"]
+
 
 class TestLLMProviderRegistry:
     def setup_method(self):
