@@ -82,3 +82,25 @@ def test_queue_assignment_rejects_empty_agent():
     assert result.is_err()
     assert result.unwrap_err() == "Assigned agent cannot be empty"
     assert task_queue.get_task(task_id).unwrap().status == TaskStatus.QUEUED
+
+
+def test_queue_completion_accepts_running_owned_task_and_records_result():
+    task_queue = TaskQueue(max_queue_size=1)
+    task_queue.start()
+    try:
+        task_id = task_queue.submit_task("compute", {}).unwrap()
+        dequeued = task_queue.get_next_task().unwrap()
+        assert dequeued is not None
+        assert task_queue.assign_task(task_id, "worker-1").is_ok()
+        assert task_queue.update_task_status(task_id, TaskStatus.RUNNING).is_ok()
+
+        result = task_queue.complete_task(
+            task_id, "worker-1", result={"value": 42}
+        )
+
+        assert result.is_ok()
+        completed = task_queue.get_task(task_id).unwrap()
+        assert completed.status == TaskStatus.COMPLETED
+        assert completed.result == {"value": 42}
+    finally:
+        task_queue.stop()

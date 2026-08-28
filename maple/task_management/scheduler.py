@@ -473,18 +473,25 @@ class TaskScheduler:
 
         return self.task_queue.requeue_task(task_id)
 
-    def task_completed(self, task_id: str, agent_id: str) -> Result[None, str]:
-        """Notify scheduler that a task has completed."""
+    def task_completed(
+        self, task_id: str, agent_id: str, result: object = None
+    ) -> Result[None, str]:
+        """Complete an owned task and release its scheduler assignment."""
+
+        completion_result = self.task_queue.complete_task(
+            task_id, agent_id, result=result
+        )
+        if completion_result.is_err():
+            return Result.err(completion_result.unwrap_err())
 
         with self._lock:
-            # Update agent load
-            if agent_id in self.agent_loads:
-                self.agent_loads[agent_id] = max(0, self.agent_loads[agent_id] - 1)
-
             # Remove from assignments
-            if agent_id in self.agent_assignments:
-                if task_id in self.agent_assignments[agent_id]:
-                    self.agent_assignments[agent_id].remove(task_id)
+            assignments = self.agent_assignments.get(agent_id, [])
+            if task_id in assignments:
+                assignments.remove(task_id)
+                self.agent_loads[agent_id] = max(
+                    0, self.agent_loads.get(agent_id, 0) - 1
+                )
 
         return Result.ok(None)
 

@@ -377,6 +377,28 @@ class TaskQueue:
             self._notify_task_callbacks(task_id, task)
             return Result.ok(task)
 
+    def complete_task(
+        self, task_id: str, assigned_agent: str, result: Any = None
+    ) -> Result[Task, str]:
+        """Complete an assigned task after checking its owner."""
+
+        with self._lock:
+            if not assigned_agent:
+                return Result.err("Assigned agent cannot be empty")
+            if task_id not in self.tasks:
+                return Result.err(f"Task {task_id} not found")
+
+            task = self.tasks[task_id]
+            if task.assigned_agent != assigned_agent:
+                return Result.err(f"Task {task_id} is not assigned to {assigned_agent}")
+            if task.status not in (TaskStatus.ASSIGNED, TaskStatus.RUNNING):
+                return Result.err(
+                    f"Task {task_id} cannot be completed from status "
+                    f"{task.status.value}"
+                )
+
+            return self.update_task_status(task_id, TaskStatus.COMPLETED, result=result)
+
     def cancel_task(self, task_id: str) -> Result[Task, str]:
         """Cancel a task."""
         return self.update_task_status(task_id, TaskStatus.CANCELLED)

@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import MagicMock
 from dataclasses import dataclass, field
-from maple.task_management.task_queue import TaskQueue, TaskPriority
+from maple.task_management.task_queue import TaskQueue, TaskPriority, TaskStatus
 from maple.task_management.scheduler import TaskScheduler, SchedulingPolicy, SchedulingMetrics
 from maple.core.result import Result
 
@@ -182,13 +182,44 @@ class TestTaskCompletion:
         sched.schedule_task(tid)
         agent = list(sched.agent_loads.keys())[0]
         assert sched.agent_loads[agent] >= 1
-        sched.task_completed(tid, agent)
+        completed = sched.task_completed(tid, agent, result={"ok": True})
+        assert completed.is_ok()
         assert sched.agent_loads[agent] == 0
+        assert task_queue.get_task(tid).unwrap().status == TaskStatus.COMPLETED
+        assert task_queue.get_task(tid).unwrap().result == {"ok": True}
 
-    def test_task_completed_unknown_agent(self, task_queue):
+    def test_task_completed_unknown_task_fails_closed(self, task_queue):
         sched = _make_scheduler(task_queue)
         result = sched.task_completed("t1", "unknown")
-        assert result.is_ok()
+        assert result.is_err()
+        assert "not found" in result.unwrap_err()
+
+    def test_task_completed_wrong_owner_fails_without_releasing_load(
+        self, task_queue
+    ):
+        sched = _make_scheduler(task_queue)
+        tid = _submit(task_queue, reqs=["compute"])
+        assert sched.schedule_task(tid).is_ok()
+        owner = list(sched.agent_loads.keys())[0]
+
+        result = sched.task_completed(tid, "other-agent")
+
+        assert result.is_err()
+        assert "not assigned" in result.unwrap_err()
+        assert sched.get_agent_load(owner) == 1
+        assert task_queue.get_task(tid).unwrap().status == TaskStatus.ASSIGNED
+
+    def test_task_completed_rejects_repeated_terminal_transition(self, task_queue):
+        sched = _make_scheduler(task_queue)
+        tid = _submit(task_queue, reqs=["compute"])
+        assert sched.schedule_task(tid).is_ok()
+        owner = list(sched.agent_loads.keys())[0]
+
+        assert sched.task_completed(tid, owner).is_ok()
+        repeated = sched.task_completed(tid, owner)
+
+        assert repeated.is_err()
+        assert "completed" in repeated.unwrap_err()
 
 
 # ---------------------------------------------------------------------------
