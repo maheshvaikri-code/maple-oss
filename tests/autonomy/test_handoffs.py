@@ -91,6 +91,65 @@ class AsyncCancellationAwareTarget:
         return await self.pursue_goal(description, cancellation=cancellation)
 
 
+class DurableChildTarget:
+    agent_id = "durable-specialist"
+
+    def __init__(self):
+        self.start_attempts = 0
+        self.model_runs = 0
+        self.resume_calls = 0
+
+    def pursue_goal(self, description, *, run_id, cancellation=None):
+        self.start_attempts += 1
+        if self.start_attempts == 1:
+            self.model_runs += 1
+            return Result.ok(
+                type(
+                    "Goal",
+                    (),
+                    {
+                        "goal_id": run_id,
+                        "status": "paused",
+                        "result": None,
+                    },
+                )()
+            )
+        return Result.err(
+            {
+                "errorType": "RUN_EXISTS",
+                "message": "The durable child already exists.",
+            }
+        )
+
+    def resume_run(self, run_id, *, cancellation=None):
+        self.resume_calls += 1
+        return Result.ok(
+            type(
+                "Goal",
+                (),
+                {
+                    "goal_id": run_id,
+                    "status": "completed",
+                    "result": {"answer": "resumed"},
+                },
+            )()
+        )
+
+
+class AsyncDurableChildTarget(DurableChildTarget):
+    agent_id = "async-durable-specialist"
+
+    async def pursue_goal_async(self, description, *, run_id, cancellation=None):
+        return self.pursue_goal(
+            description,
+            run_id=run_id,
+            cancellation=cancellation,
+        )
+
+    async def resume_run_async(self, run_id, *, cancellation=None):
+        return self.resume_run(run_id, cancellation=cancellation)
+
+
 def make_record(handoff_id="handoff-1"):
     return HandoffRecord.pending(
         handoff_id,
@@ -459,6 +518,41 @@ def test_agent_tool_propagates_cancellation_to_native_child():
     assert outcome[0].unwrap_err()["errorType"] == "EXECUTION_CANCELLED"
 
 
+def test_persistent_agent_tool_resumes_existing_sync_child_run():
+    target = DurableChildTarget()
+    tool = create_agent_tool(
+        target,
+        requires_approval=False,
+        persist_child_run=True,
+    )
+
+    first = tool.execute(task="pause this", child_run_id="child-sync-1")
+    resumed = tool.execute(task="pause this", child_run_id="child-sync-1")
+
+    assert first.is_ok()
+    assert first.unwrap()["status"] == "paused"
+    assert resumed.is_ok()
+    assert resumed.unwrap()["status"] == "completed"
+    assert target.start_attempts == 2
+    assert target.model_runs == 1
+    assert target.resume_calls == 1
+    definition = tool.to_llm_definition().parameters
+    assert definition["required"] == ["task", "child_run_id"]
+    assert definition["properties"]["child_run_id"]["maxLength"] == 128
+
+
+def test_persistent_agent_tool_rejects_unsupported_target_contract():
+    with pytest.raises(ValueError, match="persist_child_run"):
+        create_agent_tool(HandoffTarget(), persist_child_run=True)
+
+    target = DurableChildTarget()
+    tool = create_agent_tool(target, requires_approval=False, persist_child_run=True)
+    invalid = tool.execute(task="pause this", child_run_id="bad id")
+
+    assert invalid.is_err()
+    assert invalid.unwrap_err()["errorType"] == "AGENT_TOOL_CHILD_RUN_ID_INVALID"
+
+
 def test_handoff_tool_propagates_cancellation_to_native_child():
     target = CancellationAwareTarget()
     token = CancellationToken()
@@ -546,6 +640,33 @@ async def test_async_agent_tool_propagates_cancellation_to_native_child():
     assert target.received_token is token
     assert result.is_err()
     assert result.unwrap_err()["errorType"] == "EXECUTION_CANCELLED"
+
+
+@pytest.mark.asyncio
+async def test_persistent_agent_tool_resumes_existing_async_child_run():
+    target = AsyncDurableChildTarget()
+    tool = create_agent_tool(
+        target,
+        requires_approval=False,
+        persist_child_run=True,
+    )
+
+    first = await tool.execute_async(
+        task="pause asynchronously",
+        child_run_id="child-async-1",
+    )
+    resumed = await tool.execute_async(
+        task="pause asynchronously",
+        child_run_id="child-async-1",
+    )
+
+    assert first.is_ok()
+    assert first.unwrap()["status"] == "paused"
+    assert resumed.is_ok()
+    assert resumed.unwrap()["status"] == "completed"
+    assert target.start_attempts == 2
+    assert target.model_runs == 1
+    assert target.resume_calls == 1
 
 
 @pytest.mark.asyncio

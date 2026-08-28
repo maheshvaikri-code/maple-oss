@@ -917,8 +917,40 @@ boundary. Target failures, raised exceptions, and malformed goals return typed
 `AGENT_TOOL_TARGET_INVALID` errors without the child payload. When the target
 declares `pursue_goal_async(...)`, `await specialist_tool.execute_async(...)`
 uses that contract; otherwise the normal synchronous compatibility path runs in
-the tool executor. Remote routing, durable child-run replay, automatic retries,
-and exactly-once effects remain outside this local contract.
+the tool executor. Remote routing, automatic retries, and exactly-once effects
+remain outside this local contract.
+
+For a native child configured with an `AgentRunStore`, callers may opt into
+local in-flight child recovery:
+
+```python
+durable_tool = create_agent_tool(
+    specialist,
+    requires_approval=False,
+    persist_child_run=True,
+)
+
+first = durable_tool.execute(
+    task="Continue the release audit",
+    child_run_id="release-audit-child-1",
+)
+# If the child run already exists after a crash or retry, MAPLE calls the
+# target's resume_run("release-audit-child-1") instead of starting a new run.
+retry = durable_tool.execute(
+    task="Continue the release audit",
+    child_run_id="release-audit-child-1",
+)
+```
+
+`persist_child_run=True` requires the target's `pursue_goal(..., run_id=...)`
+and `resume_run(run_id)` contracts. Async-capable targets must also expose
+`pursue_goal_async(..., run_id=...)` and `resume_run_async(run_id)`. The caller
+owns the bounded ID, and it is required in the tool schema. Context remains
+allowlisted; a native resume uses the child's persisted checkpoint. Completed
+terminal child results are not independently replayed by this option—use the
+existing parent `ExecutionJournal` policy when that behavior is intended.
+Remote child routing, distributed scheduling, hard cancellation, and
+exactly-once effects remain outside the contract.
 
 ### Per-goal token accounting and budgets
 

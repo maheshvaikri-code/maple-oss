@@ -19,6 +19,7 @@ import inspect
 import json
 import logging
 import math
+import re
 import uuid
 from dataclasses import dataclass, field
 from typing import (
@@ -59,15 +60,16 @@ MAX_HANDOFF_CONTEXT_STRING_LENGTH = 8_192
 MAX_HANDOFF_CONTEXT_BYTES = 32_768
 TOOL_REPLAY_DISABLED = "disabled"
 TOOL_REPLAY_REUSE_SUCCESS = "reuse_success"
+_CHILD_RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
 
 
-def _callable_accepts_cancellation(handler: Callable[..., Any]) -> bool:
-    """Return whether a callable explicitly accepts the cancellation keyword."""
+def _callable_accepts_keyword(handler: Callable[..., Any], keyword: str) -> bool:
+    """Return whether a callable accepts one named keyword argument."""
     try:
         signature = inspect.signature(handler)
     except (TypeError, ValueError):
         return False
-    parameter = signature.parameters.get("cancellation")
+    parameter = signature.parameters.get(keyword)
     if parameter is not None and parameter.kind in {
         inspect.Parameter.POSITIONAL_OR_KEYWORD,
         inspect.Parameter.KEYWORD_ONLY,
@@ -79,15 +81,46 @@ def _callable_accepts_cancellation(handler: Callable[..., Any]) -> bool:
     )
 
 
+def _callable_accepts_cancellation(handler: Callable[..., Any]) -> bool:
+    """Return whether a callable explicitly accepts the cancellation keyword."""
+    return _callable_accepts_keyword(handler, "cancellation")
+
+
 def _invoke_delegated(
     handler: Callable[..., Any],
     args: Sequence[Any],
     cancellation: Optional[CancellationToken],
+    *,
+    run_id: Optional[str] = None,
 ) -> Any:
-    """Invoke a child method with a token only when its signature supports it."""
+    """Invoke a child method with only signature-compatible control keywords."""
+    kwargs: Dict[str, Any] = {}
+    if run_id is not None and _callable_accepts_keyword(handler, "run_id"):
+        kwargs["run_id"] = run_id
     if cancellation is not None and _callable_accepts_cancellation(handler):
-        return handler(*args, cancellation=cancellation)
-    return handler(*args)
+        kwargs["cancellation"] = cancellation
+    return handler(*args, **kwargs)
+
+
+def _child_run_id_error(value: Any) -> Optional[Dict[str, Any]]:
+    if not isinstance(value, str) or not _CHILD_RUN_ID_PATTERN.fullmatch(value):
+        return {
+            "errorType": "AGENT_TOOL_CHILD_RUN_ID_INVALID",
+            "message": (
+                "child_run_id must contain 1-128 letters, numbers, '_', '.', ':', "
+                "or '-'."
+            ),
+        }
+    return None
+
+
+def _result_error_type(value: Any) -> Optional[str]:
+    if not isinstance(value, Result) or value.is_ok():
+        return None
+    error = value.unwrap_err()
+    if isinstance(error, Mapping) and isinstance(error.get("errorType"), str):
+        return cast(str, error["errorType"])
+    return None
 
 
 def _delegation_cancelled(target_id: str) -> Result[Any, Dict[str, Any]]:
@@ -973,6 +1006,7 @@ def create_agent_tool(
     description: Optional[str] = None,
     requires_approval: bool = True,
     replay_policy: str = TOOL_REPLAY_DISABLED,
+    persist_child_run: bool = False,
     allowed_context_keys: Optional[Sequence[str]] = None,
 ) -> Tool:
     """Create a bounded manager-style tool backed by another agent.
@@ -984,7 +1018,9 @@ def create_agent_tool(
     errors are reduced to their type; prompts, traces, and provider details do
     not cross the tool result boundary. ``replay_policy`` is forwarded to the
     returned tool so a parent execution journal can optionally reuse a
-    successful bounded child result during local recovery.
+    successful bounded child result during local recovery. ``persist_child_run``
+    enables an explicit local child lifecycle: callers supply ``child_run_id``
+    and an existing child run is resumed through its native resume API.
     """
     target_id = getattr(target_agent, "agent_id", None)
     pursue_goal = getattr(target_agent, "pursue_goal", None)
@@ -999,6 +1035,28 @@ def create_agent_tool(
         raise ValueError("target_agent must expose a callable pursue_goal method")
     if not isinstance(requires_approval, bool):
         raise ValueError("requires_approval must be boolean")
+    if not isinstance(persist_child_run, bool):
+        raise ValueError("persist_child_run must be boolean")
+    pursue_with_context = getattr(target_agent, "pursue_goal_with_context", None)
+    resume_run = getattr(target_agent, "resume_run", None)
+    resume_run_handler = cast(Callable[..., Any], resume_run)
+    if persist_child_run:
+        if not _callable_accepts_keyword(pursue_goal, "run_id"):
+            raise ValueError(
+                "persist_child_run requires a target pursue_goal run_id parameter"
+            )
+        if not callable(resume_run):
+            raise ValueError("persist_child_run requires a target resume_run method")
+        if not _callable_accepts_keyword(resume_run, "run_id"):
+            raise ValueError(
+                "persist_child_run requires a target resume_run run_id parameter"
+            )
+        if callable(pursue_with_context) and not _callable_accepts_keyword(
+            pursue_with_context, "run_id"
+        ):
+            raise ValueError(
+                "persist_child_run requires context-aware target run_id support"
+            )
     if allowed_context_keys is None:
         allowed_keys: frozenset[str] = frozenset()
     else:
@@ -1028,6 +1086,44 @@ def create_agent_tool(
         f"Ask agent {target_id} to complete one bounded task and return its result"
     )
 
+    def validate_child_run_id(
+        child_run_id: Optional[str],
+    ) -> Result[Optional[str], Dict[str, Any]]:
+        if not persist_child_run:
+            return Result.ok(None)
+        if child_run_id is None:
+            return Result.err(
+                {
+                    "errorType": "AGENT_TOOL_CHILD_RUN_ID_INVALID",
+                    "message": (
+                        "child_run_id is required when child-run persistence is "
+                        "enabled."
+                    ),
+                }
+            )
+        identifier_error = _child_run_id_error(child_run_id)
+        if identifier_error is not None:
+            return Result.err(identifier_error)
+        return Result.ok(child_run_id)
+
+    def resume_existing_child(
+        child_run_id: str,
+        cancellation: Optional[CancellationToken],
+    ) -> Any:
+        try:
+            return _invoke_delegated(resume_run_handler, (child_run_id,), cancellation)
+        except Exception as exc:
+            return Result.err(
+                {
+                    "errorType": "AGENT_TOOL_CHILD_RESUME_ERROR",
+                    "message": "Nested agent resume failed.",
+                    "details": {
+                        "agent_id": target_id,
+                        "exception": type(exc).__name__,
+                    },
+                }
+            )
+
     def prepare_context(
         context: Optional[Dict[str, Any]],
     ) -> Result[Dict[str, Any], Dict[str, Any]]:
@@ -1049,6 +1145,7 @@ def create_agent_tool(
     def invoke_sync(
         task: str,
         context: Optional[Dict[str, Any]] = None,
+        child_run_id: Optional[str] = None,
         *,
         cancellation: Optional[CancellationToken] = None,
     ) -> Result[Dict[str, Any], Dict[str, Any]]:
@@ -1056,9 +1153,12 @@ def create_agent_tool(
         if context_result.is_err():
             return Result.err(context_result.unwrap_err())
         nested_context = context_result.unwrap()
+        child_id = validate_child_run_id(child_run_id)
+        if child_id.is_err():
+            return Result.err(child_id.unwrap_err())
+        active_child_run_id = child_id.unwrap()
         if cancellation is not None and cancellation.is_cancelled():
             return _delegation_cancelled(target_id)
-        pursue_with_context = getattr(target_agent, "pursue_goal_with_context", None)
         try:
             if nested_context:
                 if not callable(pursue_with_context):
@@ -1070,10 +1170,18 @@ def create_agent_tool(
                         }
                     )
                 target_result = _invoke_delegated(
-                    pursue_with_context, (task, nested_context), cancellation
+                    pursue_with_context,
+                    (task, nested_context),
+                    cancellation,
+                    run_id=active_child_run_id,
                 )
             else:
-                target_result = _invoke_delegated(pursue_goal, (task,), cancellation)
+                target_result = _invoke_delegated(
+                    pursue_goal,
+                    (task,),
+                    cancellation,
+                    run_id=active_child_run_id,
+                )
         except Exception as exc:
             return Result.err(
                 {
@@ -1082,6 +1190,12 @@ def create_agent_tool(
                     "details": {"agent_id": target_id, "exception": type(exc).__name__},
                 }
             )
+        if (
+            persist_child_run
+            and active_child_run_id is not None
+            and _result_error_type(target_result) == "RUN_EXISTS"
+        ):
+            target_result = resume_existing_child(active_child_run_id, cancellation)
         return _format_agent_tool_result(target_result, target_id)
 
     async_handler: Optional[Callable[..., Awaitable[Result[Any, Dict[str, Any]]]]] = (
@@ -1091,11 +1205,33 @@ def create_agent_tool(
     pursue_with_context_async = getattr(
         target_agent, "pursue_goal_with_context_async", None
     )
+    resume_run_async = getattr(target_agent, "resume_run_async", None)
+    resume_run_async_handler = cast(Callable[..., Any], resume_run_async)
+    if persist_child_run and callable(pursue_goal_async):
+        if not _callable_accepts_keyword(pursue_goal_async, "run_id"):
+            raise ValueError(
+                "persist_child_run requires an async target pursue_goal run_id parameter"
+            )
+        if not callable(resume_run_async):
+            raise ValueError(
+                "persist_child_run requires a target resume_run_async method"
+            )
+        if not _callable_accepts_keyword(resume_run_async, "run_id"):
+            raise ValueError(
+                "persist_child_run requires a target resume_run_async run_id parameter"
+            )
+        if callable(pursue_with_context_async) and not _callable_accepts_keyword(
+            pursue_with_context_async, "run_id"
+        ):
+            raise ValueError(
+                "persist_child_run requires async context-aware target run_id support"
+            )
     if callable(pursue_goal_async):
 
         async def invoke_async(
             task: str,
             context: Optional[Dict[str, Any]] = None,
+            child_run_id: Optional[str] = None,
             *,
             cancellation: Optional[CancellationToken] = None,
         ) -> Result[Dict[str, Any], Dict[str, Any]]:
@@ -1103,6 +1239,10 @@ def create_agent_tool(
             if context_result.is_err():
                 return Result.err(context_result.unwrap_err())
             nested_context = context_result.unwrap()
+            child_id = validate_child_run_id(child_run_id)
+            if child_id.is_err():
+                return Result.err(child_id.unwrap_err())
+            active_child_run_id = child_id.unwrap()
             if cancellation is not None and cancellation.is_cancelled():
                 return _delegation_cancelled(target_id)
             try:
@@ -1119,10 +1259,14 @@ def create_agent_tool(
                         pursue_with_context_async,
                         (task, nested_context),
                         cancellation,
+                        run_id=active_child_run_id,
                     )
                 else:
                     target_result = await _invoke_delegated(
-                        pursue_goal_async, (task,), cancellation
+                        pursue_goal_async,
+                        (task,),
+                        cancellation,
+                        run_id=active_child_run_id,
                     )
             except Exception as exc:
                 return Result.err(
@@ -1135,32 +1279,66 @@ def create_agent_tool(
                         },
                     }
                 )
+            if (
+                persist_child_run
+                and active_child_run_id is not None
+                and _result_error_type(target_result) == "RUN_EXISTS"
+            ):
+                try:
+                    target_result = await _invoke_delegated(
+                        resume_run_async_handler,
+                        (active_child_run_id,),
+                        cancellation,
+                    )
+                except Exception as exc:
+                    target_result = Result.err(
+                        {
+                            "errorType": "AGENT_TOOL_CHILD_RESUME_ERROR",
+                            "message": "Nested agent resume failed.",
+                            "details": {
+                                "agent_id": target_id,
+                                "exception": type(exc).__name__,
+                            },
+                        }
+                    )
             return _format_agent_tool_result(target_result, target_id)
 
         async_handler = invoke_async
+
+    properties: Dict[str, Any] = {
+        "task": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8192,
+            "description": "The bounded task for the nested agent.",
+        },
+        "context": {
+            "type": "object",
+            "maxProperties": MAX_HANDOFF_CONTEXT_KEYS,
+            "description": (
+                "Optional bounded context. Only explicitly allowlisted "
+                "keys reach the nested agent."
+            ),
+        },
+    }
+    required = ["task"]
+    if persist_child_run:
+        properties["child_run_id"] = {
+            "type": "string",
+            "maxLength": 128,
+            "description": (
+                "Caller-owned durable ID for resuming an in-flight child run."
+            ),
+        }
+        required.append("child_run_id")
 
     return Tool(
         name=tool_name,
         description=tool_description,
         parameters={
             "type": "object",
-            "properties": {
-                "task": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 8192,
-                    "description": "The bounded task for the nested agent.",
-                },
-                "context": {
-                    "type": "object",
-                    "maxProperties": MAX_HANDOFF_CONTEXT_KEYS,
-                    "description": (
-                        "Optional bounded context. Only explicitly allowlisted "
-                        "keys reach the nested agent."
-                    ),
-                },
-            },
-            "required": ["task"],
+            "properties": properties,
+            "required": required,
             "additionalProperties": False,
         },
         handler=invoke_sync,

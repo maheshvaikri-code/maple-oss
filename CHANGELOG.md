@@ -10,6 +10,13 @@
 
 ### Additions
 
+- **Opt-in delegated child-run lifecycle**: `create_agent_tool` can now accept
+  `persist_child_run=True` with a caller-owned bounded `child_run_id`, pass it
+  to a native child run, and call the matching sync/async resume API when the
+  child reports that the ID already exists. Existing defaults and legacy child
+  adapters remain unchanged; completed terminal replay, remote routing,
+  scheduling, hard cancellation, and exactly-once effects remain separate.
+
 - **Opt-in durable handoff-result replay**: `create_handoff_tool` can now
   persist a bounded successful result in the local `InMemoryHandoffStore` or
   `FileHandoffStore` and replay it on a matching explicit `handoff_id` without
