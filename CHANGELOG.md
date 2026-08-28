@@ -10,6 +10,10 @@
 
 ### Additions
 
+- **Fail-closed memory archiving**: `MemoryManager.summarize_and_archive()`
+  now propagates typed episodic persistence failures and preserves working
+  memory until the summary archive succeeds.
+
 - **Bounded working-memory admission**: `WorkingMemory` validates bounded
   budgets, UTF-8 keys and content, and finite relevance metadata before
   mutation. It bounds memory to 1,000,000 estimated tokens and 4,096 entries,

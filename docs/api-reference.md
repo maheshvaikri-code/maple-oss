@@ -2036,6 +2036,14 @@ is not thread-safe; callers sharing an instance across threads must provide
 external synchronization. This API does not summarize, persist, automatically
 compact, or manage memory across processes.
 
+`MemoryManager.summarize_and_archive(llm_provider=...)` also preserves the
+working context until the generated summary has been persisted to episodic
+memory. Provider failures and archive failures return their typed errors; an
+archive failure does not clear or partially consume the working entries. A
+successful archive returns the summary and then clears the working context.
+The operation is not a cross-store transaction, so hosts should inspect the
+returned error and decide whether to retry or retain the context.
+
 ### Durable agent runs (preview)
 
 Attach an `InMemoryAgentRunStore` or `FileAgentRunStore` to persist a bounded

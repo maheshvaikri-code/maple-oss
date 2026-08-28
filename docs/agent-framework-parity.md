@@ -35,6 +35,11 @@ completion capability. This prevents an async caller that needs a non-blocking
 provider from selecting a descriptor that only inherits the synchronous
 compatibility fallback.
 
+Memory summary archiving now preserves the working context until episodic
+persistence succeeds. This closes a local no-loss boundary; cross-store
+transactions, automatic/token-aware summarization, managed memory, and hosted
+context services remain separate.
+
 Working-memory admission is also bounded in the local runtime: budgets accept
 1..1,000,000 estimated tokens, storage retains at most 4,096 entries, keys are
 limited to 256 UTF-8 bytes, and invalid or non-fitting entries fail before
