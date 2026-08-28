@@ -10,6 +10,14 @@
 
 ### Additions
 
+- **Authenticated remote durable checkpoint transfer**: compatible hosts can
+  export complete JSON-safe non-terminal agent checkpoints and restore them
+  through additive `RunClient` methods under the distinct `agent:restore`
+  scope. Route/store identity checks, bounded parsing, destination CAS fencing,
+  terminal-state rejection, and metadata-only restore receipts are enforced;
+  no handler execution, automatic retry, distributed scheduling, or
+  exactly-once external-effect guarantee is introduced.
+
 - **Release automation hardening**: GitHub release workflows now require a
   human-created version tag that matches package metadata and a changelog
   heading; workflow dispatch can no longer bump or push `main`, and manual

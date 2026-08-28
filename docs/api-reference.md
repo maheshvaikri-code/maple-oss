@@ -2801,6 +2801,34 @@ resume/cancel callbacks return `501`. Cancellation is cooperative; the host
 remains responsible for token propagation, checkpoint mutation, cleanup,
 retries, principal scopes, and exactly-once side-effect policy.
 
+Compatible hosts may explicitly transfer a non-terminal durable checkpoint:
+
+```python
+from maple import AgentRunCheckpoint
+
+exported = client.export_agent_run_checkpoint("researcher", "run-1")
+checkpoint = AgentRunCheckpoint.from_dict(exported.unwrap()["checkpoint"])
+restored = destination_client.restore_agent_run_checkpoint(
+    "researcher", checkpoint, expected_version=None
+)
+```
+
+The export route is `GET
+/v1/agents/<agent_id>/runs/<run_id>/checkpoint`; the restore route is `POST
+/v1/agents/<agent_id>/runs/<run_id>/restore`. Both require the distinct
+`agent:restore` scope because the export includes messages, reasoning steps,
+tool arguments, pending interaction IDs, and results. The restore body is
+`{"checkpoint": <AgentRunCheckpoint.to_dict()>, "expected_version": N}`;
+the version field is optional. New destination records accept an omitted
+version and start at version `1`; an existing record requires its exact
+current version, otherwise `RUN_CHECKPOINT_CONFLICT` is returned. Only
+`running` and `paused` checkpoints are accepted. Route/checkpoint identity
+mismatches, malformed or oversized JSON, terminal checkpoints, and stores
+without `save()` fail before mutation. A successful response contains only a
+metadata receipt under `checkpoint`; no handler is invoked and the client does
+not retry. The transport does not provide encryption, identity federation,
+scheduling, push delivery, or exactly-once external effects.
+
 ### Agent capability discovery and routing
 
 Handlers may advertise bounded public capability labels at registration time.
