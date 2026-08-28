@@ -23,6 +23,7 @@ from maple.autonomy import (
     InMemoryHandoffStore,
     InMemoryHumanInputStore,
     Principal,
+    RemoteHandoffTarget,
     RunClient,
     RunServer,
     Workflow,
@@ -596,6 +597,264 @@ def test_agent_transport_bounds_inputs_and_normalizes_host_failures():
     assert failed.unwrap_err()["errorType"] == "AGENT_HANDLER_ERROR"
     assert failed.unwrap_err()["message"] == "Registered agent handler failed."
     assert failed.unwrap_err()["details"]["agent_id"] == "failing"
+
+
+def test_remote_handoff_target_delivers_allowlisted_payload_and_binds_run_id():
+    calls = []
+
+    def handler(task, context, *, session_id, run_id):
+        calls.append((task, dict(context), session_id, run_id))
+        return Result.ok(
+            AgentRun(
+                "remote-specialist",
+                run_id,
+                "completed",
+                result={"answer": "remote result", "project": context["project"]},
+            )
+        )
+
+    agents = AgentRegistry()
+    assert agents.register("remote-specialist", handler).is_ok()
+    server = RunServer(
+        WorkflowRegistry(),
+        agent_registry=agents,
+        auth_token="remote-token",
+    )
+    base_url = server.start()
+    try:
+        from maple.autonomy.tools import create_handoff_tool
+
+        handoffs = InMemoryHandoffStore()
+        target = RemoteHandoffTarget(
+            "remote-specialist",
+            RunClient(base_url, auth_token="remote-token"),
+            session_id="remote-session",
+        )
+        tool = create_handoff_tool(
+            target,
+            requires_approval=False,
+            allowed_context_keys=["project"],
+            handoff_store=handoffs,
+            source_agent_id="source-agent",
+            persist_result=True,
+        )
+        result = tool.execute(
+            task="Summarize the remote release",
+            context={"project": "MAPLE"},
+            handoff_id="remote-handoff-1",
+        )
+    finally:
+        server.close()
+
+    assert result.is_ok()
+    assert result.unwrap() == {
+        "agent_id": "remote-specialist",
+        "goal_id": "remote-handoff-1",
+        "status": "completed",
+        "result": {"answer": "remote result", "project": "MAPLE"},
+        "handoff_id": "remote-handoff-1",
+    }
+    assert calls == [
+        (
+            "Summarize the remote release",
+            {"project": "MAPLE"},
+            "remote-session",
+            "remote-handoff-1",
+        )
+    ]
+    record = handoffs.get("remote-handoff-1").unwrap()
+    assert record is not None
+    assert record.status == "completed"
+    assert record.target_goal_id == "remote-handoff-1"
+    assert "Summarize the remote release" not in str(record.to_dict())
+
+
+def test_remote_handoff_target_rejects_unauthorized_and_incomplete_runs_without_leaks():
+    class IncompleteClient(RunClient):
+        def run_agent(self, *args, **kwargs):
+            return Result.ok(
+                {
+                    "run": {
+                        "agent_id": "remote-specialist",
+                        "run_id": "remote-run",
+                        "status": "paused",
+                        "result": {"private": "not exposed"},
+                        "error": None,
+                    }
+                }
+            )
+
+    target = RemoteHandoffTarget(
+        "remote-specialist", IncompleteClient("http://127.0.0.1:1")
+    )
+    incomplete = target.pursue_goal("task", handoff_id="remote-run")
+
+    assert incomplete.is_err()
+    assert incomplete.unwrap_err()["errorType"] == "REMOTE_HANDOFF_INCOMPLETE"
+    assert "private" not in str(incomplete.unwrap_err())
+
+    class MalformedClient(RunClient):
+        def run_agent(self, *args, **kwargs):
+            return Result.ok({"run": {"agent_id": "remote-specialist"}})
+
+    malformed = RemoteHandoffTarget(
+        "remote-specialist", MalformedClient("http://127.0.0.1:1")
+    ).pursue_goal("task")
+    assert malformed.is_err()
+    assert malformed.unwrap_err()["errorType"] == "REMOTE_HANDOFF_RESULT_INVALID"
+
+    class FailedClient(RunClient):
+        def run_agent(self, *args, **kwargs):
+            return Result.ok(
+                {
+                    "run": {
+                        "agent_id": "remote-specialist",
+                        "run_id": "remote-run",
+                        "status": "completed",
+                        "result": None,
+                        "error": {
+                            "errorType": "PRIVATE_REMOTE_FAILURE",
+                            "message": "private provider detail",
+                        },
+                    }
+                }
+            )
+
+    failed = RemoteHandoffTarget(
+        "remote-specialist", FailedClient("http://127.0.0.1:1")
+    ).pursue_goal("task")
+    assert failed.is_err()
+    assert failed.unwrap_err()["errorType"] == "REMOTE_HANDOFF_FAILED"
+    assert "private provider detail" not in str(failed.unwrap_err())
+
+    invalid_handoff_id = RemoteHandoffTarget(
+        "remote-specialist", IncompleteClient("http://127.0.0.1:1")
+    ).pursue_goal("task", handoff_id="bad\x7f-id")
+    assert invalid_handoff_id.is_err()
+    assert invalid_handoff_id.unwrap_err()["errorType"] == (
+        "REMOTE_HANDOFF_INPUT_INVALID"
+    )
+
+    with pytest.raises(ValueError):
+        RemoteHandoffTarget("", IncompleteClient("http://127.0.0.1:1"))
+    with pytest.raises(ValueError):
+        RemoteHandoffTarget(
+            "remote\n-specialist", IncompleteClient("http://127.0.0.1:1")
+        )
+    with pytest.raises(TypeError):
+        RemoteHandoffTarget("remote-specialist", object())
+    with pytest.raises(ValueError):
+        RemoteHandoffTarget(
+            "remote-specialist",
+            IncompleteClient("http://127.0.0.1:1"),
+            session_id="bad\n-session",
+        )
+
+    server = RunServer(
+        WorkflowRegistry(),
+        agent_registry=AgentRegistry(),
+        auth_token="required-token",
+    )
+    base_url = server.start()
+    try:
+        unauthorized_target = RemoteHandoffTarget(
+            "remote-specialist", RunClient(base_url)
+        )
+        handoffs = InMemoryHandoffStore()
+        from maple.autonomy.tools import create_handoff_tool
+
+        unauthorized_tool = create_handoff_tool(
+            unauthorized_target,
+            requires_approval=False,
+            handoff_store=handoffs,
+            source_agent_id="source-agent",
+        )
+        unauthorized = unauthorized_tool.execute(
+            task="task", handoff_id="unauthorized-run"
+        )
+    finally:
+        server.close()
+
+    assert unauthorized.is_err()
+    assert unauthorized.unwrap_err()["errorType"] == "HANDOFF_TARGET_FAILED"
+    assert unauthorized.unwrap_err()["details"]["target_error_type"] == (
+        "REMOTE_HANDOFF_FAILED"
+    )
+    assert "UNAUTHORIZED" not in str(unauthorized.unwrap_err())
+    assert "private" not in str(unauthorized.unwrap_err())
+    failed_record = handoffs.get("unauthorized-run").unwrap()
+    assert failed_record is not None
+    assert failed_record.status == "failed"
+    assert failed_record.error_type == "HANDOFF_TARGET_FAILED"
+
+
+def test_remote_handoff_target_rejects_cancelled_request_without_calling_client():
+    class CountingClient(RunClient):
+        def __init__(self):
+            super().__init__("http://127.0.0.1:1")
+            self.calls = 0
+
+        def run_agent(self, *args, **kwargs):
+            self.calls += 1
+            return Result.err({"errorType": "SHOULD_NOT_RUN", "message": "bad"})
+
+    class Cancelled:
+        def is_cancelled(self):
+            return True
+
+    client = CountingClient()
+    result = RemoteHandoffTarget("remote-specialist", client).pursue_goal(
+        "task", cancellation=Cancelled()
+    )
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "EXECUTION_CANCELLED"
+    assert client.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_remote_handoff_target_supports_async_context_delivery():
+    calls = []
+
+    def handler(task, context, *, session_id, run_id):
+        calls.append((task, dict(context), session_id, run_id))
+        return Result.ok(
+            AgentRun("remote-async", run_id, "completed", result={"ok": True})
+        )
+
+    agents = AgentRegistry()
+    assert agents.register("remote-async", handler).is_ok()
+    server = RunServer(
+        WorkflowRegistry(), agent_registry=agents, auth_token="async-token"
+    )
+    base_url = server.start()
+    try:
+        from maple.autonomy.tools import create_handoff_tool
+
+        handoffs = InMemoryHandoffStore()
+        target = RemoteHandoffTarget(
+            "remote-async", RunClient(base_url, auth_token="async-token")
+        )
+        tool = create_handoff_tool(
+            target,
+            requires_approval=False,
+            allowed_context_keys=["request"],
+            handoff_store=handoffs,
+            source_agent_id="source-agent",
+        )
+        result = await tool.execute_async(
+            task="Run asynchronously",
+            context={"request": "async"},
+            handoff_id="remote-async-handoff",
+        )
+    finally:
+        server.close()
+
+    assert result.is_ok()
+    assert result.unwrap()["goal_id"] == "remote-async-handoff"
+    assert calls == [
+        ("Run asynchronously", {"request": "async"}, None, "remote-async-handoff")
+    ]
 
 
 def test_agent_registry_rejects_result_identity_and_non_json_values():

@@ -92,11 +92,14 @@ def _invoke_delegated(
     cancellation: Optional[CancellationToken],
     *,
     run_id: Optional[str] = None,
+    handoff_id: Optional[str] = None,
 ) -> Any:
     """Invoke a child method with only signature-compatible control keywords."""
     kwargs: Dict[str, Any] = {}
     if run_id is not None and _callable_accepts_keyword(handler, "run_id"):
         kwargs["run_id"] = run_id
+    if handoff_id is not None and _callable_accepts_keyword(handler, "handoff_id"):
+        kwargs["handoff_id"] = handoff_id
     if cancellation is not None and _callable_accepts_cancellation(handler):
         kwargs["cancellation"] = cancellation
     return handler(*args, **kwargs)
@@ -1506,11 +1509,17 @@ def create_handoff_tool(
                         execution_error = target_result
                     else:
                         target_result = _invoke_delegated(
-                            pursue_with_context, (task, handoff_context), cancellation
+                            pursue_with_context,
+                            (task, handoff_context),
+                            cancellation,
+                            handoff_id=active_handoff_id,
                         )
                 else:
                     target_result = _invoke_delegated(
-                        pursue_goal, (task,), cancellation
+                        pursue_goal,
+                        (task,),
+                        cancellation,
+                        handoff_id=active_handoff_id,
                     )
             except Exception as exc:
                 target_result = Result.err(
@@ -1620,10 +1629,14 @@ def create_handoff_tool(
                                 pursue_with_context_async,
                                 (task, handoff_context),
                                 cancellation,
+                                handoff_id=active_handoff_id,
                             )
                     else:
                         target_result = await _invoke_delegated(
-                            pursue_goal_async, (task,), cancellation
+                            pursue_goal_async,
+                            (task,),
+                            cancellation,
+                            handoff_id=active_handoff_id,
                         )
                 except Exception as exc:
                     target_result = Result.err(

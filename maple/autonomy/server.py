@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hmac
 import ipaddress
 import json
@@ -10,6 +11,7 @@ import re
 import threading
 import uuid
 from dataclasses import dataclass
+from functools import partial
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Dict, Mapping, Optional, Protocol, Sequence, Tuple, cast
 from urllib.error import HTTPError, URLError
@@ -3066,11 +3068,277 @@ class RunClient:
         return Result.ok(decoded)
 
 
+@dataclass(frozen=True)
+class RemoteHandoffResult:
+    """Bounded completed result exposed to the local handoff adapter."""
+
+    agent_id: str
+    goal_id: str
+    status: str
+    result: Optional[Any] = None
+
+
+class RemoteHandoffTarget:
+    """Adapt an authenticated :class:`RunClient` into a handoff target.
+
+    The target forwards bounded task/context data to a host-owned
+    ``AgentRegistry``. It does not retry, persist payloads, or interrupt an
+    in-flight HTTP request when cancellation is requested.
+    """
+
+    def __init__(
+        self,
+        agent_id: str,
+        client: RunClient,
+        *,
+        session_id: Optional[str] = None,
+    ) -> None:
+        identifier_error = self._validate_remote_identifier(agent_id, "agent_id")
+        if identifier_error is not None:
+            raise ValueError(identifier_error["message"])
+        if not isinstance(client, RunClient):
+            raise TypeError("client must be a RunClient")
+        if session_id is not None:
+            session_error = self._validate_remote_identifier(session_id, "session_id")
+            if session_error is not None:
+                raise ValueError(session_error["message"])
+        self.agent_id = agent_id
+        self.client = client
+        self.session_id = session_id
+
+    @staticmethod
+    def _validate_remote_identifier(value: Any, field: str) -> Optional[Error]:
+        error = _validate_agent_identifier(value, field)
+        if error is not None:
+            return error
+        if any(ord(character) < 0x20 or ord(character) == 0x7F for character in value):
+            return _error(
+                "AGENT_IDENTIFIER_INVALID",
+                f"{field} must not contain control characters.",
+            )
+        return None
+
+    @staticmethod
+    def _cancelled(cancellation: Optional[Any]) -> bool:
+        if cancellation is None:
+            return False
+        try:
+            return cancellation.is_cancelled() is True
+        except Exception:
+            return False
+
+    @staticmethod
+    def _remote_reason(error: Any) -> str:
+        if isinstance(error, Mapping) and isinstance(error.get("errorType"), str):
+            return str(error["errorType"])[:128]
+        return "UNKNOWN"
+
+    def _invoke(
+        self,
+        task: str,
+        context: Optional[Mapping[str, Any]],
+        *,
+        handoff_id: Optional[str],
+        cancellation: Optional[Any],
+    ) -> Result[RemoteHandoffResult, Error]:
+        if self._cancelled(cancellation):
+            return Result.err(
+                _error(
+                    "EXECUTION_CANCELLED",
+                    "Remote handoff cancellation was requested.",
+                    agent_id=self.agent_id,
+                )
+            )
+        if handoff_id is not None:
+            handoff_error = self._validate_remote_identifier(
+                handoff_id, "handoff_id"
+            )
+            if handoff_error is not None:
+                return Result.err(
+                    _error(
+                        "REMOTE_HANDOFF_INPUT_INVALID",
+                        "handoff_id must be bounded and control-free.",
+                    )
+                )
+        remote = self.client.run_agent(
+            self.agent_id,
+            task,
+            context,
+            session_id=self.session_id,
+            run_id=handoff_id,
+        )
+        if remote.is_err():
+            return Result.err(
+                _error(
+                    "REMOTE_HANDOFF_FAILED",
+                    "The remote handoff target could not be invoked.",
+                    agent_id=self.agent_id,
+                    reason=self._remote_reason(remote.unwrap_err()),
+                )
+            )
+        envelope = remote.unwrap()
+        raw_run = envelope.get("run") if isinstance(envelope, Mapping) else None
+        if not isinstance(raw_run, Mapping):
+            return Result.err(
+                _error(
+                    "REMOTE_HANDOFF_RESULT_INVALID",
+                    "The remote handoff returned an invalid run envelope.",
+                    agent_id=self.agent_id,
+                )
+            )
+        raw_run_id = raw_run.get("run_id")
+        raw_agent_id = raw_run.get("agent_id")
+        raw_status = raw_run.get("status")
+        if (
+            not isinstance(raw_agent_id, str)
+            or not raw_agent_id
+            or not isinstance(raw_run_id, str)
+            or not raw_run_id
+            or not isinstance(raw_status, str)
+            or not raw_status
+        ):
+            return Result.err(
+                _error(
+                    "REMOTE_HANDOFF_RESULT_INVALID",
+                    "The remote handoff returned an invalid run envelope.",
+                    agent_id=self.agent_id,
+                )
+            )
+        candidate = AgentRun(
+            agent_id=raw_agent_id,
+            run_id=raw_run_id,
+            status=raw_status,
+            result=raw_run.get("result"),
+            error=raw_run.get("error"),
+        )
+        normalized = _normalize_agent_result(
+            Result.ok(candidate), self.agent_id, raw_run_id
+        )
+        if normalized.is_err():
+            return Result.err(
+                _error(
+                    "REMOTE_HANDOFF_RESULT_INVALID",
+                    "The remote handoff returned an invalid run envelope.",
+                    agent_id=self.agent_id,
+                )
+            )
+        run = normalized.unwrap()
+        if run.error is not None:
+            return Result.err(
+                _error(
+                    "REMOTE_HANDOFF_FAILED",
+                    "The remote handoff target reported a failure.",
+                    agent_id=self.agent_id,
+                    reason=self._remote_reason(run.error),
+                )
+            )
+        if run.status != "completed":
+            return Result.err(
+                _error(
+                    "REMOTE_HANDOFF_INCOMPLETE",
+                    "The remote handoff target did not complete.",
+                    agent_id=self.agent_id,
+                    run_id=run.run_id,
+                    status=run.status,
+                )
+            )
+        result = Result.ok(
+            RemoteHandoffResult(
+                agent_id=run.agent_id,
+                goal_id=run.run_id,
+                status=run.status,
+                result=run.result,
+            )
+        )
+        if self._cancelled(cancellation):
+            return Result.err(
+                _error(
+                    "EXECUTION_CANCELLED",
+                    "Remote handoff cancellation was requested.",
+                    agent_id=self.agent_id,
+                )
+            )
+        return result
+
+    def pursue_goal(
+        self,
+        description: str,
+        *,
+        handoff_id: Optional[str] = None,
+        cancellation: Optional[Any] = None,
+    ) -> Result[RemoteHandoffResult, Error]:
+        """Invoke the remote agent without context."""
+        return self._invoke(
+            description,
+            {},
+            handoff_id=handoff_id,
+            cancellation=cancellation,
+        )
+
+    def pursue_goal_with_context(
+        self,
+        description: str,
+        context: Mapping[str, Any],
+        *,
+        handoff_id: Optional[str] = None,
+        cancellation: Optional[Any] = None,
+    ) -> Result[RemoteHandoffResult, Error]:
+        """Invoke the remote agent with already-filtered context."""
+        return self._invoke(
+            description,
+            context,
+            handoff_id=handoff_id,
+            cancellation=cancellation,
+        )
+
+    async def pursue_goal_async(
+        self,
+        description: str,
+        *,
+        handoff_id: Optional[str] = None,
+        cancellation: Optional[Any] = None,
+    ) -> Result[RemoteHandoffResult, Error]:
+        """Invoke the synchronous client from an executor for async callers."""
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            None,
+            partial(
+                self.pursue_goal,
+                description,
+                handoff_id=handoff_id,
+                cancellation=cancellation,
+            ),
+        )
+
+    async def pursue_goal_with_context_async(
+        self,
+        description: str,
+        context: Mapping[str, Any],
+        *,
+        handoff_id: Optional[str] = None,
+        cancellation: Optional[Any] = None,
+    ) -> Result[RemoteHandoffResult, Error]:
+        """Invoke the synchronous client with context from an executor."""
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            None,
+            partial(
+                self.pursue_goal_with_context,
+                description,
+                context,
+                handoff_id=handoff_id,
+                cancellation=cancellation,
+            ),
+        )
+
+
 __all__ = [
     "AgentRegistry",
     "AgentRun",
     "AgentRunCancelHandler",
     "AgentRunHandler",
+    "RemoteHandoffResult",
+    "RemoteHandoffTarget",
     "RunClient",
     "RunServer",
     "WorkflowRegistry",

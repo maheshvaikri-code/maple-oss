@@ -4,6 +4,7 @@ import pytest
 
 from maple.autonomy.agent import Goal
 from maple.autonomy.execution import CancellationToken
+from maple.autonomy.handoffs import InMemoryHandoffStore
 from maple.autonomy.tools import (
     Tool,
     ToolRegistry,
@@ -420,6 +421,29 @@ class TestHandoffTool:
 
         assert result.is_ok()
         assert target.contexts == [{"project": "MAPLE"}]
+
+    def test_handoff_id_is_forwarded_only_to_targets_that_accept_it(self):
+        class CorrelatedAgent(HandoffAgent):
+            def __init__(self):
+                super().__init__()
+                self.handoff_ids = []
+
+            def pursue_goal(self, description, *, handoff_id=None):
+                self.handoff_ids.append(handoff_id)
+                return super().pursue_goal(description)
+
+        target = CorrelatedAgent()
+        tool = create_handoff_tool(
+            target,
+            requires_approval=False,
+            handoff_store=InMemoryHandoffStore(),
+            source_agent_id="source",
+        )
+
+        result = tool.execute(task="Correlate this", handoff_id="handoff-correlation")
+
+        assert result.is_ok()
+        assert target.handoff_ids == ["handoff-correlation"]
 
 
 class TestAgentTool:
