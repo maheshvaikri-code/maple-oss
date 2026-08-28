@@ -45,6 +45,10 @@ events per task, with reject-before-write errors and newest-window retention.
 The quota is local to each store instance; distributed memory, semantic
 indexing, and automatic summarization remain separate.
 
+Episodic keyword search now bounds query size and result count and propagates
+store or malformed-history errors. It remains local keyword matching rather
+than semantic retrieval or a distributed index.
+
 Working-memory admission is also bounded in the local runtime: budgets accept
 1..1,000,000 estimated tokens, storage retains at most 4,096 entries, keys are
 limited to 256 UTF-8 bytes, and invalid or non-fitting entries fail before

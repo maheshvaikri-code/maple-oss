@@ -10,6 +10,10 @@
 
 ### Additions
 
+- **Fail-closed episodic search**: `EpisodicMemory.search()` now bounds
+  queries and result limits, rejects invalid caller input, propagates state
+  errors, and rejects malformed stored histories instead of hiding failures.
+
 - **Bounded episodic memory**: `EpisodicMemory` now validates bounded task
   IDs and serialized event size, retains a configurable newest-event window
   per task, rejects malformed or oversized records before persistence, and

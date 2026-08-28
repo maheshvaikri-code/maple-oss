@@ -2076,6 +2076,15 @@ propagated. The bound is per task and per store instance, not a distributed
 global quota, and this API does not add summarization, retry, or cross-store
 transactions.
 
+`search(query, limit=10)` accepts queries up to `4,096` UTF-8 bytes and result
+limits from `1` through `1,000`. Invalid text returns
+`EPISODIC_QUERY_INVALID`; an invalid limit returns
+`EPISODIC_SEARCH_LIMIT_INVALID`. Search propagates state-store read/list
+failures and returns `EPISODIC_STATE_INVALID` for malformed stored histories;
+it never converts those failures into an empty successful result. Search is
+keyword matching over the locally retained events, not semantic retrieval or
+a distributed index.
+
 ### Durable agent runs (preview)
 
 Attach an `InMemoryAgentRunStore` or `FileAgentRunStore` to persist a bounded
