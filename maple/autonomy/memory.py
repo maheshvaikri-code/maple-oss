@@ -19,6 +19,7 @@ import json
 import logging
 import math
 import time
+import unicodedata
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, cast
 
@@ -72,7 +73,7 @@ class WorkingMemory:
         if (
             not isinstance(key, str)
             or not key
-            or any(ord(character) < 32 for character in key)
+            or any(unicodedata.category(character) == "Cc" for character in key)
         ):
             return Result.err(
                 {

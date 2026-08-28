@@ -91,6 +91,7 @@ class TestWorkingMemory:
         wm = WorkingMemory(max_tokens=4)
 
         invalid_key = wm.add("bad\nkey", "value")
+        invalid_unicode_control_key = wm.add("bad\x7fkey", "value")
         oversized_key = wm.add("k" * 257, "value")
         invalid_unicode_key = wm.add("\ud800", "value")
         invalid_content = wm.add("content", 123)
@@ -99,6 +100,10 @@ class TestWorkingMemory:
         non_finite_relevance = wm.add("non-finite", "value", relevance=float("nan"))
 
         assert invalid_key.unwrap_err()["errorType"] == "MEMORY_KEY_INVALID"
+        assert (
+            invalid_unicode_control_key.unwrap_err()["errorType"]
+            == "MEMORY_KEY_INVALID"
+        )
         assert oversized_key.unwrap_err()["errorType"] == "MEMORY_KEY_INVALID"
         assert invalid_unicode_key.unwrap_err()["errorType"] == "MEMORY_KEY_INVALID"
         assert invalid_content.unwrap_err()["errorType"] == "MEMORY_CONTENT_INVALID"
