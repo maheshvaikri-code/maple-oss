@@ -25,8 +25,7 @@ state returns typed errors without silently replacing data.
 - Changed-surface isort: passed.
 - Changed-surface Ruff: `All checks passed!`.
 - `python -m compileall -q maple`: passed.
-- `git diff --check 84f8afa..HEAD`: pending the final slice 147 commits;
-  the final committed range is checked again before closure.
+- `git diff --check 84f8afa..HEAD`: passed.
 - Changed-surface secret scan: `no matches`.
 - Changed-surface dangerous-construct scan: `no matches`.
 - Bandit is unavailable in the environment (`No module named bandit`); this is
@@ -43,10 +42,15 @@ packages skipped. This remains a release veto outside this slice.
 
 ## Package evidence
 
-The final clean archive must build wheel and sdist, pass Twine checks, install
-without dependencies into an isolated target, run an episodic-memory export
-smoke test, and contain no workspace-only files. Exact results are recorded
-after that run.
+The final `git archive HEAD` snapshot built successfully as `maple-oss-1.1.3`:
+
+- build exit: `0`;
+- wheel: `104` archive entries;
+- sdist: `626` archive entries;
+- `twine check`: both artifacts passed;
+- `pip install --no-deps --target ...`: exit `0`;
+- isolated export smoke: `clean_archive_episodic_memory_smoke=passed`;
+- workspace-only archive entries: `0`.
 
 ## QA decision
 
