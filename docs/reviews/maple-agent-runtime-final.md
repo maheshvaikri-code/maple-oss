@@ -881,12 +881,12 @@ tool context. No
 publication, deployment, cloud action, registry write, or website update was
 performed.
 
-Clean-archive packaging revalidation from committed `ca45cdd`:
+Clean-archive packaging revalidation from committed `762dc1e`:
 
 ```text
 clean git archive HEAD: source_archive_entries=828
 python -m pytest -q --no-cov
-1567 passed, 1 skipped in 236.82s
+1567 passed, 1 skipped in 246.06s
 build_exit=0
 wheel_entries=106
 sdist_entries=742
