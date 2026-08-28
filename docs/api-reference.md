@@ -655,8 +655,32 @@ This primitive does not automatically own durable approval/input/run records,
 provide remote authentication, or promise exactly-once external effects.
 
 Pass the executor to `Tool(executor=...)` to apply the same boundary to a
-tool. Handlers that need cancellation should close over the token and check
-`token.is_cancelled()` or `token.wait()` while working.
+tool. A non-executor handler that explicitly accepts the cooperative token can
+opt into handler-level propagation with `accepts_cancellation=True`:
+
+```python
+from maple import CancellationToken, Result, Tool
+
+def cancellable_lookup(*, cancellation=None):
+    if cancellation is not None and cancellation.is_cancelled():
+        return Result.err({"errorType": "EXECUTION_CANCELLED", "message": "stopped"})
+    return Result.ok({"value": "ready"})
+
+tool = Tool(
+    name="cancellable_lookup",
+    description="A host-owned cancellation-aware lookup",
+    parameters={"type": "object"},
+    handler=cancellable_lookup,
+    accepts_cancellation=True,
+)
+result = tool.execute(cancellation=CancellationToken())
+```
+
+The token is passed as a keyword-only handler argument and is never added to
+the model-visible tool schema. `accepts_cancellation=True` cannot be combined
+with `executor=...`; the trusted executor supervises cancellation but does not
+inject the token into handler kwargs. Handlers remain responsible for checking
+the signal while working.
 
 ## Typed Agent Contracts (preview)
 
@@ -795,9 +819,14 @@ payloads are not forwarded. Set `requires_approval=False` only for a trusted
 host-controlled handoff. The target's initial context message is part of a
 durable local run checkpoint. `Tool.execute_async` awaits an async-capable
 target and otherwise runs the synchronous compatibility path in an executor;
-the async agent loop preserves the same approval boundary. Durable handoff
-identity and ownership transfer can be enabled with `HandoffStore`; records
-contain only bounded IDs, state, timestamps, and SHA-256 task/context digests.
+the async agent loop preserves the same approval boundary. When the target
+method also declares a `cancellation` parameter, the
+the parent token passed to `handoff.execute(..., cancellation=token)` or
+`execute_async(...)` is forwarded to that native target. A legacy target is
+invoked with its original arguments and remains compatible, but cannot observe
+the parent signal during its own work. Identity and ownership transfer can be
+enabled with `HandoffStore`; records contain only bounded IDs, state,
+timestamps, and SHA-256 task/context digests.
 `FileHandoffStore` uses atomic JSON replacement and the existing per-record
 fencing lease. The record is accepted before target execution and finalized by
 the target owner after execution:
@@ -849,7 +878,11 @@ child prompts, traces, provider objects, and raw child errors are not forwarded.
 Context is copied before filtering. A key outside `allowed_context_keys` returns
 `AGENT_TOOL_CONTEXT_KEY_DENIED`, and non-empty context sent to a target without
 `pursue_goal_with_context(...)` returns `AGENT_TOOL_CONTEXT_UNSUPPORTED`.
-Target failures, raised exceptions, and malformed goals return typed
+When the target method declares a keyword-only `cancellation` parameter, the
+parent token passed to `specialist_tool.execute(..., cancellation=token)` or
+`execute_async(...)` is forwarded to the child. Legacy targets remain
+compatible without that keyword and are only checked at the delegation
+boundary. Target failures, raised exceptions, and malformed goals return typed
 `AGENT_TOOL_TARGET_FAILED`, `AGENT_TOOL_TARGET_ERROR`, or
 `AGENT_TOOL_TARGET_INVALID` errors without the child payload. When the target
 declares `pursue_goal_async(...)`, `await specialist_tool.execute_async(...)`

@@ -10,6 +10,13 @@
 
 ### Additions
 
+- **Cooperative cancellation through local delegation**: `Tool` handlers can
+  explicitly opt into receiving a caller-owned `CancellationToken`, and the
+  agent-as-tool and handoff helpers forward that token to signature-compatible
+  native child targets in sync and async paths. Legacy targets remain
+  compatible; executor-backed handler injection, hard termination, remote
+  cancellation, and exactly-once effects remain outside this contract.
+
 - **Cooperative native agent-run cancellation**: sync and async native goal
   and resume entry points now accept the existing `CancellationToken`, stop
   future ReAct turns, propagate cancellation to tools and trusted executors,
