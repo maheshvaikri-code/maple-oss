@@ -767,3 +767,41 @@ packaged and locally verified, but release governance still requires an
 independent fresh-session review and human authorization before publication.
 No publication, deployment, cloud action, registry write, or website update
 was performed.
+
+## 2026-08-28 current revalidation — Slice 173 release automation
+
+The release path now reacts only to human-created `v*` tags. It no longer
+contains a workflow-dispatch version bump or a workflow push to `main`. Tag
+releases validate package metadata and a matching changelog heading before
+tests and artifact work. Manual Test PyPI publication requires the exact
+confirmation value `I AUTHORIZE THIS PUBLISH`; direct manual PyPI dispatch was
+removed, and the protected `pypi` environment remains on release events.
+
+Review evidence:
+
+```text
+python -m pytest tests/test_release_workflows.py -q --no-cov
+4 passed in 0.21s
+
+workflow_yaml_parse=passed
+
+python -m pytest -q --no-cov  (clean committed archive)
+1561 passed, 1 skipped in 227.39s
+
+clean git archive HEAD: source_archive_entries=821
+build_exit=0
+wheel_entries=106
+sdist_entries=735
+twine_exit=0
+install_exit=0
+isolated_import=passed
+version=1.1.3
+import_exit=0
+```
+
+**Slice 173 review:** PASS for the changed workflow and release-evidence
+boundary. `actionlint` was unavailable in this tool context; the YAML parser
+and static regression tests passed. The final v1.1.4 release remains
+conditional because the version bump, clean `main` commit, independent fresh
+review, dependency/security disposition, and human publication authorization
+are still open.

@@ -789,3 +789,38 @@ fresh independent verifier session are unavailable here.
 **Current QA status: CONDITIONAL / NOT PUBLISH-READY.** Local code, tests,
 doctor, and package gates pass. Human release authorization and the independent
 fresh-session review remain required before publication.
+
+## 2026-08-28 current QA revalidation — Slice 173 release automation
+
+The release and publish workflow changes were tested from the exact committed
+archive at `1ac8a72`. The clean archive excludes the preserved untracked
+workspace Doctrine files; the dirty workspace suite additionally reported
+`1678 passed, 1 skipped in 266.73s`.
+
+```text
+python -m pytest tests/test_release_workflows.py -q --no-cov
+4 passed in 0.21s
+
+workflow_yaml_parse=passed
+
+python -m pytest -q --no-cov  (clean committed archive)
+1561 passed, 1 skipped in 227.39s
+
+python -m maple.cli doctor --json
+{"checks": {"core": true, "evaluation": true, "events": true, "execution": true, "interop": true, "retrieval": true, "server": true, "sessions": true}, "network": false, "ready": true, "status": "SUCCESS", "version": "1.1.3"}
+
+clean git archive HEAD: source_archive_entries=821
+build_exit=0
+wheel_entries=106
+sdist_entries=735
+twine_exit=0
+install_exit=0
+isolated_import=passed
+version=1.1.3
+import_exit=0
+```
+
+**Slice 173 QA status: PASS for local workflow safety and packaging checks;
+overall release status remains CONDITIONAL / NOT PUBLISH-READY.** `actionlint`
+was unavailable, the known environment-wide dependency audit remains a veto,
+and the fresh independent verifier plus human approval are still required.

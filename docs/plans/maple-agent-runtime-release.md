@@ -1416,3 +1416,16 @@ boundaries. A clean committed-candidate package audit reports build/Twine exit
 0, sdist `504` entries, required public files `5/5`, and workspace-only audit
 `0`. Dependency-governance disposition remains open; no publication was
 performed.
+
+2026-08-28 release automation safety closure: ADR-118 makes the release
+workflow tag-driven, removes workflow-dispatch branch mutation, validates tag,
+package, and changelog agreement before test and artifact work, and adds an
+explicit confirmation gate for manual Test PyPI publication. The stale CI
+version summary was removed, and the v1.1.4 G6 checklist is filed. Workflow
+tests report `4 passed in 0.21s`; YAML parsing passes; the clean committed
+archive at `1ac8a72` reports `1561 passed, 1 skipped in 227.39s`, doctor
+success, source archive `821`, wheel `106`, sdist `735`, build/Twine/install/
+import exit 0. No tag, publication, registry write, cloud action, or website
+update was performed. The v1.1.4 checklist remains conditional pending the
+version bump, clean-main release commit, independent review,
+security/dependency disposition, and human authorization.

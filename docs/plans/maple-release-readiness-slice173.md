@@ -8,10 +8,10 @@
 
 | # | Slice | Role | Files touched | Proven by | Status |
 |---|---|---|---|---|---|
-| 1 | Remove workflow-dispatch branch mutation and validate tag/package/changelog agreement | Release Manager | `.github/workflows/release.yml` | workflow regression tests | doing |
-| 2 | Require explicit confirmation for manual registry publication | Release Manager | `.github/workflows/publish.yml` | workflow regression tests | todo |
-| 3 | Remove stale CI version text and file the v1.1.4 G6 checklist | Release Manager | `.github/workflows/ci.yml`, `docs/releases/v1.1.4.md` | static checks + checklist review | todo |
-| 4 | Run local verification and record review/QA evidence | Code Reviewer / QA Engineer | `docs/reviews/`, `docs/qa/` | focused tests, full suite, package checks | todo |
+| 1 | Remove workflow-dispatch branch mutation and validate tag/package/changelog agreement | Release Manager | `.github/workflows/release.yml` | workflow regression tests | done — 1ac8a72 |
+| 2 | Require explicit confirmation for manual registry publication | Release Manager | `.github/workflows/publish.yml` | workflow regression tests | done — 1ac8a72 |
+| 3 | Remove stale CI version text and file the v1.1.4 G6 checklist | Release Manager | `.github/workflows/ci.yml`, `docs/releases/v1.1.4.md` | static checks + checklist review | done — 1ac8a72 |
+| 4 | Run local verification and record review/QA evidence | Code Reviewer / QA Engineer | `docs/reviews/`, `docs/qa/` | focused tests, full suite, package checks | done — evidence below |
 
 ## Threat sketch
 
@@ -41,7 +41,8 @@ version, or a workflow pushes generated changes to the wrong branch.
 
 ## Status snapshot
 
-Done (with evidence): design and candidate version decision. · Next: harden
-release and publish workflows, then verify. · Blocked on: human release
+Done (with evidence): tag-driven release/publish gates, workflow regression
+tests, clean-archive suite, doctor, and package checks. · Next: independent
+review and remaining parity slices. · Blocked on: human release
 authorization, fresh independent verifier, and unresolved security-gate
 findings before any external publication.
