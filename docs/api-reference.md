@@ -1924,6 +1924,27 @@ external effect, and a journal write failure returns a typed error that warns
 the effect may have occurred. Handlers that call external systems still need
 idempotency keys or transactional coordination.
 
+`create_agent_tool` exposes the same policy for manager-style local
+delegation. Set `requires_approval=False` only for a trusted host-controlled
+child call, and configure the parent with an `ExecutionJournal`:
+
+```python
+from maple import TOOL_REPLAY_REUSE_SUCCESS, create_agent_tool
+
+specialist_tool = create_agent_tool(
+    specialist,
+    requires_approval=False,
+    replay_policy=TOOL_REPLAY_REUSE_SUCCESS,
+)
+manager.register_tool(specialist_tool)
+```
+
+The parent run's agent, durable run ID, reasoning step, tool ordinal, tool
+name, and authorized arguments determine the journal key. A regenerated model
+tool-call ID does not cause the child to run again. Handoff tools do not expose
+this policy because their ownership record and target side effects require a
+separate replay contract.
+
 ### Durable tool approvals
 
 Approval-required autonomous tools can use a local durable approval store when

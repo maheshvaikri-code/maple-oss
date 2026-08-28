@@ -10,6 +10,13 @@
 
 ### Additions
 
+- **Opt-in agent-as-tool result replay**: `create_agent_tool` now exposes the
+  existing `replay_policy` contract so trusted, non-approval manager calls can
+  reuse bounded successful child results from a parent `ExecutionJournal` after
+  a local checkpoint crash window. Sync and async parent paths preserve the
+  regenerated tool-call ID; child-run restore, handoff replay, failed/cancelled
+  replay, and exactly-once external effects remain separate.
+
 - **Cooperative cancellation through local delegation**: `Tool` handlers can
   explicitly opt into receiving a caller-owned `CancellationToken`, and the
   agent-as-tool and handoff helpers forward that token to signature-compatible
