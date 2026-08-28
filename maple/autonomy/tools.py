@@ -678,6 +678,259 @@ async def _run_handoff_store_async(
     return await loop.run_in_executor(None, callback)
 
 
+def _format_agent_tool_result(
+    target_result: Any, target_id: str
+) -> Result[Dict[str, Any], Dict[str, Any]]:
+    """Normalize a nested agent result without forwarding child errors."""
+    if not isinstance(target_result, Result):
+        return Result.err(
+            {
+                "errorType": "AGENT_TOOL_TARGET_INVALID",
+                "message": "Nested agent returned an invalid result.",
+                "details": {"agent_id": target_id},
+            }
+        )
+    if target_result.is_err():
+        target_error = target_result.unwrap_err()
+        error_type = (
+            target_error.get("errorType") if isinstance(target_error, dict) else None
+        )
+        return Result.err(
+            {
+                "errorType": "AGENT_TOOL_TARGET_FAILED",
+                "message": "Nested agent reported a failure.",
+                "details": {
+                    "agent_id": target_id,
+                    "target_error_type": error_type or "UNKNOWN",
+                },
+            }
+        )
+    goal = target_result.unwrap()
+    goal_id = getattr(goal, "goal_id", None)
+    status = getattr(goal, "status", None)
+    if (
+        not isinstance(goal_id, str)
+        or not goal_id
+        or len(goal_id) > 256
+        or any(ord(char) < 32 for char in goal_id)
+        or not isinstance(status, str)
+        or not status
+        or len(status) > 64
+        or any(ord(char) < 32 for char in status)
+    ):
+        return Result.err(
+            {
+                "errorType": "AGENT_TOOL_TARGET_INVALID",
+                "message": "Nested agent returned an invalid goal.",
+                "details": {"agent_id": target_id},
+            }
+        )
+    copied_result = _copy_handoff_value(
+        getattr(goal, "result", None), path="$.result", depth=0
+    )
+    if copied_result.is_err():
+        return Result.err(
+            {
+                "errorType": "AGENT_TOOL_TARGET_INVALID",
+                "message": "Nested agent returned an unbounded result.",
+                "details": {"agent_id": target_id},
+            }
+        )
+    return Result.ok(
+        {
+            "agent_id": target_id,
+            "goal_id": goal_id,
+            "status": status,
+            "result": copied_result.unwrap(),
+        }
+    )
+
+
+def create_agent_tool(
+    target_agent: "AutonomousAgent",
+    *,
+    name: Optional[str] = None,
+    description: Optional[str] = None,
+    requires_approval: bool = True,
+    allowed_context_keys: Optional[Sequence[str]] = None,
+) -> Tool:
+    """Create a bounded manager-style tool backed by another agent.
+
+    Unlike :func:`create_handoff_tool`, this keeps orchestration ownership with
+    the caller. The nested agent is invoked synchronously when the tool is
+    executed, and asynchronously when it exposes ``pursue_goal_async``.
+    Optional context is copied and must be explicitly allowlisted. Child
+    errors are reduced to their type; prompts, traces, and provider details do
+    not cross the tool result boundary.
+    """
+    target_id = getattr(target_agent, "agent_id", None)
+    pursue_goal = getattr(target_agent, "pursue_goal", None)
+    if (
+        not isinstance(target_id, str)
+        or not target_id
+        or len(target_id) > 256
+        or any(ord(char) < 32 for char in target_id)
+    ):
+        raise ValueError("target_agent must expose a bounded non-empty agent_id")
+    if not callable(pursue_goal):
+        raise ValueError("target_agent must expose a callable pursue_goal method")
+    if not isinstance(requires_approval, bool):
+        raise ValueError("requires_approval must be boolean")
+    if allowed_context_keys is None:
+        allowed_keys: frozenset[str] = frozenset()
+    else:
+        if isinstance(allowed_context_keys, (str, bytes)):
+            raise ValueError("allowed_context_keys must be a sequence of strings")
+        try:
+            raw_allowed_keys = tuple(allowed_context_keys)
+        except TypeError as exc:
+            raise ValueError(
+                "allowed_context_keys must be a sequence of strings"
+            ) from exc
+        if len(raw_allowed_keys) > MAX_HANDOFF_CONTEXT_KEYS:
+            raise ValueError(
+                f"allowed_context_keys cannot exceed {MAX_HANDOFF_CONTEXT_KEYS} keys"
+            )
+        if any(
+            not isinstance(key, str) or not key or len(key) > 128
+            for key in raw_allowed_keys
+        ):
+            raise ValueError("allowed_context_keys must contain bounded strings")
+        if len(set(raw_allowed_keys)) != len(raw_allowed_keys):
+            raise ValueError("allowed_context_keys must not contain duplicates")
+        allowed_keys = frozenset(raw_allowed_keys)
+
+    tool_name = name or f"ask_{target_id}"
+    tool_description = description or (
+        f"Ask agent {target_id} to complete one bounded task and return its result"
+    )
+
+    def prepare_context(
+        context: Optional[Dict[str, Any]],
+    ) -> Result[Dict[str, Any], Dict[str, Any]]:
+        context_result = _normalize_handoff_context(context)
+        if context_result.is_err():
+            return Result.err(context_result.unwrap_err())
+        nested_context = context_result.unwrap()
+        denied_keys = sorted(set(nested_context).difference(allowed_keys))
+        if denied_keys:
+            return Result.err(
+                {
+                    "errorType": "AGENT_TOOL_CONTEXT_KEY_DENIED",
+                    "message": "Agent-tool context contains a key outside the allowlist.",
+                    "details": {"keys": denied_keys},
+                }
+            )
+        return Result.ok(nested_context)
+
+    def invoke_sync(
+        task: str, context: Optional[Dict[str, Any]] = None
+    ) -> Result[Dict[str, Any], Dict[str, Any]]:
+        context_result = prepare_context(context)
+        if context_result.is_err():
+            return Result.err(context_result.unwrap_err())
+        nested_context = context_result.unwrap()
+        pursue_with_context = getattr(target_agent, "pursue_goal_with_context", None)
+        try:
+            if nested_context:
+                if not callable(pursue_with_context):
+                    return Result.err(
+                        {
+                            "errorType": "AGENT_TOOL_CONTEXT_UNSUPPORTED",
+                            "message": "Nested agent does not declare context-aware execution.",
+                            "details": {"agent_id": target_id},
+                        }
+                    )
+                target_result = pursue_with_context(task, nested_context)
+            else:
+                target_result = pursue_goal(task)
+        except Exception as exc:
+            return Result.err(
+                {
+                    "errorType": "AGENT_TOOL_TARGET_ERROR",
+                    "message": "Nested agent execution failed.",
+                    "details": {"agent_id": target_id, "exception": type(exc).__name__},
+                }
+            )
+        return _format_agent_tool_result(target_result, target_id)
+
+    async_handler: Optional[Callable[..., Awaitable[Result[Any, Dict[str, Any]]]]] = (
+        None
+    )
+    pursue_goal_async = getattr(target_agent, "pursue_goal_async", None)
+    pursue_with_context_async = getattr(
+        target_agent, "pursue_goal_with_context_async", None
+    )
+    if callable(pursue_goal_async):
+
+        async def invoke_async(
+            task: str, context: Optional[Dict[str, Any]] = None
+        ) -> Result[Dict[str, Any], Dict[str, Any]]:
+            context_result = prepare_context(context)
+            if context_result.is_err():
+                return Result.err(context_result.unwrap_err())
+            nested_context = context_result.unwrap()
+            try:
+                if nested_context:
+                    if not callable(pursue_with_context_async):
+                        return Result.err(
+                            {
+                                "errorType": "AGENT_TOOL_CONTEXT_UNSUPPORTED",
+                                "message": "Nested agent does not declare async context-aware execution.",
+                                "details": {"agent_id": target_id},
+                            }
+                        )
+                    target_result = await pursue_with_context_async(
+                        task, nested_context
+                    )
+                else:
+                    target_result = await pursue_goal_async(task)
+            except Exception as exc:
+                return Result.err(
+                    {
+                        "errorType": "AGENT_TOOL_TARGET_ERROR",
+                        "message": "Nested agent execution failed.",
+                        "details": {
+                            "agent_id": target_id,
+                            "exception": type(exc).__name__,
+                        },
+                    }
+                )
+            return _format_agent_tool_result(target_result, target_id)
+
+        async_handler = invoke_async
+
+    return Tool(
+        name=tool_name,
+        description=tool_description,
+        parameters={
+            "type": "object",
+            "properties": {
+                "task": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 8192,
+                    "description": "The bounded task for the nested agent.",
+                },
+                "context": {
+                    "type": "object",
+                    "maxProperties": MAX_HANDOFF_CONTEXT_KEYS,
+                    "description": (
+                        "Optional bounded context. Only explicitly allowlisted "
+                        "keys reach the nested agent."
+                    ),
+                },
+            },
+            "required": ["task"],
+            "additionalProperties": False,
+        },
+        handler=invoke_sync,
+        async_handler=async_handler,
+        requires_approval=requires_approval,
+        tags=["delegation", "agent-as-tool"],
+    )
+
+
 def create_handoff_tool(
     target_agent: "AutonomousAgent",
     *,

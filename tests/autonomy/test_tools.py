@@ -6,6 +6,7 @@ from maple.autonomy.agent import Goal
 from maple.autonomy.tools import (
     Tool,
     ToolRegistry,
+    create_agent_tool,
     create_builtin_tools,
     create_handoff_tool,
 )
@@ -328,6 +329,107 @@ class TestHandoffTool:
         result = await tool.execute_async(
             task="Use the release notes",
             context={"project": "MAPLE"},
+        )
+
+        assert result.is_ok()
+        assert target.contexts == [{"project": "MAPLE"}]
+
+
+class TestAgentTool:
+    def test_agent_tool_returns_bounded_child_result_without_handoff_state(self):
+        target = HandoffAgent()
+        tool = create_agent_tool(target)
+
+        result = tool.execute(task="Research the release notes")
+
+        assert result.is_ok()
+        assert result.unwrap() == {
+            "agent_id": "specialist",
+            "goal_id": "goal-specialist",
+            "status": "completed",
+            "result": {"answer": "RESEARCH THE RELEASE NOTES"},
+        }
+        assert target.tasks == ["Research the release notes"]
+        assert tool.requires_approval is True
+        assert "agent-as-tool" in tool.tags
+        assert "handoff_id" not in result.unwrap()
+
+    def test_agent_tool_filters_context_and_requires_explicit_support(self):
+        target = ContextHandoffAgent()
+        tool = create_agent_tool(target, allowed_context_keys=["project"])
+
+        result = tool.execute(
+            task="Use the release notes",
+            context={"project": {"name": "MAPLE"}},
+        )
+
+        assert result.is_ok()
+        assert target.contexts == [{"project": {"name": "MAPLE"}}]
+
+        legacy = create_agent_tool(HandoffAgent(), allowed_context_keys=["project"])
+        unsupported = legacy.execute(
+            task="Use the release notes", context={"project": "MAPLE"}
+        )
+
+        assert unsupported.is_err()
+        assert unsupported.unwrap_err()["errorType"] == "AGENT_TOOL_CONTEXT_UNSUPPORTED"
+
+    def test_agent_tool_rejects_context_outside_allowlist_before_target(self):
+        target = ContextHandoffAgent()
+        tool = create_agent_tool(target, allowed_context_keys=["project"])
+
+        result = tool.execute(task="Use the release notes", context={"secret": "x"})
+
+        assert result.is_err()
+        assert result.unwrap_err()["errorType"] == "AGENT_TOOL_CONTEXT_KEY_DENIED"
+        assert target.tasks == []
+
+    def test_agent_tool_redacts_child_failures_and_exceptions(self):
+        class FailingAgent(HandoffAgent):
+            def pursue_goal(self, description):
+                return Result.err(
+                    {"errorType": "TARGET_FAILURE", "message": "secret response"}
+                )
+
+        class RaisingAgent(HandoffAgent):
+            def pursue_goal(self, description):
+                raise RuntimeError("private failure")
+
+        failed = create_agent_tool(FailingAgent()).execute(task="Try this")
+        raised = create_agent_tool(RaisingAgent()).execute(task="Try this")
+
+        assert failed.is_err()
+        assert failed.unwrap_err()["errorType"] == "AGENT_TOOL_TARGET_FAILED"
+        assert failed.unwrap_err()["details"]["target_error_type"] == "TARGET_FAILURE"
+        assert "secret" not in str(failed.unwrap_err())
+        assert raised.is_err()
+        assert raised.unwrap_err()["errorType"] == "AGENT_TOOL_TARGET_ERROR"
+        assert raised.unwrap_err()["details"]["exception"] == "RuntimeError"
+        assert "private failure" not in str(raised.unwrap_err())
+
+    def test_agent_tool_rejects_unbounded_child_result(self):
+        class UnboundedAgent(HandoffAgent):
+            def pursue_goal(self, description):
+                return Result.ok(
+                    Goal(
+                        goal_id="goal-specialist",
+                        description=description,
+                        status="completed",
+                        result=object(),
+                    )
+                )
+
+        result = create_agent_tool(UnboundedAgent()).execute(task="Try this")
+
+        assert result.is_err()
+        assert result.unwrap_err()["errorType"] == "AGENT_TOOL_TARGET_INVALID"
+
+    async def test_async_agent_tool_uses_async_child_contract(self):
+        target = AsyncHandoffAgent()
+        tool = create_agent_tool(target, allowed_context_keys=["project"])
+
+        result = await tool.execute_async(
+            task="Use the release notes", context={"project": "MAPLE"}
         )
 
         assert result.is_ok()

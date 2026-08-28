@@ -195,6 +195,7 @@ from .tools import (
     TOOL_REPLAY_REUSE_SUCCESS,
     Tool,
     ToolRegistry,
+    create_agent_tool,
     create_handoff_tool,
 )
 from .workflow import (
@@ -216,6 +217,7 @@ __all__ = [
     "ToolRegistry",
     "TOOL_REPLAY_DISABLED",
     "TOOL_REPLAY_REUSE_SUCCESS",
+    "create_agent_tool",
     "create_handoff_tool",
     "WorkingMemory",
     "EpisodicMemory",
