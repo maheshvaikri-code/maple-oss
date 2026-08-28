@@ -2791,6 +2791,56 @@ resume/cancel callbacks return `501`. Cancellation is cooperative; the host
 remains responsible for token propagation, checkpoint mutation, cleanup,
 retries, principal scopes, and exactly-once side-effect policy.
 
+### Agent capability discovery and routing
+
+Handlers may advertise bounded public capability labels at registration time.
+The listing contains only agent IDs and sorted labels; handlers, checkpoints,
+credentials, prompts, contexts, results, and errors are never included:
+
+```python
+from maple import (
+    AgentRegistry,
+    AgentRun,
+    Result,
+    RunClient,
+    RunServer,
+    WorkflowRegistry,
+)
+
+agents = AgentRegistry()
+
+def researcher(task, context, *, session_id, run_id):
+    return Result.ok(AgentRun("researcher", run_id, "completed", {"task": task}))
+
+agents.register("researcher", researcher, capabilities=["research", "summarize"])
+
+with RunServer(
+    WorkflowRegistry(), agent_registry=agents, auth_token="local-token"
+) as server:
+    client = RunClient(server.url, auth_token="local-token")
+    descriptors = client.list_agents_typed()
+    routed = client.route_agent_typed("research", "find release notes")
+    assert descriptors.is_ok()
+    assert routed.is_ok()
+```
+
+`AgentRegistry.list_agents()` and `RunClient.list_agents()` return raw
+`{"agents": [...]}` envelopes; their typed counterparts return
+`AgentDescriptor` values. `AgentRegistry.route(...)` and
+`RunClient.route_agent(...)` accept one exact, case-sensitive capability plus
+the normal bounded task/context/session/run fields. `route_agent_typed()`
+returns the selected `AgentRun`, including the selected agent ID. When several
+agents match, selection is deterministic by lexicographic agent ID. No match
+returns `AGENT_ROUTE_NOT_FOUND` (`404` over HTTP); invalid labels return a
+typed input error (`400`). Listing requires `agent:read`; routing requires
+`agent:invoke`.
+
+This is a deterministic routing seam, not a scheduler: it provides no retry,
+failover, health probing, load balancing, queueing, distributed ownership,
+identity federation, push notification, or exactly-once side-effect guarantee.
+The native `AutonomousAgentRemoteAdapter.register(..., capabilities=...)`
+option forwards the same metadata to the registry.
+
 ### Authenticated event transport
 
 When `event_stream=...` is configured, `RunServer` exposes the existing

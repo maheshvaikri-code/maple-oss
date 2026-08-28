@@ -1,8 +1,8 @@
 # QA + Security Report - native autonomous-agent remote transport adapter
 
 **QA Engineer** / **Security Reviewer** / **Date:** 2026-08-28
-**Code candidate:** `b3d8f74` (`feat(transport): export native agent adapter`)
-**Design baseline:** `bfbeef8`
+**Code candidate:** `abf02d6` (`docs(qa): close native agent transport slice`)
+**Design baseline:** `c94328e`
 **Implementation baseline:** `e1812f6`
 
 ## Acceptance criteria verification
@@ -69,16 +69,16 @@ condition and the open fresh-session verifier requirement.
 
 ## Package gate
 
-The package was built from a file-backed clean archive of committed HEAD
-`b3d8f74c40c1a64b3fc23b18de0c5b12aba2491f`; untracked workspace files were
+The final package was built from a file-backed clean archive of committed HEAD
+`abf02d69c3e64ed2113b2b220c6ee7008885768f`; untracked workspace files were
 excluded.
 
 ```text
-source_archive_entries=730
+source_archive_entries=733
 build_exit=0
 twine_exit=0
 wheel_entries=104
-sdist_entries=705
+sdist_entries=708
 install_exit=0
 isolated_import=passed
 version=1.1.3

@@ -10,6 +10,14 @@
 
 ### Additions
 
+- **Bounded agent capability discovery and routing**: `AgentRegistry` now
+  retains bounded public capability labels, exposes deterministic descriptor
+  listing, and routes exact capability requests to the lexicographically first
+  match. Authenticated `RunServer`/`RunClient` listing and raw/typed routing
+  methods are available, and native adapters can advertise capabilities.
+  Routing performs no retry, failover, load balancing, scheduling, identity
+  federation, push delivery, or exactly-once side-effect handling.
+
 - **Native autonomous-agent remote transport adapter**: `AutonomousAgentRemoteAdapter`
   binds a native agent's caller-owned `AgentRunStore` to `AgentRegistry` and
   registers sanitized start/resume callbacks for authenticated remote runs.

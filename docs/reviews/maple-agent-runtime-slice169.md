@@ -1,6 +1,6 @@
 # Code Review - native autonomous-agent remote transport adapter
 
-**Review basis:** `bfbeef8`, `e1812f6`, `b3d8f74`
+**Review basis:** `c94328e`, `e1812f6`, `b3d8f74`, `abf02d6`
 **Brief:** `docs/briefs/maple-agent-runtime-slice169.md`
 **ADR:** `docs/adr/114-native-agent-remote-transport-adapter.md`
 **Date:** 2026-08-28
