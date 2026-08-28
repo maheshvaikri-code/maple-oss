@@ -2059,7 +2059,7 @@ single host-configured bearer principal, add `auth_principal=Principal(...)` to
 enforce route scopes before request bodies are read:
 
 ```python
-from maple import Principal, RunServer
+from maple import Principal, RunClient, RunServer
 
 operator = Principal(
     "operator",
