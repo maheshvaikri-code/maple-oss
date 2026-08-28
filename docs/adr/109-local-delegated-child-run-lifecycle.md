@@ -25,8 +25,10 @@ validation, approval/input recovery, and terminal-state rules.
 The default remains disabled. Persistent child mode validates the required
 callable/signature surface at factory creation and validates the ID at the
 tool boundary. Normal result formatting still strips raw child errors and
-returns only the bounded normalized envelope. Context is sent only on a new
-start; a resume uses the child checkpoint.
+returns only the bounded normalized envelope. The retry's existence probe may
+repeat the bounded start call, but the native resume call itself receives only
+the child ID and uses the child checkpoint rather than starting another model
+turn or forwarding context into the resumed loop.
 
 ## Data flow and failure modes
 
