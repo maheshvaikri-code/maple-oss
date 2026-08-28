@@ -19,6 +19,11 @@
   or completed stale queue tuples are discarded before assignment, and a full
   requeue fails before changing the task state.
 
+- **Lifecycle-safe local task scheduling**: `TaskQueue.assign_task()` now
+  atomically claims queued tasks for one agent, while `TaskScheduler` rejects
+  duplicate ownership and physically requeues scheduler assignment failures
+  through the existing bounded retry path.
+
 - **Bounded episodic memory**: `EpisodicMemory` now validates bounded task
   IDs and serialized event size, retains a configurable newest-event window
   per task, rejects malformed or oversized records before persistence, and

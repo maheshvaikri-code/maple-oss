@@ -551,6 +551,14 @@ retry count, and error unchanged. This is an in-process queue contract; it
 does not provide durable queue storage, distributed worker ownership, hosted
 scheduling, force cancellation, or exactly-once external effects.
 
+`TaskQueue.assign_task(task_id, assigned_agent)` is the scheduler-facing
+atomic claim. It accepts a `QUEUED` task or a task just removed by
+`get_next_task()` with `ASSIGNED` status but no owner; a second owner, terminal
+task, or empty agent ID fails without changing ownership. `TaskScheduler` uses
+this claim and routes a failed assignment through `FAILED` plus
+`requeue_task()`, so changing only a status cannot silently lose the physical
+queue entry. Retry admission remains bounded by the task's `max_retries`.
+
 ## Trusted Local Execution (preview)
 
 `TrustedLocalExecutor` is an explicit boundary for trusted Python handlers. It

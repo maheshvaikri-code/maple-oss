@@ -55,6 +55,12 @@ and preserves failed-task state when a requeue is rejected for capacity. This
 is an in-process admission boundary; durable queues, distributed scheduling,
 remote workers, and hosted scheduler ownership remain separate.
 
+Local scheduler assignment now uses an atomic queue-side claim, rejects
+duplicate task ownership, and returns scheduler assignment failures through
+physical bounded retry admission. This closes a local task-loss boundary; it
+does not provide durable scheduling, distributed leases, or hosted worker
+coordination.
+
 Working-memory admission is also bounded in the local runtime: budgets accept
 1..1,000,000 estimated tokens, storage retains at most 4,096 entries, keys are
 limited to 256 UTF-8 bytes, and invalid or non-fitting entries fail before
