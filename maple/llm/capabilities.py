@@ -19,6 +19,7 @@ class ProviderCapabilities:
     tools: bool = False
     streaming: bool = False
     structured_output: bool = False
+    image_input: bool = False
     max_context_tokens: Optional[int] = None
 
     def supports(self, requirements: "ProviderRequirements") -> bool:
@@ -28,6 +29,8 @@ class ProviderCapabilities:
         if requirements.streaming and not self.streaming:
             return False
         if requirements.structured_output and not self.structured_output:
+            return False
+        if requirements.image_input and not self.image_input:
             return False
         if requirements.min_context_tokens:
             if self.max_context_tokens is None:
@@ -44,6 +47,7 @@ class ProviderRequirements:
     tools: bool = False
     streaming: bool = False
     structured_output: bool = False
+    image_input: bool = False
     min_context_tokens: int = 0
 
     def validate(self) -> Optional[Error]:
@@ -56,7 +60,7 @@ class ProviderRequirements:
                 "errorType": "PROVIDER_REQUIREMENTS_INVALID",
                 "message": "min_context_tokens must be a non-negative integer.",
             }
-        for name in ("tools", "streaming", "structured_output"):
+        for name in ("tools", "streaming", "structured_output", "image_input"):
             if not isinstance(getattr(self, name), bool):
                 return {
                     "errorType": "PROVIDER_REQUIREMENTS_INVALID",

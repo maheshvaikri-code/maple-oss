@@ -1,5 +1,6 @@
 """Tests for the bounded conversation session boundary."""
 
+import base64
 import json
 from concurrent.futures import ThreadPoolExecutor
 
@@ -8,7 +9,7 @@ from maple.autonomy import (
     InMemorySessionStore,
     SessionMessage,
 )
-from maple.llm.types import ChatMessage, ChatRole, ToolCall
+from maple.llm.types import ChatMessage, ChatRole, ImageContent, ToolCall
 
 
 def test_in_memory_session_appends_versioned_messages_and_returns_copies():
@@ -161,3 +162,21 @@ def test_session_message_round_trips_typed_llm_tool_call():
     assert restored.content == original.content
     assert restored.name == "agent"
     assert restored.tool_calls[0].arguments == {"q": "MAPLE"}
+
+
+def test_session_message_round_trips_typed_image_content():
+    original = ChatMessage(
+        role=ChatRole.USER,
+        content=[
+            "describe this",
+            ImageContent(
+                source="data:image/png;base64," + base64.b64encode(b"image").decode(),
+                detail="high",
+            ),
+        ],
+    )
+
+    stored = SessionMessage.from_chat_message(original)
+    restored = SessionMessage.from_dict(stored.to_dict()).to_chat_message()
+
+    assert restored.content == original.content

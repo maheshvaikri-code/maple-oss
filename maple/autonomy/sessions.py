@@ -15,7 +15,14 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Protocol, Tuple, Union
 
 from ..core.result import Result
-from ..llm.types import ChatMessage, ChatRole, ToolCall
+from ..llm.types import (
+    ChatContent,
+    ChatMessage,
+    ChatRole,
+    ImageContent,
+    ToolCall,
+    validate_chat_content,
+)
 
 Error = Dict[str, Any]
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
@@ -149,12 +156,74 @@ def _copy_json(value: Any, *, field_name: str, max_bytes: int) -> Result[Any, Er
         )
 
 
+def _content_to_json(
+    content: ChatContent,
+) -> Union[str, List[Union[str, Dict[str, Any]]]]:
+    """Convert typed chat content into a JSON-safe session representation."""
+
+    validate_chat_content(content)
+    if isinstance(content, str):
+        return content
+    encoded: List[Union[str, Dict[str, Any]]] = []
+    for part in content:
+        if isinstance(part, str):
+            encoded.append(part)
+        else:
+            encoded.append(
+                {
+                    "type": "image",
+                    "source": part.source,
+                    "mime_type": part.mime_type,
+                    "detail": part.detail,
+                }
+            )
+    return encoded
+
+
+def _content_from_json(value: Any) -> ChatContent:
+    """Restore text or typed image parts from a persisted session message."""
+
+    if isinstance(value, str):
+        return value
+    if not isinstance(value, list) or not value or len(value) > 64:
+        raise ValueError("session message content must be text or 1-64 parts")
+    parts: List[Union[str, ImageContent]] = []
+    for item in value:
+        if isinstance(item, str):
+            parts.append(item)
+            continue
+        if not isinstance(item, Mapping) or item.get("type") != "image":
+            raise ValueError("session content parts must be text or image objects")
+        try:
+            source = item.get("source")
+            if not isinstance(source, str):
+                raise ValueError("image source must be a string")
+            mime_type = item.get("mime_type")
+            if mime_type is not None and not isinstance(mime_type, str):
+                raise ValueError("image mime_type must be a string")
+            detail = item.get("detail", "auto")
+            if not isinstance(detail, str):
+                raise ValueError("image detail must be a string")
+            parts.append(
+                ImageContent(
+                    source=source,
+                    mime_type=mime_type,
+                    detail=detail,
+                )
+            )
+        except (TypeError, ValueError) as exc:
+            raise ValueError("invalid session image content") from exc
+    content: ChatContent = parts
+    validate_chat_content(content)
+    return content
+
+
 @dataclass(frozen=True)
 class SessionMessage:
     """One JSON-safe conversation message stored as data."""
 
     role: str
-    content: str
+    content: ChatContent
     message_id: str = field(default_factory=lambda: f"msg-{uuid.uuid4().hex}")
     name: Optional[str] = None
     tool_call_id: Optional[str] = None
@@ -167,7 +236,7 @@ class SessionMessage:
         return {
             "message_id": self.message_id,
             "role": self.role,
-            "content": self.content,
+            "content": _content_to_json(self.content),
             "name": self.name,
             "tool_call_id": self.tool_call_id,
             "tool_calls": [dict(call) for call in self.tool_calls],
@@ -185,8 +254,10 @@ class SessionMessage:
                 raise ValueError("session message is missing a required field")
         if data["role"] not in _ROLES:
             raise ValueError("invalid session message role")
-        if _valid_text(data["content"], "content", allow_empty=True):
-            raise ValueError("invalid session message content")
+        try:
+            content = _content_from_json(data["content"])
+        except (TypeError, ValueError) as exc:
+            raise ValueError("invalid session message content") from exc
         message_id = data.get("message_id", f"msg-{uuid.uuid4().hex}")
         if _valid_identifier(message_id, "message_id"):
             raise ValueError("invalid session message ID")
@@ -239,7 +310,7 @@ class SessionMessage:
             raise ValueError("session message timestamp must be finite")
         return cls(
             role=data["role"],
-            content=data["content"],
+            content=content,
             message_id=message_id,
             name=name,
             tool_call_id=tool_call_id,

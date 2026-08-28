@@ -22,7 +22,9 @@ from typing import Any, AsyncIterator, Dict, List, Optional, cast
 from ..core.result import Result
 from .provider import LLMProvider, classify_provider_exception
 from .types import (
+    ChatContent,
     ChatMessage,
+    ImageContent,
     LLMChunk,
     LLMConfig,
     LLMResponse,
@@ -79,10 +81,13 @@ class OpenAIProvider(LLMProvider):
                     ),
                 }
             )
+        formatted_messages = self._format_messages(messages)
+        if formatted_messages.is_err():
+            return Result.err(formatted_messages.unwrap_err())
         try:
             kwargs: Dict[str, Any] = {
                 "model": self.config.model,
-                "messages": [self._format_message(m) for m in messages],
+                "messages": formatted_messages.unwrap(),
                 "temperature": (
                     temperature if temperature is not None else self.config.temperature
                 ),
@@ -124,9 +129,12 @@ class OpenAIProvider(LLMProvider):
                 max_tokens=max_tokens,
             )
 
+        formatted_messages = self._format_messages(messages)
+        if formatted_messages.is_err():
+            return Result.err(formatted_messages.unwrap_err())
         kwargs: Dict[str, Any] = {
             "model": self.config.model,
-            "messages": [self._format_message(m) for m in messages],
+            "messages": formatted_messages.unwrap(),
             "temperature": (
                 temperature if temperature is not None else self.config.temperature
             ),
@@ -202,7 +210,10 @@ class OpenAIProvider(LLMProvider):
         return Result.ok(_chunks())
 
     def _format_message(self, msg: ChatMessage) -> Dict[str, Any]:
-        d: Dict[str, Any] = {"role": msg.role.value, "content": msg.content or ""}
+        d: Dict[str, Any] = {
+            "role": msg.role.value,
+            "content": self._format_content(msg.content),
+        }
         if msg.name:
             d["name"] = msg.name
         if msg.tool_call_id:
@@ -220,6 +231,42 @@ class OpenAIProvider(LLMProvider):
                 for tc in msg.tool_calls
             ]
         return d
+
+    def _format_messages(
+        self, messages: List[ChatMessage]
+    ) -> Result[List[Dict[str, Any]], Dict[str, Any]]:
+        try:
+            return Result.ok([self._format_message(message) for message in messages])
+        except (TypeError, ValueError) as exc:
+            return Result.err(
+                {
+                    "errorType": "LLM_CONTENT_INVALID",
+                    "message": "Chat content could not be formatted for the provider.",
+                    "details": {"reason": str(exc)[:256]},
+                }
+            )
+
+    @staticmethod
+    def _format_content(content: ChatContent) -> Any:
+        if isinstance(content, str):
+            return content or ""
+        formatted: List[Dict[str, Any]] = []
+        for part in content:
+            if isinstance(part, str):
+                formatted.append({"type": "text", "text": part})
+            elif isinstance(part, ImageContent):
+                formatted.append(
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": part.source,
+                            "detail": part.detail,
+                        },
+                    }
+                )
+            else:
+                raise ValueError("unsupported chat content part")
+        return formatted
 
     def _format_tool(self, tool: ToolDefinition) -> Dict[str, Any]:
         return {

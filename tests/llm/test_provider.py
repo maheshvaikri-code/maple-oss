@@ -12,6 +12,7 @@ from maple.llm.registry import LLMProviderRegistry
 from maple.llm.types import (
     ChatMessage,
     ChatRole,
+    ImageContent,
     LLMConfig,
     LLMResponse,
     ModelRetryPolicy,
@@ -157,6 +158,63 @@ class TestLLMProvider:
         assert anthropic_provider.complete(messages).unwrap_err()["errorType"] == (
             "LLM_RATE_LIMITED"
         )
+
+    def test_openai_formats_text_and_image_content(self):
+        provider = object.__new__(OpenAIProvider)
+        message = ChatMessage(
+            role=ChatRole.USER,
+            content=[
+                "inspect this",
+                ImageContent(source="https://example.com/image.png", detail="high"),
+            ],
+        )
+
+        formatted = provider._format_message(message)
+
+        assert formatted["content"] == [
+            {"type": "text", "text": "inspect this"},
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": "https://example.com/image.png",
+                    "detail": "high",
+                },
+            },
+        ]
+
+    def test_anthropic_formats_data_uri_and_rejects_remote_image(self):
+        provider = object.__new__(AnthropicProvider)
+        data_message = ChatMessage(
+            role=ChatRole.USER,
+            content=[
+                "inspect this",
+                ImageContent(source="data:image/png;base64,aW1hZ2U="),
+            ],
+        )
+
+        formatted = provider._format_messages([data_message])
+
+        assert formatted.is_ok()
+        assert formatted.unwrap()[1][0]["content"][1] == {
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": "image/png",
+                "data": "aW1hZ2U=",
+            },
+        }
+
+        remote = provider._format_messages(
+            [
+                ChatMessage(
+                    role=ChatRole.USER,
+                    content=[ImageContent(source="https://example.com/image.png")],
+                )
+            ]
+        )
+
+        assert remote.is_err()
+        assert remote.unwrap_err()["errorType"] == "LLM_UNSUPPORTED_CONTENT"
 
 
 class TestLLMProviderRegistry:

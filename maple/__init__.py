@@ -238,7 +238,16 @@ from .llm.capabilities import (
     ProviderRouter,
 )
 from .llm.registry import LLMProviderRegistry
-from .llm.types import ChatMessage, ChatRole, LLMConfig, ModelRetryPolicy
+from .llm.types import (
+    ChatContent,
+    ChatMessage,
+    ChatRole,
+    ContentPart,
+    ImageContent,
+    LLMConfig,
+    ModelRetryPolicy,
+    validate_chat_content,
+)
 from .resources.lease import Lease, LeaseManager
 from .resources.manager import (
     DEFAULT_LIFECYCLES,
@@ -479,6 +488,10 @@ __all__ = [
     "ModelRetryPolicy",
     "ChatMessage",
     "ChatRole",
+    "ChatContent",
+    "ContentPart",
+    "ImageContent",
+    "validate_chat_content",
     "LLMProviderRegistry",
     "ProviderCapabilities",
     "ProviderDescriptor",

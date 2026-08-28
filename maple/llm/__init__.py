@@ -24,8 +24,11 @@ from .capabilities import (
 from .provider import LLMProvider, classify_provider_exception
 from .registry import LLMProviderRegistry
 from .types import (
+    ChatContent,
     ChatMessage,
     ChatRole,
+    ContentPart,
+    ImageContent,
     LLMChunk,
     LLMConfig,
     LLMResponse,
@@ -34,14 +37,19 @@ from .types import (
     ToolCall,
     ToolDefinition,
     ToolResult,
+    validate_chat_content,
 )
 
 __all__ = [
     "ChatRole",
     "ChatMessage",
+    "ChatContent",
+    "ContentPart",
+    "ImageContent",
     "ToolDefinition",
     "ToolCall",
     "ToolResult",
+    "validate_chat_content",
     "TokenUsage",
     "LLMResponse",
     "LLMChunk",

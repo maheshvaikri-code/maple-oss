@@ -15,10 +15,23 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 
 # LLM types for MAPLE autonomy layer.
 
+import base64
+import binascii
 import math
+import re
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple, Union
+from urllib.parse import urlsplit
+
+_MAX_CHAT_CONTENT_PARTS = 64
+_MAX_CHAT_CONTENT_BYTES = 1 * 1024 * 1024
+_MAX_IMAGE_SOURCE_BYTES = 1 * 1024 * 1024
+_IMAGE_DATA_URI = re.compile(
+    r"^data:(image/(?:jpeg|png|webp|gif));base64,([A-Za-z0-9+/]*={0,2})$"
+)
+_IMAGE_MIME_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+_IMAGE_DETAILS = {"auto", "low", "high"}
 
 
 class ChatRole(Enum):
@@ -28,6 +41,93 @@ class ChatRole(Enum):
     USER = "user"
     ASSISTANT = "assistant"
     TOOL = "tool"
+
+
+@dataclass(frozen=True)
+class ImageContent:
+    """A bounded image reference for multimodal chat messages.
+
+    ``source`` is an HTTPS URL or a validated base64 data URI. MAPLE never
+    fetches or executes the source; provider adapters decide which source
+    forms they can transmit. Data URIs are portable to the built-in
+    Anthropic adapter, while HTTPS URLs are supported by OpenAI-compatible
+    adapters.
+    """
+
+    source: str
+    mime_type: Optional[str] = None
+    detail: str = "auto"
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.source, str) or not self.source:
+            raise ValueError("image source must be a non-empty string")
+        if len(self.source.encode("utf-8")) > _MAX_IMAGE_SOURCE_BYTES:
+            raise ValueError("image source exceeds the configured byte limit")
+        if any(
+            ord(character) < 32 or ord(character) == 127 for character in self.source
+        ):
+            raise ValueError("image source must not contain control characters")
+        if self.detail not in _IMAGE_DETAILS:
+            raise ValueError("image detail must be auto, low, or high")
+        if self.mime_type is not None and self.mime_type not in _IMAGE_MIME_TYPES:
+            raise ValueError("image mime_type must be a supported image type")
+
+        if self.source.startswith("https://"):
+            try:
+                parsed = urlsplit(self.source)
+            except ValueError as exc:
+                raise ValueError("image source must be a valid HTTPS URL") from exc
+            if parsed.hostname and parsed.username is None and parsed.password is None:
+                return
+            raise ValueError("image source must be a valid HTTPS URL")
+        match = _IMAGE_DATA_URI.fullmatch(self.source)
+        if match is None:
+            if self.source.startswith("data:"):
+                raise ValueError("image data URI is not valid base64 or is malformed")
+            raise ValueError("image source must be an HTTPS URL or base64 data URI")
+        data = match.group(2)
+        try:
+            decoded = base64.b64decode(data, validate=True)
+        except (ValueError, binascii.Error) as exc:
+            raise ValueError("image data URI is not valid base64") from exc
+        if not decoded:
+            raise ValueError("image data URI must contain image bytes")
+        if len(decoded) > _MAX_IMAGE_SOURCE_BYTES:
+            raise ValueError("image data exceeds the configured byte limit")
+        if self.mime_type is not None and self.mime_type != match.group(1):
+            raise ValueError("image mime_type does not match the data URI")
+
+
+ContentPart = Union[str, ImageContent]
+ChatContent = Union[str, List[ContentPart], Tuple[ContentPart, ...]]
+
+
+def validate_chat_content(content: ChatContent) -> None:
+    """Validate bounded text or multimodal chat content.
+
+    The function raises ``ValueError`` for invalid caller-owned input so
+    ``ChatMessage`` remains a small dataclass while providers can use the
+    same contract at their boundary.
+    """
+
+    if isinstance(content, str):
+        if len(content.encode("utf-8")) > _MAX_CHAT_CONTENT_BYTES:
+            raise ValueError("chat content exceeds the configured byte limit")
+        return
+    if not isinstance(content, (list, tuple)):
+        raise ValueError("chat content must be text or a list of content parts")
+    if not content or len(content) > _MAX_CHAT_CONTENT_PARTS:
+        raise ValueError("chat content must contain 1-64 parts")
+    total_bytes = 0
+    for part in content:
+        if isinstance(part, str):
+            total_bytes += len(part.encode("utf-8"))
+        elif isinstance(part, ImageContent):
+            total_bytes += len(part.source.encode("utf-8"))
+        else:
+            raise ValueError("chat content parts must be text or ImageContent")
+    if total_bytes > _MAX_CHAT_CONTENT_BYTES:
+        raise ValueError("chat content exceeds the configured byte limit")
 
 
 @dataclass
@@ -62,10 +162,13 @@ class ChatMessage:
     """A single message in a conversation."""
 
     role: ChatRole
-    content: str
+    content: ChatContent
     name: Optional[str] = None
     tool_call_id: Optional[str] = None
     tool_calls: Optional[List[ToolCall]] = None
+
+    def __post_init__(self) -> None:
+        validate_chat_content(self.content)
 
 
 @dataclass

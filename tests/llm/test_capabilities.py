@@ -50,6 +50,27 @@ def test_router_selects_declared_capabilities_in_priority_order():
     assert [descriptor.name for descriptor in result.unwrap()] == ["streaming"]
 
 
+def test_router_selects_image_capable_provider_only_for_image_requirements():
+    router = ProviderRouter()
+    router.register(
+        "text",
+        MockProvider,
+        ProviderCapabilities(tools=True),
+        priority=2,
+    )
+    router.register(
+        "vision",
+        MockProvider,
+        ProviderCapabilities(tools=True, image_input=True),
+        priority=1,
+    )
+
+    result = router.select(ProviderRequirements(image_input=True))
+
+    assert result.is_ok()
+    assert [descriptor.name for descriptor in result.unwrap()] == ["vision"]
+
+
 def test_router_falls_back_when_high_priority_provider_initialization_fails():
     router = ProviderRouter()
     router.register(

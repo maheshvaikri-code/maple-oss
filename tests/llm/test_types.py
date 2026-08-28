@@ -1,8 +1,20 @@
 """Tests for LLM types."""
 
+import base64
+
+import pytest
+
 from maple.llm.types import (
-    ChatRole, ChatMessage, ToolDefinition, ToolCall, ToolResult,
-    TokenUsage, LLMResponse, LLMChunk, LLMConfig,
+    ChatMessage,
+    ChatRole,
+    ImageContent,
+    LLMChunk,
+    LLMConfig,
+    LLMResponse,
+    TokenUsage,
+    ToolCall,
+    ToolDefinition,
+    ToolResult,
 )
 
 
@@ -50,6 +62,30 @@ class TestChatMessage:
         )
         assert len(msg.tool_calls) == 1
         assert msg.tool_calls[0].name == "search"
+
+    def test_accepts_bounded_text_and_image_parts(self):
+        image = ImageContent(
+            source="data:image/png;base64," + base64.b64encode(b"png").decode(),
+            detail="low",
+        )
+
+        msg = ChatMessage(
+            role=ChatRole.USER,
+            content=["What is in this image?", image],
+        )
+
+        assert msg.content[0] == "What is in this image?"
+        assert msg.content[1] == image
+
+    def test_rejects_unbounded_or_unsupported_image_sources(self):
+        with pytest.raises(ValueError, match="HTTPS URL or base64"):
+            ImageContent(source="file:///tmp/private.png")
+        with pytest.raises(ValueError, match="valid HTTPS URL"):
+            ImageContent(source="https://")
+        with pytest.raises(ValueError, match="valid base64"):
+            ImageContent(source="data:image/png;base64,not-base64!")
+        with pytest.raises(ValueError, match="1-64 parts"):
+            ChatMessage(role=ChatRole.USER, content=[])
 
 
 class TestToolDefinition:

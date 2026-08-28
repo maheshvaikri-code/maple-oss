@@ -16,13 +16,15 @@
 """Anthropic Claude LLM provider."""
 
 import logging
-from typing import Any, AsyncIterator, Dict, List, Optional, cast
+from typing import Any, AsyncIterator, Dict, List, Optional, Tuple, cast
 
 from ..core.result import Result
 from .provider import LLMProvider, classify_provider_exception
 from .types import (
+    ChatContent,
     ChatMessage,
     ChatRole,
+    ImageContent,
     LLMChunk,
     LLMConfig,
     LLMResponse,
@@ -79,47 +81,11 @@ class AnthropicProvider(LLMProvider):
                     ),
                 }
             )
+        formatted = self._format_messages(messages)
+        if formatted.is_err():
+            return Result.err(formatted.unwrap_err())
+        system_prompt, conversation = formatted.unwrap()
         try:
-            # Anthropic uses system as a separate parameter
-            system_prompt = None
-            conversation: List[Dict[str, Any]] = []
-            for msg in messages:
-                if msg.role == ChatRole.SYSTEM:
-                    system_prompt = msg.content
-                elif msg.role == ChatRole.TOOL:
-                    conversation.append(
-                        {
-                            "role": "user",
-                            "content": [
-                                {
-                                    "type": "tool_result",
-                                    "tool_use_id": msg.tool_call_id,
-                                    "content": msg.content,
-                                }
-                            ],
-                        }
-                    )
-                elif msg.role == ChatRole.ASSISTANT and msg.tool_calls:
-                    content: List[Dict[str, Any]] = []
-                    if msg.content:
-                        content.append({"type": "text", "text": msg.content})
-                    for tc in msg.tool_calls:
-                        content.append(
-                            {
-                                "type": "tool_use",
-                                "id": tc.id,
-                                "name": tc.name,
-                                "input": tc.arguments,
-                            }
-                        )
-                    conversation.append({"role": "assistant", "content": content})
-                else:
-                    conversation.append(
-                        {
-                            "role": msg.role.value,
-                            "content": msg.content or "",
-                        }
-                    )
 
             kwargs: Dict[str, Any] = {
                 "model": self.config.model,
@@ -166,45 +132,10 @@ class AnthropicProvider(LLMProvider):
                 max_tokens=max_tokens,
             )
 
-        system_prompt = None
-        conversation: List[Dict[str, Any]] = []
-        for msg in messages:
-            if msg.role == ChatRole.SYSTEM:
-                system_prompt = msg.content
-            elif msg.role == ChatRole.TOOL:
-                conversation.append(
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "tool_result",
-                                "tool_use_id": msg.tool_call_id,
-                                "content": msg.content,
-                            }
-                        ],
-                    }
-                )
-            elif msg.role == ChatRole.ASSISTANT and msg.tool_calls:
-                content: List[Dict[str, Any]] = []
-                if msg.content:
-                    content.append({"type": "text", "text": msg.content})
-                for tc in msg.tool_calls:
-                    content.append(
-                        {
-                            "type": "tool_use",
-                            "id": tc.id,
-                            "name": tc.name,
-                            "input": tc.arguments,
-                        }
-                    )
-                conversation.append({"role": "assistant", "content": content})
-            else:
-                conversation.append(
-                    {
-                        "role": msg.role.value,
-                        "content": msg.content or "",
-                    }
-                )
+        formatted = self._format_messages(messages)
+        if formatted.is_err():
+            return Result.err(formatted.unwrap_err())
+        system_prompt, conversation = formatted.unwrap()
 
         kwargs: Dict[str, Any] = {
             "model": self.config.model,
@@ -299,6 +230,114 @@ class AnthropicProvider(LLMProvider):
             )
 
         return Result.ok(_chunks())
+
+    def _format_messages(
+        self, messages: List[ChatMessage]
+    ) -> Result[Tuple[Optional[str], List[Dict[str, Any]]], Dict[str, Any]]:
+        """Format text/image messages for the Anthropic Messages API."""
+
+        system_prompt: Optional[str] = None
+        conversation: List[Dict[str, Any]] = []
+        for message in messages:
+            formatted_content = self._format_content(message.content)
+            if formatted_content.is_err():
+                return Result.err(formatted_content.unwrap_err())
+            content = formatted_content.unwrap()
+            if message.role == ChatRole.SYSTEM:
+                if not isinstance(content, str):
+                    return Result.err(
+                        {
+                            "errorType": "LLM_UNSUPPORTED_CONTENT",
+                            "message": "Anthropic system prompts must be text.",
+                        }
+                    )
+                system_prompt = content
+            elif message.role == ChatRole.TOOL:
+                if not isinstance(content, str):
+                    return Result.err(
+                        {
+                            "errorType": "LLM_UNSUPPORTED_CONTENT",
+                            "message": "Anthropic tool results must be text.",
+                        }
+                    )
+                conversation.append(
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": message.tool_call_id,
+                                "content": content,
+                            }
+                        ],
+                    }
+                )
+            elif message.role == ChatRole.ASSISTANT and message.tool_calls:
+                content_blocks: List[Dict[str, Any]] = []
+                if isinstance(content, str):
+                    if content:
+                        content_blocks.append({"type": "text", "text": content})
+                else:
+                    content_blocks.extend(content)
+                for tool_call in message.tool_calls:
+                    content_blocks.append(
+                        {
+                            "type": "tool_use",
+                            "id": tool_call.id,
+                            "name": tool_call.name,
+                            "input": tool_call.arguments,
+                        }
+                    )
+                conversation.append({"role": "assistant", "content": content_blocks})
+            else:
+                conversation.append({"role": message.role.value, "content": content})
+        return Result.ok((system_prompt, conversation))
+
+    @staticmethod
+    def _format_content(content: ChatContent) -> Result[Any, Dict[str, Any]]:
+        if isinstance(content, str):
+            return Result.ok(content or "")
+        formatted: List[Dict[str, Any]] = []
+        for part in content:
+            if isinstance(part, str):
+                formatted.append({"type": "text", "text": part})
+            elif isinstance(part, ImageContent):
+                if not part.source.startswith("data:"):
+                    return Result.err(
+                        {
+                            "errorType": "LLM_UNSUPPORTED_CONTENT",
+                            "message": (
+                                "Anthropic image input requires a base64 data URI."
+                            ),
+                        }
+                    )
+                header, separator, data = part.source.partition(",")
+                if not separator or ";base64" not in header:
+                    return Result.err(
+                        {
+                            "errorType": "LLM_CONTENT_INVALID",
+                            "message": "Anthropic image data URI is malformed.",
+                        }
+                    )
+                mime_type = header[5:].split(";", 1)[0]
+                formatted.append(
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": mime_type,
+                            "data": data,
+                        },
+                    }
+                )
+            else:
+                return Result.err(
+                    {
+                        "errorType": "LLM_CONTENT_INVALID",
+                        "message": "Unsupported chat content part.",
+                    }
+                )
+        return Result.ok(formatted)
 
     def _format_tool(self, tool: ToolDefinition) -> Dict[str, Any]:
         return {
