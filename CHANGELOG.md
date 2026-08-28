@@ -10,6 +10,14 @@
 
 ### Additions
 
+- **Bounded principal scopes for the local control plane**: configure a
+  `Principal` on an authenticated `RunServer` to authorize known health,
+  workflow, agent, approval, interaction, handoff, and event routes with exact
+  or family scopes before request bodies are read. Missing scopes return a
+  bounded `403`; legacy bearer-token servers remain wildcard-compatible.
+  Identity issuance, TLS, tenancy, per-agent delivery, and hosted policy
+  remain outside the contract.
+
 - **Bounded multimodal image content**: `ChatMessage` now accepts bounded
   text/image parts through `ImageContent`, with HTTPS or validated base64 data
   URI sources. OpenAI-compatible and Anthropic adapters format supported

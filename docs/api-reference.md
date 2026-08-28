@@ -2054,9 +2054,44 @@ state/resume values still pass through the workflow JSON boundary. Set
 route; unauthorized calls return `401`. `RunClient(auth_token="...")` sends
 that header without putting credentials in the URL. The built-in server still
 rejects non-loopback binding and does not provide TLS, token issuance,
-multi-tenant authorization, streaming transport, or a hard sandbox. A remote
-deployment must supply those host-owned controls and must not infer exactly-once
-effects from this transport.
+multi-tenant authorization, streaming transport, or a hard sandbox. For a
+single host-configured bearer principal, add `auth_principal=Principal(...)` to
+enforce route scopes before request bodies are read:
+
+```python
+from maple import Principal, RunServer
+
+operator = Principal(
+    "operator",
+    ("health:read", "workflow:read", "workflow:invoke", "approval:decide"),
+)
+with RunServer(
+    registry,
+    auth_token="local-token",
+    auth_principal=operator,
+) as server:
+    client = RunClient(server.url, auth_token="local-token")
+```
+
+Known route scope families are:
+
+| Route family | Scope examples |
+| --- | --- |
+| Health | `health:read` |
+| Workflows | `workflow:read`, `workflow:invoke` |
+| Agents | `agent:read`, `agent:invoke`, `agent:resume`, `agent:cancel` |
+| Approvals | `approval:read`, `approval:decide` |
+| Human input | `interaction:read`, `interaction:write`, `interaction:consume` |
+| Handoffs | `handoff:read`, `handoff:write` |
+| Events | `event:read`, `event:publish` |
+
+`Principal("operator", ("workflow:*",))` grants a scope family and
+`Principal("operator", ("*",))` preserves the legacy all-routes behavior.
+Missing scopes return `403` and the bounded request body is discarded. This is
+a host-configured authorization policy, not token issuance, identity
+verification, TLS, multi-tenant authorization, per-agent delivery, or a
+hard-sandbox boundary. A remote deployment must supply those controls and
+must not infer exactly-once effects from this transport.
 
 When `RunServer` receives `human_input_store=...`, the same authenticated
 contract exposes bounded human-in-the-loop control; configuring that store

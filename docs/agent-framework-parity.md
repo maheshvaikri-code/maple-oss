@@ -24,6 +24,12 @@ with that capability, nor that an adapter makes MAPLE equivalent to it.
 
 ## Capability matrix
 
+The local authenticated control plane now supports host-configured
+`Principal` scopes for known health, workflow, agent, approval, interaction,
+handoff, and event routes. Remaining principal-scope gaps in the rows below
+refer to delegated child-run identity, remote delivery, and policy evaluation,
+not the local route gate itself.
+
 | Capability | MAPLE status and evidence | What the comparison set makes visible | Release action |
 |---|---|---|---|
 | Agent loop, tool calling, and tool schemas | **Native** — `AutonomousAgent`, `Tool`, `ToolRegistry`, ReAct reasoning, bounded arguments, approval-aware execution | All five expose an agent/tool loop as a primary developer surface | Keep stable; add more provider-contract fixtures only when needed |
