@@ -13,7 +13,7 @@
 | 3 | Exact deterministic capability route | Registry and HTTP integration select `alpha` before `zeta`, preserve task/context/session/run fields, and return selected identity | Yes |
 | 4 | Raw compatibility and typed route normalization | Existing named-agent transport tests remain green; typed malformed selected identity regression passes | Yes |
 | 5 | Native adapter capability forwarding | `test_native_agent_remote_adapter_routes_by_capability` and adapter listing assertion pass | Yes |
-| 6 | Documentation, security, regression, and package gates | Public docs, changelog, parity/release artifacts, targeted scans, and full suite are green; clean-archive package gate remains the final pending check | Pending |
+| 6 | Documentation, security, regression, and package gates | Public docs, changelog, parity/release artifacts, targeted scans, full suite, clean-archive build/Twine/install/import gates are green | Yes |
 
 ## Regression
 
@@ -60,8 +60,38 @@ authenticated, scope-checked, bounded, exact-match, and metadata-only for
 discovery. It does not claim identity federation, distributed ownership,
 push delivery, retries, failover, or exactly-once effects.
 
+## Clean-archive package gate
+
+The gate was run from a `git archive HEAD` extraction, excluding all
+worktree-only files:
+
+```text
+source_archive_entries=801
+
+python -m build --wheel --sdist --outdir dist-clean
+Successfully built maple_oss-1.1.3-py3-none-any.whl and maple_oss-1.1.3.tar.gz
+build_exit=0
+
+wheel_entries=105
+sdist_entries=715
+
+python -m twine check dist-clean/*
+...maple_oss-1.1.3-py3-none-any.whl: PASSED
+...maple_oss-1.1.3.tar.gz: PASSED
+twine_exit=0
+
+python -m pip install --no-deps --target isolated-target dist-clean/maple_oss-1.1.3-py3-none-any.whl
+Successfully installed maple-oss-1.1.3
+install_exit=0
+isolated_import=passed
+version=1.1.3
+import_exit=0
+```
+
+The ellipses above replace only the machine-specific absolute archive path;
+the artifact names and command results are unchanged.
+
 ## Release disposition
 
-Slice 170 is ready for clean-archive package verification. Publication,
-deployment, cloud action, registry write, and website update were not
-performed.
+Slice 170 is ready for staged release review. Publication, deployment, cloud
+action, registry write, and website update were not performed.
