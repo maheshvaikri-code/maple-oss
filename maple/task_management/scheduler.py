@@ -437,26 +437,33 @@ class TaskScheduler:
     def _assign_task_to_agent(self, task: Task, agent_id: str) -> Result[str, str]:
         """Assign a task to a specific agent."""
 
-        # Claiming is serialized by TaskQueue so duplicate schedulers cannot
-        # both pass a status check before either writes the assignment.
-        status_result = self.task_queue.assign_task(task.task_id, agent_id)
+        # Reserve scheduler capacity before the queue claim. The queue claim
+        # still owns task state; this reservation closes the race between
+        # concurrent capacity checks and increments.
+        with self._lock:
+            current_load = self.agent_loads.get(agent_id, 0)
+            if current_load >= self.policy.max_concurrent_per_agent:
+                return Result.err(f"Agent {agent_id} is at capacity")
+
+            self.agent_loads[agent_id] = current_load + 1
+            self.agent_assignments.setdefault(agent_id, []).append(task.task_id)
+
+        try:
+            status_result = self.task_queue.assign_task(task.task_id, agent_id)
+        except Exception as exc:
+            status_result = Result.err(f"queue assignment raised {type(exc).__name__}")
+
         if status_result.is_err():
+            with self._lock:
+                assignments = self.agent_assignments.get(agent_id, [])
+                if task.task_id in assignments:
+                    assignments.remove(task.task_id)
+                    self.agent_loads[agent_id] = max(
+                        0, self.agent_loads.get(agent_id, 0) - 1
+                    )
             return Result.err(
                 f"Failed to update task status: {status_result.unwrap_err()}"
             )
-
-        # Update agent load tracking after the queue-side claim. Do not hold
-        # this lock while TaskQueue invokes user callbacks.
-        with self._lock:
-            if agent_id not in self.agent_loads:
-                self.agent_loads[agent_id] = 0
-
-            self.agent_loads[agent_id] += 1
-
-            if agent_id not in self.agent_assignments:
-                self.agent_assignments[agent_id] = []
-
-            self.agent_assignments[agent_id].append(task.task_id)
 
         return Result.ok(agent_id)
 

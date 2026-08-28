@@ -1,18 +1,19 @@
 """Regression tests for scheduler assignment and rollback lifecycle."""
 
+import threading
 from unittest.mock import MagicMock
 
 from maple.core.result import Result
-from maple.task_management.scheduler import TaskScheduler
+from maple.task_management.scheduler import SchedulingPolicy, TaskScheduler
 from maple.task_management.task_queue import TaskQueue, TaskStatus
 
 
-def _scheduler(task_queue, agents):
+def _scheduler(task_queue, agents, policy=None):
     registry = MagicMock()
     registry.list_agents.return_value = agents
     matcher = MagicMock()
     matcher.match_capabilities.return_value = Result.ok([])
-    return TaskScheduler(task_queue, registry, matcher)
+    return TaskScheduler(task_queue, registry, matcher, policy=policy)
 
 
 def test_scheduler_failure_requeues_physical_task():
@@ -82,6 +83,47 @@ def test_queue_assignment_rejects_empty_agent():
     assert result.is_err()
     assert result.unwrap_err() == "Assigned agent cannot be empty"
     assert task_queue.get_task(task_id).unwrap().status == TaskStatus.QUEUED
+
+
+def test_scheduler_assignment_respects_capacity_under_concurrency():
+    task_queue = TaskQueue(max_queue_size=2)
+    task_queue.start()
+    try:
+        agent = MagicMock(agent_id="worker-1", capabilities=[])
+        scheduler = _scheduler(
+            task_queue,
+            [agent],
+            SchedulingPolicy(max_concurrent_per_agent=1),
+        )
+        first_id = task_queue.submit_task("compute", {}).unwrap()
+        second_id = task_queue.submit_task("compute", {}).unwrap()
+        first = task_queue.get_task(first_id).unwrap()
+        second = task_queue.get_task(second_id).unwrap()
+        barrier = threading.Barrier(2)
+        results = [None, None]
+
+        def assign(index, task):
+            barrier.wait()
+            results[index] = scheduler._assign_task_to_agent(task, "worker-1")
+
+        threads = [
+            threading.Thread(target=assign, args=(0, first)),
+            threading.Thread(target=assign, args=(1, second)),
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=2.0)
+
+        assert sum(result.is_ok() for result in results) == 1
+        assert sum(result.is_err() for result in results) == 1
+        assert scheduler.get_agent_load("worker-1") == 1
+        statuses = {
+            task_queue.get_task(task_id).unwrap().status for task_id in (first_id, second_id)
+        }
+        assert statuses == {TaskStatus.ASSIGNED, TaskStatus.QUEUED}
+    finally:
+        task_queue.stop()
 
 
 def test_queue_completion_accepts_running_owned_task_and_records_result():
