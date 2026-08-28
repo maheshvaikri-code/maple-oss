@@ -8,8 +8,8 @@
 
 | # | Slice | Role | Files touched | Proven by (tests) | Status |
 |---|---|---|---|---|---|
-| 1 | Add explicit adapter binding and input validation | Backend / Interop / Security | `maple/autonomy/server.py`, adapter regressions | Default wire compatibility, opt-in key/run binding, missing/invalid handoff ID, sync/async behavior | done: implementation and regression `pending commit`; focused `54 passed`; changed static/security gates pass |
-| 2 | Close public contract and release gates | Tech Writer / Code Reviewer / QA / Release | README, API reference, parity ledger, changelog, `docs/reviews/`, `docs/qa/`, release plan | Focused/full tests, static/security checks, clean archive, install/import | in progress: public docs updated; full regression and clean archive pending |
+| 1 | Add explicit adapter binding and input validation | Backend / Interop / Security | `maple/autonomy/server.py`, adapter regressions | Default wire compatibility, opt-in key/run binding, missing/invalid handoff ID, sync/async behavior | done: `21c4f2a`; focused `54 passed`; changed static/security gates pass |
+| 2 | Close public contract and release gates | Tech Writer / Code Reviewer / QA / Release | README, API reference, parity ledger, changelog, `docs/reviews/`, `docs/qa/`, release plan | Focused/full tests, static/security checks, clean archive, install/import | done: `21c4f2a`; full `1674 passed, 1 skipped`; clean archive source `815`, wheel `106`, sdist `729`, build/Twine/install/import pass |
 
 ## Threat sketch
 
