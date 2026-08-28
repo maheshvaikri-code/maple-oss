@@ -45,10 +45,15 @@ slice; the slice adds no dependency.
 
 ## Package evidence
 
-The clean archive evidence is recorded after the QA/review files are included
-and the plan row is closed. The final archive must build wheel and sdist,
-pass Twine checks, install without dependencies into an isolated target, and
-run an export smoke test for `WorkingMemory`.
+The clean `git archive HEAD` snapshot built successfully as `maple-oss-1.1.3`:
+
+- build exit: `0`;
+- wheel: `104` archive entries;
+- sdist: `620` archive entries;
+- `twine check`: both artifacts passed;
+- `pip install --no-deps --target ...`: exit `0`;
+- isolated export smoke: `clean_archive_memory_smoke=passed`;
+- workspace-only archive entries: `0`.
 
 ## QA decision
 
