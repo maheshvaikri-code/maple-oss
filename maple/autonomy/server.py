@@ -769,6 +769,80 @@ def _normalize_agent_result(
     return Result.ok(normalized)
 
 
+def _normalize_remote_agent_response(
+    response: Result[Dict[str, Any], Error],
+    agent_id: str,
+    *,
+    requested_run_id: Optional[str] = None,
+    required_status: Optional[str] = None,
+) -> Result[AgentRun, Error]:
+    """Normalize one raw remote agent response into a typed ``AgentRun``."""
+
+    if response.is_err():
+        return Result.err(response.unwrap_err())
+    envelope = response.unwrap()
+    raw_run = envelope.get("run") if isinstance(envelope, Mapping) else None
+    if not isinstance(raw_run, Mapping):
+        return Result.err(
+            _error(
+                "AGENT_RESPONSE_INVALID",
+                "Remote agent response did not contain a run envelope.",
+            )
+        )
+    raw_agent_id = raw_run.get("agent_id")
+    raw_run_id = raw_run.get("run_id")
+    raw_status = raw_run.get("status")
+    if (
+        not isinstance(raw_agent_id, str)
+        or not raw_agent_id
+        or not isinstance(raw_run_id, str)
+        or not raw_run_id
+        or not isinstance(raw_status, str)
+        or not raw_status
+    ):
+        return Result.err(
+            _error(
+                "AGENT_RESPONSE_INVALID",
+                "Remote agent response contained an invalid run envelope.",
+            )
+        )
+    if requested_run_id is not None and raw_run_id != requested_run_id:
+        return Result.err(
+            _error(
+                "AGENT_RESPONSE_INVALID",
+                "Remote agent response run identity did not match the request.",
+                agent_id=agent_id,
+            )
+        )
+    candidate = AgentRun(
+        agent_id=raw_agent_id,
+        run_id=raw_run_id,
+        status=raw_status,
+        result=raw_run.get("result"),
+        error=raw_run.get("error"),
+    )
+    normalized = _normalize_agent_result(Result.ok(candidate), agent_id, raw_run_id)
+    if normalized.is_err():
+        return Result.err(
+            _error(
+                "AGENT_RESPONSE_INVALID",
+                "Remote agent response failed run validation.",
+                agent_id=agent_id,
+            )
+        )
+    run = normalized.unwrap()
+    if required_status is not None and run.status != required_status:
+        return Result.err(
+            _error(
+                "AGENT_RESPONSE_INVALID",
+                "Remote agent response had an unexpected run status.",
+                agent_id=agent_id,
+                expected_status=required_status,
+            )
+        )
+    return Result.ok(run)
+
+
 def _run_to_dict(run: WorkflowRun) -> Dict[str, Any]:
     """Convert a workflow result into the stable HTTP response shape."""
     return {
@@ -2499,6 +2573,28 @@ class RunClient:
             body["run_id"] = run_id
         return self._request("POST", ("v1", "agents", agent_id, "runs"), body)
 
+    def run_agent_typed(
+        self,
+        agent_id: str,
+        task: str,
+        context: Optional[Mapping[str, Any]] = None,
+        *,
+        session_id: Optional[str] = None,
+        run_id: Optional[str] = None,
+    ) -> Result[AgentRun, Error]:
+        """Invoke a remote agent and return its validated ``AgentRun``."""
+        return _normalize_remote_agent_response(
+            self.run_agent(
+                agent_id,
+                task,
+                context,
+                session_id=session_id,
+                run_id=run_id,
+            ),
+            agent_id,
+            requested_run_id=run_id,
+        )
+
     def publish_event(
         self,
         event_type: str,
@@ -2674,6 +2770,16 @@ class RunClient:
             "POST", ("v1", "agents", agent_id, "runs", run_id, "resume"), {}
         )
 
+    def resume_agent_run_typed(
+        self, agent_id: str, run_id: str
+    ) -> Result[AgentRun, Error]:
+        """Resume a remote agent run and return its validated ``AgentRun``."""
+        return _normalize_remote_agent_response(
+            self.resume_agent_run(agent_id, run_id),
+            agent_id,
+            requested_run_id=run_id,
+        )
+
     def cancel_agent_run(
         self, agent_id: str, run_id: str
     ) -> Result[Dict[str, Any], Error]:
@@ -2686,6 +2792,17 @@ class RunClient:
             return Result.err(run_error)
         return self._request(
             "POST", ("v1", "agents", agent_id, "runs", run_id, "cancel"), {}
+        )
+
+    def cancel_agent_run_typed(
+        self, agent_id: str, run_id: str
+    ) -> Result[AgentRun, Error]:
+        """Cancel a remote agent run and require a ``cancelled`` result."""
+        return _normalize_remote_agent_response(
+            self.cancel_agent_run(agent_id, run_id),
+            agent_id,
+            requested_run_id=run_id,
+            required_status="cancelled",
         )
 
     def list_pending_approvals(

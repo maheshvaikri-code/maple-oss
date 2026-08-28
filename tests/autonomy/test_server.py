@@ -908,6 +908,126 @@ def test_agent_registry_cancellation_requires_cancelled_result_and_redacts_failu
     assert "private cancellation detail" not in str(failed.unwrap_err())
 
 
+def test_typed_remote_agent_methods_return_validated_agent_runs():
+    class TypedClient(RunClient):
+        def __init__(self):
+            super().__init__("http://127.0.0.1:1")
+
+        def run_agent(self, *args, **kwargs):
+            return Result.ok(
+                {
+                    "run": {
+                        "agent_id": "researcher",
+                        "run_id": "typed-run",
+                        "status": "paused",
+                        "result": {"state": "waiting"},
+                        "error": None,
+                    }
+                }
+            )
+
+        def resume_agent_run(self, *args, **kwargs):
+            return Result.ok(
+                {
+                    "run": {
+                        "agent_id": "researcher",
+                        "run_id": "typed-run",
+                        "status": "completed",
+                        "result": {"answer": "ready"},
+                        "error": None,
+                    }
+                }
+            )
+
+        def cancel_agent_run(self, *args, **kwargs):
+            return Result.ok(
+                {
+                    "run": {
+                        "agent_id": "researcher",
+                        "run_id": "typed-run",
+                        "status": "cancelled",
+                        "result": None,
+                        "error": {
+                            "errorType": "AGENT_RUN_CANCELLED",
+                            "message": "Cancellation was requested.",
+                        },
+                    }
+                }
+            )
+
+    client = TypedClient()
+    started = client.run_agent_typed("researcher", "wait", run_id="typed-run")
+    resumed = client.resume_agent_run_typed("researcher", "typed-run")
+    cancelled = client.cancel_agent_run_typed("researcher", "typed-run")
+
+    assert started.is_ok()
+    assert isinstance(started.unwrap(), AgentRun)
+    assert started.unwrap().status == "paused"
+    assert resumed.is_ok()
+    assert resumed.unwrap().result == {"answer": "ready"}
+    assert cancelled.is_ok()
+    assert cancelled.unwrap().status == "cancelled"
+    assert cancelled.unwrap().error == {
+        "errorType": "AGENT_RUN_CANCELLED",
+        "message": "Cancellation was requested.",
+    }
+
+
+def test_typed_remote_agent_methods_fail_closed_on_invalid_envelopes():
+    class InvalidClient(RunClient):
+        def __init__(self, payload):
+            super().__init__("http://127.0.0.1:1")
+            self.payload = payload
+
+        def run_agent(self, *args, **kwargs):
+            return Result.ok(self.payload)
+
+    malformed = InvalidClient({"run": {"agent_id": "researcher"}})
+    malformed_result = malformed.run_agent_typed("researcher", "task")
+    assert malformed_result.is_err()
+    assert malformed_result.unwrap_err()["errorType"] == "AGENT_RESPONSE_INVALID"
+
+    mismatched = InvalidClient(
+        {
+            "run": {
+                "agent_id": "other",
+                "run_id": "typed-run",
+                "status": "completed",
+                "result": {"private": "not exposed"},
+                "error": None,
+            }
+        }
+    )
+    mismatched_result = mismatched.run_agent_typed(
+        "researcher", "task", run_id="typed-run"
+    )
+    assert mismatched_result.is_err()
+    assert mismatched_result.unwrap_err()["errorType"] == "AGENT_RESPONSE_INVALID"
+    assert "private" not in str(mismatched_result.unwrap_err())
+
+    class WrongCancelClient(RunClient):
+        def __init__(self):
+            super().__init__("http://127.0.0.1:1")
+
+        def cancel_agent_run(self, *args, **kwargs):
+            return Result.ok(
+                {
+                    "run": {
+                        "agent_id": "researcher",
+                        "run_id": "typed-run",
+                        "status": "completed",
+                        "result": {"private": "not exposed"},
+                        "error": None,
+                    }
+                }
+            )
+
+    wrong_cancel = WrongCancelClient().cancel_agent_run_typed("researcher", "typed-run")
+    assert wrong_cancel.is_err()
+    assert wrong_cancel.unwrap_err()["errorType"] == "AGENT_RESPONSE_INVALID"
+    assert "private" not in str(wrong_cancel.unwrap_err())
+
+
 def test_authenticated_durable_agent_run_inspection_and_resume():
     run_store = InMemoryAgentRunStore()
     assert run_store.save(
