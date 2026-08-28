@@ -10,7 +10,7 @@
 |---|---|---|---|---|---|
 | 1 | Add bounded claim/complete/abort contracts and memory/file stores | Backend / Security | `maple/autonomy/invocations.py`, autonomy exports, store tests | Key/digest validation, detached replay, conflict/in-progress behavior, expiry/capacity, file restart/corruption/fencing | done: `d824940`; store suite `12 passed` |
 | 2 | Integrate keyed named and capability-routed invocations | Backend / Interop | `maple/autonomy/server.py`, client/server regressions | Claim before handler, complete after normalization, missing-store fail-closed, route identity, legacy wire compatibility | done: `1c19544`; transport suite `71 passed` |
-| 3 | Close public contract and release gates | Tech Writer / Code Reviewer / QA / Release | README, API reference, parity ledger, changelog, `docs/reviews/`, `docs/qa/`, release plan | Focused/tracked tests, static/security checks, clean archive, install/import | in progress: public docs updated; full suite and clean archive pending |
+| 3 | Close public contract and release gates | Tech Writer / Code Reviewer / QA / Release | README, API reference, parity ledger, changelog, `docs/reviews/`, `docs/qa/`, release plan | Focused/tracked tests, static/security checks, clean archive, install/import | done: `b6c4c0c`; focused `21 passed`; full `1670 passed, 1 skipped`; clean archive source `809`, wheel `106`, sdist `723`, build/Twine/install/import pass |
 
 ## Threat sketch
 
@@ -42,6 +42,6 @@ authentication, scope checks, and fail-closed conflicts limit the blast radius.
 
 ## Status snapshot
 
-G0 and G1 are recorded. Store and transport implementation is complete; G2
-public-contract closure is in progress. Publication authorization, cloud
-actions, and website changes remain outside this plan.
+G0 through G3 are recorded. Store, transport, public-contract, review, QA, and
+clean-archive package gates are complete for this slice. Publication
+authorization, cloud actions, and website changes remain outside this plan.

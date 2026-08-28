@@ -1,7 +1,7 @@
 # QA + Security Report - bounded remote agent invocation idempotency
 
 **QA Engineer** / **Security Reviewer** / **Date:** 2026-08-28
-**Code candidate:** `1c19544` plus public-contract documentation closure
+**Code candidate:** `b6c4c0c` plus the final closure commit
 **Design baseline:** [ADR-116](../adr/116-bounded-agent-invocation-idempotency.md)
 
 ## Acceptance criteria verification
@@ -14,7 +14,7 @@
 | 4 | Atomic file restart state and bounded persistence | File-store tests cover restart replay, malformed/oversized state, expiry/capacity, fencing, atomic writes, and absence of raw task/context in serialized state | Yes |
 | 5 | Fail-closed invalid/configuration/storage behavior | Typed errors cover missing store, invalid key/digest/response, claim races, clock, lease, load/save, capacity, and response-size failures; keyed requests claim before handlers | Yes |
 | 6 | Raw/typed and capability-route compatibility | Named and capability-routed raw/typed client regressions pass; selected capability identity is retained; existing named-agent tests remain green | Yes |
-| 7 | Public contract and validation gates | API reference, README, parity ledger, changelog, review, QA, and release-plan artifacts are filed; final package gate is recorded below after the closure commit | Pending final archive gate |
+| 7 | Public contract and validation gates | API reference, README, parity ledger, changelog, review, QA, and release-plan artifacts are filed; clean archive build, Twine, isolated install, and import pass below | Yes |
 
 ## Regression evidence
 
@@ -51,9 +51,29 @@ set was not changed by this slice.
 
 ## Package gate
 
-Pending the final closure commit so that the clean archive includes the
-completed QA and release artifacts. No publication or upload is authorized by
-this report.
+The final committed archive gate produced the following real output:
+
+```text
+source_archive_entries=809
+
+Successfully built maple_oss-1.1.3-py3-none-any.whl and maple_oss-1.1.3.tar.gz
+build_exit=0
+wheel_entries=106
+sdist_entries=723
+
+maple_oss-1.1.3-py3-none-any.whl: PASSED
+maple_oss-1.1.3.tar.gz: PASSED
+twine_exit=0
+
+Successfully installed maple-oss-1.1.3
+install_exit=0
+isolated_import=passed
+version=1.1.3
+import_exit=0
+```
+
+The package was built from a `git archive HEAD` extraction and no worktree-only
+files were included. No publication or upload is authorized by this report.
 
 ## Security verdict
 
