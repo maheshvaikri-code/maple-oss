@@ -2027,12 +2027,20 @@ class _RequestHandler(BaseHTTPRequestHandler):
                     ),
                 )
                 return
-            result = store.complete(
-                handoff_id,
-                target_agent_id,
-                cast(str, body.get("target_goal_id")),
-                result=cast(Optional[Mapping[str, Any]], raw_result),
-            )
+            target_goal_id = cast(str, body.get("target_goal_id"))
+            if "result" in body:
+                result = store.complete(
+                    handoff_id,
+                    target_agent_id,
+                    target_goal_id,
+                    result=cast(Optional[Mapping[str, Any]], raw_result),
+                )
+            else:
+                result = store.complete(
+                    handoff_id,
+                    target_agent_id,
+                    target_goal_id,
+                )
         else:
             result = store.fail(
                 handoff_id, target_agent_id, cast(str, body.get("error_type"))

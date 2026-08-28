@@ -1476,6 +1476,56 @@ def test_handoff_result_transport_rejects_invalid_payload_without_mutation():
     assert stored.unwrap().result is None
 
 
+def test_handoff_transport_preserves_legacy_complete_signature_without_result():
+    class LegacyHandoffStore:
+        def __init__(self):
+            self._store = InMemoryHandoffStore()
+
+        def create(self, record):
+            return self._store.create(record)
+
+        def get(self, handoff_id):
+            return self._store.get(handoff_id)
+
+        def accept(self, handoff_id, target_agent_id):
+            return self._store.accept(handoff_id, target_agent_id)
+
+        def complete(self, handoff_id, target_agent_id, target_goal_id):
+            return self._store.complete(handoff_id, target_agent_id, target_goal_id)
+
+        def fail(self, handoff_id, target_agent_id, error_type):
+            return self._store.fail(handoff_id, target_agent_id, error_type)
+
+        def list_open(self, limit=100):
+            return self._store.list_open(limit)
+
+    store = LegacyHandoffStore()
+    record = HandoffRecord.pending(
+        "legacy-complete",
+        "source",
+        "target",
+        "a" * 64,
+    )
+    server = RunServer(
+        WorkflowRegistry(),
+        handoff_store=store,
+        auth_token="handoff-token",
+    )
+    base_url = server.start()
+    try:
+        client = RunClient(base_url, auth_token="handoff-token")
+        created = client.create_handoff(record)
+        accepted = client.accept_handoff("legacy-complete", "target")
+        completed = client.complete_handoff("legacy-complete", "target", "target-goal")
+    finally:
+        server.close()
+
+    assert created.is_ok()
+    assert accepted.is_ok()
+    assert completed.is_ok()
+    assert completed.unwrap()["handoff"]["status"] == "completed"
+
+
 def test_handoff_transport_fails_closed_without_store_and_bounds_client_inputs():
     server = RunServer(WorkflowRegistry(), auth_token="token")
     base_url = server.start()
