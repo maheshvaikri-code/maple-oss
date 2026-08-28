@@ -1,9 +1,9 @@
 # Code Review - MAPLE Agent Runtime Slice 164
 
-**Date:** 2026-08-28  
-**Reviewer role:** Code Reviewer  
+**Date:** 2026-08-28
+**Reviewer role:** Code Reviewer
 **Review basis:** Slice164 brief and ADR-109, plus implementation candidate
-`21fc4bc`  
+`21fc4bc`
 **Decision:** Pass with no blocking findings
 
 ## Reviewed surface
