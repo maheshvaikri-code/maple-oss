@@ -221,6 +221,34 @@ class TestTaskCompletion:
         assert repeated.is_err()
         assert "completed" in repeated.unwrap_err()
 
+    def test_task_failed_releases_load_and_records_error(self, task_queue):
+        sched = _make_scheduler(task_queue)
+        tid = _submit(task_queue, reqs=["compute"])
+        assert sched.schedule_task(tid).is_ok()
+        owner = list(sched.agent_loads.keys())[0]
+
+        failed = sched.task_failed(tid, owner, "worker crashed")
+
+        assert failed.is_ok()
+        assert sched.get_agent_load(owner) == 0
+        task = task_queue.get_task(tid).unwrap()
+        assert task.status == TaskStatus.FAILED
+        assert task.error == "worker crashed"
+
+    def test_task_failed_wrong_owner_preserves_assignment(self, task_queue):
+        sched = _make_scheduler(task_queue)
+        tid = _submit(task_queue, reqs=["compute"])
+        assert sched.schedule_task(tid).is_ok()
+        owner = list(sched.agent_loads.keys())[0]
+
+        failed = sched.task_failed(tid, "other-agent", "not my task")
+
+        assert failed.is_err()
+        assert sched.get_agent_load(owner) == 1
+        task = task_queue.get_task(tid).unwrap()
+        assert task.status == TaskStatus.ASSIGNED
+        assert task.error is None
+
 
 # ---------------------------------------------------------------------------
 #  rebalance_loads

@@ -166,3 +166,21 @@ def test_queue_reassignment_rejects_running_task_without_changing_owner():
         assert task.status == TaskStatus.RUNNING
     finally:
         task_queue.stop()
+
+
+def test_queue_failure_rejects_oversized_error_without_mutation():
+    task_queue = TaskQueue(max_queue_size=1)
+    task_queue.start()
+    try:
+        task_id = task_queue.submit_task("compute", {}).unwrap()
+        assert task_queue.get_next_task().is_ok()
+        assert task_queue.assign_task(task_id, "worker-1").is_ok()
+
+        result = task_queue.fail_task(task_id, "worker-1", "x" * 8_193)
+
+        assert result.is_err()
+        task = task_queue.get_task(task_id).unwrap()
+        assert task.status == TaskStatus.ASSIGNED
+        assert task.error is None
+    finally:
+        task_queue.stop()

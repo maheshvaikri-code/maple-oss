@@ -480,6 +480,17 @@ class TaskScheduler:
 
         return self.task_queue.requeue_task(task_id)
 
+    def _release_agent_assignment(self, task_id: str, agent_id: str) -> None:
+        """Release local capacity for an assignment already transitioned."""
+
+        with self._lock:
+            assignments = self.agent_assignments.get(agent_id, [])
+            if task_id in assignments:
+                assignments.remove(task_id)
+                self.agent_loads[agent_id] = max(
+                    0, self.agent_loads.get(agent_id, 0) - 1
+                )
+
     def task_completed(
         self, task_id: str, agent_id: str, result: object = None
     ) -> Result[None, str]:
@@ -491,14 +502,18 @@ class TaskScheduler:
         if completion_result.is_err():
             return Result.err(completion_result.unwrap_err())
 
-        with self._lock:
-            # Remove from assignments
-            assignments = self.agent_assignments.get(agent_id, [])
-            if task_id in assignments:
-                assignments.remove(task_id)
-                self.agent_loads[agent_id] = max(
-                    0, self.agent_loads.get(agent_id, 0) - 1
-                )
+        self._release_agent_assignment(task_id, agent_id)
+
+        return Result.ok(None)
+
+    def task_failed(self, task_id: str, agent_id: str, error: str) -> Result[None, str]:
+        """Fail an owned task and release its scheduler assignment."""
+
+        failure_result = self.task_queue.fail_task(task_id, agent_id, error)
+        if failure_result.is_err():
+            return Result.err(failure_result.unwrap_err())
+
+        self._release_agent_assignment(task_id, agent_id)
 
         return Result.ok(None)
 

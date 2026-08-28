@@ -27,6 +27,7 @@ from typing import Any, Callable, Dict, List, Optional
 from ..core.result import Result
 
 _MAX_TASK_QUEUE_SIZE = 100_000
+_MAX_TASK_ERROR_BYTES = 8_192
 
 
 class TaskStatus(Enum):
@@ -424,6 +425,37 @@ class TaskQueue:
             task.assigned_agent = new_agent
             self._notify_task_callbacks(task_id, task)
             return Result.ok(task)
+
+    def fail_task(
+        self, task_id: str, assigned_agent: str, error: str
+    ) -> Result[Task, str]:
+        """Fail an assigned task after checking its owner and error bound."""
+
+        with self._lock:
+            if not assigned_agent:
+                return Result.err("Assigned agent cannot be empty")
+            if (
+                not isinstance(error, str)
+                or not error
+                or len(error.encode("utf-8")) > _MAX_TASK_ERROR_BYTES
+            ):
+                return Result.err(
+                    "Task failure error must be a non-empty string of at most "
+                    f"{_MAX_TASK_ERROR_BYTES} bytes"
+                )
+            if task_id not in self.tasks:
+                return Result.err(f"Task {task_id} not found")
+
+            task = self.tasks[task_id]
+            if task.assigned_agent != assigned_agent:
+                return Result.err(f"Task {task_id} is not assigned to {assigned_agent}")
+            if task.status not in (TaskStatus.ASSIGNED, TaskStatus.RUNNING):
+                return Result.err(
+                    f"Task {task_id} cannot be failed from status "
+                    f"{task.status.value}"
+                )
+
+            return self.update_task_status(task_id, TaskStatus.FAILED, error=error)
 
     def cancel_task(self, task_id: str) -> Result[Task, str]:
         """Cancel a task."""
