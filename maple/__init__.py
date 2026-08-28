@@ -36,9 +36,12 @@ from .autonomy.agent import AutonomousAgent, AutonomousConfig, Goal
 from .autonomy.agent_transport import AutonomousAgentRemoteAdapter
 from .autonomy.approval import (
     ApprovalDecision,
+    ApprovalNotification,
+    ApprovalNotifier,
     ApprovalRequest,
     ApprovalStore,
     FileApprovalStore,
+    HttpApprovalNotifier,
     InMemoryApprovalStore,
 )
 from .autonomy.artifacts import (
@@ -491,9 +494,12 @@ __all__ = [
     "InMemoryArtifactStore",
     "extract_code_blocks",
     "ApprovalDecision",
+    "ApprovalNotification",
+    "ApprovalNotifier",
     "ApprovalRequest",
     "ApprovalStore",
     "FileApprovalStore",
+    "HttpApprovalNotifier",
     "InMemoryApprovalStore",
     "DEFAULT_MAX_MESSAGES",
     "DEFAULT_MAX_MESSAGE_BYTES",

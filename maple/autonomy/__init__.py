@@ -19,9 +19,12 @@ from .agent import AutonomousAgent, AutonomousConfig, Goal, ReasoningStep
 from .agent_transport import AutonomousAgentRemoteAdapter
 from .approval import (
     ApprovalDecision,
+    ApprovalNotification,
+    ApprovalNotifier,
     ApprovalRequest,
     ApprovalStore,
     FileApprovalStore,
+    HttpApprovalNotifier,
     InMemoryApprovalStore,
 )
 from .artifacts import (
@@ -386,9 +389,12 @@ __all__ = [
     "InMemoryArtifactStore",
     "extract_code_blocks",
     "ApprovalDecision",
+    "ApprovalNotification",
+    "ApprovalNotifier",
     "ApprovalRequest",
     "ApprovalStore",
     "FileApprovalStore",
+    "HttpApprovalNotifier",
     "InMemoryApprovalStore",
     "END",
     "CheckpointStore",

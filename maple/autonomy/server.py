@@ -31,7 +31,12 @@ from urllib.parse import parse_qsl, quote, unquote, urlencode, urlsplit, urlunsp
 from urllib.request import Request, urlopen
 
 from ..core.result import Result
-from .approval import ApprovalRequest, ApprovalStore
+from .approval import (
+    ApprovalNotification,
+    ApprovalNotifier,
+    ApprovalRequest,
+    ApprovalStore,
+)
 from .events import (
     AgentEvent,
     EventCursor,
@@ -179,6 +184,8 @@ def _required_scope(method: str, path: Tuple[str, ...]) -> Optional[str]:
             return "interaction:consume"
         return "interaction:write"
     if path[0:2] == ("v1", "approvals"):
+        if method == "POST" and path == ("v1", "approvals", "notifications"):
+            return "approval:notify"
         return "approval:read" if method == "GET" else "approval:decide"
     if path[0:2] == ("v1", "workflows"):
         if method == "GET":
@@ -1611,6 +1618,9 @@ class _RequestHandler(BaseHTTPRequestHandler):
         return True
 
     def _approval_route(self, method: str, path: Tuple[str, ...]) -> bool:
+        if method == "POST" and path == ("v1", "approvals", "notifications"):
+            self._receive_approval_notification()
+            return True
         store = self.server.application.approval_store
         if not path or path[0:2] != ("v1", "approvals"):
             return False
@@ -1710,6 +1720,80 @@ class _RequestHandler(BaseHTTPRequestHandler):
         self._write_json(
             200,
             {"approval": self._approval_to_dict(result.unwrap())},
+        )
+
+    def _receive_approval_notification(self) -> None:
+        """Validate and deliver one host-owned remote approval notification."""
+        handler = self.server.application.approval_notification_handler
+        if handler is None:
+            self._write_error(
+                501,
+                _error(
+                    "APPROVAL_NOTIFICATION_UNAVAILABLE",
+                    "No approval notification handler is configured.",
+                ),
+            )
+            return
+        body = self._read_body()
+        raw_notification = body.get("notification")
+        if not isinstance(raw_notification, Mapping):
+            self._write_error(
+                400,
+                _error(
+                    "APPROVAL_NOTIFICATION_INVALID",
+                    "The approval notification is invalid.",
+                ),
+            )
+            return
+        try:
+            notification = ApprovalNotification.from_dict(raw_notification)
+        except (TypeError, ValueError):
+            self._write_error(
+                400,
+                _error(
+                    "APPROVAL_NOTIFICATION_INVALID",
+                    "The approval notification is invalid.",
+                ),
+            )
+            return
+        try:
+            delivered = handler.notify(notification)
+        except Exception:
+            self._write_error(
+                503,
+                _error(
+                    "APPROVAL_NOTIFICATION_HANDLER_ERROR",
+                    "The approval notification handler failed.",
+                ),
+            )
+            return
+        if not isinstance(delivered, Result):
+            self._write_error(
+                500,
+                _error(
+                    "APPROVAL_NOTIFICATION_HANDLER_INVALID",
+                    "The approval notification handler returned an invalid result.",
+                ),
+            )
+            return
+        if delivered.is_err():
+            self._write_error(
+                503,
+                _error(
+                    "APPROVAL_NOTIFICATION_HANDLER_ERROR",
+                    "The approval notification handler rejected the notification.",
+                ),
+            )
+            return
+        self._write_json(
+            200,
+            {
+                "accepted": True,
+                "notification": {
+                    "event_type": notification.event_type,
+                    "approval_id": notification.approval_id,
+                },
+            },
         )
 
     @staticmethod
@@ -3080,6 +3164,7 @@ class RunServer:
         auth_token: Optional[str] = None,
         auth_principal: Optional[Principal] = None,
         approval_store: Optional[ApprovalStore] = None,
+        approval_notification_handler: Optional[ApprovalNotifier] = None,
         human_input_store: Optional[HumanInputStore] = None,
         human_input_notification_handler: Optional[HumanInputNotifier] = None,
         agent_registry: Optional[AgentRegistry] = None,
@@ -3153,6 +3238,13 @@ class RunServer:
                 raise TypeError(
                     "human_input_notification_handler must implement notify"
                 )
+        if approval_notification_handler is not None:
+            if auth_token is None:
+                raise ValueError(
+                    "auth_token is required when approval_notification_handler is configured"
+                )
+            if not callable(getattr(approval_notification_handler, "notify", None)):
+                raise TypeError("approval_notification_handler must implement notify")
         if agent_registry is not None:
             if not isinstance(agent_registry, AgentRegistry):
                 raise TypeError("agent_registry must be an AgentRegistry")
@@ -3236,6 +3328,7 @@ class RunServer:
         self._auth_token = auth_token
         self._auth_principal = auth_principal
         self.approval_store = approval_store
+        self.approval_notification_handler = approval_notification_handler
         self.human_input_store = human_input_store
         self.human_input_notification_handler = human_input_notification_handler
         self.agent_registry = agent_registry
@@ -3885,6 +3978,45 @@ class RunClient:
     def get_approval(self, approval_id: str) -> Result[Dict[str, Any], Error]:
         """Inspect one remote approval request."""
         return self._request("GET", ("v1", "approvals", approval_id))
+
+    def publish_approval_notification(
+        self, notification: ApprovalNotification
+    ) -> Result[Dict[str, Any], Error]:
+        """Push one validated approval notification to a remote host."""
+        if not isinstance(notification, ApprovalNotification):
+            return Result.err(
+                _error(
+                    "APPROVAL_NOTIFICATION_INVALID",
+                    "notification must be an ApprovalNotification.",
+                )
+            )
+        try:
+            payload = {"notification": notification.to_dict()}
+        except (TypeError, ValueError, OverflowError):
+            return Result.err(
+                _error(
+                    "APPROVAL_NOTIFICATION_INVALID",
+                    "notification is not JSON serializable.",
+                )
+            )
+        response = self._request("POST", ("v1", "approvals", "notifications"), payload)
+        if response.is_err():
+            return Result.err(response.unwrap_err())
+        acknowledged = response.unwrap()
+        metadata = acknowledged.get("notification")
+        if (
+            acknowledged.get("accepted") is not True
+            or not isinstance(metadata, Mapping)
+            or metadata.get("event_type") != notification.event_type
+            or metadata.get("approval_id") != notification.approval_id
+        ):
+            return Result.err(
+                _error(
+                    "APPROVAL_NOTIFICATION_RESPONSE_INVALID",
+                    "Remote approval notification response did not acknowledge the requested notification.",
+                )
+            )
+        return Result.ok(acknowledged)
 
     def decide_approval(
         self,

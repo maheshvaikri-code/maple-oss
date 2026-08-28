@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import math
 import os
@@ -12,6 +13,9 @@ import time
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Protocol, Union
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit, urlunsplit
+from urllib.request import Request, urlopen
 
 from ..core.result import Result
 from ..resources.lease import FileLeaseManager
@@ -26,6 +30,11 @@ _MAX_LIST_LIMIT = 1_000
 _MAX_LIST_SCAN = 10_000
 _MAX_EXECUTION_RESULT_BYTES = 131_072
 _APPROVAL_LEASE_TTL_SECONDS = 30.0
+_APPROVAL_NOTIFICATION_EVENTS = frozenset({"created", "approved", "denied"})
+_MAX_NOTIFICATION_ENDPOINT_BYTES = 4_096
+_DEFAULT_NOTIFICATION_TIMEOUT_SECONDS = 10.0
+_MAX_NOTIFICATION_REQUEST_BYTES = 512 * 1024
+_MAX_NOTIFICATION_RESPONSE_BYTES = 64 * 1024
 
 Error = Dict[str, Any]
 
@@ -396,6 +405,393 @@ class ApprovalRequest:
         )
 
 
+@dataclass(frozen=True)
+class ApprovalNotification:
+    """Bounded host notification for an approval lifecycle transition."""
+
+    event_type: str
+    approval_id: str
+    tool_call_id: str
+    tool_name: str
+    arguments: Dict[str, Any]
+    status: str
+    created_at: float
+    updated_at: float
+    decision: Optional[ApprovalDecision] = None
+    trace_id: Optional[str] = None
+    span_id: Optional[str] = None
+
+    @classmethod
+    def from_request(
+        cls, request: ApprovalRequest, event_type: str
+    ) -> "ApprovalNotification":
+        if (
+            not isinstance(event_type, str)
+            or event_type not in _APPROVAL_NOTIFICATION_EVENTS
+        ):
+            raise ValueError("approval notification event type is invalid")
+        expected_status = {
+            "created": "pending",
+            "approved": "approved",
+            "denied": "denied",
+        }[event_type]
+        if request.status != expected_status:
+            raise ValueError("approval notification event and status disagree")
+        arguments = _copy_arguments(request.arguments)
+        if arguments.is_err():
+            raise ValueError(arguments.unwrap_err()["message"])
+        return cls(
+            event_type=event_type,
+            approval_id=request.approval_id,
+            tool_call_id=request.tool_call_id,
+            tool_name=request.tool_name,
+            arguments=arguments.unwrap(),
+            status=request.status,
+            created_at=request.created_at,
+            updated_at=request.updated_at,
+            decision=request.decision,
+            trace_id=request.trace_id,
+            span_id=request.span_id,
+        )
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "ApprovalNotification":
+        """Parse one notification without accepting execution outcomes."""
+        if not isinstance(data, Mapping):
+            raise ValueError("approval notification must be an object")
+        required = (
+            "event_type",
+            "approval_id",
+            "tool_call_id",
+            "tool_name",
+            "arguments",
+            "status",
+            "created_at",
+            "updated_at",
+            "decision",
+        )
+        if any(field_name not in data for field_name in required):
+            raise ValueError("approval notification is missing a required field")
+        event_type = data["event_type"]
+        if (
+            not isinstance(event_type, str)
+            or event_type not in _APPROVAL_NOTIFICATION_EVENTS
+        ):
+            raise ValueError("invalid approval notification event type")
+        for field_name in ("approval_id", "tool_call_id"):
+            if _valid_identifier(data[field_name], field_name):
+                raise ValueError(f"invalid {field_name}")
+        if _valid_text(data["tool_name"], "tool_name"):
+            raise ValueError("invalid tool_name")
+        arguments = _copy_arguments(data["arguments"])
+        if arguments.is_err():
+            raise ValueError(arguments.unwrap_err()["message"])
+        status = data["status"]
+        if not isinstance(status, str) or status not in _STATUSES:
+            raise ValueError("invalid approval notification status")
+        expected_status = {
+            "created": "pending",
+            "approved": "approved",
+            "denied": "denied",
+        }[event_type]
+        if status != expected_status:
+            raise ValueError("approval notification event and status disagree")
+        decision_data = data["decision"]
+        decision: Optional[ApprovalDecision] = None
+        if decision_data is not None:
+            if not isinstance(decision_data, Mapping):
+                raise ValueError("approval notification decision must be an object")
+            if decision_data.get("approval_id") != data["approval_id"]:
+                raise ValueError("approval notification decision ID does not match")
+            approved = decision_data.get("approved")
+            expected_approved = event_type == "approved"
+            if type(approved) is not bool or approved != expected_approved:
+                raise ValueError("approval notification decision is invalid")
+            if "decided_at" not in decision_data:
+                raise ValueError("approval notification decision is invalid")
+            try:
+                decided_at = float(decision_data["decided_at"])
+            except (TypeError, ValueError, OverflowError) as exc:
+                raise ValueError("approval notification decision is invalid") from exc
+            edited_arguments_data = decision_data.get("edited_arguments")
+            edited_arguments: Optional[Dict[str, Any]] = None
+            if edited_arguments_data is not None:
+                edited = _copy_arguments(edited_arguments_data)
+                if edited.is_err():
+                    raise ValueError(edited.unwrap_err()["message"])
+                edited_arguments = edited.unwrap()
+            try:
+                decision = ApprovalDecision(
+                    approval_id=data["approval_id"],
+                    approved=approved,
+                    decided_at=decided_at,
+                    edited_arguments=edited_arguments,
+                )
+            except (TypeError, ValueError) as exc:
+                raise ValueError("approval notification decision is invalid") from exc
+        if event_type == "created" and decision is not None:
+            raise ValueError("created approval notification cannot contain a decision")
+        if event_type != "created" and decision is None:
+            raise ValueError("decided approval notification requires a decision")
+        try:
+            created_at = float(data["created_at"])
+            updated_at = float(data["updated_at"])
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError("approval notification timestamps are invalid") from exc
+        if not math.isfinite(created_at) or not math.isfinite(updated_at):
+            raise ValueError("approval notification timestamps must be finite")
+        for field_name in ("trace_id", "span_id"):
+            if _valid_correlation_id(data.get(field_name), field_name):
+                raise ValueError(f"invalid {field_name}")
+        return cls(
+            event_type=event_type,
+            approval_id=data["approval_id"],
+            tool_call_id=data["tool_call_id"],
+            tool_name=data["tool_name"],
+            arguments=arguments.unwrap(),
+            status=status,
+            created_at=created_at,
+            updated_at=updated_at,
+            decision=decision,
+            trace_id=data.get("trace_id"),
+            span_id=data.get("span_id"),
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        arguments = _copy_arguments(self.arguments)
+        if arguments.is_err():
+            raise ValueError(arguments.unwrap_err()["message"])
+        return {
+            "event_type": self.event_type,
+            "approval_id": self.approval_id,
+            "tool_call_id": self.tool_call_id,
+            "tool_name": self.tool_name,
+            "arguments": arguments.unwrap(),
+            "status": self.status,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+            "decision": self.decision.to_dict() if self.decision else None,
+            "trace_id": self.trace_id,
+            "span_id": self.span_id,
+        }
+
+
+class ApprovalNotifier(Protocol):
+    """Host callback for bounded approval lifecycle notifications."""
+
+    def notify(self, notification: ApprovalNotification) -> Result[None, Error]: ...
+
+
+def _notify_host(
+    notifier: Optional[ApprovalNotifier],
+    request: ApprovalRequest,
+    event_type: str,
+) -> Result[None, Error]:
+    if notifier is None:
+        return Result.ok(None)
+    try:
+        notification = ApprovalNotification.from_request(request, event_type)
+        delivered = notifier.notify(notification)
+    except Exception as exc:
+        return Result.err(
+            _error(
+                "APPROVAL_NOTIFICATION_ERROR",
+                "Approval notification failed after persistence.",
+                event_type=event_type,
+                reason=str(exc)[:256],
+            )
+        )
+    if not isinstance(delivered, Result) or delivered.is_err():
+        reason = "invalid_result"
+        if isinstance(delivered, Result) and isinstance(delivered.unwrap_err(), dict):
+            reason = str(delivered.unwrap_err().get("errorType", "unknown"))[:64]
+        return Result.err(
+            _error(
+                "APPROVAL_NOTIFICATION_ERROR",
+                "Approval notification failed after persistence.",
+                event_type=event_type,
+                reason=reason,
+            )
+        )
+    return Result.ok(None)
+
+
+class HttpApprovalNotifier:
+    """Make one bounded HTTP delivery attempt for each approval notification."""
+
+    def __init__(
+        self,
+        endpoint: str,
+        *,
+        auth_token: Optional[str] = None,
+        timeout_seconds: float = _DEFAULT_NOTIFICATION_TIMEOUT_SECONDS,
+        max_request_bytes: int = _MAX_NOTIFICATION_REQUEST_BYTES,
+        max_response_bytes: int = _MAX_NOTIFICATION_RESPONSE_BYTES,
+    ) -> None:
+        if not isinstance(endpoint, str) or not endpoint.strip():
+            raise ValueError("endpoint must be a non-empty URL")
+        if any(
+            ord(character) < 0x20 or ord(character) == 0x7F for character in endpoint
+        ):
+            raise ValueError("endpoint must not contain control characters")
+        parsed = urlsplit(endpoint.strip())
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("endpoint must use http or https and include a host")
+        try:
+            hostname = parsed.hostname
+        except ValueError as exc:
+            raise ValueError("endpoint host is invalid") from exc
+        if not hostname:
+            raise ValueError("endpoint must include a host")
+        if parsed.username is not None or parsed.password is not None:
+            raise ValueError("endpoint must not contain user information")
+        if parsed.query or parsed.fragment:
+            raise ValueError("endpoint must not contain a query or fragment")
+        if auth_token is not None:
+            if not isinstance(auth_token, str) or not auth_token.strip():
+                raise ValueError("auth_token must be non-empty when provided")
+            if any(
+                ord(character) < 0x20 or ord(character) == 0x7F
+                for character in auth_token
+            ):
+                raise ValueError("auth_token must not contain control characters")
+        is_loopback = hostname.lower() == "localhost"
+        if not is_loopback:
+            try:
+                is_loopback = ipaddress.ip_address(hostname).is_loopback
+            except ValueError:
+                is_loopback = False
+        if parsed.scheme != "https" and not is_loopback:
+            raise ValueError("non-loopback notification delivery requires https")
+        normalized_endpoint = urlunsplit(
+            (parsed.scheme, parsed.netloc, parsed.path, "", "")
+        )
+        if len(normalized_endpoint.encode("utf-8")) > _MAX_NOTIFICATION_ENDPOINT_BYTES:
+            raise ValueError("endpoint URL is too large")
+        if not isinstance(timeout_seconds, (int, float)) or isinstance(
+            timeout_seconds, bool
+        ):
+            raise ValueError("timeout_seconds must be a finite positive number")
+        try:
+            normalized_timeout = float(timeout_seconds)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError(
+                "timeout_seconds must be a finite positive number"
+            ) from exc
+        if not math.isfinite(normalized_timeout) or normalized_timeout <= 0:
+            raise ValueError("timeout_seconds must be a finite positive number")
+        for value, name, maximum in (
+            (max_request_bytes, "max_request_bytes", _MAX_NOTIFICATION_REQUEST_BYTES),
+            (
+                max_response_bytes,
+                "max_response_bytes",
+                _MAX_NOTIFICATION_RESPONSE_BYTES,
+            ),
+        ):
+            if (
+                not isinstance(value, int)
+                or isinstance(value, bool)
+                or not 0 < value <= maximum
+            ):
+                raise ValueError(f"{name} must be between 1 and {maximum}")
+        self.endpoint = normalized_endpoint
+        self.auth_token = auth_token
+        self.timeout_seconds = normalized_timeout
+        self.max_request_bytes = max_request_bytes
+        self.max_response_bytes = max_response_bytes
+
+    def notify(self, notification: ApprovalNotification) -> Result[None, Error]:
+        """POST one notification and require an explicit acceptance body."""
+        if not isinstance(notification, ApprovalNotification):
+            return Result.err(
+                _error(
+                    "APPROVAL_NOTIFICATION_INVALID",
+                    "notification must be an ApprovalNotification.",
+                )
+            )
+        try:
+            encoded = json.dumps(
+                {"notification": notification.to_dict()},
+                ensure_ascii=False,
+                allow_nan=False,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        except (TypeError, ValueError, OverflowError) as exc:
+            return Result.err(
+                _error(
+                    "APPROVAL_NOTIFICATION_INVALID",
+                    "notification is not JSON serializable.",
+                    reason=type(exc).__name__,
+                )
+            )
+        if len(encoded) > self.max_request_bytes:
+            return Result.err(
+                _error(
+                    "APPROVAL_NOTIFICATION_TOO_LARGE",
+                    "notification exceeds the configured request byte limit.",
+                    max_bytes=self.max_request_bytes,
+                )
+            )
+        headers = {"Accept": "application/json", "Content-Type": "application/json"}
+        if self.auth_token is not None:
+            headers["Authorization"] = f"Bearer {self.auth_token}"
+        request = Request(self.endpoint, data=encoded, headers=headers, method="POST")
+        try:
+            with urlopen(request, timeout=self.timeout_seconds) as response:
+                status = int(response.status)
+                raw = response.read(self.max_response_bytes + 1)
+        except HTTPError as exc:
+            status = int(exc.code)
+            exc.close()
+            return Result.err(
+                _error(
+                    "APPROVAL_NOTIFICATION_HTTP_ERROR",
+                    "remote approval notification endpoint returned an error.",
+                    status=status,
+                )
+            )
+        except (URLError, TimeoutError, OSError):
+            return Result.err(
+                _error(
+                    "APPROVAL_NOTIFICATION_TRANSPORT_ERROR",
+                    "remote approval notification endpoint could not be reached.",
+                )
+            )
+        if len(raw) > self.max_response_bytes:
+            return Result.err(
+                _error(
+                    "APPROVAL_NOTIFICATION_RESPONSE_TOO_LARGE",
+                    "remote approval notification response exceeds the configured byte limit.",
+                    max_bytes=self.max_response_bytes,
+                )
+            )
+        if not 200 <= status < 300:
+            return Result.err(
+                _error(
+                    "APPROVAL_NOTIFICATION_HTTP_ERROR",
+                    "remote approval notification endpoint returned an error.",
+                    status=status,
+                )
+            )
+        try:
+            decoded = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return Result.err(
+                _error(
+                    "APPROVAL_NOTIFICATION_RESPONSE_INVALID",
+                    "remote approval notification response is not valid JSON.",
+                )
+            )
+        if not isinstance(decoded, dict) or decoded.get("accepted") is not True:
+            return Result.err(
+                _error(
+                    "APPROVAL_NOTIFICATION_RESPONSE_INVALID",
+                    "remote approval notification response did not acknowledge acceptance.",
+                )
+            )
+        return Result.ok(None)
+
+
 class ApprovalStore(Protocol):
     """Persistence contract for human approval requests."""
 
@@ -429,9 +825,12 @@ def _copy_request(request: ApprovalRequest) -> ApprovalRequest:
 class InMemoryApprovalStore:
     """Thread-safe approval store for local runs and contract tests."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, notifier: Optional[ApprovalNotifier] = None) -> None:
         self._requests: Dict[str, ApprovalRequest] = {}
         self._lock = threading.RLock()
+        self._notifier = notifier
+        if notifier is not None and not callable(getattr(notifier, "notify", None)):
+            raise TypeError("approval notifier must implement notify")
 
     def get(self, approval_id: str) -> Result[Optional[ApprovalRequest], Error]:
         identifier_error = _valid_identifier(approval_id, "approval_id")
@@ -474,6 +873,9 @@ class InMemoryApprovalStore:
                     )
                 return Result.ok(_copy_request(existing))
             self._requests[candidate.approval_id] = candidate
+            notified = _notify_host(self._notifier, candidate, "created")
+            if notified.is_err():
+                return Result.err(notified.unwrap_err())
             return Result.ok(_copy_request(candidate))
 
     def decide(
@@ -622,6 +1024,13 @@ class InMemoryApprovalStore:
                 decision=decision,
             )
             self._requests[approval_id] = decided
+            notified = _notify_host(
+                self._notifier,
+                decided,
+                "approved" if approved else "denied",
+            )
+            if notified.is_err():
+                return Result.err(notified.unwrap_err())
             return Result.ok(_copy_request(decided))
 
 
@@ -641,6 +1050,7 @@ class FileApprovalStore:
         *,
         lease_manager: Optional[FileLeaseManager] = None,
         lease_ttl_seconds: float = _APPROVAL_LEASE_TTL_SECONDS,
+        notifier: Optional[ApprovalNotifier] = None,
     ) -> None:
         if max_record_bytes <= 0:
             raise ValueError("max_record_bytes must be positive")
@@ -661,6 +1071,9 @@ class FileApprovalStore:
             lease_manager=lease_manager,
             lease_ttl_seconds=lease_ttl_seconds,
         )
+        self._notifier = notifier
+        if notifier is not None and not callable(getattr(notifier, "notify", None)):
+            raise TypeError("approval notifier must implement notify")
 
     def _with_record_lease(
         self,
@@ -781,7 +1194,11 @@ class FileApprovalStore:
                             )
                         )
                     return Result.ok(_copy_request(existing))
-                return Result.ok(self._write_unlocked(candidate))
+                stored = self._write_unlocked(candidate)
+                notified = _notify_host(self._notifier, stored, "created")
+                if notified.is_err():
+                    return Result.err(notified.unwrap_err())
+                return Result.ok(stored)
         except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
             return Result.err(
                 _error(
@@ -847,7 +1264,15 @@ class FileApprovalStore:
                     updated_at=decision.decided_at,
                     decision=decision,
                 )
-                return Result.ok(self._write_unlocked(decided))
+                stored = self._write_unlocked(decided)
+                notified = _notify_host(
+                    self._notifier,
+                    stored,
+                    "approved" if approved else "denied",
+                )
+                if notified.is_err():
+                    return Result.err(notified.unwrap_err())
+                return Result.ok(stored)
         except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
             return Result.err(
                 _error(
