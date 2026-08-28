@@ -53,6 +53,7 @@ slice:
 
 ## QA disposition
 
-**Behavioral QA pass.** Package and archive verification remain required before
-calling a release tip publish-ready. No publication, cloud, or website action
-was performed.
+**Behavioral QA and package pass.** The exact release tip `7005bcc` also passed
+build, Twine, isolated install, packaged history smoke, and archive-content
+checks: wheel `104` entries, sdist `664` entries, and `0` untracked source
+archive entries. No publication, cloud, or website action was performed.
