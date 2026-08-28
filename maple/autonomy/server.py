@@ -150,9 +150,13 @@ def _required_scope(method: str, path: Tuple[str, ...]) -> Optional[str]:
         return None
     if path[0:2] == ("v1", "agents"):
         if method == "GET":
+            if len(path) == 6 and path[5] == "checkpoint":
+                return "agent:restore"
             return "agent:read"
         if method == "POST" and len(path) == 4:
             return "agent:invoke"
+        if method == "POST" and len(path) == 6 and path[5] == "restore":
+            return "agent:restore"
         if method == "POST" and len(path) == 6 and path[5] == "resume":
             return "agent:resume"
         if method == "POST" and len(path) == 6 and path[5] == "cancel":
@@ -557,6 +561,42 @@ def _agent_checkpoint_to_dict(checkpoint: AgentRunCheckpoint) -> Dict[str, Any]:
     payload.pop("messages", None)
     payload.pop("reasoning_steps", None)
     return cast(Dict[str, Any], payload)
+
+
+def _agent_checkpoint_export_to_dict(
+    checkpoint: AgentRunCheckpoint,
+) -> Dict[str, Any]:
+    """Return a validated complete checkpoint for the explicit restore scope."""
+
+    if not isinstance(checkpoint, AgentRunCheckpoint):
+        raise TypeError("agent run store returned an invalid checkpoint")
+    normalized = AgentRunCheckpoint.from_dict(checkpoint.to_dict())
+    payload = normalized.to_dict()
+    if not isinstance(payload, dict):
+        raise TypeError("agent run checkpoint serialization must return an object")
+    return cast(Dict[str, Any], payload)
+
+
+def _agent_checkpoint_receipt_to_dict(
+    checkpoint: AgentRunCheckpoint,
+) -> Dict[str, Any]:
+    """Return a metadata-only receipt after a remote checkpoint restore."""
+
+    return {
+        "run_id": checkpoint.run_id,
+        "agent_id": checkpoint.agent_id,
+        "status": checkpoint.status,
+        "step_count": checkpoint.step_count,
+        "output_retries_used": checkpoint.output_retries_used,
+        "pending_approval_id": checkpoint.pending_approval_id,
+        "pending_input_id": checkpoint.pending_input_id,
+        "session_id": checkpoint.session_id,
+        "session_version": checkpoint.session_version,
+        "token_usage": dict(checkpoint.token_usage),
+        "version": checkpoint.version,
+        "created_at": checkpoint.created_at,
+        "updated_at": checkpoint.updated_at,
+    }
 
 
 def _agent_checkpoint_history_to_dict(
@@ -1125,6 +1165,8 @@ def _status_for_error(error: Error) -> int:
         "RUN_ID_EXISTS",
         "CHECKPOINT_CONFLICT",
         "RUN_CHECKPOINT_CONFLICT",
+        "AGENT_RUN_CHECKPOINT_IDENTITY_MISMATCH",
+        "AGENT_RUN_CHECKPOINT_NOT_RESUMABLE",
         "RUN_NOT_RESUMABLE",
         "RUN_WAITING_APPROVAL",
         "RUN_WAITING_INPUT",
@@ -1193,6 +1235,10 @@ def _status_for_error(error: Error) -> int:
         "AGENT_INVOCATION_DIGEST_INVALID",
         "AGENT_INVOCATION_REQUEST_INVALID",
         "AGENT_INVOCATION_RESPONSE_INVALID",
+        "AGENT_RUN_CHECKPOINT_INVALID",
+        "AGENT_RUN_CHECKPOINT_SIZE_EXCEEDED",
+        "RUN_CHECKPOINT_INVALID",
+        "RUN_CHECKPOINT_SIZE_EXCEEDED",
     }:
         return 400
     if error_type == "AGENT_REGISTRY_UNAVAILABLE":
@@ -1220,6 +1266,10 @@ def _status_for_error(error: Error) -> int:
         return 501
     if error_type == "AGENT_RUN_HISTORY_UNAVAILABLE":
         return 501
+    if error_type == "AGENT_RUN_RESTORE_UNAVAILABLE":
+        return 501
+    if error_type == "AGENT_RUN_RESTORE_ERROR":
+        return 503
     if error_type == "HUMAN_INPUT_STORE_UNAVAILABLE":
         return 503
     if error_type == "APPROVAL_STORE_UNAVAILABLE":
@@ -1396,6 +1446,14 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 method == "GET"
                 and len(path) == 6
                 and path[0:4] == ("v1", "agents", path[2], "runs")
+                and path[5] == "checkpoint"
+            ):
+                self._export_agent_checkpoint(path[2], path[4])
+                return
+            if (
+                method == "GET"
+                and len(path) == 6
+                and path[0:4] == ("v1", "agents", path[2], "runs")
                 and path[5] == "history"
             ):
                 self._inspect_agent_history(path[2], path[4])
@@ -1411,9 +1469,11 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 method == "POST"
                 and len(path) == 6
                 and path[0:4] == ("v1", "agents", path[2], "runs")
-                and path[5] in {"resume", "cancel"}
+                and path[5] in {"restore", "resume", "cancel"}
             ):
-                if path[5] == "resume":
+                if path[5] == "restore":
+                    self._restore_agent_checkpoint(path[2], path[4])
+                elif path[5] == "resume":
                     self._resume_agent(path[2], path[4])
                 else:
                     self._cancel_agent(path[2], path[4])
@@ -2309,13 +2369,223 @@ class _RequestHandler(BaseHTTPRequestHandler):
             )
             return
         checkpoint = result.unwrap()
-        if checkpoint is None or checkpoint.agent_id != agent_id:
+        if (
+            checkpoint is None
+            or not isinstance(checkpoint, AgentRunCheckpoint)
+            or checkpoint.agent_id != agent_id
+        ):
+            if checkpoint is not None and not isinstance(
+                checkpoint, AgentRunCheckpoint
+            ):
+                self._write_error(
+                    500,
+                    _error(
+                        "AGENT_RUN_CHECKPOINT_INVALID",
+                        "agent run store returned an invalid checkpoint.",
+                    ),
+                )
+                return
             self._write_error(
                 404,
                 _error("AGENT_RUN_NOT_FOUND", "Agent run was not found."),
             )
             return
         self._write_json(200, {"run": _agent_checkpoint_to_dict(checkpoint)})
+
+    def _export_agent_checkpoint(self, agent_id: str, run_id: str) -> None:
+        """Export complete JSON checkpoint state under the explicit restore scope."""
+
+        store = self.server.application.agent_run_store
+        if store is None:
+            self._write_error(
+                503,
+                _error(
+                    "AGENT_RUN_STORE_UNAVAILABLE",
+                    "No agent run store is configured.",
+                ),
+            )
+            return
+        result = store.load(run_id)
+        if result.is_err():
+            self._write_error(
+                _status_for_error(result.unwrap_err()), result.unwrap_err()
+            )
+            return
+        checkpoint = result.unwrap()
+        if (
+            checkpoint is None
+            or not isinstance(checkpoint, AgentRunCheckpoint)
+            or checkpoint.agent_id != agent_id
+        ):
+            if checkpoint is not None and not isinstance(
+                checkpoint, AgentRunCheckpoint
+            ):
+                self._write_error(
+                    500,
+                    _error(
+                        "AGENT_RUN_CHECKPOINT_INVALID",
+                        "agent run store returned an invalid checkpoint.",
+                    ),
+                )
+                return
+            self._write_error(
+                404,
+                _error("AGENT_RUN_NOT_FOUND", "Agent run was not found."),
+            )
+            return
+        try:
+            payload = _agent_checkpoint_export_to_dict(checkpoint)
+        except (TypeError, ValueError, OverflowError, RecursionError):
+            self._write_error(
+                500,
+                _error(
+                    "AGENT_RUN_CHECKPOINT_INVALID",
+                    "Agent run checkpoint failed validation.",
+                ),
+            )
+            return
+        self._write_json(200, {"checkpoint": payload})
+
+    def _restore_agent_checkpoint(self, agent_id: str, run_id: str) -> None:
+        """Validate and persist one complete remote checkpoint without executing it."""
+
+        store = self.server.application.agent_run_store
+        if store is None:
+            self._write_error(
+                503,
+                _error(
+                    "AGENT_RUN_STORE_UNAVAILABLE",
+                    "No agent run store is configured.",
+                ),
+            )
+            return
+        save_method = getattr(store, "save", None)
+        if not callable(save_method):
+            self._write_error(
+                501,
+                _error(
+                    "AGENT_RUN_RESTORE_UNAVAILABLE",
+                    "The configured agent run store does not support restore.",
+                ),
+            )
+            return
+        body = self._read_body()
+        raw_checkpoint = body.get("checkpoint")
+        if not isinstance(raw_checkpoint, Mapping):
+            self._write_error(
+                400,
+                _error(
+                    "AGENT_RUN_CHECKPOINT_INVALID",
+                    "checkpoint must be a JSON object.",
+                ),
+            )
+            return
+        expected_version = body.get("expected_version")
+        if "expected_version" in body and (
+            expected_version is not None
+            and (
+                not isinstance(expected_version, int)
+                or isinstance(expected_version, bool)
+                or expected_version < 0
+            )
+        ):
+            self._write_error(
+                400,
+                _error(
+                    "AGENT_RUN_CHECKPOINT_INVALID",
+                    "expected_version must be a non-negative integer or null.",
+                ),
+            )
+            return
+        try:
+            checkpoint = AgentRunCheckpoint.from_dict(raw_checkpoint)
+        except (TypeError, ValueError, OverflowError, RecursionError):
+            self._write_error(
+                400,
+                _error(
+                    "AGENT_RUN_CHECKPOINT_INVALID",
+                    "checkpoint is malformed or outside the configured bounds.",
+                ),
+            )
+            return
+        if checkpoint.agent_id != agent_id or checkpoint.run_id != run_id:
+            self._write_error(
+                409,
+                _error(
+                    "AGENT_RUN_CHECKPOINT_IDENTITY_MISMATCH",
+                    "checkpoint identity does not match the target route.",
+                ),
+            )
+            return
+        if checkpoint.status not in {"running", "paused"}:
+            self._write_error(
+                409,
+                _error(
+                    "AGENT_RUN_CHECKPOINT_NOT_RESUMABLE",
+                    "only running or paused checkpoints can be restored.",
+                ),
+            )
+            return
+        current_result = store.load(run_id)
+        if current_result.is_err():
+            self._write_error(
+                _status_for_error(current_result.unwrap_err()),
+                current_result.unwrap_err(),
+            )
+            return
+        current = current_result.unwrap()
+        if current is not None:
+            if not isinstance(current, AgentRunCheckpoint):
+                self._write_error(
+                    500,
+                    _error(
+                        "AGENT_RUN_CHECKPOINT_INVALID",
+                        "agent run store returned an invalid checkpoint.",
+                    ),
+                )
+                return
+            if current.run_id != run_id or current.agent_id != agent_id:
+                self._write_error(
+                    409,
+                    _error(
+                        "AGENT_RUN_CHECKPOINT_IDENTITY_MISMATCH",
+                        "existing checkpoint identity does not match the target route.",
+                    ),
+                )
+                return
+        try:
+            save_result = save_method(checkpoint, expected_version=expected_version)
+        except Exception:
+            self._write_error(
+                503,
+                _error(
+                    "AGENT_RUN_RESTORE_ERROR",
+                    "agent run checkpoint restore failed.",
+                ),
+            )
+            return
+        if save_result.is_err():
+            error = save_result.unwrap_err()
+            self._write_error(_status_for_error(error), error)
+            return
+        saved = save_result.unwrap()
+        if (
+            not isinstance(saved, AgentRunCheckpoint)
+            or saved.run_id != run_id
+            or saved.agent_id != agent_id
+        ):
+            self._write_error(
+                500,
+                _error(
+                    "AGENT_RUN_CHECKPOINT_INVALID",
+                    "agent run store returned an invalid restored checkpoint.",
+                ),
+            )
+            return
+        self._write_json(
+            200,
+            {"checkpoint": _agent_checkpoint_receipt_to_dict(saved)},
+        )
 
     def _agent_history_limit(self) -> Result[int, Error]:
         parsed = urlsplit(self.path)
@@ -3339,6 +3609,85 @@ class RunClient:
         if run_error is not None:
             return Result.err(run_error)
         return self._request("GET", ("v1", "agents", agent_id, "runs", run_id))
+
+    def export_agent_run_checkpoint(
+        self, agent_id: str, run_id: str
+    ) -> Result[Dict[str, Any], Error]:
+        """Export one complete JSON-safe checkpoint under ``agent:restore``."""
+
+        identifier_error = _validate_agent_identifier(agent_id, "agent_id")
+        if identifier_error is not None:
+            return Result.err(identifier_error)
+        run_error = _validate_agent_identifier(run_id, "run_id")
+        if run_error is not None:
+            return Result.err(run_error)
+        return self._request(
+            "GET",
+            ("v1", "agents", agent_id, "runs", run_id, "checkpoint"),
+        )
+
+    def restore_agent_run_checkpoint(
+        self,
+        agent_id: str,
+        checkpoint: AgentRunCheckpoint,
+        *,
+        expected_version: Optional[int] = None,
+    ) -> Result[Dict[str, Any], Error]:
+        """Restore one non-terminal checkpoint using destination-store CAS."""
+
+        identifier_error = _validate_agent_identifier(agent_id, "agent_id")
+        if identifier_error is not None:
+            return Result.err(identifier_error)
+        if not isinstance(checkpoint, AgentRunCheckpoint):
+            return Result.err(
+                _error(
+                    "AGENT_RUN_CHECKPOINT_INVALID",
+                    "checkpoint must be an AgentRunCheckpoint.",
+                )
+            )
+        if expected_version is not None and (
+            not isinstance(expected_version, int)
+            or isinstance(expected_version, bool)
+            or expected_version < 0
+        ):
+            return Result.err(
+                _error(
+                    "AGENT_RUN_CHECKPOINT_INVALID",
+                    "expected_version must be a non-negative integer or null.",
+                )
+            )
+        try:
+            normalized = AgentRunCheckpoint.from_dict(checkpoint.to_dict())
+            run_id = normalized.run_id
+            payload: Dict[str, Any] = {"checkpoint": normalized.to_dict()}
+        except (TypeError, ValueError, OverflowError, RecursionError):
+            return Result.err(
+                _error(
+                    "AGENT_RUN_CHECKPOINT_INVALID",
+                    "checkpoint is malformed or outside the configured bounds.",
+                )
+            )
+        if normalized.agent_id != agent_id:
+            return Result.err(
+                _error(
+                    "AGENT_RUN_CHECKPOINT_IDENTITY_MISMATCH",
+                    "checkpoint agent_id does not match the target agent.",
+                )
+            )
+        if normalized.status not in {"running", "paused"}:
+            return Result.err(
+                _error(
+                    "AGENT_RUN_CHECKPOINT_NOT_RESUMABLE",
+                    "only running or paused checkpoints can be restored.",
+                )
+            )
+        if expected_version is not None:
+            payload["expected_version"] = expected_version
+        return self._request(
+            "POST",
+            ("v1", "agents", agent_id, "runs", run_id, "restore"),
+            payload,
+        )
 
     def inspect_agent_run_history(
         self,
