@@ -1006,6 +1006,35 @@ def test_file_event_deduplication_store_rejects_oversized_state_without_mutation
     assert not store.path.exists()
 
 
+def test_file_event_deduplication_store_rejects_oversized_completion_without_mutation(
+    tmp_path,
+):
+    store = FileEventDeduplicationStore(tmp_path, max_bytes=400)
+    source_event = AgentEvent(
+        sequence=1,
+        event_type="agent.completed",
+        timestamp=0.0,
+        payload={},
+    )
+    destination_event = AgentEvent(
+        sequence=2,
+        event_type="agent.completed",
+        timestamp=0.0,
+        payload={"value": "x" * 500},
+    )
+    assert store.claim("source-a", 1, source_event).is_ok()
+    before = store.path.read_bytes()
+
+    result = store.complete("source-a", 1, destination_event)
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "EVENT_DEDUPLICATION_SIZE"
+    assert store.path.read_bytes() == before
+    pending = store.claim("source-a", 1, source_event)
+    assert pending.is_err()
+    assert pending.unwrap_err()["errorType"] == "EVENT_DEDUPLICATION_IN_PROGRESS"
+
+
 def test_file_event_deduplication_store_serializes_concurrent_local_instances(
     tmp_path,
 ):
