@@ -38,7 +38,17 @@ Implementation commit: `28ee94e`
 
 ## Package evidence
 
-Pending the final clean archive rebuild from the documentation closure commit.
+The clean ZIP-extracted archive from documentation commit `3e12052` built
+successfully. Wheel and source distribution both passed Twine checks; the
+wheel contained `104` entries and the source distribution contained `605`
+entries. No-dependency wheel-target installation and import smoke both exited
+`0` and reported:
+`clean_archive_guardrail_exports=GuardrailEvent,Callable`.
+
+SHA-256: wheel
+`92E5F99CC6BFDDFA4C5F375734DDA80AFB225CB951646340D562448CAC1153A4`;
+source distribution
+`55AC86C2EA8B32D64580DD818F4D54783C54C25A9744A98ABF91BBBD5507CD16`.
 
 ## Disposition
 
