@@ -10,6 +10,15 @@
 
 ### Additions
 
+- **Authenticated remote handoff payload delivery**: `RemoteHandoffTarget`
+  adapts the existing bounded `RunClient.run_agent(...)` contract into
+  `create_handoff_tool(...)`, forwarding only allowlisted task/context and
+  binding an explicit local `handoff_id` to the remote run ID. Sync and async
+  callers receive the same bounded completed-result shape; malformed,
+  unauthorized, incomplete, and transport failures are normalized without raw
+  payloads. Retries, remote durable restore, scheduling, push delivery, and
+  exactly-once effects remain outside the contract.
+
 - **Durable receiver-side event deduplication**: authenticated event receivers
   can use `FileEventDeduplicationStore` to persist bounded source claims and
   completed redacted destination events across local process restarts. Atomic

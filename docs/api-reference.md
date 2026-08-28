@@ -880,6 +880,59 @@ journal, not a remote queue, scheduler, notification service, or exactly-once
 side-effect mechanism; remote routing/authentication, hard target cancellation,
 and distributed delivery remain separate capabilities.
 
+### Authenticated remote handoff target
+
+`RemoteHandoffTarget` adapts an authenticated `RunClient` into the same target
+contract used by `create_handoff_tool`. The existing handoff helper performs
+the context allowlist and local ownership transitions; the adapter forwards
+the resulting bounded task/context to the remote host's
+`RunClient.run_agent(...)` route:
+
+```python
+from maple import (
+    FileHandoffStore,
+    RemoteHandoffTarget,
+    RunClient,
+    create_handoff_tool,
+)
+
+remote_target = RemoteHandoffTarget(
+    "researcher",
+    RunClient("https://agents.example", auth_token="host-token"),
+    session_id="release-session",
+)
+handoff = create_handoff_tool(
+    remote_target,
+    handoff_store=FileHandoffStore(".maple-handoffs"),
+    source_agent_id="orchestrator",
+    allowed_context_keys=["project", "constraints"],
+)
+result = handoff.execute(
+    task="Summarize the release risks",
+    context={"project": "MAPLE", "constraints": {"max_words": 200}},
+    handoff_id="release-risk-remote-v1",
+)
+```
+
+The receiver must expose an authenticated `RunServer` with an
+`AgentRegistry`; the client token is sent only in the authorization header.
+The allowlisted context is bounded by the handoff helper and copied again by
+the client/server agent contract. When a persisted handoff ID is supplied,
+the adapter sends it as the remote `run_id`; the local record still retains
+only IDs, state, timestamps, and task/context digests. Only a validated remote
+`completed` run becomes a successful handoff result. Unauthorized, transport,
+malformed, incomplete, and remote-failure outcomes become typed target
+failures, and raw remote error messages/results are not forwarded through the
+handoff error boundary.
+
+The sync adapter checks cancellation before and after the request. Its async
+methods run the synchronous HTTP client in an executor so the event-loop
+caller is not blocked, but cancellation does not interrupt an already-running
+HTTP request. The client performs no retry; a crash after remote execution can
+still repeat a side effect, so this is bounded at-least-once coordination and
+not a distributed exactly-once protocol. Remote scheduling, push notification,
+remote durable resume, and identity federation remain separate contracts.
+
 ### Manager-style agent-as-tool delegation
 
 `create_agent_tool` exposes a specialist as a normal `Tool` while the calling
