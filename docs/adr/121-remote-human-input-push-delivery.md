@@ -1,6 +1,6 @@
 # ADR-121: Bounded remote human-input push delivery
 
-**Date:** 2026-08-28 · **Status:** accepted  
+**Date:** 2026-08-28 · **Status:** accepted
 **Deciders:** Chief Architect (human confirmation is not required for the
 recorded additive, local-first default)
 
