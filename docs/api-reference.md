@@ -622,7 +622,40 @@ config = AutonomousConfig(
     output_guardrails=[lambda value: value["answer"] != ""],
 )
 parsed = parse_structured_output('{"answer":"ready"}', report_schema)
+```
 
+### Guardrail lifecycle events
+
+`run_guardrails(...)` can receive an optional `GuardrailObserver`. The observer
+gets immutable `GuardrailEvent` records for each ordered transition:
+`started`, `passed`, `rejected`, or `failed`. Events contain only the stage,
+guardrail index, status, and optional bounded trace/span IDs; guarded values and
+raw callback errors are never copied. Observer exceptions are ignored so
+observability cannot weaken fail-closed enforcement.
+
+```python
+from maple import GuardrailEvent, run_guardrails
+
+events: list[GuardrailEvent] = []
+decision = run_guardrails(
+    {"answer": "ready"},
+    [lambda value: True],
+    stage="agent:output",
+    observer=events.append,
+    trace_id="run-123",
+    span_id="span-456",
+)
+assert decision.is_ok()
+assert [event.status for event in events] == ["started", "passed"]
+```
+
+When an `AutonomousAgent` has an `EventStream`, its input/output guardrails
+publish the same metadata as `guardrail.started`, `guardrail.passed`,
+`guardrail.rejected`, and `guardrail.failed`, linked to the local run and
+active model span where available. Publication remains best-effort under the
+bounded event-stream contract.
+
+```python
 class LookupArgs(BaseModel):
     topic: str
 

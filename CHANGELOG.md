@@ -18,6 +18,11 @@
   enabled by default. Remote routing, child-run replay, retries, and
   exactly-once effects remain outside the local contract.
 
+- **Bounded guardrail lifecycle events**: `run_guardrails(...)` can report
+  ordered `started`, `passed`, `rejected`, and `failed` transitions through
+  safe metadata, and agent event streams attach local run/span correlation
+  without copying guarded values or raw callback errors.
+
 - **Bounded connector rate limiting**: `ingest_documents(...)` accepts an
   optional host-owned `DocumentConnectorRateLimiter`; the in-memory trailing
   window implementation admits bounded fetches and returns a sanitized typed
