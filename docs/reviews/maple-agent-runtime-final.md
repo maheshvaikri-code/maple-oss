@@ -805,3 +805,36 @@ and static regression tests passed. The final v1.1.4 release remains
 conditional because the version bump, clean `main` commit, independent fresh
 review, dependency/security disposition, and human publication authorization
 are still open.
+
+## 2026-08-28 current revalidation — Slice 174 workflow supply chain
+
+All workflow action references are now pinned to full immutable commit SHAs.
+The selected upstream refs were verified read-only before the edit:
+
+```text
+checkout-v4.2.2=11bd71901bbe5b1630ceea73d27597364c9af683
+setup-python-v5.6.0=a26af69be951a213d495a4c3e4e4022e16d87065
+upload-artifact-v4.6.2=ea165f8d65b6e75b540449e92b4886f43607fa02
+download-artifact-v4.3.0=d3f86a106a0bac45b974a628896c90dbdf5c8093
+codecov-v4.6.0=0f8570b1a125f4937846a11fcfa3bcd548bd8c97
+pypi-release-v1=dc37677b2e1c63e2034f94d8a5b11f265b73ba33
+```
+
+The static pin regression and clean archive evidence are:
+
+```text
+python -m pytest tests/test_release_workflows.py -q --no-cov
+5 passed in 0.27s
+
+workflow_yaml_parse=passed
+all_workflow_action_refs_are_sha_pinned
+uses_total=37
+sha_pins=37
+
+python -m pytest -q --no-cov  (clean committed archive)
+1562 passed, 1 skipped in 228.60s
+```
+
+**Slice 174 review:** PASS. No workflow behavior, credentials, runtime
+dependency, or external state was changed. The remaining release decision is
+the v1.1.4 candidate gate, not action provenance.

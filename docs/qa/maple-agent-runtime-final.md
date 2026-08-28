@@ -824,3 +824,41 @@ import_exit=0
 overall release status remains CONDITIONAL / NOT PUBLISH-READY.** `actionlint`
 was unavailable, the known environment-wide dependency audit remains a veto,
 and the fresh independent verifier plus human approval are still required.
+
+## 2026-08-28 current QA revalidation — Slice 174 workflow supply chain
+
+The action-pin invariant and all workflow YAML files were exercised locally.
+The exact committed `4f145b8` archive also passed the full tracked suite and
+package smoke checks:
+
+```text
+python -m pytest tests/test_release_workflows.py -q --no-cov
+5 passed in 0.27s
+
+workflow_yaml_parse=passed
+all_workflow_action_refs_are_sha_pinned
+uses_total=37
+sha_pins=37
+
+python -m pytest -q --no-cov  (clean committed archive)
+1562 passed, 1 skipped in 228.60s
+
+python -m maple.cli doctor --json  (isolated wheel)
+{"checks": {"core": true, "evaluation": true, "events": true, "execution": true, "interop": true, "retrieval": true, "server": true, "sessions": true}, "network": false, "ready": true, "status": "SUCCESS", "version": "1.1.3"}
+
+clean git archive HEAD: source_archive_entries=824
+build_exit=0
+wheel_entries=106
+sdist_entries=738
+twine_exit=0
+install_exit=0
+isolated_import=passed
+version=1.1.3
+import_exit=0
+```
+
+**Slice 174 QA status: PASS for action provenance and local packaging.** The
+overall release remains CONDITIONAL / NOT PUBLISH-READY because v1.1.4 has
+not been version-bumped or tagged, the workspace has preserved user changes,
+the dependency audit remains a governance veto, and independent review plus
+human publication approval are outstanding.
