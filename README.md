@@ -46,6 +46,7 @@ Most agent frameworks give you either **infrastructure** (messaging, security, f
 - **Ownership-Checked Task Completion (preview)** - `TaskQueue.complete_task` requires the assigned agent and an active task state before recording completion; `TaskScheduler.task_completed` releases load only after that authoritative transition succeeds.
 - **Atomic Task Reassignment (preview)** - `TaskQueue.reassign_task` lets local rebalancing transfer an `ASSIGNED` task between owners while rejecting running, stale, duplicate, or invalid transfers.
 - **Atomic Scheduler Capacity Admission (preview)** - `TaskScheduler` reserves agent capacity before claiming a task and rolls that reservation back when the queue rejects the claim, preventing concurrent over-admission.
+- **Ownership-Checked Task Failure (preview)** - `TaskQueue.fail_task` records bounded failure errors only for the assigned agent, while `TaskScheduler.task_failed` releases capacity only after that transition succeeds; requeue remains explicit.
 
 - **ReAct Reasoning Loop** — Agents think, act, and reflect autonomously. Built-in backtracking when approaches fail.
 - **Pluggable LLM Providers** — OpenAI, Anthropic Claude, or any compatible API (vLLM, Ollama, Together AI).

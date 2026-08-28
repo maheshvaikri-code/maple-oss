@@ -590,6 +590,15 @@ This prevents concurrent local schedulers from exceeding
 `SchedulingPolicy.max_concurrent_per_agent`; it does not provide distributed
 quota coordination or worker liveness detection.
 
+`TaskQueue.fail_task(task_id, assigned_agent, error)` is the ownership-checked
+failure transition. It accepts only the recorded owner while the task is
+`ASSIGNED` or `RUNNING`, requires a non-empty UTF-8 error of at most `8,192`
+bytes, records `FAILED`, and rejects invalid or terminal transitions without
+mutation. `TaskScheduler.task_failed(...)` uses this transition and releases
+local assignment/load bookkeeping only after acceptance. Callers may then use
+the existing bounded `requeue_task()` operation explicitly when retry is
+appropriate; failure acknowledgement does not auto-retry.
+
 ## Trusted Local Execution (preview)
 
 `TrustedLocalExecutor` is an explicit boundary for trusted Python handlers. It

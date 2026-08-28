@@ -78,6 +78,12 @@ claim and rolled back if that claim fails. This closes concurrent local
 over-admission for `max_concurrent_per_agent`; it is not a distributed quota,
 worker heartbeat, or hosted admission service.
 
+Failure acknowledgement follows the same local ownership rule: only the
+recorded agent can transition an `ASSIGNED` or `RUNNING` task to `FAILED`, and
+the scheduler releases capacity only after the queue accepts the error. Retry
+is explicit through bounded `requeue_task()` admission; there is no automatic
+distributed retry or exactly-once side-effect claim.
+
 `SchedulingPolicy` also rejects invalid strategy names and unbounded worker
 configuration before a scheduler starts. The local limits are explicit and
 finite; policy distribution, durable schedule state, distributed leases, and
