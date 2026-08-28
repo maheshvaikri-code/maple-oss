@@ -25,7 +25,7 @@ Implementation commit: `3e42af2`
 - Source-only dangerous-construct scan: `source_dangerous_construct_matches=0`
 - Clean committed-candidate archive build: exit `0`
 - Wheel: `104` entries
-- Source distribution: `596` entries
+- Source distribution: `599` entries
 - Twine checks: both artifacts `PASSED`
 - Isolated no-dependency wheel-target rate-limiter export smoke: `passed`
 
