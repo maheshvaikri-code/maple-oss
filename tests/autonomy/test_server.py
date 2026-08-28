@@ -1330,6 +1330,152 @@ def test_authenticated_handoff_transport_redacts_persisted_result():
     assert "local-only" not in str(payload)
 
 
+def test_authenticated_handoff_transport_delivers_result_through_scoped_route():
+    store = InMemoryHandoffStore()
+    record = HandoffRecord.pending(
+        "remote-delivery",
+        "source",
+        "target",
+        "a" * 64,
+        "b" * 64,
+    )
+    server = RunServer(
+        WorkflowRegistry(),
+        handoff_store=store,
+        auth_token="handoff-token",
+        auth_principal=Principal(
+            "handoff-operator",
+            ("handoff:read", "handoff:write", "handoff:result"),
+        ),
+    )
+    base_url = server.start()
+    try:
+        client = RunClient(base_url, auth_token="handoff-token")
+        assert client.create_handoff(record).is_ok()
+        pending = client.get_handoff_result("remote-delivery")
+        assert client.accept_handoff("remote-delivery", "target").is_ok()
+        unavailable = client.get_handoff_result("remote-delivery")
+        completed = client.complete_handoff(
+            "remote-delivery",
+            "target",
+            "target-goal",
+            result={"answer": "ready", "metadata": {"source": "target"}},
+        )
+        inspected = client.get_handoff("remote-delivery")
+        delivered = client.get_handoff_result("remote-delivery")
+    finally:
+        server.close()
+
+    assert pending.is_err()
+    assert pending.unwrap_err()["errorType"] == "HANDOFF_RESULT_UNAVAILABLE"
+    assert unavailable.is_err()
+    assert unavailable.unwrap_err()["errorType"] == "HANDOFF_RESULT_UNAVAILABLE"
+    assert completed.is_ok()
+    assert "result" not in completed.unwrap()["handoff"]
+    assert inspected.is_ok()
+    assert "result" not in inspected.unwrap()["handoff"]
+    assert delivered.is_ok()
+    assert delivered.unwrap()["handoff"] == {
+        "handoff_id": "remote-delivery",
+        "status": "completed",
+        "target_goal_id": "target-goal",
+        "result": {"answer": "ready", "metadata": {"source": "target"}},
+    }
+
+
+def test_handoff_result_transport_requires_dedicated_principal_scope():
+    store = InMemoryHandoffStore()
+    record = HandoffRecord.pending(
+        "remote-scope",
+        "source",
+        "target",
+        "a" * 64,
+    )
+    assert store.create(record).is_ok()
+    assert store.accept("remote-scope", "target").is_ok()
+    assert store.complete(
+        "remote-scope", "target", "target-goal", result={"answer": "secret"}
+    ).is_ok()
+    server = RunServer(
+        WorkflowRegistry(),
+        handoff_store=store,
+        auth_token="handoff-token",
+        auth_principal=Principal("reader", ("handoff:read",)),
+    )
+    base_url = server.start()
+    try:
+        client = RunClient(base_url, auth_token="handoff-token")
+        inspected = client.get_handoff("remote-scope")
+        denied = client.get_handoff_result("remote-scope")
+    finally:
+        server.close()
+
+    assert inspected.is_ok()
+    assert "result" not in inspected.unwrap()["handoff"]
+    assert denied.is_err()
+    assert denied.unwrap_err()["errorType"] == "FORBIDDEN"
+
+
+def test_handoff_result_transport_rejects_invalid_payload_without_mutation():
+    store = InMemoryHandoffStore()
+    record = HandoffRecord.pending(
+        "remote-invalid-result",
+        "source",
+        "target",
+        "a" * 64,
+    )
+    assert store.create(record).is_ok()
+    assert store.accept("remote-invalid-result", "target").is_ok()
+    server = RunServer(
+        WorkflowRegistry(),
+        handoff_store=store,
+        auth_token="handoff-token",
+    )
+    base_url = server.start()
+    complete_url = f"{base_url}/v1/handoffs/remote-invalid-result/complete"
+    try:
+        client = RunClient(base_url, auth_token="handoff-token")
+        client_rejected = client.complete_handoff(
+            "remote-invalid-result",
+            "target",
+            "target-goal",
+            result=[],  # type: ignore[arg-type]
+        )
+        invalid_status, invalid = _request(
+            complete_url,
+            method="POST",
+            payload={
+                "target_agent_id": "target",
+                "target_goal_id": "target-goal",
+                "result": [],
+            },
+            headers={"Authorization": "Bearer handoff-token"},
+        )
+        oversized_status, oversized = _request(
+            complete_url,
+            method="POST",
+            payload={
+                "target_agent_id": "target",
+                "target_goal_id": "target-goal",
+                "result": {"value": "x" * 70_000},
+            },
+            headers={"Authorization": "Bearer handoff-token"},
+        )
+    finally:
+        server.close()
+
+    assert client_rejected.is_err()
+    assert client_rejected.unwrap_err()["errorType"] == "HANDOFF_RESULT_INVALID"
+    assert invalid_status == 400
+    assert invalid["error"]["errorType"] == "HANDOFF_RESULT_INVALID"
+    assert oversized_status == 400
+    assert oversized["error"]["errorType"] == "HANDOFF_RESULT_INVALID"
+    stored = store.get("remote-invalid-result")
+    assert stored.is_ok()
+    assert stored.unwrap().status == "accepted"
+    assert stored.unwrap().result is None
+
+
 def test_handoff_transport_fails_closed_without_store_and_bounds_client_inputs():
     server = RunServer(WorkflowRegistry(), auth_token="token")
     base_url = server.start()

@@ -132,6 +132,8 @@ def _required_scope(method: str, path: Tuple[str, ...]) -> Optional[str]:
         if method == "POST" and len(path) == 6 and path[5] == "cancel":
             return "agent:cancel"
     if path[0:2] == ("v1", "handoffs"):
+        if method == "GET" and len(path) == 4 and path[3] == "result":
+            return "handoff:result"
         return "handoff:read" if method == "GET" else "handoff:write"
     if path[0:2] == ("v1", "interactions"):
         if method == "GET":
@@ -391,11 +393,24 @@ def _agent_checkpoint_history_to_dict(
     }
 
 
-def _handoff_to_dict(record: HandoffRecord) -> Dict[str, Any]:
-    payload = record.to_dict(include_result=False)
+def _handoff_to_dict(
+    record: HandoffRecord, *, include_result: bool = False
+) -> Dict[str, Any]:
+    payload = record.to_dict(include_result=include_result)
     if not isinstance(payload, dict):
         raise TypeError("handoff record serialization must return an object")
     return cast(Dict[str, Any], payload)
+
+
+def _handoff_result_to_dict(record: HandoffRecord) -> Dict[str, Any]:
+    """Return the least-privilege envelope for one delivered handoff result."""
+    payload = _handoff_to_dict(record, include_result=True)
+    return {
+        "handoff_id": payload["handoff_id"],
+        "status": payload["status"],
+        "target_goal_id": payload["target_goal_id"],
+        "result": payload["result"],
+    }
 
 
 class AgentRegistry:
@@ -798,6 +813,7 @@ def _status_for_error(error: Error) -> int:
         "HANDOFF_CONFLICT",
         "HANDOFF_STATE_CONFLICT",
         "HANDOFF_OWNER_ERROR",
+        "HANDOFF_RESULT_UNAVAILABLE",
         "APPROVAL_CONFLICT",
         "APPROVAL_LEASE_ERROR",
         "EVENT_CURSOR_EXPIRED",
@@ -819,6 +835,7 @@ def _status_for_error(error: Error) -> int:
         "HANDOFF_INPUT_INVALID",
         "HANDOFF_LIMIT_INVALID",
         "HANDOFF_RECORD_INVALID",
+        "HANDOFF_RESULT_INVALID",
         "APPROVAL_LIMIT_INVALID",
         "APPROVAL_DECISION_INVALID",
         "HUMAN_INPUT_IDENTIFIER_INVALID",
@@ -1919,6 +1936,9 @@ class _RequestHandler(BaseHTTPRequestHandler):
         if method == "POST" and path == ("v1", "handoffs"):
             self._create_handoff(store)
             return True
+        if method == "GET" and len(path) == 4 and path[3] == "result":
+            self._get_handoff_result(store, path[2])
+            return True
         if method == "GET" and len(path) == 4 and path[2] == "open":
             try:
                 limit = int(path[3])
@@ -1997,14 +2017,54 @@ class _RequestHandler(BaseHTTPRequestHandler):
         if action == "accept":
             result = store.accept(handoff_id, target_agent_id)
         elif action == "complete":
+            raw_result = body.get("result")
+            if raw_result is not None and not isinstance(raw_result, Mapping):
+                self._write_error(
+                    400,
+                    _error(
+                        "HANDOFF_RESULT_INVALID",
+                        "result must be an object or null.",
+                    ),
+                )
+                return
             result = store.complete(
-                handoff_id, target_agent_id, cast(str, body.get("target_goal_id"))
+                handoff_id,
+                target_agent_id,
+                cast(str, body.get("target_goal_id")),
+                result=cast(Optional[Mapping[str, Any]], raw_result),
             )
         else:
             result = store.fail(
                 handoff_id, target_agent_id, cast(str, body.get("error_type"))
             )
         self._write_handoff_result(result, success_status=200)
+
+    def _get_handoff_result(self, store: HandoffStore, handoff_id: str) -> None:
+        result = store.get(handoff_id)
+        if result.is_err():
+            self._write_error(
+                _status_for_error(result.unwrap_err()), result.unwrap_err()
+            )
+            return
+        record = result.unwrap()
+        if record is None:
+            self._write_error(
+                404, _error("HANDOFF_NOT_FOUND", "handoff was not found.")
+            )
+            return
+        if record.status != "completed" or record.result is None:
+            self._write_error(
+                409,
+                _error(
+                    "HANDOFF_RESULT_UNAVAILABLE",
+                    "a completed handoff result is not available.",
+                ),
+            )
+            return
+        self._write_json(
+            200,
+            {"handoff": _handoff_result_to_dict(record)},
+        )
 
     def _write_handoff_result(
         self, result: Result[HandoffRecord, Error], *, success_status: int
@@ -2701,17 +2761,48 @@ class RunClient:
         )
 
     def complete_handoff(
-        self, handoff_id: str, target_agent_id: str, target_goal_id: str
+        self,
+        handoff_id: str,
+        target_agent_id: str,
+        target_goal_id: str,
+        *,
+        result: Optional[Mapping[str, Any]] = None,
     ) -> Result[Dict[str, Any], Error]:
-        """Complete an accepted handoff and return ownership to its source."""
+        """Complete an accepted handoff and optionally deliver its result."""
+        if result is not None and not isinstance(result, Mapping):
+            return Result.err(
+                _error(
+                    "HANDOFF_RESULT_INVALID",
+                    "result must be an object or null.",
+                )
+            )
+        payload: Dict[str, Any] = {
+            "target_agent_id": target_agent_id,
+            "target_goal_id": target_goal_id,
+        }
+        if result is not None:
+            payload["result"] = dict(result)
         return self._request(
             "POST",
             ("v1", "handoffs", handoff_id, "complete"),
-            {
-                "target_agent_id": target_agent_id,
-                "target_goal_id": target_goal_id,
-            },
+            payload,
         )
+
+    def get_handoff_result(self, handoff_id: str) -> Result[Dict[str, Any], Error]:
+        """Retrieve one completed handoff result through its scoped route."""
+        if (
+            not isinstance(handoff_id, str)
+            or not handoff_id
+            or len(handoff_id) > 256
+            or any(ord(char) < 32 for char in handoff_id)
+        ):
+            return Result.err(
+                _error(
+                    "HANDOFF_INPUT_INVALID",
+                    "handoff_id must be bounded text.",
+                )
+            )
+        return self._request("GET", ("v1", "handoffs", handoff_id, "result"))
 
     def fail_handoff(
         self, handoff_id: str, target_agent_id: str, error_type: str

@@ -10,6 +10,13 @@
 
 ### Additions
 
+- **Authenticated remote handoff result delivery**: `RunClient.complete_handoff`
+  can submit a bounded JSON result through the authenticated completion route,
+  and `get_handoff_result()` can retrieve it through the explicit
+  `handoff:result` scope. Ordinary handoff inspection remains result-redacted;
+  task/context contents, automatic retries, push notifications, scheduling,
+  and exactly-once effects remain outside the transport contract.
+
 - **Opt-in delegated child-run lifecycle**: `create_agent_tool` can now accept
   `persist_child_run=True` with a caller-owned bounded `child_run_id`, pass it
   to a native child run, and call the matching sync/async resume API when the

@@ -869,9 +869,10 @@ retry = handoff.execute(
 
 Result persistence is disabled by default and requires the built-in stores or
 a custom store whose `complete` method accepts the `result=` keyword. The
-authenticated `RunServer` handoff API remains digest-only and never emits the
-stored result. This is local successful-result replay, not in-flight child-run
-restore, remote result delivery, or exactly-once side-effect execution.
+authenticated `RunServer` metadata inspection API remains result-redacted and
+never emits the stored result; remote result delivery is a separate explicit
+transport contract described below. This is local successful-result replay,
+not in-flight child-run restore or exactly-once side-effect execution.
 
 `InMemoryHandoffStore` is available for local tests. Store failures fail closed
 and finalization failures do not claim success. The store is an identity/state
@@ -2493,7 +2494,7 @@ Known route scope families are:
 | Agents | `agent:read`, `agent:invoke`, `agent:resume`, `agent:cancel` |
 | Approvals | `approval:read`, `approval:decide` |
 | Human input | `interaction:read`, `interaction:write`, `interaction:consume` |
-| Handoffs | `handoff:read`, `handoff:write` |
+| Handoffs | `handoff:read`, `handoff:write`, `handoff:result` |
 | Events | `event:read`, `event:publish` |
 
 `Principal("operator", ("workflow:*",))` grants a scope family and
@@ -2749,22 +2750,55 @@ with RunServer(registry, handoff_store=handoffs, auth_token="local-token") as se
     client = RunClient(server.url, auth_token="local-token")
     created = client.create_handoff(record)
     accepted = client.accept_handoff("handoff-1", "target")
-    completed = client.complete_handoff("handoff-1", "target", "goal-1")
+    completed = client.complete_handoff(
+        "handoff-1",
+        "target",
+        "goal-1",
+        result={"answer": "ready"},
+    )
     assert completed.is_ok()
 ```
 
 The contract provides `create_handoff(record)`, `get_handoff(id)`,
 `list_open_handoffs(limit)`, `accept_handoff(id, target_agent_id)`,
-`complete_handoff(id, target_agent_id, target_goal_id)`, and
-`fail_handoff(id, target_agent_id, error_type)`. Routes return digest-only
-`HandoffRecord` envelopes; task and context contents are never transmitted.
-The store remains authoritative for state, ownership, validation, and file
-fencing. The bearer token authenticates transport access but does not create a
-per-agent principal or authorization scope. Missing stores return `503`,
-invalid records/limits return `400`, missing records return `404`, and state or
-owner conflicts return `409`. No retries, queueing, notifications,
-cancellation, scheduling, payload delivery, or exactly-once effect guarantee
-is provided.
+`complete_handoff(id, target_agent_id, target_goal_id, result=...)`, and
+`fail_handoff(id, target_agent_id, error_type)`. Completion `result` is
+optional; when present it must be a JSON object within the store's 65,536-byte
+result bound. Routes return digest-only `HandoffRecord` envelopes by default;
+task and context contents are never transmitted. The store remains authoritative
+for state, ownership, validation, and file fencing.
+
+For explicit remote result delivery, configure a host principal with
+`handoff:result` in addition to the scopes needed for the transition and call
+the separate result route:
+
+```python
+from maple import Principal, RunClient, RunServer
+
+principal = Principal(
+    "handoff-operator",
+    ("handoff:read", "handoff:write", "handoff:result"),
+)
+with RunServer(
+    registry,
+    handoff_store=handoffs,
+    auth_token="local-token",
+    auth_principal=principal,
+) as server:
+    client = RunClient(server.url, auth_token="local-token")
+    delivered = client.get_handoff_result("handoff-1")
+    assert delivered.unwrap()["handoff"]["result"] == {"answer": "ready"}
+```
+
+`GET /v1/handoffs/<handoff_id>` remains available under `handoff:read` but
+omits results. `GET /v1/handoffs/<handoff_id>/result` returns only the handoff
+ID, completed status, target goal ID, and bounded result under `handoff:result`.
+Missing handoffs return `404`; pending, accepted, failed, or result-less
+records return `HANDOFF_RESULT_UNAVAILABLE` with `409`; invalid result payloads
+return `400` without mutating the record. The bearer token authenticates
+transport access but is not a per-agent identity provider. Retrieval is
+pull-based and the client performs no automatic retries, queueing,
+notifications, cancellation, scheduling, or exactly-once effect guarantee.
 
 ## Usage Example
 

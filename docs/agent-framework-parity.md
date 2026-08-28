@@ -146,6 +146,12 @@ summarization, managed context windows, and hosted memory remain separate.
 | Language SDK breadth | **Deferred** — Python runtime | Microsoft Agent Framework and LlamaIndex document multiple language surfaces; others have additional SDK/community surfaces | P2: define a language-neutral protocol contract before another SDK |
 | Infrastructure and protocol security | **Native differentiator** — broker, resource negotiation, leases, circuit breakers, cryptographic link/security layers, discovery/health, and protocol adapters | This is not the primary center of gravity of the five agent runtimes | Keep as MAPLE's distinct strength; do not use it to hide the runtime gaps above |
 
+Slice165 closes the earlier remote handoff result-delivery gap with bounded
+result submission on completion and explicit pull retrieval under the
+`handoff:result` scope. The earlier P0 wording that lists remote result
+delivery as wholly separate is superseded by this scoped pull contract;
+push delivery, retry-safe coordination, and exactly-once effects remain open.
+
 The workflow transport contract now includes a dependency-free `RunClient`
 with bounded JSON responses and optional bearer authentication on
 `RunServer`. Loopback binding remains the default; TLS, token issuance,
@@ -170,9 +176,11 @@ request boundary, not a force-kill or exactly-once side-effect guarantee.
 Remote handoff identity now has an optional authenticated `RunServer`/
 `RunClient` control plane over the existing digest-only `HandoffStore`.
 Create, inspect, list, accept, complete, and fail transitions retain the
-store's ownership and fencing semantics; raw task/context delivery, per-agent
-principal scopes, notifications, retries, and exactly-once effects remain
-separate.
+store's ownership and fencing semantics. Completion can carry one bounded
+JSON result, and an explicit `handoff:result` scope permits a least-privilege
+pull of that result while ordinary inspection remains redacted. Raw
+task/context delivery, per-agent principal identity, push notifications,
+automatic retries, scheduling, and exactly-once effects remain separate.
 
 The same authenticated transport can now receive one bounded event at a time or
 a 1–100 item batch through `POST /v1/events` and `POST /v1/events/batch` into a
