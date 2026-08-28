@@ -37,6 +37,7 @@ Most agent frameworks give you either **infrastructure** (messaging, security, f
 - **Native Async Provider Completion (preview)** - Async agent loops can await native OpenAI-compatible and Anthropic completion clients when the optional SDK exposes them. Providers without an async client retain the explicit base-provider fallback; `ProviderRequirements(async_completion=True)` can require a declared native async provider; no hidden retry, provider selection, or concurrency claim is made.
 - **Bounded Working Memory Admission (preview)** - Working-memory budgets are bounded to 1..1,000,000 estimated tokens and 4,096 entries; UTF-8 text, keys, and relevance metadata are validated before admission, and entries too large to fit fail without mutating the existing context.
 - **Fail-Closed Memory Archiving (preview)** - `MemoryManager.summarize_and_archive()` clears working memory only after the generated summary is persisted successfully; typed archive failures preserve the source context for inspection or retry.
+- **Bounded Episodic Memory (preview)** - Episodic records are bounded to 1,024 events per task and 64 KiB per serialized event by default; invalid or oversized records fail before persistence, while accepted records retain the newest bounded window.
 
 - **ReAct Reasoning Loop** — Agents think, act, and reflect autonomously. Built-in backtracking when approaches fail.
 - **Pluggable LLM Providers** — OpenAI, Anthropic Claude, or any compatible API (vLLM, Ollama, Together AI).

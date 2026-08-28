@@ -2044,6 +2044,38 @@ successful archive returns the summary and then clears the working context.
 The operation is not a cross-store transaction, so hosts should inspect the
 returned error and decide whether to retry or retain the context.
 
+### Bounded episodic memory admission (preview)
+
+`EpisodicMemory` keeps a bounded event history for each task in the supplied
+`StateStore`. The defaults retain at most `1,024` events per task and accept
+serialized events up to `65,536` bytes. Both limits are configurable within
+those maxima:
+
+```python
+from maple import EpisodicMemory, StateStore, StorageBackend
+
+episodic = EpisodicMemory(
+    StateStore(backend=StorageBackend.MEMORY),
+    max_events_per_task=100,
+    max_event_bytes=32_768,
+)
+stored = episodic.record("task-1", {"action": "search", "result": "found"})
+assert stored.is_ok()
+assert episodic.recall("task-1").unwrap()[0]["action"] == "search"
+```
+
+Task IDs must be non-empty text without Unicode control characters and at most
+`256` UTF-8 bytes. Events must be mappings. Before the store is written, the
+event plus its timestamp is encoded as bounded UTF-8 JSON with non-finite
+numeric values rejected. An accepted event keeps the newest entries when the
+per-task count is full. Invalid task IDs/events return
+`EPISODIC_TASK_ID_INVALID` or `EPISODIC_EVENT_INVALID`; an event over the
+configured byte bound returns `EPISODIC_EVENT_TOO_LARGE`; malformed stored
+history returns `EPISODIC_STATE_INVALID`. Store read/write errors are
+propagated. The bound is per task and per store instance, not a distributed
+global quota, and this API does not add summarization, retry, or cross-store
+transactions.
+
 ### Durable agent runs (preview)
 
 Attach an `InMemoryAgentRunStore` or `FileAgentRunStore` to persist a bounded

@@ -10,6 +10,11 @@
 
 ### Additions
 
+- **Bounded episodic memory**: `EpisodicMemory` now validates bounded task
+  IDs and serialized event size, retains a configurable newest-event window
+  per task, rejects malformed or oversized records before persistence, and
+  propagates store/state errors instead of silently replacing unreadable data.
+
 - **Fail-closed memory archiving**: `MemoryManager.summarize_and_archive()`
   now propagates typed episodic persistence failures and preserves working
   memory until the summary archive succeeds.
