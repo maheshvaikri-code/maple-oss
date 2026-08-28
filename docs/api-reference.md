@@ -2208,6 +2208,13 @@ the model for another step. A pending run without a decision returns
 before the next model call, but external side effects remain at-least-once and
 must be made idempotent by the handler when required.
 
+Checkpoint parsing and store writes fail closed on inconsistent interaction
+state: a `paused` checkpoint must identify exactly one pending approval or
+human-input request, while `running`, `completed`, and `failed` checkpoints
+must identify none. A checkpoint cannot carry both pending IDs. This validation
+happens before an in-memory or file-backed store mutates its current record;
+it does not claim distributed recovery or exactly-once external effects.
+
 Both sync and async run paths checkpoint the initial message cursor and each
 completed ReAct step. When durable persistence is enabled, async tool calls in
 one model step are executed in order so an approval pause happens before later

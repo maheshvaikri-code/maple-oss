@@ -1,6 +1,7 @@
 """Regression coverage for FileAgentRunStore cross-process ownership."""
 
 from pathlib import Path
+from typing import Optional
 
 from maple.autonomy.runs import AgentRunCheckpoint, FileAgentRunStore
 from maple.autonomy.sessions import SessionMessage
@@ -8,7 +9,10 @@ from maple.resources.lease import FileLeaseManager
 
 
 def _checkpoint(
-    run_id: str = "run-lease-1", *, status: str = "running"
+    run_id: str = "run-lease-1",
+    *,
+    status: str = "running",
+    pending_approval_id: Optional[str] = None,
 ) -> AgentRunCheckpoint:
     return AgentRunCheckpoint(
         run_id=run_id,
@@ -18,6 +22,7 @@ def _checkpoint(
         messages=(SessionMessage(role="user", content="hello"),),
         reasoning_steps=(),
         step_count=0,
+        pending_approval_id=pending_approval_id,
         token_usage={"total_tokens": 0},
     )
 
@@ -31,7 +36,10 @@ def test_file_run_store_fails_closed_when_run_lease_is_held(tmp_path: Path) -> N
     held = external_leases.acquire("run:run-lease-1", "external-holder", 60).unwrap()
 
     blocked_load = store.load("run-lease-1")
-    blocked_save = store.save(_checkpoint(status="paused"), expected_version=1)
+    blocked_save = store.save(
+        _checkpoint(status="paused", pending_approval_id="approval-1"),
+        expected_version=1,
+    )
 
     assert blocked_load.is_err()
     assert blocked_load.unwrap_err()["errorType"] == "RUN_CHECKPOINT_LEASE_ERROR"
@@ -51,7 +59,10 @@ def test_file_run_store_releases_run_lease_after_compare_and_set_save(
     second_store = FileAgentRunStore(tmp_path)
     assert first_store.save(_checkpoint()).is_ok()
 
-    updated = second_store.save(_checkpoint(status="paused"), expected_version=1)
+    updated = second_store.save(
+        _checkpoint(status="paused", pending_approval_id="approval-1"),
+        expected_version=1,
+    )
     loaded = first_store.load("run-lease-1")
 
     assert updated.is_ok()

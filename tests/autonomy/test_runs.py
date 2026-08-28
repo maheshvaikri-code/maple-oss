@@ -25,7 +25,14 @@ from maple.llm.registry import LLMProviderRegistry
 from maple.llm.types import LLMConfig, LLMResponse, ToolCall
 
 
-def make_checkpoint(run_id="run-1", *, status="running", result=None):
+def make_checkpoint(
+    run_id="run-1",
+    *,
+    status="running",
+    result=None,
+    pending_approval_id=None,
+    pending_input_id=None,
+):
     return AgentRunCheckpoint(
         run_id=run_id,
         agent_id="agent-1",
@@ -43,6 +50,8 @@ def make_checkpoint(run_id="run-1", *, status="running", result=None):
             },
         ),
         step_count=1,
+        pending_approval_id=pending_approval_id,
+        pending_input_id=pending_input_id,
         token_usage={"prompt_tokens": 2, "completion_tokens": 3, "total_tokens": 5},
         result=result,
     )
@@ -59,7 +68,7 @@ def test_in_memory_run_store_round_trips_and_uses_compare_and_set():
     assert loaded.is_ok()
     assert loaded.unwrap().to_dict() == saved.unwrap().to_dict()
 
-    changed = make_checkpoint(status="paused")
+    changed = make_checkpoint(status="paused", pending_approval_id="approval-1")
     conflict = store.save(changed, expected_version=0)
     assert conflict.is_err()
     assert conflict.unwrap_err()["errorType"] == "RUN_CHECKPOINT_CONFLICT"
@@ -104,6 +113,65 @@ def test_checkpoint_parser_does_not_execute_embedded_values():
 
     assert parsed.result == payload["result"]
     assert json.dumps(parsed.to_dict(), allow_nan=False)
+
+
+@pytest.mark.parametrize(
+    ("status", "pending_approval_id", "pending_input_id"),
+    [
+        ("paused", None, None),
+        ("running", "approval-1", None),
+        ("completed", None, "interaction-1"),
+        ("failed", "approval-1", None),
+        ("paused", "approval-1", "interaction-1"),
+    ],
+)
+def test_checkpoint_parser_rejects_inconsistent_pending_request_state(
+    status, pending_approval_id, pending_input_id
+):
+    payload = make_checkpoint(status="running").to_dict()
+    payload.update(
+        {
+            "status": status,
+            "pending_approval_id": pending_approval_id,
+            "pending_input_id": pending_input_id,
+        }
+    )
+
+    with pytest.raises(ValueError, match="pending"):
+        AgentRunCheckpoint.from_dict(payload)
+
+
+@pytest.mark.parametrize(
+    "pending_field",
+    ["pending_approval_id", "pending_input_id"],
+)
+def test_checkpoint_parser_accepts_one_pending_request_for_paused_run(
+    pending_field,
+):
+    payload = make_checkpoint(status="paused").to_dict()
+    payload[pending_field] = (
+        "approval-1" if pending_field == "pending_approval_id" else "interaction-1"
+    )
+
+    parsed = AgentRunCheckpoint.from_dict(payload)
+
+    assert parsed.status == "paused"
+    assert getattr(parsed, pending_field) == payload[pending_field]
+
+
+def test_run_store_rejects_inconsistent_pending_request_before_mutation():
+    store = InMemoryAgentRunStore()
+    assert store.save(make_checkpoint()).is_ok()
+    invalid = make_checkpoint(status="running", pending_input_id="interaction-1")
+
+    saved = store.save(invalid, expected_version=1)
+
+    assert saved.is_err()
+    assert saved.unwrap_err()["errorType"] == "RUN_CHECKPOINT_INVALID"
+    loaded = store.load("run-1").unwrap()
+    assert loaded is not None
+    assert loaded.status == "running"
+    assert loaded.pending_input_id is None
 
 
 class ScriptedProvider(LLMProvider):

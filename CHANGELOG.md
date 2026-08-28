@@ -10,6 +10,13 @@
 
 ### Additions
 
+- **Fail-closed durable run checkpoint state**: in-memory and file-backed
+  agent-run stores now reject checkpoints with both pending interaction IDs,
+  missing a pending ID while paused, or carrying one while running or
+  terminal. Rejection occurs before the existing checkpoint is mutated;
+  distributed recovery and exactly-once side effects remain outside the local
+  contract.
+
 - **Fail-closed episodic search**: `EpisodicMemory.search()` now bounds
   queries and result limits, rejects invalid caller input, propagates state
   errors, and rejects malformed stored histories instead of hiding failures.

@@ -78,6 +78,12 @@ claim and rolled back if that claim fails. This closes concurrent local
 over-admission for `max_concurrent_per_agent`; it is not a distributed quota,
 worker heartbeat, or hosted admission service.
 
+Durable run stores now reject contradictory pending-request state before
+mutation: paused checkpoints identify exactly one approval or human-input
+record, and non-paused checkpoints identify none. This protects the local
+resume cursor from ambiguous recovery; it does not add distributed recovery,
+remote request delivery, or exactly-once side effects.
+
 Failure acknowledgement follows the same local ownership rule: only the
 recorded agent can transition an `ASSIGNED` or `RUNNING` task to `FAILED`, and
 the scheduler releases capacity only after the queue accepts the error. Retry

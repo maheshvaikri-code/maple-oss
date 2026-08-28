@@ -49,6 +49,28 @@ def _valid_identifier(value: Any, field_name: str) -> Optional[Error]:
     return None
 
 
+def _validate_pending_request_state(
+    status: str,
+    pending_approval_id: Optional[str],
+    pending_input_id: Optional[str],
+) -> None:
+    """Reject checkpoint states that cannot be resumed deterministically."""
+
+    if pending_approval_id is not None and pending_input_id is not None:
+        raise ValueError(
+            "run checkpoint cannot contain both a pending approval and input"
+        )
+    has_pending_request = (
+        pending_approval_id is not None or pending_input_id is not None
+    )
+    if status == "paused" and not has_pending_request:
+        raise ValueError(
+            "paused run checkpoint must identify one pending approval or input"
+        )
+    if status != "paused" and has_pending_request:
+        raise ValueError("only paused run checkpoints may contain a pending request")
+
+
 def _copy_json(
     value: Any,
     *,
@@ -267,6 +289,7 @@ class AgentRunCheckpoint:
             pending_input_id, "pending_input_id"
         ):
             raise ValueError("invalid pending input ID")
+        _validate_pending_request_state(status, pending_approval_id, pending_input_id)
         session_id = data["session_id"]
         if session_id is not None and _valid_identifier(session_id, "session_id"):
             raise ValueError("invalid session ID")
