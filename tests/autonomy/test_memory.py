@@ -171,6 +171,58 @@ class TestEpisodicMemory:
         assert len(matches) >= 1
         assert any("error" in str(m).lower() for m in matches)
 
+    @pytest.mark.parametrize("query", [None, "bad\x7fquery", "\ud800", "x" * 4097])
+    def test_search_rejects_invalid_or_oversized_query(self, query):
+        store = StateStore(backend=StorageBackend.MEMORY)
+        em = EpisodicMemory(store)
+
+        result = em.search(query)
+
+        assert result.is_err()
+        assert result.unwrap_err()["errorType"] == "EPISODIC_QUERY_INVALID"
+
+    @pytest.mark.parametrize("limit", [0, -1, True, 1.5, 1_001])
+    def test_search_rejects_invalid_result_limit(self, limit):
+        store = StateStore(backend=StorageBackend.MEMORY)
+        em = EpisodicMemory(store)
+
+        result = em.search("query", limit=limit)
+
+        assert result.is_err()
+        assert result.unwrap_err()["errorType"] == "EPISODIC_SEARCH_LIMIT_INVALID"
+
+    def test_search_propagates_list_and_read_errors(self, monkeypatch):
+        store = StateStore(backend=StorageBackend.MEMORY)
+        em = EpisodicMemory(store)
+        list_error = {"errorType": "STATE_LIST_ERROR", "message": "list failed"}
+        get_error = {"errorType": "STATE_GET_ERROR", "message": "read failed"}
+
+        monkeypatch.setattr(
+            store, "list_keys", lambda prefix=None: Result.err(list_error)
+        )
+        listed = em.search("query")
+
+        monkeypatch.setattr(
+            store,
+            "list_keys",
+            lambda prefix=None: Result.ok(["episodic:task1"]),
+        )
+        monkeypatch.setattr(store, "get", lambda key: Result.err(get_error))
+        read = em.search("query")
+
+        assert listed.unwrap_err() == list_error
+        assert read.unwrap_err() == get_error
+
+    def test_search_rejects_malformed_stored_history(self):
+        store = StateStore(backend=StorageBackend.MEMORY)
+        em = EpisodicMemory(store)
+        store.set("episodic:task1", {"not": "a list"})
+
+        result = em.search("list")
+
+        assert result.is_err()
+        assert result.unwrap_err()["errorType"] == "EPISODIC_STATE_INVALID"
+
 
 class TestSemanticMemory:
     def test_store_and_recall(self):

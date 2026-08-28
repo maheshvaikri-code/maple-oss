@@ -34,6 +34,8 @@ _MAX_WORKING_MEMORY_KEY_BYTES = 256
 _MAX_EPISODIC_EVENTS_PER_TASK = 1_024
 _MAX_EPISODIC_EVENT_BYTES = 64 * 1024
 _MAX_EPISODIC_TASK_ID_BYTES = 256
+_MAX_EPISODIC_QUERY_BYTES = 4_096
+_MAX_EPISODIC_SEARCH_RESULTS = 1_000
 
 
 @dataclass
@@ -331,20 +333,64 @@ class EpisodicMemory:
         self, query: str, limit: int = 10
     ) -> Result[List[Dict[str, Any]], Dict[str, Any]]:
         """Search episodic memory by keyword."""
+        if not isinstance(query, str) or any(
+            unicodedata.category(character) == "Cc" for character in query
+        ):
+            return Result.err(
+                {
+                    "errorType": "EPISODIC_QUERY_INVALID",
+                    "message": "Episodic search queries must be bounded text.",
+                }
+            )
+        try:
+            query_bytes = query.encode("utf-8")
+        except UnicodeEncodeError:
+            return Result.err(
+                {
+                    "errorType": "EPISODIC_QUERY_INVALID",
+                    "message": "Episodic search queries must be bounded text.",
+                }
+            )
+        if len(query_bytes) > _MAX_EPISODIC_QUERY_BYTES:
+            return Result.err(
+                {
+                    "errorType": "EPISODIC_QUERY_INVALID",
+                    "message": "Episodic search queries must be bounded text.",
+                }
+            )
+        if (
+            isinstance(limit, bool)
+            or not isinstance(limit, int)
+            or not 1 <= limit <= _MAX_EPISODIC_SEARCH_RESULTS
+        ):
+            return Result.err(
+                {
+                    "errorType": "EPISODIC_SEARCH_LIMIT_INVALID",
+                    "message": "Episodic search limits must be from 1 to 1000.",
+                }
+            )
+        normalized_query = query.lower()
         keys_result = self.store.list_keys(prefix=self._prefix)
         if keys_result.is_err():
-            return Result.ok([])
+            return Result.err(keys_result.unwrap_err())
 
         matches: List[Dict[str, Any]] = []
         for key in keys_result.unwrap():
             episodes = self.store.get(key)
-            episodes_value = episodes.unwrap() if episodes.is_ok() else None
-            if episodes_value:
-                for ep in cast(List[Dict[str, Any]], episodes_value):
-                    if query.lower() in str(ep).lower():
-                        matches.append(ep)
-                        if len(matches) >= limit:
-                            return Result.ok(matches)
+            if episodes.is_err():
+                return Result.err(episodes.unwrap_err())
+            episodes_value = episodes.unwrap()
+            if episodes_value is None:
+                continue
+            if not isinstance(episodes_value, list) or not all(
+                isinstance(item, dict) for item in episodes_value
+            ):
+                return Result.err(self._state_error())
+            for ep in cast(List[Dict[str, Any]], episodes_value):
+                if normalized_query in str(ep).lower():
+                    matches.append(ep)
+                    if len(matches) >= limit:
+                        return Result.ok(matches)
         return Result.ok(matches)
 
 
