@@ -72,10 +72,22 @@ vetoed by the pre-existing dependency-audit/tooling governance condition.
 
 ## Package gate
 
-Pending final clean-archive validation at the release-evidence commit.
+The package was built from a file-backed `git archive` of committed HEAD
+`72aa035`, so untracked workspace files were excluded.
+
+```text
+source_archive_entries=779
+build_exit=0
+twine_exit=0
+wheel_entries=104
+sdist_entries=693
+install_exit=0
+isolated_import=passed
+```
 
 ## Release disposition
 
-The implementation is ready for local package validation and staged release
-review. No publication, deployment, cloud action, registry write, or website
-update was performed.
+The implementation is ready for staged release review. The dependency-
+governance veto above still prevents publication authorization. No
+publication, deployment, cloud action, registry write, or website update was
+performed.
