@@ -84,6 +84,13 @@ record, and non-paused checkpoints identify none. This protects the local
 resume cursor from ambiguous recovery; it does not add distributed recovery,
 remote request delivery, or exactly-once side effects.
 
+Sync and async durable resume also bind a pending approval or human-input
+record to its persisted tool-call placeholder before any handler execution or
+input consumption. A missing or mismatched placeholder fails with
+`RUN_PENDING_TOOL_MISSING` and preserves the request state. This is local
+correlation protection, not a globally unique request identity or distributed
+side-effect protocol.
+
 Failure acknowledgement follows the same local ownership rule: only the
 recorded agent can transition an `ASSIGNED` or `RUNNING` task to `FAILED`, and
 the scheduler releases capacity only after the queue accepts the error. Retry

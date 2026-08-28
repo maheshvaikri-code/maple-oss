@@ -1022,28 +1022,54 @@ class AutonomousAgent(Agent):
     def _replace_pending_tool_result(
         messages: Sequence[SessionMessage], result: ToolResult
     ) -> Result[List[ChatMessage], Dict[str, Any]]:
+        target_index = AutonomousAgent._pending_tool_result_index(
+            messages, result.tool_call_id
+        )
+        if target_index is None:
+            return Result.err(
+                {
+                    "errorType": "RUN_PENDING_TOOL_MISSING",
+                    "message": "The persisted pending tool result could not be located.",
+                }
+            )
         restored = [message.to_chat_message() for message in messages]
-        for index in range(len(restored) - 1, -1, -1):
-            message = restored[index]
+        restored[target_index] = ChatMessage(
+            role=ChatRole.TOOL,
+            content=result.content,
+            tool_call_id=result.tool_call_id,
+        )
+        return Result.ok(restored)
+
+    @staticmethod
+    def _pending_tool_result_index(
+        messages: Sequence[SessionMessage], tool_call_id: str
+    ) -> Optional[int]:
+        """Find the latest persisted tool placeholder for one request."""
+        for index in range(len(messages) - 1, -1, -1):
+            message = messages[index]
             if (
-                message.role == ChatRole.TOOL
-                and message.tool_call_id == result.tool_call_id
+                message.role == ChatRole.TOOL.value
+                and message.tool_call_id == tool_call_id
             ):
-                restored[index] = ChatMessage(
-                    role=ChatRole.TOOL,
-                    content=result.content,
-                    tool_call_id=result.tool_call_id,
-                )
-                return Result.ok(restored)
+                return index
+        return None
+
+    @classmethod
+    def _validate_pending_tool_target(
+        cls, messages: Sequence[SessionMessage], tool_call_id: str
+    ) -> Result[None, Dict[str, Any]]:
+        """Verify request identity before consuming or executing its result."""
+        if cls._pending_tool_result_index(messages, tool_call_id) is not None:
+            return Result.ok(None)
         return Result.err(
             {
                 "errorType": "RUN_PENDING_TOOL_MISSING",
-                "message": "The persisted approval tool result could not be located.",
+                "message": "The persisted pending tool result could not be located.",
             }
         )
 
     def resume_run(self, run_id: str) -> Result[Goal, Dict[str, Any]]:
-        """Resume a running or approval-paused durable agent run."""
+        """Resume a running or interaction-paused durable agent run."""
         if self._run_store is None:
             return Result.err(
                 {
@@ -1100,6 +1126,11 @@ class AutonomousAgent(Agent):
                         "message": "The pending approval request was not found.",
                     }
                 )
+            pending_target = self._validate_pending_tool_target(
+                messages, request.tool_call_id
+            )
+            if pending_target.is_err():
+                return Result.err(pending_target.unwrap_err())
             if request.status == "pending":
                 return Result.err(
                     {
@@ -1179,6 +1210,11 @@ class AutonomousAgent(Agent):
                         "message": "The pending human input request was not found.",
                     }
                 )
+            pending_target = self._validate_pending_tool_target(
+                messages, input_request.tool_call_id
+            )
+            if pending_target.is_err():
+                return Result.err(pending_target.unwrap_err())
             if input_request.status == "pending":
                 return Result.err(
                     {
@@ -3387,7 +3423,7 @@ Instructions:
             )
 
     async def resume_run_async(self, run_id: str) -> Result[Goal, Dict[str, Any]]:
-        """Resume a durable run through the async LLM and tool boundaries."""
+        """Resume an interaction-paused run through async boundaries."""
         if self._run_store is None:
             return Result.err(
                 {
@@ -3450,6 +3486,11 @@ Instructions:
                         "message": "The pending approval request was not found.",
                     }
                 )
+            pending_target = self._validate_pending_tool_target(
+                messages, request.tool_call_id
+            )
+            if pending_target.is_err():
+                return Result.err(pending_target.unwrap_err())
             if request.status == "pending":
                 return Result.err(
                     {
@@ -3540,6 +3581,11 @@ Instructions:
                         "message": "The pending human input request was not found.",
                     }
                 )
+            pending_target = self._validate_pending_tool_target(
+                messages, input_request.tool_call_id
+            )
+            if pending_target.is_err():
+                return Result.err(pending_target.unwrap_err())
             if input_request.status == "pending":
                 return Result.err(
                     {

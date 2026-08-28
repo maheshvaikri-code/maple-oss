@@ -10,6 +10,12 @@
 
 ### Additions
 
+- **Fail-closed pending-request tool correlation**: sync and async durable run
+  resume now verify a pending approval or human-input record's `tool_call_id`
+  against the persisted tool-result placeholder before executing or consuming
+  anything. A mismatch returns `RUN_PENDING_TOOL_MISSING` without side effects
+  or request consumption.
+
 - **Fail-closed durable run checkpoint state**: in-memory and file-backed
   agent-run stores now reject checkpoints with both pending interaction IDs,
   missing a pending ID while paused, or carrying one while running or

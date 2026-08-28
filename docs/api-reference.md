@@ -2215,6 +2215,12 @@ must identify none. A checkpoint cannot carry both pending IDs. This validation
 happens before an in-memory or file-backed store mutates its current record;
 it does not claim distributed recovery or exactly-once external effects.
 
+Before resuming a pending approval or human-input record, sync and async
+resume also verify that the record's `tool_call_id` still identifies a
+persisted tool-result placeholder. A mismatch returns
+`RUN_PENDING_TOOL_MISSING` before an approved handler executes or a responded
+input record is consumed, leaving both durable records available for repair.
+
 Both sync and async run paths checkpoint the initial message cursor and each
 completed ReAct step. When durable persistence is enabled, async tool calls in
 one model step are executed in order so an approval pause happens before later

@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from dataclasses import replace
 
 import pytest
 
@@ -291,6 +292,53 @@ def test_sync_run_pauses_for_approval_and_resumes_after_restart():
     assert final_checkpoint is not None
     assert final_checkpoint.status == "completed"
     assert final_checkpoint.pending_approval_id is None
+
+
+def test_sync_resume_rejects_mismatched_approval_before_execution():
+    run_store = InMemoryAgentRunStore()
+    approval_store = InMemoryApprovalStore()
+    calls = []
+    agent = make_agent(
+        [
+            LLMResponse(
+                content="request write",
+                tool_calls=[ToolCall("approval-target", "write_value", {})],
+                finish_reason="tool_calls",
+            )
+        ]
+    )
+    agent.set_run_store(run_store)
+    agent.set_approval_store(approval_store)
+    assert agent.register_tool(approval_tool(calls)).is_ok()
+
+    started = agent.pursue_goal("Write once", run_id="run-approval-target")
+    assert started.is_ok()
+    approval_id = started.unwrap().result["details"]["approval_id"]
+    checkpoint = run_store.load("run-approval-target").unwrap()
+    assert checkpoint is not None
+    tampered_messages = tuple(
+        (
+            replace(message, tool_call_id="wrong-target")
+            if message.tool_call_id == "approval-target"
+            else message
+        )
+        for message in checkpoint.messages
+    )
+    assert run_store.save(
+        replace(checkpoint, messages=tampered_messages),
+        expected_version=checkpoint.version,
+    ).is_ok()
+    assert agent.decide_approval(approval_id, approved=True).is_ok()
+
+    resumed = agent.resume_run("run-approval-target")
+
+    assert resumed.is_err()
+    assert resumed.unwrap_err()["errorType"] == "RUN_PENDING_TOOL_MISSING"
+    assert calls == []
+    assert approval_store.get(approval_id).unwrap().status == "approved"
+    assert run_store.load("run-approval-target").unwrap().pending_approval_id == (
+        approval_id
+    )
 
 
 def test_sync_approval_outcome_replays_after_checkpoint_save_failure():
@@ -887,6 +935,52 @@ def test_async_run_pauses_for_approval_and_resumes_after_restart():
     ]
 
 
+def test_async_resume_rejects_mismatched_approval_before_execution():
+    run_store = InMemoryAgentRunStore()
+    approval_store = InMemoryApprovalStore()
+    calls = []
+    agent = make_agent(
+        [
+            LLMResponse(
+                content="request write",
+                tool_calls=[ToolCall("async-approval-target", "write_value", {})],
+                finish_reason="tool_calls",
+            )
+        ]
+    )
+    agent.set_run_store(run_store)
+    agent.set_approval_store(approval_store)
+    assert agent.register_tool(approval_tool(calls)).is_ok()
+
+    started = asyncio.run(
+        agent.pursue_goal_async("Write once", run_id="async-approval-target")
+    )
+    assert started.is_ok()
+    approval_id = started.unwrap().result["details"]["approval_id"]
+    checkpoint = run_store.load("async-approval-target").unwrap()
+    assert checkpoint is not None
+    tampered_messages = tuple(
+        (
+            replace(message, tool_call_id="wrong-target")
+            if message.tool_call_id == "async-approval-target"
+            else message
+        )
+        for message in checkpoint.messages
+    )
+    assert run_store.save(
+        replace(checkpoint, messages=tampered_messages),
+        expected_version=checkpoint.version,
+    ).is_ok()
+    assert agent.decide_approval(approval_id, approved=True).is_ok()
+
+    resumed = asyncio.run(agent.resume_run_async("async-approval-target"))
+
+    assert resumed.is_err()
+    assert resumed.unwrap_err()["errorType"] == "RUN_PENDING_TOOL_MISSING"
+    assert calls == []
+    assert approval_store.get(approval_id).unwrap().status == "approved"
+
+
 def test_async_approval_outcome_replays_after_checkpoint_save_failure():
     class FailThirdSaveStore(InMemoryAgentRunStore):
         def __init__(self):
@@ -1099,6 +1193,50 @@ def test_sync_durable_human_input_pauses_and_resumes_after_restart():
     assert input_store.get(interaction_id).unwrap().status == "consumed"
 
 
+def test_sync_resume_rejects_mismatched_human_input_before_consume():
+    run_store = InMemoryAgentRunStore()
+    input_store = InMemoryHumanInputStore()
+    agent = make_agent(
+        [
+            LLMResponse(
+                content="ask for code",
+                tool_calls=[_human_input_call("input-target")],
+                finish_reason="tool_calls",
+            )
+        ]
+    )
+    agent.set_run_store(run_store)
+    agent.set_human_input_store(input_store)
+
+    started = agent.pursue_goal("Deploy safely", run_id="run-input-target")
+    assert started.is_ok()
+    interaction_id = started.unwrap().result["details"]["interaction_id"]
+    checkpoint = run_store.load("run-input-target").unwrap()
+    assert checkpoint is not None
+    tampered_messages = tuple(
+        (
+            replace(message, tool_call_id="wrong-target")
+            if message.tool_call_id == "input-target"
+            else message
+        )
+        for message in checkpoint.messages
+    )
+    assert run_store.save(
+        replace(checkpoint, messages=tampered_messages),
+        expected_version=checkpoint.version,
+    ).is_ok()
+    assert agent.respond_human_input(interaction_id, {"code": "green"}).is_ok()
+
+    resumed = agent.resume_run("run-input-target")
+
+    assert resumed.is_err()
+    assert resumed.unwrap_err()["errorType"] == "RUN_PENDING_TOOL_MISSING"
+    assert input_store.get(interaction_id).unwrap().status == "responded"
+    assert run_store.load("run-input-target").unwrap().pending_input_id == (
+        interaction_id
+    )
+
+
 def test_async_durable_human_input_rejection_resumes_as_typed_tool_error():
     run_store = InMemoryAgentRunStore()
     input_store = InMemoryHumanInputStore()
@@ -1132,6 +1270,52 @@ def test_async_durable_human_input_rejection_resumes_as_typed_tool_error():
     assert resumed.unwrap().status == "completed"
     assert resumed.unwrap().result == "do not deploy"
     assert input_store.get(interaction_id).unwrap().status == "consumed"
+
+
+def test_async_resume_rejects_mismatched_human_input_before_consume():
+    run_store = InMemoryAgentRunStore()
+    input_store = InMemoryHumanInputStore()
+    agent = make_agent(
+        [
+            LLMResponse(
+                content="ask for code",
+                tool_calls=[_human_input_call("async-input-target")],
+                finish_reason="tool_calls",
+            )
+        ]
+    )
+    agent.set_run_store(run_store)
+    agent.set_human_input_store(input_store)
+
+    started = asyncio.run(
+        agent.pursue_goal_async("Deploy safely", run_id="async-input-target")
+    )
+    assert started.is_ok()
+    interaction_id = started.unwrap().result["details"]["interaction_id"]
+    checkpoint = run_store.load("async-input-target").unwrap()
+    assert checkpoint is not None
+    tampered_messages = tuple(
+        (
+            replace(message, tool_call_id="wrong-target")
+            if message.tool_call_id == "async-input-target"
+            else message
+        )
+        for message in checkpoint.messages
+    )
+    assert run_store.save(
+        replace(checkpoint, messages=tampered_messages),
+        expected_version=checkpoint.version,
+    ).is_ok()
+    assert agent.respond_human_input(interaction_id, {"code": "green"}).is_ok()
+
+    resumed = asyncio.run(agent.resume_run_async("async-input-target"))
+
+    assert resumed.is_err()
+    assert resumed.unwrap_err()["errorType"] == "RUN_PENDING_TOOL_MISSING"
+    assert input_store.get(interaction_id).unwrap().status == "responded"
+    assert run_store.load("async-input-target").unwrap().pending_input_id == (
+        interaction_id
+    )
 
 
 def test_sync_durable_human_input_supports_bounded_follow_up_before_resume():
