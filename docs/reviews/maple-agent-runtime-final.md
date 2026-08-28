@@ -870,7 +870,7 @@ python -m compileall -q maple
 compile_exit=0
 
 git diff --check 474568d..HEAD
-clean
+scoped_diff_check=clean
 ```
 
 **Slice 175 review:** PASS for the implemented authenticated transfer
@@ -880,3 +880,25 @@ actionlint, and a fresh independent verifier session were unavailable in this
 tool context. No
 publication, deployment, cloud action, registry write, or website update was
 performed.
+
+Clean-archive packaging revalidation from committed `ca45cdd`:
+
+```text
+clean git archive HEAD: source_archive_entries=828
+python -m pytest -q --no-cov
+1567 passed, 1 skipped in 236.82s
+build_exit=0
+wheel_entries=106
+sdist_entries=742
+twine_exit=0
+install_exit=0
+isolated_import=passed
+version=1.1.3
+import_exit=0
+{"checks": {"core": true, "evaluation": true, "events": true, "execution": true, "interop": true, "retrieval": true, "server": true, "sessions": true}, "network": false, "ready": true, "status": "SUCCESS", "version": "1.1.3"}
+doctor_exit=0
+```
+
+The clean package evidence passes for the current committed tree. It is not
+release authorization: the candidate still requires a 1.1.4 version bump on
+clean `main`, human approval, and the remaining independent/security gates.

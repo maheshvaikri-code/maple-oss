@@ -879,8 +879,23 @@ The transfer tests cover full checkpoint export, restore identity and scope,
 terminal rejection, malformed input, destination CAS conflicts, legacy-store
 compatibility, and metadata-only receipts.
 
-The clean-archive build, isolated install/import, doctor result, and package
-smoke evidence will be appended once the final committed archive is rebuilt.
+The final committed archive also passed the package gates:
+
+```text
+clean git archive HEAD: source_archive_entries=828
+python -m pytest -q --no-cov
+1567 passed, 1 skipped in 236.82s
+build_exit=0
+wheel_entries=106
+sdist_entries=742
+twine_exit=0
+install_exit=0
+isolated_import=passed
+version=1.1.3
+import_exit=0
+{"checks": {"core": true, "evaluation": true, "events": true, "execution": true, "interop": true, "retrieval": true, "server": true, "sessions": true}, "network": false, "ready": true, "status": "SUCCESS", "version": "1.1.3"}
+doctor_exit=0
+```
 
 **Slice 175 QA status: PASS for the implemented local runtime boundary;
 overall release status remains CONDITIONAL / NOT PUBLISH-READY.** The current
