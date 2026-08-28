@@ -900,6 +900,7 @@ remote_target = RemoteHandoffTarget(
     "researcher",
     RunClient("https://agents.example", auth_token="host-token"),
     session_id="release-session",
+    use_handoff_id_as_idempotency_key=True,
 )
 handoff = create_handoff_tool(
     remote_target,
@@ -925,13 +926,22 @@ malformed, incomplete, and remote-failure outcomes become typed target
 failures, and raw remote error messages/results are not forwarded through the
 handoff error boundary.
 
+Set `use_handoff_id_as_idempotency_key=True` to send that same explicit
+`handoff_id` as the remote `idempotency_key` as well. The receiver must
+configure `RunServer(agent_invocation_store=...)`; matching retries then replay
+the detached bounded response without calling the handler again, while
+concurrent or different-content reuse fails closed. The option requires an
+explicit handoff ID and does not generate one. It is disabled by default so
+existing adapter calls and receivers retain their current wire behavior.
+
 The sync adapter checks cancellation before and after the request. Its async
 methods run the synchronous HTTP client in an executor so the event-loop
 caller is not blocked, but cancellation does not interrupt an already-running
-HTTP request. The client performs no retry; a crash after remote execution can
-still repeat a side effect, so this is bounded at-least-once coordination and
-not a distributed exactly-once protocol. Remote scheduling, push notification,
-remote durable resume, and identity federation remain separate contracts.
+HTTP request. The client performs no retry or waiting for a pending claim; TTL,
+eviction, crash windows, and external effects remain bounded at-least-once
+coordination rather than a distributed exactly-once protocol. Remote
+scheduling, push notification, remote durable resume, and identity federation
+remain separate contracts.
 
 ### Typed remote agent-run lifecycle
 

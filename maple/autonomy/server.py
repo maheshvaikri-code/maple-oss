@@ -3816,7 +3816,8 @@ class RemoteHandoffTarget:
 
     The target forwards bounded task/context data to a host-owned
     ``AgentRegistry``. It does not retry, persist payloads, or interrupt an
-    in-flight HTTP request when cancellation is requested.
+    in-flight HTTP request when cancellation is requested. Hosts may opt into
+    binding an explicit handoff ID to the remote invocation idempotency key.
     """
 
     def __init__(
@@ -3825,6 +3826,7 @@ class RemoteHandoffTarget:
         client: RunClient,
         *,
         session_id: Optional[str] = None,
+        use_handoff_id_as_idempotency_key: bool = False,
     ) -> None:
         identifier_error = self._validate_remote_identifier(agent_id, "agent_id")
         if identifier_error is not None:
@@ -3835,9 +3837,12 @@ class RemoteHandoffTarget:
             session_error = self._validate_remote_identifier(session_id, "session_id")
             if session_error is not None:
                 raise ValueError(session_error["message"])
+        if not isinstance(use_handoff_id_as_idempotency_key, bool):
+            raise ValueError("use_handoff_id_as_idempotency_key must be boolean")
         self.agent_id = agent_id
         self.client = client
         self.session_id = session_id
+        self.use_handoff_id_as_idempotency_key = use_handoff_id_as_idempotency_key
 
     @staticmethod
     def _validate_remote_identifier(value: Any, field: str) -> Optional[Error]:
@@ -3891,13 +3896,38 @@ class RemoteHandoffTarget:
                         "handoff_id must be bounded and control-free.",
                     )
                 )
-        remote = self.client.run_agent(
-            self.agent_id,
-            task,
-            context,
-            session_id=self.session_id,
-            run_id=handoff_id,
-        )
+        if self.use_handoff_id_as_idempotency_key:
+            if handoff_id is None:
+                return Result.err(
+                    _error(
+                        "REMOTE_HANDOFF_INPUT_INVALID",
+                        "handoff_id is required when remote idempotency binding is enabled.",
+                    )
+                )
+            key_result = normalize_agent_idempotency_key(handoff_id)
+            if key_result.is_err():
+                return Result.err(
+                    _error(
+                        "REMOTE_HANDOFF_INPUT_INVALID",
+                        "handoff_id cannot be used as a remote idempotency key.",
+                    )
+                )
+            remote = self.client.run_agent(
+                self.agent_id,
+                task,
+                context,
+                session_id=self.session_id,
+                run_id=handoff_id,
+                idempotency_key=key_result.unwrap(),
+            )
+        else:
+            remote = self.client.run_agent(
+                self.agent_id,
+                task,
+                context,
+                session_id=self.session_id,
+                run_id=handoff_id,
+            )
         if remote.is_err():
             return Result.err(
                 _error(

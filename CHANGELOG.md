@@ -10,6 +10,14 @@
 
 ### Additions
 
+- **Opt-in remote handoff idempotency binding**: `RemoteHandoffTarget` can
+  send an explicit persisted `handoff_id` as both the remote `run_id` and
+  `idempotency_key`, allowing a receiver configured with the bounded
+  invocation store to replay a matching response without a second handler
+  call. The flag is disabled by default and requires an explicit handoff ID;
+  no distributed coordination or exactly-once external-effect guarantee is
+  introduced.
+
 - **Bounded agent-invocation idempotency**: named-agent and capability-routed
   `RunClient` calls accept an optional bounded `idempotency_key`. A configured
   in-memory or atomic fenced file store claims before handler execution and
