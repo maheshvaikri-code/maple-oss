@@ -13,6 +13,7 @@ admission.
 
 - Focused scheduler/lifecycle regression: `31 passed in 1.36s`.
 - Full tracked task-management suite: `146 passed in 22.25s`.
+- Full tracked repository test manifest: `1379 passed, 1 skipped in 212.36s`.
 - Coverage includes physical scheduler rollback, duplicate ownership
   rejection, queue-side atomic assignment, and empty-owner validation.
 
@@ -41,8 +42,19 @@ cloud action, or website update was performed.
 
 ## Package evidence
 
-The final clean archive package evidence will be recorded after the release
-candidate is rebuilt from the documentation closure commit.
+The clean `git archive HEAD` package candidate built successfully as
+`maple-oss-1.1.3`:
+
+- `python -m build --wheel --sdist`: exit `0`;
+- wheel: `104` archive entries;
+- sdist: `636` archive entries;
+- `twine check`: both artifacts passed;
+- `pip install --no-deps --target ...`: exit `0`;
+- isolated export smoke: `clean_archive_scheduler_smoke=passed`;
+- workspace-only archive entries: `0`.
+
+The final exact-`HEAD` archive is rebuilt after this QA record and the release
+plan closure metadata are committed.
 
 ## QA decision
 
