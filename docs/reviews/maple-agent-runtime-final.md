@@ -838,3 +838,45 @@ python -m pytest -q --no-cov  (clean committed archive)
 **Slice 174 review:** PASS. No workflow behavior, credentials, runtime
 dependency, or external state was changed. The remaining release decision is
 the v1.1.4 candidate gate, not action provenance.
+
+## 2026-08-28 current revalidation — Slice 175 remote durable checkpoint transfer
+
+The authenticated checkpoint transfer boundary was reviewed across the
+server dispatcher, scope mapping, checkpoint parsing, identity checks,
+destination compare-and-set behavior, legacy-store compatibility, and the
+metadata-only restore receipt. Export is limited to `agent:restore`; restore
+does not invoke a handler and rejects malformed, cross-agent, terminal, and
+stale-version requests before mutating destination state.
+
+Review evidence:
+
+```text
+python -m pytest -q tests/autonomy/test_remote_checkpoint_restore.py tests/autonomy/test_server.py --no-cov
+55 passed in 31.82s
+
+python -m black --check maple/autonomy/server.py tests/autonomy/test_remote_checkpoint_restore.py
+exit=0; 2 files would be left unchanged.
+
+python -m isort --check-only maple/autonomy/server.py tests/autonomy/test_remote_checkpoint_restore.py
+exit=0; no output.
+
+python -m ruff check maple/autonomy/server.py tests/autonomy/test_remote_checkpoint_restore.py
+All checks passed!
+
+python -m mypy maple/autonomy/server.py tests/autonomy/test_remote_checkpoint_restore.py --follow-imports=skip
+Success: no issues found in 2 source files
+
+python -m compileall -q maple
+compile_exit=0
+
+git diff --check 474568d..HEAD
+clean
+```
+
+**Slice 175 review:** PASS for the implemented authenticated transfer
+contract. The current environment-wide `pip-audit --format json` run exited
+`1` with `Found 385 known vulnerabilities in 78 packages`; Gitleaks, Bandit,
+actionlint, and a fresh independent verifier session were unavailable in this
+tool context. No
+publication, deployment, cloud action, registry write, or website update was
+performed.

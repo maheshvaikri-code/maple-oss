@@ -862,3 +862,30 @@ overall release remains CONDITIONAL / NOT PUBLISH-READY because v1.1.4 has
 not been version-bumped or tagged, the workspace has preserved user changes,
 the dependency audit remains a governance veto, and independent review plus
 human publication approval are outstanding.
+
+## 2026-08-28 current QA revalidation — Slice 175 remote durable checkpoint transfer
+
+The complete workspace test manifest and changed-surface validation passed
+after the checkpoint export/restore implementation and hardening fix:
+
+```text
+python -m pytest -q
+1684 passed, 1 skipped in 288.93s (0:04:48)
+```
+
+The targeted transport regression set reported `55 passed in 31.82s`.
+Black, isort, Ruff, mypy, compileall, and the scoped whitespace check passed.
+The transfer tests cover full checkpoint export, restore identity and scope,
+terminal rejection, malformed input, destination CAS conflicts, legacy-store
+compatibility, and metadata-only receipts.
+
+The clean-archive build, isolated install/import, doctor result, and package
+smoke evidence will be appended once the final committed archive is rebuilt.
+
+**Slice 175 QA status: PASS for the implemented local runtime boundary;
+overall release status remains CONDITIONAL / NOT PUBLISH-READY.** The current
+environment-wide `pip-audit --format json` run exited `1` with `Found 385 known
+vulnerabilities in 78 packages`; Gitleaks, Bandit, actionlint, and the fresh
+independent verifier remain unavailable. Version 1.1.4 has not been cut, the
+workspace retains preserved user changes, and human publication authorization
+is still required.
