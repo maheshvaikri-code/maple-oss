@@ -965,3 +965,73 @@ state was changed.
 
 **Slice 176 QA status: PASS for the implemented boundary; overall release
 status remains CONDITIONAL / NOT PUBLISH-READY.**
+
+## 2026-08-28 current QA revalidation - Slice 177 remote approval push delivery
+
+Acceptance criteria were exercised through model, local-store, HTTP sender,
+receiver, and client tests. Coverage includes created/approved/denied events,
+file restart persistence, execution-result exclusion, event/status mismatch,
+post-persistence failure behavior, auth and `approval:notify` scope denial,
+malformed and oversized bodies, receiver no-mutation behavior, non-loopback
+HTTPS enforcement, invalid acknowledgements, and unavailable receiver
+configuration.
+
+```text
+python -m pytest -q tests/autonomy/test_remote_approval_notification.py --no-cov
+12 passed in 4.46s
+
+python -m pytest -q tests/autonomy/test_approval.py tests/autonomy/test_approval_leases.py tests/autonomy/test_server.py --no-cov
+61 passed in 21.11s
+
+python -m pytest -q --no-cov
+1705 passed, 1 skipped in 289.21s (0:04:49)
+
+python -m black --check maple/autonomy/approval.py maple/autonomy/server.py maple/autonomy/__init__.py maple/__init__.py tests/autonomy/test_remote_approval_notification.py
+5 files would be left unchanged.
+
+python -m isort --check-only maple/autonomy/approval.py maple/autonomy/server.py maple/autonomy/__init__.py maple/__init__.py tests/autonomy/test_remote_approval_notification.py
+exit=0
+
+python -m ruff check maple/autonomy/approval.py maple/autonomy/server.py maple/autonomy/__init__.py maple/__init__.py tests/autonomy/test_remote_approval_notification.py
+All checks passed!
+
+python -m mypy maple/autonomy/approval.py maple/autonomy/server.py tests/autonomy/test_remote_approval_notification.py --follow-imports=skip
+Success: no issues found in 3 source files
+
+python -m compileall -q maple tests/autonomy/test_remote_approval_notification.py
+compile_exit=0
+```
+
+The documented API construction example was executed:
+
+```text
+FileApprovalStore
+```
+
+Clean archive/package verification was run from exact committed `f53e95f`:
+
+```text
+clean git archive HEAD: source_archive_entries=836
+python -m pytest -q --no-cov
+1588 passed, 1 skipped in 258.43s (0:04:18)
+wheel_entries=106
+sdist_entries=750
+twine_exit=0
+install_exit=0
+isolated_import=passed
+version=1.1.3
+import_exit=0
+{"checks": {"core": true, "evaluation": true, "events": true, "execution": true, "interop": true, "retrieval": true, "server": true, "sessions": true}, "network": false, "ready": true, "status": "SUCCESS", "version": "1.1.3"}
+doctor_exit=0
+```
+
+Adversarial result: malformed, enormous, unauthorized, out-of-scope,
+event/status-inconsistent, execution-result-bearing, invalid-acknowledgement,
+non-HTTPS non-loopback, callback rejection, and future-field payload cases
+behaved as specified. No new unresolved bug remains. The environment-wide
+dependency audit remains a governance veto (`pip-audit` exit `1`, 385 findings
+in 78 packages); Gitleaks, Bandit, actionlint, and the fresh independent
+verifier were unavailable. No external state was changed.
+
+**Slice 177 QA status: PASS for the implemented boundary; overall release
+status remains CONDITIONAL / NOT PUBLISH-READY.**

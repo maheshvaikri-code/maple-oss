@@ -6,10 +6,10 @@
 
 | # | Slice | Role | Files touched | Proven by (tests) | Status |
 |---|-------|------|---------------|-------------------|--------|
-| 1 | Add strict approval notification model and local notifier hooks | Backend / Security | `maple/autonomy/approval.py`, approval exports | Round-trip, event/status invariants, create/decide persistence and failure behavior | todo |
-| 2 | Add one-shot HTTP sender and authenticated receiver/client route | Backend / Interop / Security | `maple/autonomy/approval.py`, `maple/autonomy/server.py` | Auth/scope, bounds, callback ordering, acknowledgement and failure mapping | todo |
-| 3 | Prove compatibility and adversarial behavior | QA / Backend | approval and remote notification tests | Existing lifecycle/lease tests plus malformed, oversized, unauthorized, and no-mutation cases | todo |
-| 4 | Publish public contract and package evidence | Tech Writer / Release | README, API/parity/changelog, QA/review/release artifacts | Static checks, full suite, clean archive and isolated package smoke | todo |
+| 1 | Add strict approval notification model and local notifier hooks | Backend / Security | `maple/autonomy/approval.py`, approval exports | Round-trip, event/status invariants, create/decide persistence and failure behavior | complete |
+| 2 | Add one-shot HTTP sender and authenticated receiver/client route | Backend / Interop / Security | `maple/autonomy/approval.py`, `maple/autonomy/server.py` | Auth/scope, bounds, callback ordering, acknowledgement and failure mapping | complete |
+| 3 | Prove compatibility and adversarial behavior | QA / Backend | approval and remote notification tests | Existing lifecycle/lease tests plus malformed, oversized, unauthorized, and no-mutation cases | complete |
+| 4 | Publish public contract and package evidence | Tech Writer / Release | README, API/parity/changelog, QA/review/release artifacts | Static checks, full suite, clean archive and isolated package smoke | complete |
 
 ## Threat sketch
 
@@ -32,5 +32,7 @@ leases, and decision semantics remain intact.
 
 ## Status
 
-Design and threat model filed; implementation pending. No external state,
-publication, cloud action, or website update is in scope.
+Done with evidence: implementation, regressions, public documentation, QA,
+review, and clean archive packaging. Next: continue the remaining P0 parity
+gaps. No external state, publication, cloud action, or website update is in
+scope.

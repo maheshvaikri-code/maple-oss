@@ -949,3 +949,60 @@ update was performed.
 **Slice 176 review:** PASS for the implemented local/remote human-input
 notification boundary. Overall release status remains CONDITIONAL / NOT
 PUBLISH-READY pending the documented release gates and human authorization.
+
+## 2026-08-28 current revalidation - Slice 177 remote approval push delivery
+
+The changed approval boundary was reviewed for event/status invariants,
+execution-result exclusion, post-persistence notification ordering, distinct
+scope mapping, callback-only receiver behavior, bounded HTTP handling, and
+one-attempt sender semantics. No correctness or security boundary defect was
+found after the focused regression run and static checks.
+
+Review evidence on the committed candidate `f53e95f`:
+
+```text
+git diff --check f559fd3..HEAD
+scoped_diff_check=clean
+
+python -m pytest -q tests/autonomy/test_remote_approval_notification.py --no-cov
+12 passed in 4.46s
+
+python -m pytest -q tests/autonomy/test_approval.py tests/autonomy/test_approval_leases.py tests/autonomy/test_server.py --no-cov
+61 passed in 21.11s
+
+python -m black --check maple/autonomy/approval.py maple/autonomy/server.py maple/autonomy/__init__.py maple/__init__.py tests/autonomy/test_remote_approval_notification.py
+5 files would be left unchanged.
+
+python -m isort --check-only maple/autonomy/approval.py maple/autonomy/server.py maple/autonomy/__init__.py maple/__init__.py tests/autonomy/test_remote_approval_notification.py
+exit=0
+
+python -m ruff check maple/autonomy/approval.py maple/autonomy/server.py maple/autonomy/__init__.py maple/__init__.py tests/autonomy/test_remote_approval_notification.py
+All checks passed!
+
+python -m mypy maple/autonomy/approval.py maple/autonomy/server.py tests/autonomy/test_remote_approval_notification.py --follow-imports=skip
+Success: no issues found in 3 source files
+
+python -m compileall -q maple tests/autonomy/test_remote_approval_notification.py
+compile_exit=0
+
+python -m pytest -q --no-cov
+1705 passed, 1 skipped in 289.21s (0:04:49)
+```
+
+The review found and fixed one implementation defect during development: the
+new in-memory approval `create()` path initially returned `None` after adding
+the notifier branch. The focused test reproduced it, the return-path fix was
+made, and the 12-test slice plus the 61-test approval/server compatibility set
+were re-run successfully. The regression test remains in
+`tests/autonomy/test_remote_approval_notification.py`.
+
+Security and governance status: the current environment-wide
+`pip-audit --format json` run exited `1` with `Found 385 known vulnerabilities
+in 78 packages`; Gitleaks, Bandit, actionlint, and a fresh independent
+verifier session were unavailable in this tool context. No dependency was
+added. No publication, deployment, cloud action, registry write, or website
+update was performed.
+
+**Slice 177 review:** PASS for the implemented local/remote approval
+notification boundary. Overall release status remains CONDITIONAL / NOT
+PUBLISH-READY pending the documented release gates and human authorization.
