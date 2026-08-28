@@ -307,8 +307,10 @@ class MemoryManager:
             return Result.err(result.unwrap_err())
 
         summary = result.unwrap().content or ""
-        self.episodic.record(
+        archive_result = self.episodic.record(
             "memory_summary", {"summary": summary, "entries_count": len(context)}
         )
+        if archive_result.is_err():
+            return Result.err(archive_result.unwrap_err())
         self.working.clear()
         return Result.ok(summary)

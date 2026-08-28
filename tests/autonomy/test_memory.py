@@ -9,6 +9,8 @@ from maple.autonomy.memory import (
     SemanticMemory,
     WorkingMemory,
 )
+from maple.core.result import Result
+from maple.llm.types import LLMResponse
 from maple.state.store import StateStore, StorageBackend
 
 
@@ -230,6 +232,31 @@ class TestMemoryManager:
         result = mm.summarize_and_archive(llm_provider="fake")
         assert result.is_ok()
         assert "nothing" in result.unwrap()
+
+    def test_summarize_preserves_working_memory_when_archive_fails(self, monkeypatch):
+        mm = MemoryManager()
+        mm.working.add("k1", "retain this context")
+
+        class FakeProvider:
+            def complete(self, messages):
+                return Result.ok(LLMResponse(content="summary"))
+
+        archive_error = {
+            "errorType": "MEMORY_ARCHIVE_FAILED",
+            "message": "persist failed",
+        }
+        monkeypatch.setattr(
+            mm.episodic,
+            "record",
+            lambda task_id, event: Result.err(archive_error),
+        )
+
+        result = mm.summarize_and_archive(llm_provider=FakeProvider())
+
+        assert result.is_err()
+        assert result.unwrap_err() == archive_error
+        assert [entry["key"] for entry in mm.working.get_context()] == ["k1"]
+        assert mm.working.token_usage > 0
 
 
 class TestMemoryEntry:
