@@ -49,6 +49,12 @@ Episodic keyword search now bounds query size and result count and propagates
 store or malformed-history errors. It remains local keyword matching rather
 than semantic retrieval or a distributed index.
 
+The local `TaskQueue` now validates a bounded `1..100,000` capacity shared by
+all priorities, discards stale cancelled or completed tuples before assignment,
+and preserves failed-task state when a requeue is rejected for capacity. This
+is an in-process admission boundary; durable queues, distributed scheduling,
+remote workers, and hosted scheduler ownership remain separate.
+
 Working-memory admission is also bounded in the local runtime: budgets accept
 1..1,000,000 estimated tokens, storage retains at most 4,096 entries, keys are
 limited to 256 UTF-8 bytes, and invalid or non-fitting entries fail before

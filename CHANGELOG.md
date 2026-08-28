@@ -14,6 +14,11 @@
   queries and result limits, rejects invalid caller input, propagates state
   errors, and rejects malformed stored histories instead of hiding failures.
 
+- **Bounded global task queue admission**: `TaskQueue` now validates a
+  `1..100,000` capacity and enforces it across all priority queues. Cancelled
+  or completed stale queue tuples are discarded before assignment, and a full
+  requeue fails before changing the task state.
+
 - **Bounded episodic memory**: `EpisodicMemory` now validates bounded task
   IDs and serialized event size, retains a configurable newest-event window
   per task, rejects malformed or oversized records before persistence, and

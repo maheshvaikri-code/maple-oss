@@ -40,6 +40,8 @@ Most agent frameworks give you either **infrastructure** (messaging, security, f
 - **Bounded Episodic Memory (preview)** - Episodic records are bounded to 1,024 events per task and 64 KiB per serialized event by default; invalid or oversized records fail before persistence, while accepted records retain the newest bounded window.
 - **Fail-Closed Episodic Search (preview)** - Episodic keyword search bounds query size and result count, rejects invalid limits, and propagates store and malformed-history errors instead of silently returning incomplete results.
 
+- **Bounded Global Task Queue Admission (preview)** - `TaskQueue` validates a `1..100,000` capacity and enforces one queued-item budget across all priorities; stale cancelled or completed tuples are discarded before assignment, and full requeues leave task state unchanged.
+
 - **ReAct Reasoning Loop** — Agents think, act, and reflect autonomously. Built-in backtracking when approaches fail.
 - **Pluggable LLM Providers** — OpenAI, Anthropic Claude, or any compatible API (vLLM, Ollama, Together AI).
 - **Multimodal Image Inputs (preview)** — Build bounded `ChatMessage` content from text and validated `ImageContent` parts. HTTPS image URLs work with OpenAI-compatible adapters; base64 data URIs work with both built-in adapters. MAPLE never fetches or executes image sources, and provider capability routing can require `image_input=True`.

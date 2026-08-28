@@ -518,6 +518,39 @@ class CircuitBreaker:
         """Circuit breaker pattern for preventing cascading failures."""
 ```
 
+## Task Management (preview)
+
+`TaskQueue` is the local priority-aware task admission and assignment surface.
+Its constructor accepts an integer capacity from `1` through `100,000`. The
+capacity is global across `CRITICAL`, `HIGH`, `NORMAL`, `LOW`, and
+`BACKGROUND`; it is not multiplied by the number of priority queues.
+
+```python
+from maple.task_management.task_queue import TaskPriority, TaskQueue
+
+queue = TaskQueue(max_queue_size=2)
+first = queue.submit_task("research", {"query": "MAPLE"}, TaskPriority.HIGH)
+second = queue.submit_task("summarize", {"text": "..."})
+overflow = queue.submit_task("extra", {})
+
+assert first.is_ok() and second.is_ok()
+assert overflow.is_err()  # Queue is full
+
+queue.start()
+try:
+    assigned = queue.get_next_task(timeout_seconds=0.1)
+finally:
+    queue.stop()
+```
+
+The public queue methods use one lock for admission, assignment, status, and
+requeue state. A cancelled or completed task whose physical priority-queue
+tuple has not yet been removed is treated as stale and never assigned. A
+requeue rejected by the global capacity check leaves the failed task's status,
+retry count, and error unchanged. This is an in-process queue contract; it
+does not provide durable queue storage, distributed worker ownership, hosted
+scheduling, force cancellation, or exactly-once external effects.
+
 ## Trusted Local Execution (preview)
 
 `TrustedLocalExecutor` is an explicit boundary for trusted Python handlers. It
