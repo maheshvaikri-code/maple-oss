@@ -10,6 +10,13 @@
 
 ### Additions
 
+- **Native autonomous-agent remote transport adapter**: `AutonomousAgentRemoteAdapter`
+  binds a native agent's caller-owned `AgentRunStore` to `AgentRegistry` and
+  registers sanitized start/resume callbacks for authenticated remote runs.
+  The adapter does not synthesize or transfer checkpoints, infer cancellation,
+  add retries, or claim distributed routing, scheduling, push delivery, or
+  exactly-once effects.
+
 - **Typed remote agent-run lifecycle**: additive `RunClient` start, resume,
   and cooperative-cancel methods now normalize authenticated remote envelopes
   into validated `AgentRun` values. Existing raw dictionary methods remain

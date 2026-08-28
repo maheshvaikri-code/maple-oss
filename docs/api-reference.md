@@ -967,6 +967,49 @@ available for callers that need the full wire envelope. This is response
 normalization only: it does not add remote checkpoint persistence, retries,
 scheduling, push notification, identity federation, or exactly-once effects.
 
+### Native autonomous-agent remote adapter
+
+`AutonomousAgentRemoteAdapter` removes the repeated callback glue needed to
+expose a native autonomous runtime through `AgentRegistry`. It binds the
+caller-owned run store through the agent's public setter, then registers native
+start and durable resume callbacks:
+
+```python
+from maple import (
+    AgentRegistry,
+    AutonomousAgentRemoteAdapter,
+    FileAgentRunStore,
+    RunServer,
+    WorkflowRegistry,
+)
+
+run_store = FileAgentRunStore(".maple-runs")
+registry = AgentRegistry()
+adapter = AutonomousAgentRemoteAdapter(native_agent, run_store=run_store)
+adapter.register(registry)
+
+with RunServer(
+    WorkflowRegistry(),
+    agent_registry=registry,
+    agent_run_store=run_store,
+    auth_token="agent-token",
+) as server:
+    # RunClient.run_agent_typed(...) starts the native agent, and
+    # RunClient.resume_agent_run_typed(...) delegates to native_agent.resume_run.
+    pass
+```
+
+`native_agent` must expose the native `agent_id`, `set_run_store`,
+`pursue_goal_with_context`, and `resume_run` methods. The same store instance
+must be bound to the native agent and passed to `RunServer` for remote
+inspection. The adapter verifies goal/run identity, accepts only completed or
+paused results, bounds JSON result data, and converts native errors or
+exceptions to generic `AGENT_RUNTIME_ERROR` responses. A cancel callback is
+registered only when the host supplies one explicitly; there is no universal
+force-free cancellation operation. Checkpoint transfer, distributed routing,
+automatic retries, scheduling, push notifications, identity federation, and
+exactly-once effects remain separate contracts.
+
 ### Manager-style agent-as-tool delegation
 
 `create_agent_tool` exposes a specialist as a normal `Tool` while the calling

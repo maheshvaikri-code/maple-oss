@@ -166,7 +166,10 @@ JSON-safe results, and handler exceptions are bounded and typed. A configured
 cooperative cancellation through the same normalized result envelope. The
 additive `run_agent_typed()`, `resume_agent_run_typed()`, and
 `cancel_agent_run_typed()` methods now return validated `AgentRun` values while
-the raw dictionary methods remain compatible.
+the raw dictionary methods remain compatible. `AutonomousAgentRemoteAdapter`
+now binds a native agent's caller-owned run store and registers start/resume
+callbacks with the same registry; checkpoint contents remain on the host and
+are never transferred by the adapter.
 Messages and reasoning steps stay off-wire. Token propagation, checkpoint
 mutation, hard termination, scheduling, retries, principal scopes, remote
 event aggregation, and exactly-once effects remain host-owned or deferred.
