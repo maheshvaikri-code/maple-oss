@@ -1,5 +1,7 @@
 """Tests for deterministic agent evaluation."""
 
+import asyncio
+
 import pytest
 
 from maple.autonomy.evaluation import (
@@ -154,6 +156,66 @@ def test_evaluation_judge_receives_redacted_bounded_output_and_can_fail_case():
     assert observed == [{"status": "ok", "api_key": "[REDACTED]"}]
     assert result.judge_score == 0.25
     assert result.judge_rationale == "contains api_key"
+
+
+def test_async_evaluation_awaits_runner_and_judge_with_redacted_observation():
+    case = EvalCase(
+        "async-judge",
+        "input",
+        output_schema={"type": "object", "required": ["answer"]},
+        expected_tool_names=("calculator",),
+    )
+    observed = []
+    calls = []
+
+    async def runner(value):
+        calls.append(value)
+        return EvalObservation(
+            {"answer": 4, "api_key": "secret"},
+            ("calculator",),
+        )
+
+    async def judge(fixture, observation):
+        observed.append(observation)
+        return EvalJudgeResult(0.9, True, "bounded and correct")
+
+    report = asyncio.run(EvaluationHarness().run_async([case], runner, judge=judge))
+
+    assert report.is_ok()
+    result = report.unwrap().results[0]
+    assert calls == ["input"]
+    assert result.passed
+    assert result.score == 1.0
+    assert result.actual_tool_names == ("calculator",)
+    assert result.judge_score == pytest.approx(0.9)
+    assert observed[0].output == {"answer": 4, "api_key": "[REDACTED]"}
+    assert observed[0].tool_names == ("calculator",)
+
+
+def test_async_evaluation_isolates_runner_failure_and_does_not_judge_it():
+    cases = [
+        EvalCase("pass", "pass", expected_output="ok"),
+        EvalCase("fail", "fail", expected_output="ok"),
+    ]
+    judged = []
+
+    async def runner(value):
+        if value == "fail":
+            raise RuntimeError("runner details")
+        return "ok"
+
+    async def judge(fixture, observation):
+        judged.append(fixture.case_id)
+        return EvalJudgeResult(1.0, True)
+
+    report = asyncio.run(EvaluationHarness().run_async(cases, runner, judge=judge))
+
+    assert report.is_ok()
+    results = report.unwrap().results
+    assert results[0].passed
+    assert results[0].judge_score == 1.0
+    assert results[1].errors[0]["errorType"] == "EVAL_RUNNER_EXCEPTION"
+    assert judged == ["pass"]
 
 
 def test_evaluation_judge_errors_and_invalid_results_fail_closed():

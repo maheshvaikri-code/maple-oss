@@ -10,6 +10,12 @@
 
 ### Additions
 
+- **Bounded async evaluation judges**: `EvaluationHarness.run_async(...)` now
+  accepts synchronous or awaitable runners and host-owned judges in deterministic
+  case order, reusing the existing validation/redaction bounds and preserving
+  typed per-case failures. Provider selection, retries, calibration, and hosted
+  evaluation remain outside the contract.
+
 - **Bounded approval trace correlation**: durable approval requests now retain
   optional bounded `trace_id`/`span_id` context from their creating model span;
   pending errors and normal sync/async tool lifecycle events expose the local

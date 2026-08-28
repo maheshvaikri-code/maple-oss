@@ -1272,6 +1272,45 @@ individual case with typed errors. MAPLE does not invoke or retry a model
 provider, calibrate scores, or claim semantic faithfulness; provider choice,
 rubric, privacy, and repeatability remain host-owned.
 
+Use `EvaluationHarness.run_async(...)` when the runner or judge is awaitable.
+Both callbacks may also be synchronous. Cases run sequentially in fixture
+order, and each runner result passes through the same deterministic checks,
+redaction, and size bounds before the judge sees it. The judge receives the
+redacted `EvalObservation`, including bounded tool names and trajectory, and
+its pass/fail result contributes one additional check. No provider selection,
+retry, calibration, raw-observation persistence, or hosted evaluation is
+implied.
+
+```python
+import asyncio
+
+from maple import EvalCase, EvalJudgeResult, EvalObservation, EvaluationHarness
+
+
+async def evaluate():
+    async def runner(value):
+        return EvalObservation({"answer": "ready"}, ("search",))
+
+    async def judge(fixture, observation):
+        return EvalJudgeResult(score=0.9, passed=True)
+
+    return await EvaluationHarness().run_async(
+        [
+            EvalCase(
+                "async-lookup",
+                {"query": "MAPLE"},
+                output_schema={"type": "object", "required": ["answer"]},
+                expected_tool_names=("search",),
+            )
+        ],
+        runner,
+        judge=judge,
+    )
+
+
+report = asyncio.run(evaluate())
+```
+
 Retrieval quality can be evaluated separately from answer generation with
 bounded golden source URIs. `run_retrieval` accepts lexical
 `RetrievalHit` or vector `VectorRetrievalHit` values, deduplicates source URIs,

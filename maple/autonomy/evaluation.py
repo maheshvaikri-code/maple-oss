@@ -2,12 +2,24 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 import math
 import re
 import time
-from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple, Union
+from dataclasses import dataclass, field, replace
+from typing import (
+    Any,
+    Awaitable,
+    Callable,
+    Dict,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+)
 
 from ..core.result import Result
 from .contracts import validate_json_schema
@@ -462,9 +474,10 @@ class EvalJudgeResult:
         return None
 
 
-EvalJudge = Callable[
-    [EvalCase, EvalObservation],
-    Union[EvalJudgeResult, Result[EvalJudgeResult, Error]],
+EvalJudgeValue = Union[EvalJudgeResult, Result[EvalJudgeResult, Error]]
+EvalJudge = Callable[[EvalCase, EvalObservation], EvalJudgeValue]
+AsyncEvalJudge = Callable[
+    [EvalCase, EvalObservation], Union[EvalJudgeValue, Awaitable[EvalJudgeValue]]
 ]
 
 
@@ -505,6 +518,7 @@ class EvalResult:
     judge_score: Optional[float] = None
     judge_rationale: Optional[str] = None
     actual_trajectory: Tuple[EvalTrajectoryStep, ...] = ()
+    actual_tool_names: Tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -547,6 +561,7 @@ class EvalReport:
                     "fixture_version": result.fixture_version,
                     "judge_score": result.judge_score,
                     "judge_rationale": result.judge_rationale,
+                    "actual_tool_names": list(result.actual_tool_names),
                     "actual_trajectory": [
                         step.to_dict() for step in result.actual_trajectory
                     ],
@@ -633,6 +648,28 @@ class EvaluationHarness:
         return safe if isinstance(safe, str) else None
 
     @staticmethod
+    def _normalize_judge_result(value: Any) -> Result[EvalJudgeResult, Error]:
+        if isinstance(value, Result):
+            if value.is_err():
+                return Result.err(
+                    {
+                        "errorType": "EVAL_JUDGE_ERROR",
+                        "message": "judge returned an error.",
+                    }
+                )
+            candidate = value.unwrap()
+            if isinstance(candidate, EvalJudgeResult):
+                return Result.ok(candidate)
+        elif isinstance(value, EvalJudgeResult):
+            return Result.ok(value)
+        return Result.err(
+            {
+                "errorType": "EVAL_JUDGE_RESULT_INVALID",
+                "message": "judge must return an EvalJudgeResult.",
+            }
+        )
+
+    @staticmethod
     def _valid_tool_names(value: Any) -> bool:
         return (
             isinstance(value, tuple)
@@ -657,6 +694,47 @@ class EvaluationHarness:
             )
         )
 
+    def _validate_run_inputs(
+        self,
+        cases: Sequence[EvalCase],
+        runner: Callable[[Any], Any],
+        judge: Optional[Callable[..., Any]],
+    ) -> Optional[Error]:
+        if (
+            not isinstance(self.max_cases, int)
+            or isinstance(self.max_cases, bool)
+            or self.max_cases <= 0
+        ):
+            return {
+                "errorType": "EVAL_CONFIG_INVALID",
+                "message": "max_cases must be positive.",
+            }
+        if (
+            not isinstance(self.max_value_bytes, int)
+            or isinstance(self.max_value_bytes, bool)
+            or self.max_value_bytes <= 0
+        ):
+            return {
+                "errorType": "EVAL_CONFIG_INVALID",
+                "message": "max_value_bytes must be positive.",
+            }
+        if not callable(runner):
+            return {
+                "errorType": "EVAL_INPUT_INVALID",
+                "message": "runner must be callable.",
+            }
+        if judge is not None and not callable(judge):
+            return {
+                "errorType": "EVAL_INPUT_INVALID",
+                "message": "judge must be callable.",
+            }
+        if len(cases) > self.max_cases:
+            return {
+                "errorType": "EVAL_CASE_LIMIT",
+                "message": "case count exceeds the limit.",
+            }
+        return None
+
     def run(
         self,
         cases: Sequence[EvalCase],
@@ -670,49 +748,9 @@ class EvaluationHarness:
         ``EvalJudgeResult`` directly or through ``Result``. MAPLE does not
         select a provider, retry a judge, or claim semantic faithfulness.
         """
-        if (
-            not isinstance(self.max_cases, int)
-            or isinstance(self.max_cases, bool)
-            or self.max_cases <= 0
-        ):
-            return Result.err(
-                {
-                    "errorType": "EVAL_CONFIG_INVALID",
-                    "message": "max_cases must be positive.",
-                }
-            )
-        if (
-            not isinstance(self.max_value_bytes, int)
-            or isinstance(self.max_value_bytes, bool)
-            or self.max_value_bytes <= 0
-        ):
-            return Result.err(
-                {
-                    "errorType": "EVAL_CONFIG_INVALID",
-                    "message": "max_value_bytes must be positive.",
-                }
-            )
-        if not callable(runner):
-            return Result.err(
-                {
-                    "errorType": "EVAL_INPUT_INVALID",
-                    "message": "runner must be callable.",
-                }
-            )
-        if judge is not None and not callable(judge):
-            return Result.err(
-                {
-                    "errorType": "EVAL_INPUT_INVALID",
-                    "message": "judge must be callable.",
-                }
-            )
-        if len(cases) > self.max_cases:
-            return Result.err(
-                {
-                    "errorType": "EVAL_CASE_LIMIT",
-                    "message": "case count exceeds the limit.",
-                }
-            )
+        input_error = self._validate_run_inputs(cases, runner, judge)
+        if input_error is not None:
+            return Result.err(input_error)
 
         results: List[EvalResult] = []
         for case in cases:
@@ -939,9 +977,132 @@ class EvaluationHarness:
                     judge_score=judge_score,
                     judge_rationale=judge_rationale,
                     actual_trajectory=tuple(safe_trajectory),
+                    actual_tool_names=tuple(tool_names),
                 )
             )
         return Result.ok(EvalReport(results=tuple(results)))
+
+    async def run_async(
+        self,
+        cases: Sequence[EvalCase],
+        runner: Callable[[Any], Any],
+        judge: Optional[AsyncEvalJudge] = None,
+    ) -> Result[EvalReport, Error]:
+        """Run bounded cases with awaitable runners and provider-neutral judges.
+
+        The runner and judge may be synchronous or awaitable. Cases are
+        evaluated sequentially to preserve deterministic fixture order. Runner
+        results are passed through the same synchronous validation/redaction
+        path, and a judge sees only the bounded redacted observation retained
+        in the report. MAPLE does not select a provider, retry a callback, or
+        claim hosted evaluation semantics.
+        """
+        input_error = self._validate_run_inputs(cases, runner, judge)
+        if input_error is not None:
+            return Result.err(input_error)
+        for case in cases:
+            case_error = case.validate()
+            if case_error is not None:
+                return Result.err(case_error)
+
+        updated_results: List[EvalResult] = []
+        for case in cases:
+            try:
+                value = runner(case.input)
+                if inspect.isawaitable(value):
+                    value = await value
+                failure: Optional[Exception] = None
+            except Exception as exc:
+                value = None
+                failure = exc
+
+            def cached_runner(
+                _: Any, value: Any = value, failure: Optional[Exception] = failure
+            ) -> Any:
+                if failure is not None:
+                    raise failure
+                return value
+
+            base_result = self.run([case], cached_runner)
+            if base_result.is_err():
+                return Result.err(base_result.unwrap_err())
+            result = base_result.unwrap().results[0]
+            if judge is None:
+                updated_results.append(result)
+                continue
+            if any(
+                error.get("errorType")
+                in {
+                    "EVAL_RUNNER_ERROR",
+                    "EVAL_RUNNER_EXCEPTION",
+                    "EVAL_OBSERVATION_INVALID",
+                }
+                for error in result.errors
+            ):
+                updated_results.append(result)
+                continue
+
+            expected_checks = sum(
+                (
+                    case.expected_output is not _UNSET,
+                    case.output_schema is not None,
+                    bool(case.expected_tool_names),
+                    bool(case.expected_trajectory),
+                )
+            )
+            errors = list(result.errors)
+            judge_score: Optional[float] = None
+            judge_rationale: Optional[str] = None
+            judge_passed = 0
+            judge_observation = EvalObservation(
+                output=result.actual_output,
+                tool_names=result.actual_tool_names,
+                trajectory=result.actual_trajectory,
+            )
+            try:
+                judged_value = judge(case, judge_observation)
+                if inspect.isawaitable(judged_value):
+                    judged_value = await judged_value
+                normalized = self._normalize_judge_result(judged_value)
+                if normalized.is_err():
+                    errors.append(normalized.unwrap_err())
+                else:
+                    judged = normalized.unwrap()
+                    judge_error = judged.validate()
+                    if judge_error is not None:
+                        errors.append(judge_error)
+                    else:
+                        judge_score = judged.score
+                        judge_rationale = self._safe_judge_rationale(judged.rationale)
+                        if judged.passed:
+                            judge_passed = 1
+                        else:
+                            errors.append(
+                                {
+                                    "errorType": "EVAL_JUDGE_FAILED",
+                                    "message": "judge marked case as failed.",
+                                }
+                            )
+            except Exception as exc:
+                errors.append(
+                    {
+                        "errorType": "EVAL_JUDGE_EXCEPTION",
+                        "message": "judge raised an exception.",
+                        "details": {"exception": type(exc).__name__},
+                    }
+                )
+            updated_results.append(
+                replace(
+                    result,
+                    passed=not errors,
+                    score=(result.score * expected_checks + judge_passed)
+                    / (expected_checks + 1),
+                    errors=tuple(errors),
+                    judge_score=judge_score,
+                    judge_rationale=judge_rationale,
+                )
+            )
+        return Result.ok(EvalReport(results=tuple(updated_results)))
 
     def run_groundedness(
         self,

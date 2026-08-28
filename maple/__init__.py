@@ -59,6 +59,7 @@ from .autonomy.contracts import (
     validate_typed_value,
 )
 from .autonomy.evaluation import (
+    AsyncEvalJudge,
     EvalCase,
     EvalJudge,
     EvalJudgeResult,
@@ -401,6 +402,7 @@ __all__ = [
     "FileHumanInputStore",
     "InMemoryHumanInputStore",
     "EvalCase",
+    "AsyncEvalJudge",
     "EvalJudge",
     "EvalJudgeResult",
     "EvalObservation",
