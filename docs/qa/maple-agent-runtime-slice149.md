@@ -13,6 +13,7 @@ assignment, and rejects capacity-full requeues before state mutation.
 
 - Focused queue/scheduler regression: `42 passed in 0.89s`.
 - Full tracked task-management suite: `142 passed in 22.28s`.
+- Full tracked repository test manifest: `1375 passed, 1 skipped in 234.42s`.
 - Coverage includes invalid capacities, global cross-priority admission,
   stale cancelled/completed tuple suppression, and requeue state preservation
   when the global queue is full.
@@ -32,6 +33,11 @@ pre-existing non-Black formatting; no unrelated formatter rewrite was staged.
 The broader working tree also contains user-owned demo changes, so a clean
 whole-tree whitespace claim is not made.
 
+An aggregate run that also included the five untracked user-owned Doctrine
+test modules stalled without failure output and was interrupted. The tracked
+runtime manifest above completed successfully; the untracked harness was not
+included in the clean package candidate.
+
 No dependency was added. No external provider call, publication, deployment,
 cloud action, or website update was performed.
 
@@ -47,8 +53,15 @@ cloud action, or website update was performed.
 
 ## Package evidence
 
-The final clean `git archive HEAD` package evidence will be appended after the
-release candidate archive is rebuilt from the documentation closure commit.
+The clean `git archive HEAD` snapshot built successfully as `maple-oss-1.1.3`:
+
+- `python -m build --wheel --sdist`: exit `0`;
+- wheel: `104` archive entries;
+- sdist: `632` archive entries;
+- `twine check`: both artifacts passed;
+- `pip install --no-deps --target ...`: exit `0`;
+- isolated export smoke: `clean_archive_task_queue_smoke=passed`;
+- workspace-only archive entries: `0`.
 
 ## QA decision
 
