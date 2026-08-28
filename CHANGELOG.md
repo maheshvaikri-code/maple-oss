@@ -10,6 +10,12 @@
 
 ### Additions
 
+- **Native async provider completion**: built-in OpenAI-compatible and Anthropic
+  adapters now await their optional async SDK clients from `complete_async(...)`.
+  SDKs without an async client retain the explicit base-provider synchronous
+  fallback for compatibility; MAPLE makes no non-blocking, retry, provider
+  selection, or concurrency claim for that fallback.
+
 - **Bounded principal scopes for the local control plane**: configure a
   `Principal` on an authenticated `RunServer` to authorize known health,
   workflow, agent, approval, interaction, handoff, and event routes with exact

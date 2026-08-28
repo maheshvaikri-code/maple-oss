@@ -1497,6 +1497,27 @@ provider = router.create(
 )
 ```
 
+### Native async provider completion (preview)
+
+Async callers can use the same provider contract without changing message,
+tool, usage, or typed-error handling:
+
+```python
+response = await provider.complete_async(
+    messages,
+    tools=tools,
+    temperature=0.2,
+    stop=["END"],
+)
+```
+
+The built-in OpenAI-compatible and Anthropic adapters await their optional
+native async SDK clients when available. If an installed SDK exposes only a
+synchronous client, the adapter uses the base provider's explicit compatibility
+fallback so existing integrations continue to work; MAPLE does not claim that
+fallback is non-blocking. This boundary performs no implicit retry, provider
+selection, or concurrent fan-out.
+
 ### Multimodal image messages (preview)
 
 `ChatMessage.content` accepts its existing string form or a bounded list of

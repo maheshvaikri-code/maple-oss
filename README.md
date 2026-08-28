@@ -34,6 +34,8 @@ Most agent frameworks give you either **infrastructure** (messaging, security, f
 
 ### Autonomous Agentic AI (v1.1.3)
 
+- **Native Async Provider Completion (preview)** - Async agent loops can await native OpenAI-compatible and Anthropic completion clients when the optional SDK exposes them. Providers without an async client retain the explicit base-provider fallback; no hidden retry, provider selection, or concurrency claim is made.
+
 - **ReAct Reasoning Loop** — Agents think, act, and reflect autonomously. Built-in backtracking when approaches fail.
 - **Pluggable LLM Providers** — OpenAI, Anthropic Claude, or any compatible API (vLLM, Ollama, Together AI).
 - **Multimodal Image Inputs (preview)** — Build bounded `ChatMessage` content from text and validated `ImageContent` parts. HTTPS image URLs work with OpenAI-compatible adapters; base64 data URIs work with both built-in adapters. MAPLE never fetches or executes image sources, and provider capability routing can require `image_input=True`.

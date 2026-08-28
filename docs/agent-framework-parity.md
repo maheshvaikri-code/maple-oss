@@ -192,6 +192,12 @@ comparison target is the current Microsoft Agent Framework. Redis state
 operations, mutual-TLS, OAuth2, and untrusted code execution remain
 fail-closed or unsupported as recorded in the [release brief](briefs/maple-agent-runtime-release.md).
 
+The built-in OpenAI-compatible and Anthropic adapters also expose native async
+completion when their optional SDKs provide async clients. SDKs without that
+surface use the explicit synchronous compatibility fallback; this is not a
+non-blocking guarantee. Other provider-specific async behavior remains subject
+to adapter contract fixtures.
+
 ## Official reference documentation
 
 These links were consulted on 2026-08-25 and should be rechecked before a
