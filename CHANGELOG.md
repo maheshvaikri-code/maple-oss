@@ -10,6 +10,12 @@
 
 ### Additions
 
+- **Bounded durable agent-run history**: built-in in-memory and file-backed
+  run stores now retain version-ordered checkpoint snapshots through an
+  optional `history()` contract. File stores persist bounded history in an
+  atomic `.history` sidecar with fail-closed corruption checks; history is
+  inspection-only and does not claim replay, restore, or exactly-once effects.
+
 - **Fail-closed pending-request tool correlation**: sync and async durable run
   resume now verify a pending approval or human-input record's `tool_call_id`
   against the persisted tool-result placeholder before executing or consuming

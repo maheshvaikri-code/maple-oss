@@ -162,9 +162,11 @@ from .retrieval import (
 )
 from .runs import (
     DEFAULT_MAX_RUN_BYTES,
+    DEFAULT_MAX_RUN_HISTORY,
     DEFAULT_MAX_RUN_MESSAGES,
     DEFAULT_MAX_RUN_TRACE,
     AgentRunCheckpoint,
+    AgentRunHistoryStore,
     AgentRunStore,
     FileAgentRunStore,
     InMemoryAgentRunStore,
@@ -277,9 +279,11 @@ __all__ = [
     "ingest_documents",
     "rerank_hits",
     "DEFAULT_MAX_RUN_BYTES",
+    "DEFAULT_MAX_RUN_HISTORY",
     "DEFAULT_MAX_RUN_MESSAGES",
     "DEFAULT_MAX_RUN_TRACE",
     "AgentRunCheckpoint",
+    "AgentRunHistoryStore",
     "AgentRunStore",
     "FileAgentRunStore",
     "InMemoryAgentRunStore",

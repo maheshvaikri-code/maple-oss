@@ -2231,6 +2231,33 @@ responsibility. Full trace replay, durable
 streaming cursors, arbitrary request/response HITL, and sandboxing are separate
 capabilities.
 
+Built-in run stores also expose bounded checkpoint history for local inspection:
+
+```python
+from maple import FileAgentRunStore
+
+run_store = FileAgentRunStore("./.maple-runs", max_history=100)
+agent.set_run_store(run_store)
+agent.pursue_goal("Review this request", run_id="review-1")
+
+history = run_store.history("review-1", limit=20)
+if history.is_ok():
+    for checkpoint in history.unwrap():
+        print(checkpoint.version, checkpoint.status)
+```
+
+`history()` returns detached snapshots in ascending checkpoint-version order.
+The default retention is 100 snapshots, with a configurable bound from 1
+through 10,000. `InMemoryAgentRunStore` retains history only for the current
+process; `FileAgentRunStore` persists it under
+`<directory>/.history/<run_id>.json` and validates the sidecar on read and
+before later saves. Invalid limits and corrupt or contradictory history return
+`RUN_HISTORY_LIMIT_INVALID` or `RUN_HISTORY_LOAD_ERROR`. History is not
+executable replay or checkpoint restore. Each current-checkpoint and history
+replacement is atomic, but the two files are not one transaction; a history
+write failure returns `RUN_HISTORY_SAVE_ERROR` after the current checkpoint may
+already be durable, so inspect before retrying.
+
 ### Workflow run HTTP transport
 
 `WorkflowRegistry` and `RunServer` expose configured workflows to local tools

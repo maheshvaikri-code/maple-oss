@@ -80,6 +80,51 @@ def test_in_memory_run_store_round_trips_and_uses_compare_and_set():
     assert store.load("run-1").unwrap().status == "paused"
 
 
+def test_in_memory_run_store_retains_bounded_immutable_history():
+    store = InMemoryAgentRunStore(max_history=2)
+
+    first = store.save(make_checkpoint(result={"state": {"version": 1}}))
+    second = store.save(
+        make_checkpoint(result={"state": {"version": 2}}),
+        expected_version=1,
+    )
+    failed = store.save(make_checkpoint(result={"state": {"version": 3}}))
+    third = store.save(
+        make_checkpoint(result={"state": {"version": 3}}),
+        expected_version=2,
+    )
+
+    assert first.is_ok()
+    assert second.is_ok()
+    assert failed.is_err()
+    assert failed.unwrap_err()["errorType"] == "RUN_CHECKPOINT_CONFLICT"
+    assert third.is_ok()
+
+    history = store.history("run-1")
+
+    assert history.is_ok()
+    assert [item.version for item in history.unwrap()] == [2, 3]
+    assert [item.result for item in history.unwrap()] == [
+        {"state": {"version": 2}},
+        {"state": {"version": 3}},
+    ]
+    history.unwrap()[0].result["state"]["version"] = 99
+    assert store.history("run-1").unwrap()[0].result == {"state": {"version": 2}}
+
+
+def test_run_history_validates_limits_and_missing_runs():
+    store = InMemoryAgentRunStore(max_history=2)
+
+    assert store.history("missing-run").unwrap() == []
+    invalid = store.history("missing-run", limit=3)
+    assert invalid.is_err()
+    assert invalid.unwrap_err()["errorType"] == "RUN_HISTORY_LIMIT_INVALID"
+    invalid_bool = store.history("missing-run", limit=True)
+    assert invalid_bool.is_err()
+    with pytest.raises(ValueError, match="max_history"):
+        InMemoryAgentRunStore(max_history=0)
+
+
 def test_file_run_store_survives_recreation_and_rejects_oversized_state(tmp_path):
     store = FileAgentRunStore(tmp_path)
     assert store.save(make_checkpoint(result={"answer": "ok"})).is_ok()
@@ -93,6 +138,48 @@ def test_file_run_store_survives_recreation_and_rejects_oversized_state(tmp_path
     oversized = tiny.save(make_checkpoint())
     assert oversized.is_err()
     assert oversized.unwrap_err()["errorType"] == "RUN_CHECKPOINT_SIZE_EXCEEDED"
+
+
+def test_file_run_store_history_survives_recreation_and_is_bounded(tmp_path):
+    store = FileAgentRunStore(tmp_path, max_history=2)
+    assert store.save(make_checkpoint(result={"version": 1})).is_ok()
+    assert store.save(
+        make_checkpoint(result={"version": 2}), expected_version=1
+    ).is_ok()
+    assert store.save(
+        make_checkpoint(result={"version": 3}), expected_version=2
+    ).is_ok()
+
+    history = store.history("run-1")
+    restarted = FileAgentRunStore(tmp_path, max_history=2)
+    restarted_history = restarted.history("run-1")
+
+    assert history.is_ok()
+    assert restarted_history.is_ok()
+    assert [item.version for item in history.unwrap()] == [2, 3]
+    assert [item.result for item in restarted_history.unwrap()] == [
+        {"version": 2},
+        {"version": 3},
+    ]
+    restarted_history.unwrap()[0].result["version"] = 99
+    assert restarted.history("run-1").unwrap()[0].result == {"version": 2}
+    assert (tmp_path / ".history" / "run-1.json").exists()
+
+
+def test_file_run_store_fails_closed_on_corrupt_history_before_save(tmp_path):
+    store = FileAgentRunStore(tmp_path)
+    assert store.save(make_checkpoint(result={"version": 1})).is_ok()
+    history_path = tmp_path / ".history" / "run-1.json"
+    history_path.write_text("{not-json", encoding="utf-8")
+
+    inspected = store.history("run-1")
+    blocked = store.save(make_checkpoint(result={"version": 2}), expected_version=1)
+
+    assert inspected.is_err()
+    assert inspected.unwrap_err()["errorType"] == "RUN_HISTORY_LOAD_ERROR"
+    assert blocked.is_err()
+    assert blocked.unwrap_err()["errorType"] == "RUN_HISTORY_LOAD_ERROR"
+    assert store.load("run-1").unwrap().result == {"version": 1}
 
 
 def test_checkpoint_rejects_non_json_values_before_store_mutation():
