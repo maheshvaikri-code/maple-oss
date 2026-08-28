@@ -871,6 +871,7 @@ def create_agent_tool(
     name: Optional[str] = None,
     description: Optional[str] = None,
     requires_approval: bool = True,
+    replay_policy: str = TOOL_REPLAY_DISABLED,
     allowed_context_keys: Optional[Sequence[str]] = None,
 ) -> Tool:
     """Create a bounded manager-style tool backed by another agent.
@@ -880,7 +881,9 @@ def create_agent_tool(
     executed, and asynchronously when it exposes ``pursue_goal_async``.
     Optional context is copied and must be explicitly allowlisted. Child
     errors are reduced to their type; prompts, traces, and provider details do
-    not cross the tool result boundary.
+    not cross the tool result boundary. ``replay_policy`` is forwarded to the
+    returned tool so a parent execution journal can optionally reuse a
+    successful bounded child result during local recovery.
     """
     target_id = getattr(target_agent, "agent_id", None)
     pursue_goal = getattr(target_agent, "pursue_goal", None)
@@ -1062,6 +1065,7 @@ def create_agent_tool(
         handler=invoke_sync,
         async_handler=async_handler,
         requires_approval=requires_approval,
+        replay_policy=replay_policy,
         accepts_cancellation=True,
         tags=["delegation", "agent-as-tool"],
     )

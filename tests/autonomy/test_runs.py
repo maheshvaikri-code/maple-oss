@@ -20,7 +20,11 @@ from maple.autonomy.runs import (
     InMemoryAgentRunStore,
 )
 from maple.autonomy.sessions import SessionMessage
-from maple.autonomy.tools import TOOL_REPLAY_REUSE_SUCCESS, Tool
+from maple.autonomy.tools import (
+    TOOL_REPLAY_REUSE_SUCCESS,
+    Tool,
+    create_agent_tool,
+)
 from maple.core.result import Result
 from maple.llm.provider import LLMProvider
 from maple.llm.registry import LLMProviderRegistry
@@ -742,6 +746,112 @@ def test_sync_tool_replay_journal_reuses_success_after_checkpoint_failure():
     assert resumed.is_ok()
     assert resumed.unwrap().status == "completed"
     assert calls == [{"value": "once"}]
+
+
+def test_sync_agent_tool_replay_journal_reuses_successful_child_result():
+    class ReplayableTarget:
+        agent_id = "replayable-specialist"
+
+        def __init__(self):
+            self.calls = 0
+
+        def pursue_goal(self, description):
+            self.calls += 1
+            return Result.ok(
+                type(
+                    "Goal",
+                    (),
+                    {
+                        "goal_id": "child-run-1",
+                        "status": "completed",
+                        "result": {"answer": description.upper()},
+                    },
+                )()
+            )
+
+    target = ReplayableTarget()
+    agent = make_agent([])
+    agent.set_execution_journal(InMemoryExecutionJournal())
+    tool = create_agent_tool(
+        target,
+        requires_approval=False,
+        replay_policy=TOOL_REPLAY_REUSE_SUCCESS,
+    )
+    assert agent.register_tool(tool).is_ok()
+
+    first = agent._execute_tool_call(
+        ToolCall("child-call-1", tool.name, {"task": "recover this"}),
+        run_id="parent-replay-run",
+        step_num=0,
+        tool_call_index=0,
+    )
+    second = agent._execute_tool_call(
+        ToolCall("child-call-2", tool.name, {"task": "recover this"}),
+        run_id="parent-replay-run",
+        step_num=0,
+        tool_call_index=0,
+    )
+
+    assert not first.is_error
+    assert not second.is_error
+    assert first.content == second.content
+    assert second.tool_call_id == "child-call-2"
+    assert target.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_async_agent_tool_replay_journal_reuses_successful_child_result():
+    class AsyncReplayableTarget:
+        agent_id = "async-replayable-specialist"
+
+        def __init__(self):
+            self.calls = 0
+
+        def pursue_goal(self, description):
+            raise AssertionError("sync child path must not be selected")
+
+        async def pursue_goal_async(self, description):
+            self.calls += 1
+            return Result.ok(
+                type(
+                    "Goal",
+                    (),
+                    {
+                        "goal_id": "async-child-run-1",
+                        "status": "completed",
+                        "result": {"answer": description.upper()},
+                    },
+                )()
+            )
+
+    target = AsyncReplayableTarget()
+    agent = make_agent([])
+    agent.set_execution_journal(InMemoryExecutionJournal())
+    tool = create_agent_tool(
+        target,
+        requires_approval=False,
+        replay_policy=TOOL_REPLAY_REUSE_SUCCESS,
+    )
+    assert agent.register_tool(tool).is_ok()
+
+    first = await agent._execute_tool_call_async(
+        ToolCall("async-child-call-1", tool.name, {"task": "recover this"}),
+        run_id="async-parent-replay-run",
+        step_num=0,
+        tool_call_index=0,
+    )
+    second = await agent._execute_tool_call_async(
+        ToolCall("async-child-call-2", tool.name, {"task": "recover this"}),
+        run_id="async-parent-replay-run",
+        step_num=0,
+        tool_call_index=0,
+    )
+
+    assert not first.is_error
+    assert not second.is_error
+    assert first.content == second.content
+    assert second.tool_call_id == "async-child-call-2"
+    assert target.calls == 1
 
 
 def test_async_tool_replay_journal_reuses_successful_result():
