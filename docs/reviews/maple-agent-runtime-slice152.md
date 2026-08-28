@@ -37,6 +37,6 @@ external effects.
 ## Decision
 
 Approve the ownership-checked completion implementation for preview release
-readiness. Exact-suite and static evidence are recorded in the QA record;
-clean-archive package evidence is pending the documentation closure commit.
-No publication, deployment, cloud action, or website update was performed.
+readiness. Exact-suite, static, and clean-archive package evidence are
+recorded in the QA record. No publication, deployment, cloud action, or
+website update was performed.

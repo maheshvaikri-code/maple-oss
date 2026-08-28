@@ -45,8 +45,19 @@ cloud action, or website update was performed.
 
 ## Package evidence
 
-The clean `git archive HEAD` package candidate will be recorded after the
-slice-152 documentation and release-plan closure metadata are committed.
+The clean `git archive HEAD` package candidate built successfully as
+`maple_oss-1.1.3`:
+
+- `python -m build --wheel --sdist`: exit `0`;
+- wheel: `104` archive entries;
+- sdist: `643` archive entries;
+- `twine check`: both artifacts `PASSED`;
+- `pip install --no-deps --target ...`: exit `0`;
+- isolated export smoke: `clean_archive_task_completion_smoke=passed`;
+- workspace-only archive entries: `0`.
+
+The exact-`HEAD` archive is rebuilt after this QA and release-plan closure
+metadata is committed.
 
 ## QA decision
 
