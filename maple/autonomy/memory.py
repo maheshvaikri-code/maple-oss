@@ -31,6 +31,9 @@ logger = logging.getLogger(__name__)
 _MAX_WORKING_MEMORY_TOKENS = 1_000_000
 _MAX_WORKING_MEMORY_ENTRIES = 4_096
 _MAX_WORKING_MEMORY_KEY_BYTES = 256
+_MAX_EPISODIC_EVENTS_PER_TASK = 1_024
+_MAX_EPISODIC_EVENT_BYTES = 64 * 1024
+_MAX_EPISODIC_TASK_ID_BYTES = 256
 
 
 @dataclass
@@ -184,28 +187,145 @@ class EpisodicMemory:
     Uses StateStore for persistence.
     """
 
-    def __init__(self, store: StateStore) -> None:
+    def __init__(
+        self,
+        store: StateStore,
+        max_events_per_task: int = _MAX_EPISODIC_EVENTS_PER_TASK,
+        max_event_bytes: int = _MAX_EPISODIC_EVENT_BYTES,
+    ) -> None:
+        if (
+            isinstance(max_events_per_task, bool)
+            or not isinstance(max_events_per_task, int)
+            or not 1 <= max_events_per_task <= _MAX_EPISODIC_EVENTS_PER_TASK
+        ):
+            raise ValueError(
+                "max_events_per_task must be an integer from 1 to "
+                f"{_MAX_EPISODIC_EVENTS_PER_TASK}"
+            )
+        if (
+            isinstance(max_event_bytes, bool)
+            or not isinstance(max_event_bytes, int)
+            or not 1 <= max_event_bytes <= _MAX_EPISODIC_EVENT_BYTES
+        ):
+            raise ValueError(
+                "max_event_bytes must be an integer from 1 to "
+                f"{_MAX_EPISODIC_EVENT_BYTES}"
+            )
         self.store = store
         self._prefix = "episodic:"
+        self.max_events_per_task = max_events_per_task
+        self.max_event_bytes = max_event_bytes
+
+    @staticmethod
+    def _task_id_error(task_id: Any) -> Optional[Dict[str, Any]]:
+        if (
+            not isinstance(task_id, str)
+            or not task_id
+            or any(unicodedata.category(character) == "Cc" for character in task_id)
+        ):
+            return {
+                "errorType": "EPISODIC_TASK_ID_INVALID",
+                "message": "Episodic task IDs must be bounded text.",
+            }
+        try:
+            task_id_bytes = task_id.encode("utf-8")
+        except UnicodeEncodeError:
+            return {
+                "errorType": "EPISODIC_TASK_ID_INVALID",
+                "message": "Episodic task IDs must be bounded text.",
+            }
+        if len(task_id_bytes) > _MAX_EPISODIC_TASK_ID_BYTES:
+            return {
+                "errorType": "EPISODIC_TASK_ID_INVALID",
+                "message": "Episodic task IDs must be bounded text.",
+            }
+        return None
+
+    @staticmethod
+    def _state_error() -> Dict[str, Any]:
+        return {
+            "errorType": "EPISODIC_STATE_INVALID",
+            "message": "Stored episodic memory must be a list of event objects.",
+        }
 
     def record(
         self, task_id: str, event: Dict[str, Any]
     ) -> Result[None, Dict[str, Any]]:
         """Record an episode (action + outcome) for a task."""
+        task_id_error = self._task_id_error(task_id)
+        if task_id_error is not None:
+            return Result.err(task_id_error)
+        if not isinstance(event, dict):
+            return Result.err(
+                {
+                    "errorType": "EPISODIC_EVENT_INVALID",
+                    "message": "Episodic events must be mappings.",
+                }
+            )
+        episode = {**event, "timestamp": time.time()}
+        try:
+            event_bytes = json.dumps(
+                episode,
+                ensure_ascii=False,
+                allow_nan=False,
+                default=str,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        except (TypeError, ValueError, OverflowError, UnicodeEncodeError):
+            return Result.err(
+                {
+                    "errorType": "EPISODIC_EVENT_INVALID",
+                    "message": "Episodic events must be valid UTF-8 data.",
+                }
+            )
+        if len(event_bytes) > self.max_event_bytes:
+            return Result.err(
+                {
+                    "errorType": "EPISODIC_EVENT_TOO_LARGE",
+                    "message": "Episodic event exceeds the byte budget.",
+                    "details": {
+                        "event_bytes": len(event_bytes),
+                        "max_event_bytes": self.max_event_bytes,
+                    },
+                }
+            )
         key = f"{self._prefix}{task_id}"
         existing = self.store.get(key)
-        episodes_value = existing.unwrap() if existing.is_ok() else None
-        episodes = cast(List[Dict[str, Any]], episodes_value) if episodes_value else []
-        episodes.append({**event, "timestamp": time.time()})
+        if existing.is_err():
+            return Result.err(existing.unwrap_err())
+        episodes_value = existing.unwrap()
+        if episodes_value is None:
+            episodes: List[Dict[str, Any]] = []
+        elif isinstance(episodes_value, list) and all(
+            isinstance(item, dict) for item in episodes_value
+        ):
+            episodes = cast(List[Dict[str, Any]], episodes_value)
+        else:
+            return Result.err(self._state_error())
+        if self.max_events_per_task == 1:
+            episodes = []
+        else:
+            episodes = episodes[-(self.max_events_per_task - 1) :]
+        episodes.append(episode)
         return self.store.set(key, episodes).map(lambda _: None)
 
     def recall(self, task_id: str) -> Result[List[Dict[str, Any]], Dict[str, Any]]:
         """Recall all episodes for a task."""
+        task_id_error = self._task_id_error(task_id)
+        if task_id_error is not None:
+            return Result.err(task_id_error)
         key = f"{self._prefix}{task_id}"
         result = self.store.get(key)
-        if result.is_ok():
-            return Result.ok(result.unwrap() or [])
-        return Result.ok([])
+        if result.is_err():
+            return Result.err(result.unwrap_err())
+        episodes_value = result.unwrap()
+        if episodes_value is None:
+            return Result.ok([])
+        if not isinstance(episodes_value, list) or not all(
+            isinstance(item, dict) for item in episodes_value
+        ):
+            return Result.err(self._state_error())
+        return Result.ok(cast(List[Dict[str, Any]], episodes_value))
 
     def search(
         self, query: str, limit: int = 10

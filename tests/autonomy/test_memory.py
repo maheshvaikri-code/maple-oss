@@ -122,6 +122,23 @@ class TestWorkingMemory:
 
 
 class TestEpisodicMemory:
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"max_events_per_task": 0},
+            {"max_events_per_task": True},
+            {"max_events_per_task": 1_025},
+            {"max_event_bytes": 0},
+            {"max_event_bytes": True},
+            {"max_event_bytes": 65 * 1024},
+        ],
+    )
+    def test_invalid_bounds_fail_fast(self, kwargs):
+        store = StateStore(backend=StorageBackend.MEMORY)
+
+        with pytest.raises(ValueError):
+            EpisodicMemory(store, **kwargs)
+
     def test_record_and_recall(self):
         store = StateStore(backend=StorageBackend.MEMORY)
         em = EpisodicMemory(store)
@@ -211,6 +228,45 @@ class TestMemoryManager:
         result = mm.episodic.recall("task1")
         assert result.is_ok()
         assert len(result.unwrap()) == 1
+
+    def test_record_keeps_newest_bounded_event_window(self):
+        store = StateStore(backend=StorageBackend.MEMORY)
+        em = EpisodicMemory(store, max_events_per_task=2)
+
+        assert em.record("task1", {"event": "first"}).is_ok()
+        assert em.record("task1", {"event": "second"}).is_ok()
+        assert em.record("task1", {"event": "third"}).is_ok()
+
+        recalled = em.recall("task1")
+
+        assert recalled.is_ok()
+        assert [episode["event"] for episode in recalled.unwrap()] == [
+            "second",
+            "third",
+        ]
+
+    def test_oversized_event_rejected_without_write(self):
+        store = StateStore(backend=StorageBackend.MEMORY)
+        em = EpisodicMemory(store, max_event_bytes=128)
+
+        result = em.record("task1", {"payload": "x" * 256})
+
+        assert result.is_err()
+        assert result.unwrap_err()["errorType"] == "EPISODIC_EVENT_TOO_LARGE"
+        assert em.recall("task1").unwrap() == []
+
+    def test_invalid_event_and_task_id_rejected_without_write(self):
+        store = StateStore(backend=StorageBackend.MEMORY)
+        em = EpisodicMemory(store)
+
+        invalid_event = em.record("task1", {"value": float("nan")})
+        invalid_task = em.record("bad\x7ftask", {"event": "ignored"})
+        invalid_unicode = em.record("\ud800", {"event": "ignored"})
+
+        assert invalid_event.unwrap_err()["errorType"] == "EPISODIC_EVENT_INVALID"
+        assert invalid_task.unwrap_err()["errorType"] == "EPISODIC_TASK_ID_INVALID"
+        assert invalid_unicode.unwrap_err()["errorType"] == "EPISODIC_TASK_ID_INVALID"
+        assert em.recall("task1").unwrap() == []
 
     def test_semantic_integration(self):
         mm = MemoryManager()
