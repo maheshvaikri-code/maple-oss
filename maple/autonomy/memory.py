@@ -17,6 +17,7 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 
 import json
 import logging
+import math
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, cast
@@ -25,6 +26,9 @@ from ..core.result import Result
 from ..state.store import StateStore, StorageBackend
 
 logger = logging.getLogger(__name__)
+
+_MAX_WORKING_MEMORY_TOKENS = 1_000_000
+_MAX_WORKING_MEMORY_KEY_BYTES = 256
 
 
 @dataclass
@@ -47,6 +51,15 @@ class WorkingMemory:
     """
 
     def __init__(self, max_tokens: int = 8000) -> None:
+        if (
+            isinstance(max_tokens, bool)
+            or not isinstance(max_tokens, int)
+            or not 1 <= max_tokens <= _MAX_WORKING_MEMORY_TOKENS
+        ):
+            raise ValueError(
+                "max_tokens must be an integer from 1 to "
+                f"{_MAX_WORKING_MEMORY_TOKENS}"
+            )
         self.max_tokens = max_tokens
         self.entries: List[MemoryEntry] = []
         self._current_tokens = 0
@@ -55,10 +68,75 @@ class WorkingMemory:
         self, key: str, content: str, relevance: float = 1.0
     ) -> Result[None, Dict[str, Any]]:
         """Add content to working memory, evicting old entries if needed."""
-        tokens = len(content) // 4
+        if (
+            not isinstance(key, str)
+            or not key
+            or any(ord(character) < 32 for character in key)
+        ):
+            return Result.err(
+                {
+                    "errorType": "MEMORY_KEY_INVALID",
+                    "message": "Working-memory keys must be bounded text.",
+                }
+            )
+        try:
+            key_bytes = key.encode("utf-8")
+        except UnicodeEncodeError:
+            return Result.err(
+                {
+                    "errorType": "MEMORY_KEY_INVALID",
+                    "message": "Working-memory keys must be bounded text.",
+                }
+            )
+        if len(key_bytes) > _MAX_WORKING_MEMORY_KEY_BYTES:
+            return Result.err(
+                {
+                    "errorType": "MEMORY_KEY_INVALID",
+                    "message": "Working-memory keys must be bounded text.",
+                }
+            )
+        if not isinstance(content, str):
+            return Result.err(
+                {
+                    "errorType": "MEMORY_CONTENT_INVALID",
+                    "message": "Working-memory content must be text.",
+                }
+            )
+        if (
+            isinstance(relevance, bool)
+            or not isinstance(relevance, (int, float))
+            or not math.isfinite(float(relevance))
+            or not 0.0 <= relevance <= 1.0
+        ):
+            return Result.err(
+                {
+                    "errorType": "MEMORY_RELEVANCE_INVALID",
+                    "message": "Working-memory relevance must be between 0 and 1.",
+                }
+            )
+        try:
+            tokens = self._estimate_tokens(content)
+        except UnicodeEncodeError:
+            return Result.err(
+                {
+                    "errorType": "MEMORY_CONTENT_INVALID",
+                    "message": "Working-memory content must be valid UTF-8 text.",
+                }
+            )
+        if tokens > self.max_tokens:
+            return Result.err(
+                {
+                    "errorType": "MEMORY_ENTRY_TOO_LARGE",
+                    "message": "Working-memory content exceeds the token budget.",
+                    "details": {
+                        "entry_tokens": tokens,
+                        "max_tokens": self.max_tokens,
+                    },
+                }
+            )
         while self._current_tokens + tokens > self.max_tokens and self.entries:
             evicted = self.entries.pop(0)
-            self._current_tokens -= len(str(evicted.content)) // 4
+            self._current_tokens -= self._estimate_tokens(str(evicted.content))
 
         entry = MemoryEntry(
             key=key, content=content, memory_type="working", relevance_score=relevance
@@ -66,6 +144,13 @@ class WorkingMemory:
         self.entries.append(entry)
         self._current_tokens += tokens
         return Result.ok(None)
+
+    @staticmethod
+    def _estimate_tokens(content: str) -> int:
+        """Estimate tokens conservatively from UTF-8 bytes for local bounds."""
+        if not content:
+            return 0
+        return max(1, (len(content.encode("utf-8")) + 3) // 4)
 
     def get_context(self) -> List[Dict[str, Any]]:
         """Get all working memory as context for LLM."""

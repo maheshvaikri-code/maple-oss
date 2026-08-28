@@ -1,12 +1,23 @@
 """Tests for the autonomy memory system."""
 
+import pytest
+
 from maple.autonomy.memory import (
-    WorkingMemory, EpisodicMemory, SemanticMemory, MemoryManager, MemoryEntry,
+    EpisodicMemory,
+    MemoryEntry,
+    MemoryManager,
+    SemanticMemory,
+    WorkingMemory,
 )
 from maple.state.store import StateStore, StorageBackend
 
 
 class TestWorkingMemory:
+    @pytest.mark.parametrize("max_tokens", [0, -1, True, 1.5, 1_000_001])
+    def test_invalid_budget_fails_fast(self, max_tokens):
+        with pytest.raises(ValueError):
+            WorkingMemory(max_tokens=max_tokens)
+
     def test_add_and_retrieve(self):
         wm = WorkingMemory(max_tokens=1000)
         wm.add("key1", "hello world")
@@ -45,6 +56,51 @@ class TestWorkingMemory:
         wm.add("important", "critical data", relevance=0.9)
         ctx = wm.get_context()
         assert ctx[0]["relevance"] == 0.9
+
+    def test_unicode_token_accounting_uses_utf8_bytes(self):
+        wm = WorkingMemory(max_tokens=2)
+
+        result = wm.add("unicode", "é" * 3)
+
+        assert result.is_ok()
+        assert wm.token_usage == 2
+
+    def test_oversized_entry_rejected_without_eviction(self):
+        wm = WorkingMemory(max_tokens=2)
+        wm.add("existing", "kept")
+
+        result = wm.add("too-large", "x" * 9)
+
+        assert result.is_err()
+        assert result.unwrap_err()["errorType"] == "MEMORY_ENTRY_TOO_LARGE"
+        assert [entry["key"] for entry in wm.get_context()] == ["existing"]
+        assert wm.token_usage == 1
+
+    def test_invalid_entry_metadata_rejected_without_mutation(self):
+        wm = WorkingMemory(max_tokens=4)
+
+        invalid_key = wm.add("bad\nkey", "value")
+        oversized_key = wm.add("k" * 257, "value")
+        invalid_unicode_key = wm.add("\ud800", "value")
+        invalid_content = wm.add("content", 123)
+        invalid_unicode_content = wm.add("unicode", "\ud800")
+        invalid_relevance = wm.add("relevance", "value", relevance=2.0)
+        non_finite_relevance = wm.add("non-finite", "value", relevance=float("nan"))
+
+        assert invalid_key.unwrap_err()["errorType"] == "MEMORY_KEY_INVALID"
+        assert oversized_key.unwrap_err()["errorType"] == "MEMORY_KEY_INVALID"
+        assert invalid_unicode_key.unwrap_err()["errorType"] == "MEMORY_KEY_INVALID"
+        assert invalid_content.unwrap_err()["errorType"] == "MEMORY_CONTENT_INVALID"
+        assert (
+            invalid_unicode_content.unwrap_err()["errorType"]
+            == "MEMORY_CONTENT_INVALID"
+        )
+        assert invalid_relevance.unwrap_err()["errorType"] == "MEMORY_RELEVANCE_INVALID"
+        assert (
+            non_finite_relevance.unwrap_err()["errorType"] == "MEMORY_RELEVANCE_INVALID"
+        )
+        assert wm.size == 0
+        assert wm.token_usage == 0
 
 
 class TestEpisodicMemory:
@@ -101,7 +157,9 @@ class TestSemanticMemory:
     def test_store_with_metadata(self):
         store = StateStore(backend=StorageBackend.MEMORY)
         sm = SemanticMemory(store)
-        result = sm.store_fact("fact1", {"value": True}, metadata={"source": "observation"})
+        result = sm.store_fact(
+            "fact1", {"value": True}, metadata={"source": "observation"}
+        )
         assert result.is_ok()
 
     def test_list_facts(self):
