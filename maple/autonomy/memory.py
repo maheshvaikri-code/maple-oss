@@ -28,6 +28,7 @@ from ..state.store import StateStore, StorageBackend
 logger = logging.getLogger(__name__)
 
 _MAX_WORKING_MEMORY_TOKENS = 1_000_000
+_MAX_WORKING_MEMORY_ENTRIES = 4_096
 _MAX_WORKING_MEMORY_KEY_BYTES = 256
 
 
@@ -134,7 +135,10 @@ class WorkingMemory:
                     },
                 }
             )
-        while self._current_tokens + tokens > self.max_tokens and self.entries:
+        while (
+            self._current_tokens + tokens > self.max_tokens
+            or len(self.entries) >= _MAX_WORKING_MEMORY_ENTRIES
+        ) and self.entries:
             evicted = self.entries.pop(0)
             self._current_tokens -= self._estimate_tokens(str(evicted.content))
 

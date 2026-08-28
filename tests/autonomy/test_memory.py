@@ -76,6 +76,17 @@ class TestWorkingMemory:
         assert [entry["key"] for entry in wm.get_context()] == ["existing"]
         assert wm.token_usage == 1
 
+    def test_entry_count_is_bounded_with_empty_content(self):
+        wm = WorkingMemory(max_tokens=1_000_000)
+        for index in range(4_096):
+            assert wm.add(str(index), "").is_ok()
+
+        result = wm.add("new", "")
+
+        assert result.is_ok()
+        assert wm.size == 4_096
+        assert wm.get_context()[0]["key"] == "1"
+
     def test_invalid_entry_metadata_rejected_without_mutation(self):
         wm = WorkingMemory(max_tokens=4)
 
