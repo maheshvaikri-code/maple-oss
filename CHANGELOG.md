@@ -10,6 +10,15 @@
 
 ### Additions
 
+- **Release automation hardening**: GitHub release workflows now require a
+  human-created version tag that matches package metadata and a changelog
+  heading; workflow dispatch can no longer bump or push `main`, and manual
+  Test PyPI publication requires an explicit confirmation value.
+
+- **Pinned workflow actions**: all GitHub Actions used by CI, security,
+  performance, packaging, and publication workflows now resolve to reviewed
+  immutable commit SHAs with human-readable release comments.
+
 - **Opt-in remote handoff idempotency binding**: `RemoteHandoffTarget` can
   send an explicit persisted `handoff_id` as both the remote `run_id` and
   `idempotency_key`, allowing a receiver configured with the bounded

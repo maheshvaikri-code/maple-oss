@@ -1429,3 +1429,13 @@ import exit 0. No tag, publication, registry write, cloud action, or website
 update was performed. The v1.1.4 checklist remains conditional pending the
 version bump, clean-main release commit, independent review,
 security/dependency disposition, and human authorization.
+
+2026-08-28 workflow supply-chain closure: ADR-119 pins all `37/37` existing
+GitHub Action references across CI, security, performance, packaging, and
+publication workflows to verified full commit SHAs while retaining release
+comments. The workflow pin regression suite reports `5 passed in 0.27s`, YAML
+parsing passes, and no floating action reference remains. The clean committed
+archive at `4f145b8` reports `1562 passed, 1 skipped in 228.60s`, doctor
+success, source archive `824`, wheel `106`, sdist `738`, build/Twine/install/
+import exit 0. No publication, registry write, cloud action, or website update
+was performed.
