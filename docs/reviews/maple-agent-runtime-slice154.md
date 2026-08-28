@@ -37,6 +37,6 @@ exactly-once effects.
 ## Decision
 
 Approve the atomic capacity-admission implementation for preview release
-readiness. Exact-suite and static evidence are recorded in the QA record;
-clean-archive package evidence is pending the documentation closure commit.
-No publication, deployment, cloud action, or website update was performed.
+readiness. Exact-suite, static, and clean-archive package evidence are
+recorded in the QA record. No publication, deployment, cloud action, or
+website update was performed.
