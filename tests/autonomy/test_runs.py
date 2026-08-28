@@ -166,6 +166,32 @@ def test_file_run_store_history_survives_recreation_and_is_bounded(tmp_path):
     assert (tmp_path / ".history" / "run-1.json").exists()
 
 
+def test_file_run_store_allows_a_smaller_history_bound_after_restart(tmp_path):
+    original = FileAgentRunStore(tmp_path, max_history=3)
+    base = dict(run_id="resized-run", agent_id="agent-1", description="history")
+    assert original.save(AgentRunCheckpoint(**base, result={"version": 1})).is_ok()
+    assert original.save(
+        AgentRunCheckpoint(**base, result={"version": 2}), expected_version=1
+    ).is_ok()
+    assert original.save(
+        AgentRunCheckpoint(**base, result={"version": 3}), expected_version=2
+    ).is_ok()
+
+    resized = FileAgentRunStore(tmp_path, max_history=2)
+    history = resized.history("resized-run")
+    updated = resized.save(
+        AgentRunCheckpoint(**base, result={"version": 4}), expected_version=3
+    )
+
+    assert history.is_ok()
+    assert [item.version for item in history.unwrap()] == [2, 3]
+    assert updated.is_ok()
+    assert [item.version for item in resized.history("resized-run").unwrap()] == [
+        3,
+        4,
+    ]
+
+
 def test_file_run_store_fails_closed_on_corrupt_history_before_save(tmp_path):
     store = FileAgentRunStore(tmp_path)
     assert store.save(make_checkpoint(result={"version": 1})).is_ok()

@@ -20,6 +20,11 @@ retention bound defaults to 100 snapshots and is configurable from 1 through
 10,000. Results are returned in ascending checkpoint-version order and are
 copied again at the read boundary.
 
+The configured bound is the active retention window. A file store may be
+restarted with a smaller bound; valid older sidecars are read within the new
+window and are trimmed on the next successful save. Snapshots already evicted
+by a previous bound cannot be recovered.
+
 `InMemoryAgentRunStore` retains history only for its process lifetime.
 `FileAgentRunStore` stores history as an atomically replaced JSON sidecar under
 `<directory>/.history/<run_id>.json`; the current checkpoint remains the

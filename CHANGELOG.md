@@ -14,7 +14,8 @@
   run stores now retain version-ordered checkpoint snapshots through an
   optional `history()` contract. File stores persist bounded history in an
   atomic `.history` sidecar with fail-closed corruption checks; history is
-  inspection-only and does not claim replay, restore, or exactly-once effects.
+  inspection-only and does not claim replay, restore, or exactly-once effects;
+  restarting with a smaller retention bound trims the active history window.
 
 - **Fail-closed pending-request tool correlation**: sync and async durable run
   resume now verify a pending approval or human-input record's `tool_call_id`

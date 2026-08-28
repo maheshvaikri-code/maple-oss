@@ -25,6 +25,7 @@ DEFAULT_MAX_RUN_MESSAGES = 1_000
 DEFAULT_MAX_RUN_TRACE = 500
 DEFAULT_MAX_RUN_HISTORY = 100
 MAX_RUN_HISTORY = 10_000
+MAX_RUN_HISTORY_BYTES = 128 * 1_048_576
 MAX_RUN_ID_LENGTH = 128
 MAX_RUN_DESCRIPTION_LENGTH = 8_192
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
@@ -601,12 +602,11 @@ class FileAgentRunStore:
         path = self._history_path(run_id)
         if not path.exists():
             return []
-        max_history_bytes = self.max_checkpoint_bytes * self.max_history + 4_096
-        if path.stat().st_size > max_history_bytes:
+        if path.stat().st_size > MAX_RUN_HISTORY_BYTES:
             raise ValueError("run history exceeds configured size limit")
         with path.open("r", encoding="utf-8") as handle:
             raw_history = json.load(handle)
-        if not isinstance(raw_history, list) or len(raw_history) > self.max_history:
+        if not isinstance(raw_history, list) or len(raw_history) > MAX_RUN_HISTORY:
             raise ValueError("invalid run history")
         snapshots = [AgentRunCheckpoint.from_dict(item) for item in raw_history]
         previous_version = -1
@@ -614,7 +614,7 @@ class FileAgentRunStore:
             if snapshot.run_id != run_id or snapshot.version <= previous_version:
                 raise ValueError("run history versions are not ordered")
             previous_version = snapshot.version
-        return snapshots
+        return snapshots[-self.max_history :]
 
     def _write_history_unlocked(
         self, run_id: str, snapshots: List[AgentRunCheckpoint]
@@ -626,7 +626,10 @@ class FileAgentRunStore:
             allow_nan=False,
             indent=2,
         )
-        max_history_bytes = self.max_checkpoint_bytes * self.max_history + 4_096
+        max_history_bytes = min(
+            MAX_RUN_HISTORY_BYTES,
+            self.max_checkpoint_bytes * self.max_history + 4_096,
+        )
         if len(payload.encode("utf-8")) > max_history_bytes:
             raise ValueError("run history exceeds configured size limit")
         temporary_path: Optional[Path] = None

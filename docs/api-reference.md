@@ -2251,7 +2251,10 @@ The default retention is 100 snapshots, with a configurable bound from 1
 through 10,000. `InMemoryAgentRunStore` retains history only for the current
 process; `FileAgentRunStore` persists it under
 `<directory>/.history/<run_id>.json` and validates the sidecar on read and
-before later saves. Invalid limits and corrupt or contradictory history return
+before later saves. A restarted file store may lower its retention bound; the
+newest active window is read and the next successful save rewrites the trimmed
+sidecar. Older snapshots evicted by the previous bound cannot be recovered.
+Invalid limits and corrupt or contradictory history return
 `RUN_HISTORY_LIMIT_INVALID` or `RUN_HISTORY_LOAD_ERROR`. History is not
 executable replay or checkpoint restore. Each current-checkpoint and history
 replacement is atomic, but the two files are not one transaction; a history
