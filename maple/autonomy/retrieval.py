@@ -8,12 +8,14 @@ import os
 import re
 import tempfile
 import threading
-from collections import Counter, defaultdict
+import time
+from collections import Counter, defaultdict, deque
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import (
     Any,
     Callable,
+    Deque,
     Dict,
     List,
     Mapping,
@@ -295,6 +297,89 @@ class DocumentCursorCheckpointStore(Protocol):
 
     def clear(self) -> Result[DocumentCursorCheckpoint, Error]:
         """Reset the stream position while retaining fencing revision."""
+
+
+class DocumentConnectorRateLimiter(Protocol):
+    """Host-owned admission contract checked before each connector fetch."""
+
+    def allow(self) -> Result[None, Error]:
+        """Consume one bounded fetch allowance or return a typed denial."""
+
+
+class InMemoryDocumentConnectorRateLimiter:
+    """Thread-safe trailing-window limiter for one connector instance."""
+
+    def __init__(
+        self,
+        max_calls: int,
+        window_seconds: float,
+        *,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        if (
+            not isinstance(max_calls, int)
+            or isinstance(max_calls, bool)
+            or not 1 <= max_calls <= 10_000
+        ):
+            raise ValueError("max_calls must be between 1 and 10000")
+        if (
+            not isinstance(window_seconds, (int, float))
+            or isinstance(window_seconds, bool)
+            or not math.isfinite(float(window_seconds))
+            or not 0.001 <= float(window_seconds) <= 86_400.0
+        ):
+            raise ValueError("window_seconds must be between 0.001 and 86400")
+        if not callable(clock):
+            raise ValueError("clock must be callable")
+        self.max_calls = max_calls
+        self.window_seconds = float(window_seconds)
+        self._clock = clock
+        self._timestamps: Deque[float] = deque()
+        self._lock = threading.RLock()
+
+    def allow(self) -> Result[None, Error]:
+        """Consume one allowance without sleeping or retrying."""
+        try:
+            now = float(self._clock())
+        except Exception:
+            return Result.err(
+                _error(
+                    "RETRIEVAL_CONNECTOR_RATE_LIMITER_ERROR",
+                    "connector rate limiter clock failed.",
+                )
+            )
+        if not math.isfinite(now):
+            return Result.err(
+                _error(
+                    "RETRIEVAL_CONNECTOR_RATE_LIMITER_ERROR",
+                    "connector rate limiter clock is invalid.",
+                )
+            )
+        with self._lock:
+            if self._timestamps and now < self._timestamps[-1]:
+                return Result.err(
+                    _error(
+                        "RETRIEVAL_CONNECTOR_RATE_LIMITER_ERROR",
+                        "connector rate limiter clock moved backwards.",
+                    )
+                )
+            cutoff = now - self.window_seconds
+            while self._timestamps and self._timestamps[0] <= cutoff:
+                self._timestamps.popleft()
+            if len(self._timestamps) >= self.max_calls:
+                retry_after = min(
+                    self.window_seconds,
+                    max(0.0, self._timestamps[0] + self.window_seconds - now),
+                )
+                return Result.err(
+                    _error(
+                        "RETRIEVAL_CONNECTOR_RATE_LIMITED",
+                        "connector rate limit exceeded.",
+                        retry_after_seconds=retry_after,
+                    )
+                )
+            self._timestamps.append(now)
+            return Result.ok(None)
 
 
 class InMemoryDocumentCursorCheckpointStore:
@@ -777,6 +862,7 @@ def ingest_documents(
     max_documents: int = 1_000,
     max_batches: int = _MAX_CONNECTOR_BATCHES,
     checkpoint_store: Optional[DocumentCursorCheckpointStore] = None,
+    rate_limiter: Optional[DocumentConnectorRateLimiter] = None,
 ) -> Result[ConnectorIngestReport, Error]:
     """Ingest bounded connector pages into an explicit host-owned sink.
 
@@ -837,6 +923,17 @@ def ingest_documents(
         return Result.err(
             _error("RETRIEVAL_SINK_INVALID", "sink must expose add_document(...).")
         )
+    allow_rate = None
+    if rate_limiter is not None:
+        allow_rate = getattr(rate_limiter, "allow", None)
+        if not callable(allow_rate):
+            return Result.err(
+                _error(
+                    "RETRIEVAL_CONNECTOR_RATE_LIMITER_INVALID",
+                    "rate_limiter must expose allow(...).",
+                )
+            )
+    allow_rate_method = cast(Callable[[], Any], allow_rate)
 
     checkpoint_revision = 0
     if checkpoint_store is not None:
@@ -930,6 +1027,70 @@ def ingest_documents(
     seen_document_ids: Set[str] = set()
     while documents_ingested < max_documents and batches_fetched < max_batches:
         requested_limit = min(batch_size, max_documents - documents_ingested)
+        if rate_limiter is not None:
+            try:
+                rate_result = allow_rate_method()
+            except Exception:
+                return Result.err(
+                    _error(
+                        "RETRIEVAL_CONNECTOR_RATE_LIMITER_ERROR",
+                        "connector rate limiter failed.",
+                        batch_index=batches_fetched,
+                    )
+                )
+            if not isinstance(rate_result, Result):
+                return Result.err(
+                    _error(
+                        "RETRIEVAL_CONNECTOR_RATE_LIMITER_ERROR",
+                        "connector rate limiter returned an invalid result.",
+                        batch_index=batches_fetched,
+                    )
+                )
+            if rate_result.is_err():
+                rate_error = rate_result.unwrap_err()
+                if (
+                    isinstance(rate_error, dict)
+                    and rate_error.get("errorType")
+                    == "RETRIEVAL_CONNECTOR_RATE_LIMITED"
+                ):
+                    retry_after = None
+                    details = rate_error.get("details")
+                    if isinstance(details, dict):
+                        candidate = details.get("retry_after_seconds")
+                        if (
+                            isinstance(candidate, (int, float))
+                            and not isinstance(candidate, bool)
+                            and math.isfinite(float(candidate))
+                            and 0.0 <= float(candidate) <= 86_400.0
+                        ):
+                            retry_after = float(candidate)
+                    return Result.err(
+                        _error(
+                            "RETRIEVAL_CONNECTOR_RATE_LIMITED",
+                            "connector rate limit exceeded.",
+                            batch_index=batches_fetched,
+                            **(
+                                {"retry_after_seconds": retry_after}
+                                if retry_after is not None
+                                else {}
+                            ),
+                        )
+                    )
+                return Result.err(
+                    _error(
+                        "RETRIEVAL_CONNECTOR_RATE_LIMITER_ERROR",
+                        "connector rate limiter returned an error.",
+                        batch_index=batches_fetched,
+                    )
+                )
+            if rate_result.unwrap() is not None:
+                return Result.err(
+                    _error(
+                        "RETRIEVAL_CONNECTOR_RATE_LIMITER_ERROR",
+                        "connector rate limiter returned an invalid value.",
+                        batch_index=batches_fetched,
+                    )
+                )
         try:
             batch_result = fetch(current_cursor, limit=requested_limit)
         except Exception:

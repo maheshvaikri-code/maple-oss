@@ -918,6 +918,7 @@ from maple import (
     Document,
     DocumentBatch,
     FileDocumentCursorCheckpointStore,
+    InMemoryDocumentConnectorRateLimiter,
     InMemoryLexicalRetriever,
     SourceRef,
     ingest_documents,
@@ -938,12 +939,17 @@ class Connector:
 
 sink = InMemoryLexicalRetriever()
 checkpoint_store = FileDocumentCursorCheckpointStore("./maple-checkpoints")
+rate_limiter = InMemoryDocumentConnectorRateLimiter(
+    max_calls=10,
+    window_seconds=60.0,
+)
 report = ingest_documents(
     Connector(),
     sink,
     batch_size=50,
     max_documents=500,
     checkpoint_store=checkpoint_store,
+    rate_limiter=rate_limiter,
 )
 if report.is_ok():
     print(report.unwrap().to_dict())
@@ -959,6 +965,11 @@ page's sink writes succeed, so restart behavior is explicitly at-least-once
 at the connector-to-sink boundary. The helper performs no network calls,
 retries, transactions, rollback, or managed-store selection; without a
 checkpoint store, the host can resume using the reported cursor.
+`InMemoryDocumentConnectorRateLimiter` optionally admits a bounded number of
+fetches in a trailing time window and returns a typed rate-limit error when
+the budget is exhausted. It never sleeps or retries; hosts own backoff and
+remote/provider-specific limits. Custom `DocumentConnectorRateLimiter`
+implementations must return `Result.ok(None)` to admit a fetch.
 
 ## Event Streaming and Redaction (preview)
 

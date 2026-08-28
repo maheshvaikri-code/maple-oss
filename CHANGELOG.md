@@ -10,6 +10,12 @@
 
 ### Additions
 
+- **Bounded connector rate limiting**: `ingest_documents(...)` accepts an
+  optional host-owned `DocumentConnectorRateLimiter`; the in-memory trailing
+  window implementation admits bounded fetches and returns a sanitized typed
+  denial before connector activity. It never sleeps, retries, or selects a
+  provider, and remote/provider-specific backoff remains host-owned.
+
 - **Bounded durable retrieval cursor checkpoints**: `ingest_documents(...)`
   can resume from host-owned in-memory or atomic file checkpoints with strict
   revision fencing and a bounded cursor payload. Completed streams short-circuit

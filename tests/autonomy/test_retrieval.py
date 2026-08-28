@@ -6,6 +6,7 @@ from maple.autonomy.retrieval import (
     DocumentBatch,
     DocumentCursorCheckpoint,
     FileDocumentCursorCheckpointStore,
+    InMemoryDocumentConnectorRateLimiter,
     InMemoryDocumentCursorCheckpointStore,
     InMemoryLexicalRetriever,
     InMemoryVectorRetriever,
@@ -228,6 +229,70 @@ def test_document_checkpoint_rejects_explicit_cursor_source_of_truth():
 
     assert result.is_err()
     assert result.unwrap_err()["errorType"] == "RETRIEVAL_CHECKPOINT_INPUT_INVALID"
+
+
+def test_document_connector_rate_limiter_denies_until_window_expires():
+    now = [0.0]
+    limiter = InMemoryDocumentConnectorRateLimiter(
+        max_calls=2, window_seconds=10.0, clock=lambda: now[0]
+    )
+
+    assert limiter.allow().is_ok()
+    assert limiter.allow().is_ok()
+    denied = limiter.allow()
+    now[0] = 10.0
+    allowed_after_window = limiter.allow()
+
+    assert denied.is_err()
+    assert denied.unwrap_err()["errorType"] == "RETRIEVAL_CONNECTOR_RATE_LIMITED"
+    assert denied.unwrap_err()["details"]["retry_after_seconds"] == 10.0
+    assert allowed_after_window.is_ok()
+
+
+def test_document_connector_rate_limit_fails_before_next_fetch():
+    calls = []
+
+    class Connector:
+        def fetch(self, cursor, *, limit):
+            calls.append(cursor)
+            return Result.ok(DocumentBatch((make_document("doc-a"),), "next"))
+
+    sink = InMemoryLexicalRetriever()
+    result = ingest_documents(
+        Connector(),
+        sink,
+        max_batches=2,
+        rate_limiter=InMemoryDocumentConnectorRateLimiter(
+            max_calls=1, window_seconds=60.0
+        ),
+    )
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "RETRIEVAL_CONNECTOR_RATE_LIMITED"
+    assert calls == [None]
+    assert sink.stats()["documents"] == 1
+
+
+def test_document_connector_rate_limiter_redacts_host_failures():
+    class Connector:
+        def fetch(self, cursor, *, limit):
+            raise AssertionError("fetch must not run")
+
+    class FailedLimiter:
+        def allow(self):
+            return Result.err(
+                {"errorType": "PRIVATE_LIMITER_ERROR", "message": "secret"}
+            )
+
+    result = ingest_documents(
+        Connector(), InMemoryLexicalRetriever(), rate_limiter=FailedLimiter()
+    )
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == (
+        "RETRIEVAL_CONNECTOR_RATE_LIMITER_ERROR"
+    )
+    assert "secret" not in str(result.unwrap_err())
 
 
 def test_document_connector_rejects_over_limit_pages_without_sink_mutation():
