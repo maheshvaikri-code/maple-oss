@@ -6,10 +6,10 @@
 
 | # | Slice | Role | Files touched | Proven by (tests) | Status |
 |---|-------|------|---------------|-------------------|--------|
-| 1 | Add strict notification parsing and one-shot stdlib HTTP sender | Backend / Interop / Security | `maple/autonomy/interactions.py`, interaction exports | Model round-trip, bounds, endpoint policy, timeout, response/error mapping | todo |
-| 2 | Add authenticated receiver route and client operation | Backend / Interop / Security | `maple/autonomy/server.py`, server exports | Auth/scope, malformed/oversized body, callback success/failure, acknowledgement | todo |
-| 3 | Prove store integration and compatibility | QA / Backend | interaction and server regression tests | Created/responded/continued delivery, state authority on failure, existing notifier compatibility | todo |
-| 4 | Publish the contract in repository artifacts | Tech Writer / Release | README, API reference, parity ledger, changelog, release plan, QA/review | Documentation/static checks and clean package verification | todo |
+| 1 | Add strict notification parsing and one-shot stdlib HTTP sender | Backend / Interop / Security | `maple/autonomy/interactions.py`, interaction exports | Model round-trip, bounds, endpoint policy, timeout, response/error mapping | complete |
+| 2 | Add authenticated receiver route and client operation | Backend / Interop / Security | `maple/autonomy/server.py`, server exports | Auth/scope, malformed/oversized body, callback success/failure, acknowledgement | complete |
+| 3 | Prove store integration and compatibility | QA / Backend | interaction and server regression tests | Created/responded/continued delivery, state authority on failure, existing notifier compatibility | complete |
+| 4 | Publish the contract in repository artifacts | Tech Writer / Release | README, API reference, parity ledger, changelog, release plan, QA/review | Documentation/static checks and clean package verification | complete |
 
 ## Threat sketch (required for Class L)
 
@@ -43,5 +43,6 @@ notification, and no logging of tokens or full bodies.
 
 ## Status snapshot (update at session end / handoff)
 
-Done (with evidence): design and threat model filed. · Next: implement slices
-1–3, then documentation and release gates. · Blocked on: none.
+Done (with evidence): implementation, regressions, public documentation, QA,
+review, and clean archive packaging. · Next: continue the remaining P0 parity
+gaps. · Blocked on: none.
