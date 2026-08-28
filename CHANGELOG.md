@@ -10,6 +10,12 @@
 
 ### Additions
 
+- **Authenticated agent-run history inspection**: the local control plane now
+  exposes bounded retained checkpoint history through `RunClient` with the
+  existing `agent:read` scope and metadata-only responses. Legacy stores,
+  cross-agent access, malformed limits, and missing stores fail with typed
+  errors; the route does not restore, replay, or claim exactly-once effects.
+
 - **Bounded durable agent-run history**: built-in in-memory and file-backed
   run stores now retain version-ordered checkpoint snapshots through an
   optional `history()` contract. File stores persist bounded history in an

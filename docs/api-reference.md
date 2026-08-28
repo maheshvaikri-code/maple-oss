@@ -2261,6 +2261,34 @@ replacement is atomic, but the two files are not one transaction; a history
 write failure returns `RUN_HISTORY_SAVE_ERROR` after the current checkpoint may
 already be durable, so inspect before retrying.
 
+An authenticated `RunServer` can expose the same bounded history as a
+metadata-only inspection route when the configured store implements the
+optional `history()` capability:
+
+```python
+with RunServer(
+    registry,
+    agent_run_store=run_store,
+    auth_token="local-token",
+) as server:
+    client = RunClient(server.url, auth_token="local-token")
+    history = client.inspect_agent_run_history(
+        "researcher", "review-1", limit=20
+    )
+```
+
+This calls `GET /v1/agents/<agent_id>/runs/<run_id>/history?limit=<N>` and
+uses the existing `agent:read` scope. The optional limit defaults to 100 and
+must be between 1 and 100; the server selects the newest retained snapshots
+and returns them in ascending version order. Each item contains identity,
+status, counters, pending interaction IDs, session correlation, token usage,
+version, and timestamps. Descriptions, results, errors, messages, and
+reasoning steps are omitted. Missing or cross-agent runs return `404`; missing
+stores return `503`; legacy stores without history return `501`; invalid
+queries return `AGENT_RUN_HISTORY_LIMIT_INVALID`. The route is read-only and
+does not restore checkpoints, replay handlers, or provide remote exactly-once
+effects.
+
 ### Workflow run HTTP transport
 
 `WorkflowRegistry` and `RunServer` expose configured workflows to local tools

@@ -736,6 +736,158 @@ def test_authenticated_durable_agent_run_inspection_and_resume():
     assert unauthorized.unwrap_err()["errorType"] == "UNAUTHORIZED"
 
 
+def test_authenticated_agent_run_history_is_bounded_redacted_and_authorized():
+    run_store = InMemoryAgentRunStore(max_history=3)
+    checkpoint = None
+    for index in range(4):
+        candidate = AgentRunCheckpoint(
+            run_id="history-run",
+            agent_id="researcher",
+            description=f"Private task {index}",
+            status="paused" if index < 3 else "completed",
+            step_count=index + 1,
+            output_retries_used=index,
+            pending_approval_id=f"approval-{index}" if index < 3 else None,
+            result={"secret": f"private-result-{index}"},
+            error=(
+                {
+                    "errorType": "PRIVATE_ERROR",
+                    "message": "private failure detail",
+                }
+                if index == 2
+                else None
+            ),
+            token_usage={"prompt_tokens": index + 1},
+        )
+        saved = run_store.save(
+            candidate,
+            expected_version=checkpoint.version if checkpoint is not None else None,
+        )
+        assert saved.is_ok()
+        checkpoint = saved.unwrap()
+
+    server = RunServer(
+        WorkflowRegistry(),
+        agent_run_store=run_store,
+        auth_token="agent-token",
+        auth_principal=Principal("reader", ("agent:read",)),
+    )
+    base_url = server.start()
+    history_url = f"{base_url}/v1/agents/researcher/runs/history-run/history"
+    try:
+        client = RunClient(base_url, auth_token="agent-token")
+        history = client.inspect_agent_run_history("researcher", "history-run", limit=2)
+        wrong_agent = client.inspect_agent_run_history("other", "history-run")
+        unauthorized = RunClient(base_url).inspect_agent_run_history(
+            "researcher", "history-run"
+        )
+        invalid_limit_status, invalid_limit = _request(
+            f"{history_url}?limit=101",
+            headers={"Authorization": "Bearer agent-token"},
+        )
+        unknown_query_status, unknown_query = _request(
+            f"{history_url}?unexpected=1",
+            headers={"Authorization": "Bearer agent-token"},
+        )
+        duplicate_query_status, duplicate_query = _request(
+            f"{history_url}?limit=1&limit=2",
+            headers={"Authorization": "Bearer agent-token"},
+        )
+    finally:
+        server.close()
+
+    assert history.is_ok()
+    snapshots = history.unwrap()["history"]
+    assert [snapshot["version"] for snapshot in snapshots] == [3, 4]
+    assert snapshots[-1]["status"] == "completed"
+    assert snapshots[-1]["token_usage"]["prompt_tokens"] == 4
+    for snapshot in snapshots:
+        assert "description" not in snapshot
+        assert "result" not in snapshot
+        assert "error" not in snapshot
+        assert "messages" not in snapshot
+        assert "reasoning_steps" not in snapshot
+    assert wrong_agent.is_err()
+    assert wrong_agent.unwrap_err()["errorType"] == "AGENT_RUN_NOT_FOUND"
+    assert unauthorized.is_err()
+    assert unauthorized.unwrap_err()["errorType"] == "UNAUTHORIZED"
+    for status, payload in (
+        (invalid_limit_status, invalid_limit),
+        (unknown_query_status, unknown_query),
+        (duplicate_query_status, duplicate_query),
+    ):
+        assert status == 400
+        assert payload["error"]["errorType"] == "AGENT_RUN_HISTORY_LIMIT_INVALID"
+
+
+def test_agent_run_history_preserves_legacy_store_compatibility_and_fails_closed():
+    checkpoint = AgentRunCheckpoint(
+        run_id="legacy-run",
+        agent_id="researcher",
+        description="Legacy store run",
+        status="paused",
+    )
+
+    class LegacyStore:
+        def load(self, run_id):
+            return Result.ok(checkpoint if run_id == checkpoint.run_id else None)
+
+    server = RunServer(
+        WorkflowRegistry(), agent_run_store=LegacyStore(), auth_token="agent-token"
+    )
+    base_url = server.start()
+    try:
+        history = RunClient(
+            base_url, auth_token="agent-token"
+        ).inspect_agent_run_history("researcher", "legacy-run")
+    finally:
+        server.close()
+
+    assert history.is_err()
+    assert history.unwrap_err()["errorType"] == "AGENT_RUN_HISTORY_UNAVAILABLE"
+
+
+def test_agent_run_history_rejects_cross_agent_store_records():
+    checkpoint = AgentRunCheckpoint(
+        run_id="history-run",
+        agent_id="researcher",
+        description="Valid current checkpoint",
+        status="completed",
+    )
+
+    class InvalidHistoryStore:
+        def load(self, run_id):
+            return Result.ok(checkpoint if run_id == checkpoint.run_id else None)
+
+        def history(self, run_id):
+            return Result.ok(
+                [
+                    AgentRunCheckpoint(
+                        run_id=run_id,
+                        agent_id="other",
+                        description="Cross-agent record",
+                        status="completed",
+                    )
+                ]
+            )
+
+    server = RunServer(
+        WorkflowRegistry(),
+        agent_run_store=InvalidHistoryStore(),
+        auth_token="agent-token",
+    )
+    base_url = server.start()
+    try:
+        history = RunClient(
+            base_url, auth_token="agent-token"
+        ).inspect_agent_run_history("researcher", "history-run")
+    finally:
+        server.close()
+
+    assert history.is_err()
+    assert history.unwrap_err()["errorType"] == "AGENT_RUN_HISTORY_INVALID"
+
+
 def test_durable_agent_transport_fails_closed_without_store_or_resume_handler():
     def handler(task, context, *, session_id, run_id):
         return Result.ok(AgentRun("researcher", run_id, "completed", result={}))

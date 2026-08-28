@@ -42,6 +42,7 @@ _MAX_EVENT_BATCH_ITEMS = 100
 _MAX_HUMAN_INPUT_LIMIT = 1_000
 _MAX_APPROVAL_LIMIT = 100
 _MAX_HANDOFF_LIMIT = 100
+_MAX_AGENT_HISTORY_LIMIT = 100
 _MAX_AGENTS = 64
 _MAX_AGENT_IDENTIFIER_BYTES = 256
 _MAX_AGENT_TASK_BYTES = 8 * 1024
@@ -366,6 +367,28 @@ def _agent_checkpoint_to_dict(checkpoint: AgentRunCheckpoint) -> Dict[str, Any]:
     payload.pop("messages", None)
     payload.pop("reasoning_steps", None)
     return cast(Dict[str, Any], payload)
+
+
+def _agent_checkpoint_history_to_dict(
+    checkpoint: AgentRunCheckpoint,
+) -> Dict[str, Any]:
+    """Return metadata-only history data for the remote inspection route."""
+
+    return {
+        "run_id": checkpoint.run_id,
+        "agent_id": checkpoint.agent_id,
+        "status": checkpoint.status,
+        "step_count": checkpoint.step_count,
+        "output_retries_used": checkpoint.output_retries_used,
+        "pending_approval_id": checkpoint.pending_approval_id,
+        "pending_input_id": checkpoint.pending_input_id,
+        "session_id": checkpoint.session_id,
+        "session_version": checkpoint.session_version,
+        "token_usage": dict(checkpoint.token_usage),
+        "version": checkpoint.version,
+        "created_at": checkpoint.created_at,
+        "updated_at": checkpoint.updated_at,
+    }
 
 
 def _handoff_to_dict(record: HandoffRecord) -> Dict[str, Any]:
@@ -816,6 +839,7 @@ def _status_for_error(error: Error) -> int:
         "EVENT_PAYLOAD_TOO_DEEP",
         "EVENT_PAYLOAD_TOO_LARGE",
         "EVENT_BATCH_INVALID",
+        "AGENT_RUN_HISTORY_LIMIT_INVALID",
     }:
         return 400
     if error_type == "AGENT_REGISTRY_UNAVAILABLE":
@@ -827,6 +851,8 @@ def _status_for_error(error: Error) -> int:
     if error_type == "AGENT_RESUME_UNAVAILABLE":
         return 501
     if error_type == "AGENT_CANCEL_UNAVAILABLE":
+        return 501
+    if error_type == "AGENT_RUN_HISTORY_UNAVAILABLE":
         return 501
     if error_type == "HUMAN_INPUT_STORE_UNAVAILABLE":
         return 503
@@ -993,6 +1019,14 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 and path[3] == "runs"
             ):
                 self._run_agent(path[2])
+                return
+            if (
+                method == "GET"
+                and len(path) == 6
+                and path[0:4] == ("v1", "agents", path[2], "runs")
+                and path[5] == "history"
+            ):
+                self._inspect_agent_history(path[2], path[4])
                 return
             if (
                 method == "GET"
@@ -1714,6 +1748,121 @@ class _RequestHandler(BaseHTTPRequestHandler):
             return
         self._write_json(200, {"run": _agent_checkpoint_to_dict(checkpoint)})
 
+    def _agent_history_limit(self) -> Result[int, Error]:
+        parsed = urlsplit(self.path)
+        try:
+            pairs = parse_qsl(
+                parsed.query,
+                keep_blank_values=True,
+                strict_parsing=True,
+                max_num_fields=1,
+            )
+        except ValueError:
+            return Result.err(
+                _error(
+                    "AGENT_RUN_HISTORY_LIMIT_INVALID",
+                    "history query supports one limit parameter.",
+                    max_limit=_MAX_AGENT_HISTORY_LIMIT,
+                )
+            )
+        if not pairs:
+            return Result.ok(_MAX_AGENT_HISTORY_LIMIT)
+        key, raw_limit = pairs[0]
+        if key != "limit":
+            return Result.err(
+                _error(
+                    "AGENT_RUN_HISTORY_LIMIT_INVALID",
+                    "history query supports only the limit parameter.",
+                    max_limit=_MAX_AGENT_HISTORY_LIMIT,
+                )
+            )
+        try:
+            limit = int(raw_limit)
+        except (TypeError, ValueError):
+            return Result.err(
+                _error(
+                    "AGENT_RUN_HISTORY_LIMIT_INVALID",
+                    "history limit must be an integer.",
+                    max_limit=_MAX_AGENT_HISTORY_LIMIT,
+                )
+            )
+        if not 0 < limit <= _MAX_AGENT_HISTORY_LIMIT:
+            return Result.err(
+                _error(
+                    "AGENT_RUN_HISTORY_LIMIT_INVALID",
+                    "history limit is outside the configured range.",
+                    max_limit=_MAX_AGENT_HISTORY_LIMIT,
+                )
+            )
+        return Result.ok(limit)
+
+    def _inspect_agent_history(self, agent_id: str, run_id: str) -> None:
+        store = self.server.application.agent_run_store
+        if store is None:
+            self._write_error(
+                503,
+                _error(
+                    "AGENT_RUN_STORE_UNAVAILABLE",
+                    "No agent run store is configured.",
+                ),
+            )
+            return
+        limit_result = self._agent_history_limit()
+        if limit_result.is_err():
+            self._write_error(400, limit_result.unwrap_err())
+            return
+        history_method = getattr(store, "history", None)
+        if not callable(history_method):
+            self._write_error(
+                501,
+                _error(
+                    "AGENT_RUN_HISTORY_UNAVAILABLE",
+                    "The configured agent run store does not retain history.",
+                ),
+            )
+            return
+        current_result = store.load(run_id)
+        if current_result.is_err():
+            self._write_error(
+                _status_for_error(current_result.unwrap_err()),
+                current_result.unwrap_err(),
+            )
+            return
+        current = current_result.unwrap()
+        if current is None or current.agent_id != agent_id:
+            self._write_error(
+                404,
+                _error("AGENT_RUN_NOT_FOUND", "Agent run was not found."),
+            )
+            return
+        history_result = history_method(run_id)
+        if history_result.is_err():
+            self._write_error(
+                _status_for_error(history_result.unwrap_err()),
+                history_result.unwrap_err(),
+            )
+            return
+        snapshots = history_result.unwrap()
+        if not isinstance(snapshots, list) or any(
+            not isinstance(item, AgentRunCheckpoint)
+            or item.run_id != run_id
+            or item.agent_id != agent_id
+            for item in snapshots
+        ):
+            self._write_error(
+                500,
+                _error(
+                    "AGENT_RUN_HISTORY_INVALID",
+                    "Agent run history failed identity validation.",
+                ),
+            )
+            return
+        selected = snapshots[-limit_result.unwrap() :]
+        self._write_json(
+            200,
+            {"history": [_agent_checkpoint_history_to_dict(item) for item in selected]},
+        )
+
     def _resume_agent(self, agent_id: str, run_id: str) -> None:
         self._discard_bounded_request_body()
         registry = self.server.application.agent_registry
@@ -2408,6 +2557,38 @@ class RunClient:
         if run_error is not None:
             return Result.err(run_error)
         return self._request("GET", ("v1", "agents", agent_id, "runs", run_id))
+
+    def inspect_agent_run_history(
+        self,
+        agent_id: str,
+        run_id: str,
+        *,
+        limit: int = _MAX_AGENT_HISTORY_LIMIT,
+    ) -> Result[Dict[str, Any], Error]:
+        """Inspect bounded metadata-only history for one durable agent run."""
+        identifier_error = _validate_agent_identifier(agent_id, "agent_id")
+        if identifier_error is not None:
+            return Result.err(identifier_error)
+        run_error = _validate_agent_identifier(run_id, "run_id")
+        if run_error is not None:
+            return Result.err(run_error)
+        if (
+            not isinstance(limit, int)
+            or isinstance(limit, bool)
+            or not 0 < limit <= _MAX_AGENT_HISTORY_LIMIT
+        ):
+            return Result.err(
+                _error(
+                    "AGENT_RUN_HISTORY_LIMIT_INVALID",
+                    "history limit is outside the configured range.",
+                    max_limit=_MAX_AGENT_HISTORY_LIMIT,
+                )
+            )
+        return self._request(
+            "GET",
+            ("v1", "agents", agent_id, "runs", run_id, "history"),
+            query={"limit": str(limit)},
+        )
 
     def resume_agent_run(
         self, agent_id: str, run_id: str
