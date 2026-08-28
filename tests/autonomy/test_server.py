@@ -7,6 +7,7 @@ import urllib.request
 import pytest
 
 from maple.autonomy import (
+    AgentDescriptor,
     AgentRegistry,
     AgentRun,
     AgentRunCheckpoint,
@@ -906,6 +907,175 @@ def test_agent_registry_cancellation_requires_cancelled_result_and_redacts_failu
     assert failed.is_err()
     assert failed.unwrap_err()["errorType"] == "AGENT_CANCEL_HANDLER_ERROR"
     assert "private cancellation detail" not in str(failed.unwrap_err())
+
+
+def test_agent_registry_lists_bounded_descriptors_and_routes_exact_match():
+    calls = []
+
+    def handler(task, context, *, session_id, run_id):
+        calls.append((task, dict(context), session_id, run_id))
+        return Result.ok(
+            AgentRun(
+                "alpha",
+                run_id,
+                "completed",
+                result={"agent": "alpha", "task": task},
+            )
+        )
+
+    def zeta_handler(task, context, *, session_id, run_id):
+        return Result.ok(
+            AgentRun("zeta", run_id, "completed", result={"agent": "zeta"})
+        )
+
+    agents = AgentRegistry()
+    assert agents.register(
+        "zeta", zeta_handler, capabilities=["shared", "research"]
+    ).is_ok()
+    assert agents.register("alpha", handler, capabilities=["shared"]).is_ok()
+
+    listed = agents.list_agents()
+    assert listed.is_ok()
+    assert listed.unwrap() == [
+        AgentDescriptor("alpha", ("shared",)),
+        AgentDescriptor("zeta", ("research", "shared")),
+    ]
+    listed.unwrap()[0].to_dict()["capabilities"].append("mutated")
+    assert agents.list_agents().unwrap()[0] == AgentDescriptor("alpha", ("shared",))
+
+    routed = agents.route(
+        "shared",
+        "find",
+        {"project": "MAPLE"},
+        session_id="session",
+        run_id="route-run",
+    )
+    assert routed.is_ok()
+    assert routed.unwrap().agent_id == "alpha"
+    assert calls == [("find", {"project": "MAPLE"}, "session", "route-run")]
+    research = agents.route("research", "find", run_id="research-run")
+    assert research.is_ok()
+    assert research.unwrap().agent_id == "zeta"
+    missing = agents.route("missing", "find")
+    assert missing.is_err()
+    assert missing.unwrap_err()["errorType"] == "AGENT_ROUTE_NOT_FOUND"
+
+    assert agents.register("invalid", handler, capabilities=[" bad"]).is_err()
+    assert agents.register("duplicate", handler, capabilities=["one", "one"]).is_err()
+
+
+def test_authenticated_agent_capability_listing_and_routing_round_trip():
+    calls = []
+
+    def make_handler(agent_id):
+        def handler(task, context, *, session_id, run_id):
+            calls.append((agent_id, task, dict(context), session_id, run_id))
+            return Result.ok(
+                AgentRun(agent_id, run_id, "completed", {"agent": agent_id})
+            )
+
+        return handler
+
+    agents = AgentRegistry()
+    assert agents.register(
+        "zeta", make_handler("zeta"), capabilities=["research"]
+    ).is_ok()
+    assert agents.register(
+        "alpha", make_handler("alpha"), capabilities=["research"]
+    ).is_ok()
+    server = RunServer(
+        WorkflowRegistry(), agent_registry=agents, auth_token="route-token"
+    )
+    base_url = server.start()
+    try:
+        client = RunClient(base_url, auth_token="route-token")
+        raw_listing = client.list_agents()
+        typed_listing = client.list_agents_typed()
+        routed = client.route_agent_typed(
+            "research",
+            "summarize",
+            {"project": "MAPLE"},
+            session_id="route-session",
+            run_id="route-run",
+        )
+        missing = client.route_agent("unknown", "summarize")
+        unauthorized_listing = RunClient(base_url).list_agents()
+        unauthorized_route = RunClient(base_url).route_agent("research", "summarize")
+    finally:
+        server.close()
+
+    assert raw_listing.is_ok()
+    assert raw_listing.unwrap()["agents"] == [
+        {"agent_id": "alpha", "capabilities": ["research"]},
+        {"agent_id": "zeta", "capabilities": ["research"]},
+    ]
+    assert typed_listing.is_ok()
+    assert typed_listing.unwrap() == [
+        AgentDescriptor("alpha", ("research",)),
+        AgentDescriptor("zeta", ("research",)),
+    ]
+    assert routed.is_ok()
+    assert routed.unwrap() == AgentRun(
+        "alpha", "route-run", "completed", {"agent": "alpha"}
+    )
+    assert calls == [
+        ("alpha", "summarize", {"project": "MAPLE"}, "route-session", "route-run")
+    ]
+    assert missing.is_err()
+    assert missing.unwrap_err()["errorType"] == "AGENT_ROUTE_NOT_FOUND"
+    assert unauthorized_listing.is_err()
+    assert unauthorized_listing.unwrap_err()["errorType"] == "UNAUTHORIZED"
+    assert unauthorized_route.is_err()
+    assert unauthorized_route.unwrap_err()["errorType"] == "UNAUTHORIZED"
+
+    unavailable_server = RunServer(WorkflowRegistry(), auth_token="route-token")
+    unavailable_url = unavailable_server.start()
+    try:
+        unavailable = RunClient(unavailable_url, auth_token="route-token").list_agents()
+    finally:
+        unavailable_server.close()
+    assert unavailable.is_err()
+    assert unavailable.unwrap_err()["errorType"] == "AGENT_REGISTRY_UNAVAILABLE"
+
+    scoped_server = RunServer(
+        WorkflowRegistry(),
+        agent_registry=agents,
+        auth_token="route-token",
+        auth_principal=Principal("invoker", ("agent:invoke",)),
+    )
+    scoped_url = scoped_server.start()
+    try:
+        scoped_client = RunClient(scoped_url, auth_token="route-token")
+        scoped_listing = scoped_client.list_agents()
+        scoped_route = scoped_client.route_agent("research", "scoped")
+    finally:
+        scoped_server.close()
+    assert scoped_listing.is_err()
+    assert scoped_listing.unwrap_err()["errorType"] == "FORBIDDEN"
+    assert scoped_route.is_ok()
+
+
+def test_typed_agent_route_rejects_malformed_selected_identity():
+    class MalformedClient(RunClient):
+        def route_agent(self, *args, **kwargs):
+            return Result.ok(
+                {
+                    "run": {
+                        "agent_id": "",
+                        "run_id": "route-run",
+                        "status": "completed",
+                        "result": {"private": "not trusted"},
+                        "error": None,
+                    }
+                }
+            )
+
+    result = MalformedClient("http://127.0.0.1:1").route_agent_typed(
+        "research", "task", run_id="route-run"
+    )
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "AGENT_RESPONSE_INVALID"
+    assert "not trusted" not in str(result.unwrap_err())
 
 
 def test_typed_remote_agent_methods_return_validated_agent_runs():

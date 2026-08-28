@@ -57,7 +57,7 @@ def test_native_agent_remote_adapter_binds_store_and_registers_start_and_resume(
     adapter = AutonomousAgentRemoteAdapter(agent, run_store=store)
     registry = AgentRegistry()
 
-    registered = adapter.register(registry)
+    registered = adapter.register(registry, capabilities=["research"])
     started = registry.run(
         "researcher",
         "summarize",
@@ -77,6 +77,7 @@ def test_native_agent_remote_adapter_binds_store_and_registers_start_and_resume(
     assert resumed.unwrap() == AgentRun(
         "researcher", "native-run-1", "completed", {"resumed": True}
     )
+    assert registry.list_agents().unwrap()[0].capabilities == ("research",)
     assert agent.calls == [
         ("summarize", {"project": "MAPLE"}, "session-1", "native-run-1")
     ]
@@ -111,6 +112,23 @@ def test_native_agent_remote_adapter_round_trips_authenticated_typed_transport()
     assert started.unwrap().result == {"answer": "remote task"}
     assert resumed.is_ok()
     assert resumed.unwrap().result == {"resumed": True}
+
+
+def test_native_agent_remote_adapter_routes_by_capability():
+    agent = _NativeAgent()
+    registry = AgentRegistry()
+    assert (
+        AutonomousAgentRemoteAdapter(agent, run_store=InMemoryAgentRunStore())
+        .register(registry, capabilities=["research"])
+        .is_ok()
+    )
+
+    routed = registry.route("research", "remote task", run_id="routed-run")
+
+    assert routed.is_ok()
+    assert routed.unwrap() == AgentRun(
+        "researcher", "routed-run", "completed", {"answer": "remote task"}
+    )
 
 
 def test_native_agent_remote_adapter_sanitizes_errors_and_rejects_invalid_goals():

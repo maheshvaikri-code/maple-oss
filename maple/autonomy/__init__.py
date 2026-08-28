@@ -16,6 +16,7 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 # MAPLE Autonomy Layer - Autonomous agentic AI capabilities.
 
 from .agent import AutonomousAgent, AutonomousConfig, Goal, ReasoningStep
+from .agent_transport import AutonomousAgentRemoteAdapter
 from .approval import (
     ApprovalDecision,
     ApprovalRequest,
@@ -174,6 +175,7 @@ from .runs import (
     InMemoryAgentRunStore,
 )
 from .server import (
+    AgentDescriptor,
     AgentRegistry,
     AgentRun,
     AgentRunCancelHandler,
@@ -186,7 +188,6 @@ from .server import (
     RunServer,
     WorkflowRegistry,
 )
-from .agent_transport import AutonomousAgentRemoteAdapter
 from .sessions import (
     DEFAULT_MAX_MESSAGE_BYTES,
     DEFAULT_MAX_MESSAGES,
@@ -391,6 +392,7 @@ __all__ = [
     "RunClient",
     "WorkflowRegistry",
     "AgentRegistry",
+    "AgentDescriptor",
     "AgentRun",
     "AgentRunHandler",
     "AgentRunCancelHandler",

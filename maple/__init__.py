@@ -33,6 +33,7 @@ from .agent.config import (
 
 # Autonomy layer (LLM + autonomous agents)
 from .autonomy.agent import AutonomousAgent, AutonomousConfig, Goal
+from .autonomy.agent_transport import AutonomousAgentRemoteAdapter
 from .autonomy.approval import (
     ApprovalDecision,
     ApprovalRequest,
@@ -184,6 +185,7 @@ from .autonomy.runs import (
     InMemoryAgentRunStore,
 )
 from .autonomy.server import (
+    AgentDescriptor,
     AgentRegistry,
     AgentRun,
     AgentRunCancelHandler,
@@ -196,7 +198,6 @@ from .autonomy.server import (
     RunServer,
     WorkflowRegistry,
 )
-from .autonomy.agent_transport import AutonomousAgentRemoteAdapter
 from .autonomy.sessions import (
     DEFAULT_MAX_MESSAGE_BYTES,
     DEFAULT_MAX_MESSAGES,
@@ -485,6 +486,7 @@ __all__ = [
     "RunClient",
     "WorkflowRegistry",
     "AgentRegistry",
+    "AgentDescriptor",
     "AgentRun",
     "AgentRunHandler",
     "AgentRunCancelHandler",

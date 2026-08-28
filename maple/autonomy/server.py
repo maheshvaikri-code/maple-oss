@@ -13,7 +13,18 @@ import uuid
 from dataclasses import dataclass
 from functools import partial
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any, Dict, Mapping, Optional, Protocol, Sequence, Tuple, cast
+from typing import (
+    Any,
+    Dict,
+    Iterable,
+    List,
+    Mapping,
+    Optional,
+    Protocol,
+    Sequence,
+    Tuple,
+    cast,
+)
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qsl, quote, unquote, urlencode, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
@@ -53,6 +64,8 @@ _MAX_AGENT_CONTEXT_ITEMS = 128
 _MAX_AGENT_CONTEXT_DEPTH = 8
 _MAX_AGENT_CONTEXT_STRING_LENGTH = 8_192
 _MAX_AGENT_CONTEXT_BYTES = 32 * 1024
+_MAX_AGENT_CAPABILITIES = 16
+_MAX_AGENT_CAPABILITY_BYTES = 128
 _AGENT_RUN_STATUSES = frozenset({"cancelled", "completed", "paused", "failed"})
 _PRINCIPAL_ID_PATTERN = r"^[A-Za-z0-9_.:-]{1,128}$"
 _SCOPE_PATTERN = r"^(?:\*|[a-z][a-z0-9_.-]{0,63}:(?:[a-z][a-z0-9_.-]{0,63}|\*))$"
@@ -124,6 +137,10 @@ def _required_scope(method: str, path: Tuple[str, ...]) -> Optional[str]:
         return "health:read"
     if path[0:2] == ("v1", "events"):
         return "event:publish" if method == "POST" else "event:read"
+    if path[0:2] == ("v1", "agent-routes"):
+        if method == "POST" and path == ("v1", "agent-routes", "runs"):
+            return "agent:invoke"
+        return None
     if path[0:2] == ("v1", "agents"):
         if method == "GET":
             return "agent:read"
@@ -186,6 +203,64 @@ def _validate_agent_identifier(value: Any, field: str) -> Optional[Error]:
             max_bytes=_MAX_AGENT_IDENTIFIER_BYTES,
         )
     return None
+
+
+def _normalize_agent_capabilities(
+    capabilities: Optional[Iterable[str]],
+) -> Result[Tuple[str, ...], Error]:
+    """Validate and deterministically copy public agent capability labels."""
+    if capabilities is None:
+        return Result.ok(())
+    if isinstance(capabilities, (str, bytes)):
+        return Result.err(
+            _error(
+                "AGENT_CAPABILITIES_INVALID",
+                "capabilities must be an iterable of labels.",
+            )
+        )
+    normalized: List[str] = []
+    seen = set()
+    try:
+        for index, capability in enumerate(capabilities):
+            if index >= _MAX_AGENT_CAPABILITIES:
+                return Result.err(
+                    _error(
+                        "AGENT_CAPABILITIES_INVALID",
+                        "capabilities exceed the configured item limit.",
+                        max_items=_MAX_AGENT_CAPABILITIES,
+                    )
+                )
+            if (
+                not isinstance(capability, str)
+                or not capability.strip()
+                or capability != capability.strip()
+                or len(capability.encode("utf-8")) > _MAX_AGENT_CAPABILITY_BYTES
+                or any(ord(char) < 32 or ord(char) == 127 for char in capability)
+            ):
+                return Result.err(
+                    _error(
+                        "AGENT_CAPABILITY_INVALID",
+                        "capability labels must be bounded control-free text.",
+                        max_bytes=_MAX_AGENT_CAPABILITY_BYTES,
+                    )
+                )
+            if capability in seen:
+                return Result.err(
+                    _error(
+                        "AGENT_CAPABILITIES_INVALID",
+                        "capability labels must be unique.",
+                    )
+                )
+            seen.add(capability)
+            normalized.append(capability)
+    except TypeError:
+        return Result.err(
+            _error(
+                "AGENT_CAPABILITIES_INVALID",
+                "capabilities must be an iterable of labels.",
+            )
+        )
+    return Result.ok(tuple(sorted(normalized)))
 
 
 def _copy_bounded_json(
@@ -352,6 +427,30 @@ class AgentRun:
     error: Optional[Error] = None
 
 
+@dataclass(frozen=True)
+class AgentDescriptor:
+    """Bounded public metadata for one registered agent."""
+
+    agent_id: str
+    capabilities: Tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        identifier_error = _validate_agent_identifier(self.agent_id, "agent_id")
+        if identifier_error is not None:
+            raise ValueError(identifier_error["message"])
+        normalized = _normalize_agent_capabilities(self.capabilities)
+        if normalized.is_err():
+            raise ValueError(normalized.unwrap_err()["message"])
+        object.__setattr__(self, "capabilities", normalized.unwrap())
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Return a detached JSON-safe public descriptor."""
+        return {
+            "agent_id": self.agent_id,
+            "capabilities": list(self.capabilities),
+        }
+
+
 def _agent_run_to_dict(run: AgentRun) -> Dict[str, Any]:
     return {
         "agent_id": run.agent_id,
@@ -427,6 +526,7 @@ class AgentRegistry:
             raise ValueError("max_agents must be between 1 and 64")
         self.max_agents = max_agents
         self._agents: Dict[str, AgentRunHandler] = {}
+        self._capabilities: Dict[str, Tuple[str, ...]] = {}
         self._resume_handlers: Dict[str, AgentRunResumeHandler] = {}
         self._cancel_handlers: Dict[str, AgentRunCancelHandler] = {}
         self._lock = threading.RLock()
@@ -438,11 +538,15 @@ class AgentRegistry:
         *,
         resume_handler: Optional[AgentRunResumeHandler] = None,
         cancel_handler: Optional[AgentRunCancelHandler] = None,
+        capabilities: Optional[Iterable[str]] = None,
     ) -> Result[None, Error]:
         """Register one host-owned handler before serving requests."""
         identifier_error = _validate_agent_identifier(agent_id, "agent_id")
         if identifier_error is not None:
             return Result.err(identifier_error)
+        capabilities_result = _normalize_agent_capabilities(capabilities)
+        if capabilities_result.is_err():
+            return Result.err(capabilities_result.unwrap_err())
         if not callable(handler):
             return Result.err(
                 _error("AGENT_HANDLER_INVALID", "handler must be callable.")
@@ -479,11 +583,57 @@ class AgentRegistry:
                     )
                 )
             self._agents[agent_id] = handler
+            self._capabilities[agent_id] = capabilities_result.unwrap()
             if resume_handler is not None:
                 self._resume_handlers[agent_id] = resume_handler
             if cancel_handler is not None:
                 self._cancel_handlers[agent_id] = cancel_handler
         return Result.ok(None)
+
+    def list_agents(self) -> Result[List[AgentDescriptor], Error]:
+        """Return detached public descriptors in deterministic ID order."""
+        with self._lock:
+            descriptors = [
+                AgentDescriptor(agent_id, self._capabilities.get(agent_id, ()))
+                for agent_id in sorted(self._agents)
+            ]
+        return Result.ok(descriptors)
+
+    def route(
+        self,
+        capability: str,
+        task: str,
+        context: Optional[Mapping[str, Any]] = None,
+        *,
+        session_id: Optional[str] = None,
+        run_id: Optional[str] = None,
+    ) -> Result[AgentRun, Error]:
+        """Route to the first exact capability match without retry or failover."""
+        capability_result = _normalize_agent_capabilities((capability,))
+        if capability_result.is_err():
+            return Result.err(capability_result.unwrap_err())
+        selected_capability = capability_result.unwrap()[0]
+        with self._lock:
+            candidates = [
+                agent_id
+                for agent_id in sorted(self._agents)
+                if selected_capability in self._capabilities.get(agent_id, ())
+            ]
+        if not candidates:
+            return Result.err(
+                _error(
+                    "AGENT_ROUTE_NOT_FOUND",
+                    "No registered agent provides the requested capability.",
+                    capability=selected_capability,
+                )
+            )
+        return self.run(
+            candidates[0],
+            task,
+            context,
+            session_id=session_id,
+            run_id=run_id,
+        )
 
     def _get(self, agent_id: str) -> Result[AgentRunHandler, Error]:
         identifier_error = _validate_agent_identifier(agent_id, "agent_id")
@@ -771,7 +921,7 @@ def _normalize_agent_result(
 
 def _normalize_remote_agent_response(
     response: Result[Dict[str, Any], Error],
-    agent_id: str,
+    agent_id: Optional[str],
     *,
     requested_run_id: Optional[str] = None,
     required_status: Optional[str] = None,
@@ -806,12 +956,21 @@ def _normalize_remote_agent_response(
                 "Remote agent response contained an invalid run envelope.",
             )
         )
+    raw_agent_error = _validate_agent_identifier(raw_agent_id, "agent_id")
+    if raw_agent_error is not None:
+        return Result.err(
+            _error(
+                "AGENT_RESPONSE_INVALID",
+                "Remote agent response contained an invalid run envelope.",
+            )
+        )
+    expected_agent_id = agent_id or raw_agent_id
     if requested_run_id is not None and raw_run_id != requested_run_id:
         return Result.err(
             _error(
                 "AGENT_RESPONSE_INVALID",
                 "Remote agent response run identity did not match the request.",
-                agent_id=agent_id,
+                agent_id=expected_agent_id,
             )
         )
     candidate = AgentRun(
@@ -821,13 +980,15 @@ def _normalize_remote_agent_response(
         result=raw_run.get("result"),
         error=raw_run.get("error"),
     )
-    normalized = _normalize_agent_result(Result.ok(candidate), agent_id, raw_run_id)
+    normalized = _normalize_agent_result(
+        Result.ok(candidate), expected_agent_id, raw_run_id
+    )
     if normalized.is_err():
         return Result.err(
             _error(
                 "AGENT_RESPONSE_INVALID",
                 "Remote agent response failed run validation.",
-                agent_id=agent_id,
+                agent_id=expected_agent_id,
             )
         )
     run = normalized.unwrap()
@@ -836,7 +997,7 @@ def _normalize_remote_agent_response(
             _error(
                 "AGENT_RESPONSE_INVALID",
                 "Remote agent response had an unexpected run status.",
-                agent_id=agent_id,
+                agent_id=expected_agent_id,
                 expected_status=required_status,
             )
         )
@@ -866,6 +1027,7 @@ def _status_for_error(error: Error) -> int:
         "AGENT_RUN_NOT_FOUND",
         "WORKFLOW_NOT_FOUND",
         "AGENT_NOT_FOUND",
+        "AGENT_ROUTE_NOT_FOUND",
         "HANDOFF_NOT_FOUND",
         "APPROVAL_NOT_FOUND",
     }:
@@ -901,10 +1063,13 @@ def _status_for_error(error: Error) -> int:
         "INVALID_WORKFLOW",
         "RUN_IDENTIFIER_INVALID",
         "AGENT_IDENTIFIER_INVALID",
+        "AGENT_CAPABILITY_INVALID",
+        "AGENT_CAPABILITIES_INVALID",
         "AGENT_TASK_INVALID",
         "AGENT_CONTEXT_INVALID",
         "AGENT_HANDLER_INVALID",
         "AGENT_RESUME_HANDLER_INVALID",
+        "AGENT_CANCEL_HANDLER_INVALID",
         "INVALID_JSON",
         "REQUEST_BODY_INVALID",
         "WORKFLOW_MISMATCH",
@@ -1104,6 +1269,12 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 return
             if method == "GET" and path == ("v1", "events"):
                 self._read_events()
+                return
+            if method == "GET" and path == ("v1", "agents"):
+                self._list_agents()
+                return
+            if method == "POST" and path == ("v1", "agent-routes", "runs"):
+                self._route_agent()
                 return
             if (
                 method == "POST"
@@ -1566,6 +1737,54 @@ class _RequestHandler(BaseHTTPRequestHandler):
         body = self._read_body()
         result = registry.run(
             agent_id,
+            body.get("task"),
+            body.get("context", {}),
+            session_id=body.get("session_id"),
+            run_id=body.get("run_id"),
+        )
+        if result.is_err():
+            self._write_error(
+                _status_for_error(result.unwrap_err()), result.unwrap_err()
+            )
+            return
+        self._write_json(201, {"run": _agent_run_to_dict(result.unwrap())})
+
+    def _list_agents(self) -> None:
+        registry = self.server.application.agent_registry
+        if registry is None:
+            self._write_error(
+                503,
+                _error(
+                    "AGENT_REGISTRY_UNAVAILABLE",
+                    "No agent registry is configured.",
+                ),
+            )
+            return
+        result = registry.list_agents()
+        if result.is_err():
+            self._write_error(
+                _status_for_error(result.unwrap_err()), result.unwrap_err()
+            )
+            return
+        self._write_json(
+            200,
+            {"agents": [descriptor.to_dict() for descriptor in result.unwrap()]},
+        )
+
+    def _route_agent(self) -> None:
+        registry = self.server.application.agent_registry
+        if registry is None:
+            self._write_error(
+                503,
+                _error(
+                    "AGENT_REGISTRY_UNAVAILABLE",
+                    "No agent registry is configured.",
+                ),
+            )
+            return
+        body = self._read_body()
+        result = registry.route(
+            body.get("capability"),
             body.get("task"),
             body.get("context", {}),
             session_id=body.get("session_id"),
@@ -2519,6 +2738,55 @@ class RunClient:
         """Check the remote workflow service health endpoint."""
         return self._request("GET", ("healthz",))
 
+    def list_agents(self) -> Result[Dict[str, Any], Error]:
+        """List bounded public metadata for registered remote agents."""
+        return self._request("GET", ("v1", "agents"))
+
+    def list_agents_typed(self) -> Result[List[AgentDescriptor], Error]:
+        """List and validate public remote agent descriptors."""
+        response = self.list_agents()
+        if response.is_err():
+            return Result.err(response.unwrap_err())
+        payload = response.unwrap()
+        raw_agents = payload.get("agents") if isinstance(payload, Mapping) else None
+        if not isinstance(raw_agents, list) or len(raw_agents) > _MAX_AGENTS:
+            return Result.err(
+                _error(
+                    "AGENT_RESPONSE_INVALID",
+                    "Remote agent listing contained an invalid descriptor list.",
+                )
+            )
+        descriptors: List[AgentDescriptor] = []
+        seen = set()
+        try:
+            for raw_agent in raw_agents:
+                if not isinstance(raw_agent, Mapping):
+                    raise ValueError
+                agent_id = raw_agent.get("agent_id")
+                capabilities = raw_agent.get("capabilities", [])
+                if not isinstance(agent_id, str) or not isinstance(capabilities, list):
+                    raise ValueError
+                descriptor = AgentDescriptor(agent_id, tuple(capabilities))
+                if descriptor.agent_id in seen:
+                    raise ValueError
+                seen.add(descriptor.agent_id)
+                descriptors.append(descriptor)
+        except (TypeError, ValueError, KeyError):
+            return Result.err(
+                _error(
+                    "AGENT_RESPONSE_INVALID",
+                    "Remote agent listing contained an invalid descriptor.",
+                )
+            )
+        if [descriptor.agent_id for descriptor in descriptors] != sorted(seen):
+            return Result.err(
+                _error(
+                    "AGENT_RESPONSE_INVALID",
+                    "Remote agent listing was not deterministically ordered.",
+                )
+            )
+        return Result.ok(descriptors)
+
     def run(
         self,
         workflow_name: str,
@@ -2572,6 +2840,66 @@ class RunClient:
         if run_id is not None:
             body["run_id"] = run_id
         return self._request("POST", ("v1", "agents", agent_id, "runs"), body)
+
+    def route_agent(
+        self,
+        capability: str,
+        task: str,
+        context: Optional[Mapping[str, Any]] = None,
+        *,
+        session_id: Optional[str] = None,
+        run_id: Optional[str] = None,
+    ) -> Result[Dict[str, Any], Error]:
+        """Invoke the deterministic exact-match remote capability route."""
+        capability_result = _normalize_agent_capabilities((capability,))
+        if capability_result.is_err():
+            return Result.err(capability_result.unwrap_err())
+        task_result = _normalize_agent_task(task)
+        if task_result.is_err():
+            return Result.err(task_result.unwrap_err())
+        context_result = _normalize_agent_context(context)
+        if context_result.is_err():
+            return Result.err(context_result.unwrap_err())
+        if session_id is not None:
+            session_error = _validate_agent_identifier(session_id, "session_id")
+            if session_error is not None:
+                return Result.err(session_error)
+        if run_id is not None:
+            run_error = _validate_agent_identifier(run_id, "run_id")
+            if run_error is not None:
+                return Result.err(run_error)
+        body: Dict[str, Any] = {
+            "capability": capability_result.unwrap()[0],
+            "task": task_result.unwrap(),
+            "context": context_result.unwrap(),
+        }
+        if session_id is not None:
+            body["session_id"] = session_id
+        if run_id is not None:
+            body["run_id"] = run_id
+        return self._request("POST", ("v1", "agent-routes", "runs"), body)
+
+    def route_agent_typed(
+        self,
+        capability: str,
+        task: str,
+        context: Optional[Mapping[str, Any]] = None,
+        *,
+        session_id: Optional[str] = None,
+        run_id: Optional[str] = None,
+    ) -> Result[AgentRun, Error]:
+        """Route to a capability and return the selected validated ``AgentRun``."""
+        return _normalize_remote_agent_response(
+            self.route_agent(
+                capability,
+                task,
+                context,
+                session_id=session_id,
+                run_id=run_id,
+            ),
+            None,
+            requested_run_id=run_id,
+        )
 
     def run_agent_typed(
         self,
@@ -3448,6 +3776,7 @@ class RemoteHandoffTarget:
 
 
 __all__ = [
+    "AgentDescriptor",
     "AgentRegistry",
     "AgentRun",
     "AgentRunCancelHandler",

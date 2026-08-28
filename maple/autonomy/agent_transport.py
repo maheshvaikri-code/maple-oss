@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Mapping, Optional, Protocol
+from typing import Any, Iterable, Mapping, Optional, Protocol
 
 from ..core.result import Result
 from .runs import AgentRunStore
@@ -200,8 +200,9 @@ class AutonomousAgentRemoteAdapter:
         registry: AgentRegistry,
         *,
         cancel_handler: Optional[AgentRunCancelHandler] = None,
+        capabilities: Optional[Iterable[str]] = None,
     ) -> Result[None, Error]:
-        """Register native invocation/resume callbacks with ``registry``."""
+        """Register native callbacks and optional public capabilities."""
         if not isinstance(registry, AgentRegistry):
             raise TypeError("registry must be an AgentRegistry")
         return registry.register(
@@ -209,6 +210,7 @@ class AutonomousAgentRemoteAdapter:
             self._run,
             resume_handler=self._resume,
             cancel_handler=cancel_handler,
+            capabilities=capabilities,
         )
 
 
