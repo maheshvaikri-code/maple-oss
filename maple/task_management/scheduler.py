@@ -385,17 +385,16 @@ class TaskScheduler:
     def _assign_task_to_agent(self, task: Task, agent_id: str) -> Result[str, str]:
         """Assign a task to a specific agent."""
 
-        # Update task status
-        status_result = self.task_queue.update_task_status(
-            task.task_id, TaskStatus.ASSIGNED, assigned_agent=agent_id
-        )
-
+        # Claiming is serialized by TaskQueue so duplicate schedulers cannot
+        # both pass a status check before either writes the assignment.
+        status_result = self.task_queue.assign_task(task.task_id, agent_id)
         if status_result.is_err():
             return Result.err(
                 f"Failed to update task status: {status_result.unwrap_err()}"
             )
 
-        # Update agent load tracking
+        # Update agent load tracking after the queue-side claim. Do not hold
+        # this lock while TaskQueue invokes user callbacks.
         with self._lock:
             if agent_id not in self.agent_loads:
                 self.agent_loads[agent_id] = 0
@@ -408,6 +407,19 @@ class TaskScheduler:
             self.agent_assignments[agent_id].append(task.task_id)
 
         return Result.ok(agent_id)
+
+    def _return_failed_task_to_queue(
+        self, task_id: str, error: str
+    ) -> Result[None, str]:
+        """Return a scheduler-assigned task through bounded retry admission."""
+
+        failed_result = self.task_queue.update_task_status(
+            task_id, TaskStatus.FAILED, error=error
+        )
+        if failed_result.is_err():
+            return Result.err(failed_result.unwrap_err())
+
+        return self.task_queue.requeue_task(task_id)
 
     def task_completed(self, task_id: str, agent_id: str) -> Result[None, str]:
         """Notify scheduler that a task has completed."""
@@ -533,9 +545,10 @@ class TaskScheduler:
                     schedule_result = self.schedule_task(task.task_id)
 
                     if schedule_result.is_err():
-                        # Failed to schedule, put task back
-                        self.task_queue.update_task_status(
-                            task.task_id, TaskStatus.QUEUED
+                        # Failed scheduling must restore a physical queue
+                        # tuple; a status-only change would lose the task.
+                        self._return_failed_task_to_queue(
+                            task.task_id, schedule_result.unwrap_err()
                         )
 
                 # Periodic rebalancing

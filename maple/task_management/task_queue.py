@@ -354,6 +354,29 @@ class TaskQueue:
                 return Result.err(f"Task {task_id} not found")
             return Result.ok(self.tasks[task_id])
 
+    def assign_task(self, task_id: str, assigned_agent: str) -> Result[Task, str]:
+        """Atomically claim a queued task for one agent."""
+
+        with self._lock:
+            if not assigned_agent:
+                return Result.err("Assigned agent cannot be empty")
+            if task_id not in self.tasks:
+                return Result.err(f"Task {task_id} not found")
+
+            task = self.tasks[task_id]
+            if task.status not in (TaskStatus.QUEUED, TaskStatus.ASSIGNED):
+                return Result.err(
+                    f"Task {task_id} is not schedulable from status "
+                    f"{task.status.value}"
+                )
+            if task.status == TaskStatus.ASSIGNED and task.assigned_agent:
+                return Result.err(f"Task {task_id} is already assigned")
+
+            task.status = TaskStatus.ASSIGNED
+            task.assigned_agent = assigned_agent
+            self._notify_task_callbacks(task_id, task)
+            return Result.ok(task)
+
     def cancel_task(self, task_id: str) -> Result[Task, str]:
         """Cancel a task."""
         return self.update_task_status(task_id, TaskStatus.CANCELLED)
