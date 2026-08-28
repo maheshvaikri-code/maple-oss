@@ -61,6 +61,12 @@ physical bounded retry admission. This closes a local task-loss boundary; it
 does not provide durable scheduling, distributed leases, or hosted worker
 coordination.
 
+Task completion is also an ownership-checked queue transition: only the
+assigned agent can complete an `ASSIGNED` or `RUNNING` task, and scheduler load
+is released after the queue records `COMPLETED`. This is a local lifecycle
+invariant, not a distributed lease, durable queue, or exactly-once side-effect
+guarantee.
+
 `SchedulingPolicy` also rejects invalid strategy names and unbounded worker
 configuration before a scheduler starts. The local limits are explicit and
 finite; policy distribution, durable schedule state, distributed leases, and

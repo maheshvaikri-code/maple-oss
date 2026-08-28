@@ -28,6 +28,11 @@
   unknown strategies, invalid concurrency limits, non-finite or out-of-range
   scheduling intervals, and non-boolean preemption flags before worker start.
 
+- **Ownership-checked task completion**: `TaskQueue.complete_task()` now
+  records terminal completion only for the assigned agent from `ASSIGNED` or
+  `RUNNING`; `TaskScheduler.task_completed()` releases local load only after
+  that queue transition succeeds.
+
 - **Bounded episodic memory**: `EpisodicMemory` now validates bounded task
   IDs and serialized event size, retains a configurable newest-event window
   per task, rejects malformed or oversized records before persistence, and

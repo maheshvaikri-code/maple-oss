@@ -568,6 +568,14 @@ and `immediate`. `max_concurrent_per_agent` is an integer from `1` through
 seconds, and `preemption_enabled` must be a boolean. Invalid values raise
 `ValueError` before a scheduler worker can consume the policy.
 
+`TaskQueue.complete_task(task_id, assigned_agent, result=None)` is the
+ownership-checked terminal transition for local workers. It accepts only the
+recorded owner while the task is `ASSIGNED` or `RUNNING`, records
+`TaskStatus.COMPLETED`, and optionally stores the result. Missing tasks, wrong
+owners, empty agent IDs, and already-terminal tasks fail without changing
+state. `TaskScheduler.task_completed(...)` uses this transition and releases
+its local assignment/load bookkeeping only after the queue accepts it.
+
 ## Trusted Local Execution (preview)
 
 `TrustedLocalExecutor` is an explicit boundary for trusted Python handlers. It
