@@ -7,7 +7,7 @@ Scope: add optional host-owned trailing-window connector rate limiting to
 denials happen before connector fetches with a typed retry-after hint. It
 never sleeps, retries, queues, selects a provider, or performs network I/O.
 
-Implementation commit: recorded after validation
+Implementation commit: `3e42af2`
 
 ## Evidence
 
@@ -23,11 +23,15 @@ Implementation commit: recorded after validation
 - Project dependency audit: `No known vulnerabilities found`
 - Source-only secret scan: `source_secret_high_confidence_matches=0`
 - Source-only dangerous-construct scan: `source_dangerous_construct_matches=0`
+- Clean committed-candidate archive build: exit `0`
+- Wheel: `104` entries
+- Source distribution: `596` entries
+- Twine checks: both artifacts `PASSED`
+- Isolated no-dependency wheel-target rate-limiter export smoke: `passed`
 
 ## Disposition
 
-Local QA passes for the implementation and documentation changes. Committed
-archive package gates remain to be recorded after the feature commit.
-Environment-wide dependency governance remains a release veto from the prior
-audit: `384` known vulnerabilities across `77` installed packages. No
-publication, deployment, cloud action, or website update was performed.
+Local QA passes for the implementation, documentation, and committed package
+artifacts. Environment-wide dependency governance remains a release veto from
+the prior audit: `384` known vulnerabilities across `77` installed packages.
+No publication, deployment, cloud action, or website update was performed.
