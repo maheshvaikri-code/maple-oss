@@ -134,6 +134,18 @@ from .autonomy.interactions import (
     InMemoryHumanInputStore,
 )
 from .autonomy.interop import InteropEnvelope, round_trip_json
+from .autonomy.invocations import (
+    DEFAULT_AGENT_INVOCATION_TTL_SECONDS,
+    DEFAULT_MAX_AGENT_INVOCATION_BYTES,
+    DEFAULT_MAX_AGENT_INVOCATION_ENTRIES,
+    DEFAULT_MAX_AGENT_INVOCATION_RESPONSE_BYTES,
+    AgentInvocationDeduplicationStore,
+    AgentInvocationResponse,
+    FileAgentInvocationDeduplicationStore,
+    InMemoryAgentInvocationDeduplicationStore,
+    fingerprint_agent_invocation,
+    normalize_agent_idempotency_key,
+)
 from .autonomy.memory import MemoryManager
 from .autonomy.observability import SpanRecorder, TraceSpan
 from .autonomy.orchestrator import AgentOrchestrator
@@ -441,6 +453,16 @@ __all__ = [
     "HumanInputStore",
     "FileHumanInputStore",
     "InMemoryHumanInputStore",
+    "DEFAULT_AGENT_INVOCATION_TTL_SECONDS",
+    "DEFAULT_MAX_AGENT_INVOCATION_BYTES",
+    "DEFAULT_MAX_AGENT_INVOCATION_ENTRIES",
+    "DEFAULT_MAX_AGENT_INVOCATION_RESPONSE_BYTES",
+    "AgentInvocationDeduplicationStore",
+    "AgentInvocationResponse",
+    "FileAgentInvocationDeduplicationStore",
+    "InMemoryAgentInvocationDeduplicationStore",
+    "fingerprint_agent_invocation",
+    "normalize_agent_idempotency_key",
     "EvalCase",
     "AsyncEvalJudge",
     "EvalJudge",

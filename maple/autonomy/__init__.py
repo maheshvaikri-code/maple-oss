@@ -117,6 +117,18 @@ from .interactions import (
     InMemoryHumanInputStore,
 )
 from .interop import InteropEnvelope, round_trip_json
+from .invocations import (
+    DEFAULT_AGENT_INVOCATION_TTL_SECONDS,
+    DEFAULT_MAX_AGENT_INVOCATION_BYTES,
+    DEFAULT_MAX_AGENT_INVOCATION_ENTRIES,
+    DEFAULT_MAX_AGENT_INVOCATION_RESPONSE_BYTES,
+    AgentInvocationDeduplicationStore,
+    AgentInvocationResponse,
+    FileAgentInvocationDeduplicationStore,
+    InMemoryAgentInvocationDeduplicationStore,
+    fingerprint_agent_invocation,
+    normalize_agent_idempotency_key,
+)
 from .mcp_tools import discover_mcp_tools, register_mcp_tools
 from .memory import EpisodicMemory, MemoryManager, SemanticMemory, WorkingMemory
 from .observability import (
@@ -336,6 +348,16 @@ __all__ = [
     "HumanInputStore",
     "FileHumanInputStore",
     "InMemoryHumanInputStore",
+    "DEFAULT_AGENT_INVOCATION_TTL_SECONDS",
+    "DEFAULT_MAX_AGENT_INVOCATION_BYTES",
+    "DEFAULT_MAX_AGENT_INVOCATION_ENTRIES",
+    "DEFAULT_MAX_AGENT_INVOCATION_RESPONSE_BYTES",
+    "AgentInvocationDeduplicationStore",
+    "AgentInvocationResponse",
+    "FileAgentInvocationDeduplicationStore",
+    "InMemoryAgentInvocationDeduplicationStore",
+    "fingerprint_agent_invocation",
+    "normalize_agent_idempotency_key",
     "EvalCase",
     "AsyncEvalJudge",
     "EvalJudge",

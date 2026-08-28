@@ -15,6 +15,7 @@ from functools import partial
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import (
     Any,
+    Callable,
     Dict,
     Iterable,
     List,
@@ -40,6 +41,12 @@ from .events import (
 )
 from .handoffs import HandoffRecord, HandoffStore
 from .interactions import HumanInputRequest, HumanInputStore
+from .invocations import (
+    AgentInvocationDeduplicationStore,
+    AgentInvocationResponse,
+    fingerprint_agent_invocation,
+    normalize_agent_idempotency_key,
+)
 from .runs import AgentRunCheckpoint, AgentRunStore
 from .workflow import Workflow, WorkflowRun
 
@@ -391,6 +398,44 @@ def _normalize_agent_task(task: Any) -> Result[str, Error]:
     return Result.ok(task)
 
 
+def _normalize_agent_invocation_request(
+    body: Mapping[str, Any],
+) -> Result[_NormalizedAgentInvocationRequest, Error]:
+    """Normalize the shared request fields before optional deduplication."""
+    if not isinstance(body, Mapping):
+        return Result.err(
+            _error("REQUEST_BODY_INVALID", "request body must be an object.")
+        )
+    task_result = _normalize_agent_task(body.get("task"))
+    if task_result.is_err():
+        return Result.err(task_result.unwrap_err())
+    context_result = _normalize_agent_context(body.get("context", {}))
+    if context_result.is_err():
+        return Result.err(context_result.unwrap_err())
+    session_id = body.get("session_id")
+    if session_id is not None:
+        session_error = _validate_agent_identifier(session_id, "session_id")
+        if session_error is not None:
+            return Result.err(session_error)
+    run_id = body.get("run_id")
+    if run_id is not None:
+        run_error = _validate_agent_identifier(run_id, "run_id")
+        if run_error is not None:
+            return Result.err(run_error)
+    key_result = normalize_agent_idempotency_key(body.get("idempotency_key"))
+    if key_result.is_err():
+        return Result.err(key_result.unwrap_err())
+    return Result.ok(
+        _NormalizedAgentInvocationRequest(
+            task=cast(str, task_result.unwrap()),
+            context=cast(Dict[str, Any], context_result.unwrap()),
+            session_id=cast(Optional[str], session_id),
+            run_id=cast(Optional[str], run_id),
+            idempotency_key=cast(Optional[str], key_result.unwrap()),
+        )
+    )
+
+
 class AgentRunHandler(Protocol):
     """Host-owned synchronous callback for one bounded agent invocation."""
 
@@ -428,6 +473,17 @@ class AgentRun:
 
 
 @dataclass(frozen=True)
+class _NormalizedAgentInvocationRequest:
+    """Validated fields shared by named and capability-routed agent calls."""
+
+    task: str
+    context: Dict[str, Any]
+    session_id: Optional[str]
+    run_id: Optional[str]
+    idempotency_key: Optional[str]
+
+
+@dataclass(frozen=True)
 class AgentDescriptor:
     """Bounded public metadata for one registered agent."""
 
@@ -459,6 +515,37 @@ def _agent_run_to_dict(run: AgentRun) -> Dict[str, Any]:
         "result": run.result,
         "error": run.error,
     }
+
+
+def _agent_invocation_response(
+    result: Result[AgentRun, Error], *, success_status: int
+) -> Result[AgentInvocationResponse, Error]:
+    """Convert one normalized registry result into a replayable response."""
+    if result.is_err():
+        error = cast(Error, result.unwrap_err())
+        try:
+            return Result.ok(
+                AgentInvocationResponse(_status_for_error(error), {"error": error})
+            )
+        except (TypeError, ValueError, OverflowError, RecursionError):
+            return Result.err(
+                _error(
+                    "AGENT_INVOCATION_RESPONSE_INVALID",
+                    "Agent invocation error could not be retained safely.",
+                )
+            )
+    run = cast(AgentRun, result.unwrap())
+    try:
+        return Result.ok(
+            AgentInvocationResponse(success_status, {"run": _agent_run_to_dict(run)})
+        )
+    except (TypeError, ValueError, OverflowError, RecursionError):
+        return Result.err(
+            _error(
+                "AGENT_INVOCATION_RESPONSE_INVALID",
+                "Agent invocation response could not be retained safely.",
+            )
+        )
 
 
 def _agent_checkpoint_to_dict(checkpoint: AgentRunCheckpoint) -> Dict[str, Any]:
@@ -1055,6 +1142,9 @@ def _status_for_error(error: Error) -> int:
         "APPROVAL_CONFLICT",
         "APPROVAL_LEASE_ERROR",
         "EVENT_CURSOR_EXPIRED",
+        "AGENT_INVOCATION_CONFLICT",
+        "AGENT_INVOCATION_IN_PROGRESS",
+        "AGENT_INVOCATION_CLAIM_MISSING",
     }:
         return 409
     if error_type in {
@@ -1098,6 +1188,11 @@ def _status_for_error(error: Error) -> int:
         "EVENT_PAYLOAD_TOO_LARGE",
         "EVENT_BATCH_INVALID",
         "AGENT_RUN_HISTORY_LIMIT_INVALID",
+        "AGENT_INVOCATION_KEY_INVALID",
+        "AGENT_INVOCATION_TARGET_INVALID",
+        "AGENT_INVOCATION_DIGEST_INVALID",
+        "AGENT_INVOCATION_REQUEST_INVALID",
+        "AGENT_INVOCATION_RESPONSE_INVALID",
     }:
         return 400
     if error_type == "AGENT_REGISTRY_UNAVAILABLE":
@@ -1105,6 +1200,19 @@ def _status_for_error(error: Error) -> int:
     if error_type == "EVENT_STREAM_UNAVAILABLE":
         return 503
     if error_type == "AGENT_RUN_STORE_UNAVAILABLE":
+        return 503
+    if error_type == "AGENT_INVOCATION_STORE_UNAVAILABLE":
+        return 503
+    if error_type in {
+        "AGENT_INVOCATION_CAPACITY",
+        "AGENT_INVOCATION_SIZE",
+        "AGENT_INVOCATION_LOAD_ERROR",
+        "AGENT_INVOCATION_SAVE_ERROR",
+        "AGENT_INVOCATION_CLOCK_INVALID",
+        "AGENT_INVOCATION_LEASE_ERROR",
+        "AGENT_INVOCATION_LEASE_RELEASE_ERROR",
+        "AGENT_INVOCATION_ERROR",
+    }:
         return 503
     if error_type == "AGENT_RESUME_UNAVAILABLE":
         return 501
@@ -1723,6 +1831,91 @@ class _RequestHandler(BaseHTTPRequestHandler):
         )
         self._write_result(result, success_status=201)
 
+    def _invoke_agent_with_idempotency(
+        self,
+        target_id: str,
+        request: _NormalizedAgentInvocationRequest,
+        invoke: Callable[[Optional[str]], Result[AgentRun, Error]],
+    ) -> None:
+        """Apply the optional claim/complete boundary around one agent call."""
+        if request.idempotency_key is None:
+            result = invoke(request.run_id)
+            if result.is_err():
+                error = cast(Error, result.unwrap_err())
+                self._write_error(_status_for_error(error), error)
+                return
+            self._write_json(
+                201,
+                {"run": _agent_run_to_dict(cast(AgentRun, result.unwrap()))},
+            )
+            return
+
+        store = self.server.application.agent_invocation_store
+        if store is None:
+            self._write_error(
+                503,
+                _error(
+                    "AGENT_INVOCATION_STORE_UNAVAILABLE",
+                    "A store is required when idempotency_key is supplied.",
+                ),
+            )
+            return
+        request_digest_result = fingerprint_agent_invocation(
+            target_id,
+            {
+                "task": request.task,
+                "context": request.context,
+                "session_id": request.session_id,
+                "run_id": request.run_id,
+            },
+        )
+        if request_digest_result.is_err():
+            self._write_error(
+                _status_for_error(request_digest_result.unwrap_err()),
+                request_digest_result.unwrap_err(),
+            )
+            return
+        request_digest = cast(str, request_digest_result.unwrap())
+        claim_result = store.claim(target_id, request.idempotency_key, request_digest)
+        if claim_result.is_err():
+            error = cast(Error, claim_result.unwrap_err())
+            self._write_error(_status_for_error(error), error)
+            return
+        replayed = cast(Optional[AgentInvocationResponse], claim_result.unwrap())
+        if replayed is not None:
+            if not isinstance(replayed, AgentInvocationResponse):
+                self._write_error(
+                    500,
+                    _error(
+                        "AGENT_INVOCATION_RESPONSE_INVALID",
+                        "Stored invocation response is invalid.",
+                    ),
+                )
+                return
+            self._write_json(replayed.status_code, replayed.payload)
+            return
+
+        chosen_run_id = request.run_id or str(uuid.uuid4())
+        result = invoke(chosen_run_id)
+        response_result = _agent_invocation_response(result, success_status=201)
+        if response_result.is_err():
+            error = cast(Error, response_result.unwrap_err())
+            self._write_error(_status_for_error(error), error)
+            return
+        response = cast(AgentInvocationResponse, response_result.unwrap())
+        complete_result = store.complete(
+            target_id,
+            request.idempotency_key,
+            request_digest,
+            response,
+        )
+        if complete_result.is_err():
+            error = cast(Error, complete_result.unwrap_err())
+            self._write_error(_status_for_error(error), error)
+            return
+        completed = cast(AgentInvocationResponse, complete_result.unwrap())
+        self._write_json(completed.status_code, completed.payload)
+
     def _run_agent(self, agent_id: str) -> None:
         registry = self.server.application.agent_registry
         if registry is None:
@@ -1735,19 +1928,49 @@ class _RequestHandler(BaseHTTPRequestHandler):
             )
             return
         body = self._read_body()
-        result = registry.run(
-            agent_id,
-            body.get("task"),
-            body.get("context", {}),
-            session_id=body.get("session_id"),
-            run_id=body.get("run_id"),
-        )
-        if result.is_err():
-            self._write_error(
-                _status_for_error(result.unwrap_err()), result.unwrap_err()
+        identifier_error = _validate_agent_identifier(agent_id, "agent_id")
+        if identifier_error is not None:
+            self._write_error(_status_for_error(identifier_error), identifier_error)
+            return
+        key_result = normalize_agent_idempotency_key(body.get("idempotency_key"))
+        if key_result.is_err():
+            error = cast(Error, key_result.unwrap_err())
+            self._write_error(_status_for_error(error), error)
+            return
+        if key_result.unwrap() is None:
+            result = registry.run(
+                agent_id,
+                body.get("task"),
+                body.get("context", {}),
+                session_id=body.get("session_id"),
+                run_id=body.get("run_id"),
+            )
+            if result.is_err():
+                error = cast(Error, result.unwrap_err())
+                self._write_error(_status_for_error(error), error)
+                return
+            self._write_json(
+                201,
+                {"run": _agent_run_to_dict(cast(AgentRun, result.unwrap()))},
             )
             return
-        self._write_json(201, {"run": _agent_run_to_dict(result.unwrap())})
+        request_result = _normalize_agent_invocation_request(body)
+        if request_result.is_err():
+            error = cast(Error, request_result.unwrap_err())
+            self._write_error(_status_for_error(error), error)
+            return
+        request = cast(_NormalizedAgentInvocationRequest, request_result.unwrap())
+        self._invoke_agent_with_idempotency(
+            f"agent:{agent_id}",
+            request,
+            lambda chosen_run_id: registry.run(
+                agent_id,
+                request.task,
+                request.context,
+                session_id=request.session_id,
+                run_id=chosen_run_id,
+            ),
+        )
 
     def _list_agents(self) -> None:
         registry = self.server.application.agent_registry
@@ -1783,19 +2006,53 @@ class _RequestHandler(BaseHTTPRequestHandler):
             )
             return
         body = self._read_body()
-        result = registry.route(
-            body.get("capability"),
-            body.get("task"),
-            body.get("context", {}),
-            session_id=body.get("session_id"),
-            run_id=body.get("run_id"),
+        capability_result = _normalize_agent_capabilities(
+            (cast(str, body.get("capability")),)
         )
-        if result.is_err():
-            self._write_error(
-                _status_for_error(result.unwrap_err()), result.unwrap_err()
+        if capability_result.is_err():
+            error = cast(Error, capability_result.unwrap_err())
+            self._write_error(_status_for_error(error), error)
+            return
+        capability = cast(str, capability_result.unwrap()[0])
+        key_result = normalize_agent_idempotency_key(body.get("idempotency_key"))
+        if key_result.is_err():
+            error = cast(Error, key_result.unwrap_err())
+            self._write_error(_status_for_error(error), error)
+            return
+        if key_result.unwrap() is None:
+            result = registry.route(
+                body.get("capability"),
+                body.get("task"),
+                body.get("context", {}),
+                session_id=body.get("session_id"),
+                run_id=body.get("run_id"),
+            )
+            if result.is_err():
+                error = cast(Error, result.unwrap_err())
+                self._write_error(_status_for_error(error), error)
+                return
+            self._write_json(
+                201,
+                {"run": _agent_run_to_dict(cast(AgentRun, result.unwrap()))},
             )
             return
-        self._write_json(201, {"run": _agent_run_to_dict(result.unwrap())})
+        request_result = _normalize_agent_invocation_request(body)
+        if request_result.is_err():
+            error = cast(Error, request_result.unwrap_err())
+            self._write_error(_status_for_error(error), error)
+            return
+        request = cast(_NormalizedAgentInvocationRequest, request_result.unwrap())
+        self._invoke_agent_with_idempotency(
+            f"capability:{capability}",
+            request,
+            lambda chosen_run_id: registry.route(
+                capability,
+                request.task,
+                request.context,
+                session_id=request.session_id,
+                run_id=chosen_run_id,
+            ),
+        )
 
     def _publish_event(self) -> None:
         stream = self.server.application.event_stream
@@ -2471,6 +2728,7 @@ class RunServer:
         human_input_store: Optional[HumanInputStore] = None,
         agent_registry: Optional[AgentRegistry] = None,
         agent_run_store: Optional[AgentRunStore] = None,
+        agent_invocation_store: Optional[AgentInvocationDeduplicationStore] = None,
         handoff_store: Optional[HandoffStore] = None,
         event_stream: Optional[EventStream] = None,
         event_deduplication_store: Optional[EventDeduplicationStore] = None,
@@ -2544,6 +2802,19 @@ class RunServer:
                 )
             if not callable(getattr(agent_run_store, "load", None)):
                 raise TypeError("agent_run_store must implement load")
+        if agent_invocation_store is not None:
+            if auth_token is None:
+                raise ValueError(
+                    "auth_token is required when agent_invocation_store is configured"
+                )
+            invocation_required_methods = ("claim", "complete", "abort")
+            if any(
+                not callable(getattr(agent_invocation_store, name, None))
+                for name in invocation_required_methods
+            ):
+                raise TypeError(
+                    "agent_invocation_store must implement claim, complete, and abort"
+                )
         if handoff_store is not None:
             if auth_token is None:
                 raise ValueError(
@@ -2603,6 +2874,7 @@ class RunServer:
         self.human_input_store = human_input_store
         self.agent_registry = agent_registry
         self.agent_run_store = agent_run_store
+        self.agent_invocation_store = agent_invocation_store
         self.handoff_store = handoff_store
         self.event_stream = event_stream
         self.event_deduplication_store = event_deduplication_store
@@ -2670,8 +2942,8 @@ class RunClient:
 
     The client can target a loopback ``RunServer`` or a separately hosted
     implementation of the same contract. It performs no retries and never
-    embeds credentials in URLs; callers own transport retry and idempotency
-    policy for remote side effects.
+    embeds credentials in URLs; callers own transport retry policy and hosts
+    opt into bounded idempotency storage for keyed agent invocations.
     """
 
     def __init__(
@@ -2812,8 +3084,9 @@ class RunClient:
         *,
         session_id: Optional[str] = None,
         run_id: Optional[str] = None,
+        idempotency_key: Optional[str] = None,
     ) -> Result[Dict[str, Any], Error]:
-        """Invoke one remote host-owned agent handler without retrying."""
+        """Invoke one remote agent, optionally using a host-owned replay key."""
         identifier_error = _validate_agent_identifier(agent_id, "agent_id")
         if identifier_error is not None:
             return Result.err(identifier_error)
@@ -2831,6 +3104,9 @@ class RunClient:
             run_error = _validate_agent_identifier(run_id, "run_id")
             if run_error is not None:
                 return Result.err(run_error)
+        key_result = normalize_agent_idempotency_key(idempotency_key)
+        if key_result.is_err():
+            return Result.err(key_result.unwrap_err())
         body: Dict[str, Any] = {
             "task": task_result.unwrap(),
             "context": context_result.unwrap(),
@@ -2839,6 +3115,8 @@ class RunClient:
             body["session_id"] = session_id
         if run_id is not None:
             body["run_id"] = run_id
+        if key_result.unwrap() is not None:
+            body["idempotency_key"] = key_result.unwrap()
         return self._request("POST", ("v1", "agents", agent_id, "runs"), body)
 
     def route_agent(
@@ -2849,8 +3127,9 @@ class RunClient:
         *,
         session_id: Optional[str] = None,
         run_id: Optional[str] = None,
+        idempotency_key: Optional[str] = None,
     ) -> Result[Dict[str, Any], Error]:
-        """Invoke the deterministic exact-match remote capability route."""
+        """Route to a capability with an optional host-owned replay key."""
         capability_result = _normalize_agent_capabilities((capability,))
         if capability_result.is_err():
             return Result.err(capability_result.unwrap_err())
@@ -2868,6 +3147,9 @@ class RunClient:
             run_error = _validate_agent_identifier(run_id, "run_id")
             if run_error is not None:
                 return Result.err(run_error)
+        key_result = normalize_agent_idempotency_key(idempotency_key)
+        if key_result.is_err():
+            return Result.err(key_result.unwrap_err())
         body: Dict[str, Any] = {
             "capability": capability_result.unwrap()[0],
             "task": task_result.unwrap(),
@@ -2877,6 +3159,8 @@ class RunClient:
             body["session_id"] = session_id
         if run_id is not None:
             body["run_id"] = run_id
+        if key_result.unwrap() is not None:
+            body["idempotency_key"] = key_result.unwrap()
         return self._request("POST", ("v1", "agent-routes", "runs"), body)
 
     def route_agent_typed(
@@ -2887,6 +3171,7 @@ class RunClient:
         *,
         session_id: Optional[str] = None,
         run_id: Optional[str] = None,
+        idempotency_key: Optional[str] = None,
     ) -> Result[AgentRun, Error]:
         """Route to a capability and return the selected validated ``AgentRun``."""
         return _normalize_remote_agent_response(
@@ -2896,6 +3181,7 @@ class RunClient:
                 context,
                 session_id=session_id,
                 run_id=run_id,
+                idempotency_key=idempotency_key,
             ),
             None,
             requested_run_id=run_id,
@@ -2909,6 +3195,7 @@ class RunClient:
         *,
         session_id: Optional[str] = None,
         run_id: Optional[str] = None,
+        idempotency_key: Optional[str] = None,
     ) -> Result[AgentRun, Error]:
         """Invoke a remote agent and return its validated ``AgentRun``."""
         return _normalize_remote_agent_response(
@@ -2918,6 +3205,7 @@ class RunClient:
                 context,
                 session_id=session_id,
                 run_id=run_id,
+                idempotency_key=idempotency_key,
             ),
             agent_id,
             requested_run_id=run_id,
