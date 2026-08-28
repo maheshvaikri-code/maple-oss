@@ -107,6 +107,7 @@ from .handoffs import (
 )
 from .interactions import (
     FileHumanInputStore,
+    HttpHumanInputNotifier,
     HumanInputAuthorizer,
     HumanInputDecision,
     HumanInputNotification,
@@ -342,6 +343,7 @@ __all__ = [
     "HumanInputDecision",
     "HumanInputNotification",
     "HumanInputNotifier",
+    "HttpHumanInputNotifier",
     "HumanInputAuthorizer",
     "HumanInputRound",
     "HumanInputRequest",

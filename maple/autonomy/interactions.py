@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import math
 import os
@@ -12,6 +13,9 @@ import time
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Protocol, Union
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit, urlunsplit
+from urllib.request import Request, urlopen
 
 from ..core.result import Result
 from ..resources.lease import FileLeaseManager
@@ -31,6 +35,11 @@ _MAX_LIST_LIMIT = 1_000
 _MAX_LIST_SCAN = 10_000
 _MAX_ROUNDS = 8
 _HUMAN_INPUT_LEASE_TTL_SECONDS = 30.0
+_NOTIFICATION_EVENTS = frozenset({"created", "continued", "responded", "rejected"})
+_MAX_NOTIFICATION_ENDPOINT_BYTES = 4_096
+_DEFAULT_NOTIFICATION_TIMEOUT_SECONDS = 10.0
+_MAX_NOTIFICATION_REQUEST_BYTES = 512 * 1024
+_MAX_NOTIFICATION_RESPONSE_BYTES = 64 * 1024
 
 
 def _error(error_type: str, message: str, **details: Any) -> Error:
@@ -434,6 +443,8 @@ class HumanInputNotification:
         *,
         actor_id: Optional[str] = None,
     ) -> "HumanInputNotification":
+        if not isinstance(event_type, str) or event_type not in _NOTIFICATION_EVENTS:
+            raise ValueError("human input notification event type is invalid")
         schema = _copy_bounded_json(request.input_schema)
         if schema.is_err() or not isinstance(schema.unwrap(), dict):
             raise ValueError("human input notification schema is invalid")
@@ -449,6 +460,83 @@ class HumanInputNotification:
             updated_at=request.updated_at,
             round_index=request.round_index,
             max_rounds=request.max_rounds,
+            actor_id=actor_id,
+        )
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "HumanInputNotification":
+        """Parse one bounded notification without accepting response data."""
+        if not isinstance(data, Mapping):
+            raise ValueError("human input notification must be an object")
+        required = (
+            "event_type",
+            "interaction_id",
+            "run_id",
+            "tool_call_id",
+            "prompt",
+            "input_schema",
+            "status",
+            "created_at",
+            "updated_at",
+            "round_index",
+            "max_rounds",
+        )
+        if any(field_name not in data for field_name in required):
+            raise ValueError("human input notification is missing a required field")
+        event_type = data["event_type"]
+        if not isinstance(event_type, str) or event_type not in _NOTIFICATION_EVENTS:
+            raise ValueError("invalid human input notification event type")
+        for field_name in ("interaction_id", "run_id", "tool_call_id"):
+            if _valid_identifier(data[field_name], field_name):
+                raise ValueError(f"invalid {field_name}")
+        if _valid_prompt(data["prompt"]):
+            raise ValueError("invalid human input notification prompt")
+        schema = _copy_bounded_json(data["input_schema"])
+        if schema.is_err() or not isinstance(schema.unwrap(), dict):
+            raise ValueError("human input notification schema must be an object")
+        status = data["status"]
+        if not isinstance(status, str) or status not in _STATUSES:
+            raise ValueError("invalid human input notification status")
+        expected_status = {
+            "created": "pending",
+            "continued": "pending",
+            "responded": "responded",
+            "rejected": "rejected",
+        }[event_type]
+        if status != expected_status:
+            raise ValueError("human input notification event and status disagree")
+        max_rounds = data["max_rounds"]
+        if _valid_max_rounds(max_rounds):
+            raise ValueError("invalid human input notification max_rounds")
+        round_index = data["round_index"]
+        if (
+            not isinstance(round_index, int)
+            or isinstance(round_index, bool)
+            or not 0 <= round_index < max_rounds
+        ):
+            raise ValueError("invalid human input notification round_index")
+        try:
+            created_at = float(data["created_at"])
+            updated_at = float(data["updated_at"])
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError("human input notification timestamps are invalid") from exc
+        if not math.isfinite(created_at) or not math.isfinite(updated_at):
+            raise ValueError("human input notification timestamps must be finite")
+        actor_id = data.get("actor_id")
+        if actor_id is not None and _valid_identifier(actor_id, "actor_id"):
+            raise ValueError("invalid human input notification actor_id")
+        return cls(
+            event_type=event_type,
+            interaction_id=data["interaction_id"],
+            run_id=data["run_id"],
+            tool_call_id=data["tool_call_id"],
+            prompt=data["prompt"],
+            input_schema=schema.unwrap(),
+            status=status,
+            created_at=created_at,
+            updated_at=updated_at,
+            round_index=round_index,
+            max_rounds=max_rounds,
             actor_id=actor_id,
         )
 
@@ -473,6 +561,190 @@ class HumanInputNotifier(Protocol):
     """Host callback for bounded human-input lifecycle notifications."""
 
     def notify(self, notification: HumanInputNotification) -> Result[None, Error]: ...
+
+
+class HttpHumanInputNotifier:
+    """Make one bounded HTTP delivery attempt for each local notification.
+
+    The endpoint is host-configured. Loopback HTTP is allowed for local
+    composition; non-loopback endpoints require HTTPS. This class never
+    retries, stores, or deduplicates notifications.
+    """
+
+    def __init__(
+        self,
+        endpoint: str,
+        *,
+        auth_token: Optional[str] = None,
+        timeout_seconds: float = _DEFAULT_NOTIFICATION_TIMEOUT_SECONDS,
+        max_request_bytes: int = _MAX_NOTIFICATION_REQUEST_BYTES,
+        max_response_bytes: int = _MAX_NOTIFICATION_RESPONSE_BYTES,
+    ) -> None:
+        if not isinstance(endpoint, str) or not endpoint.strip():
+            raise ValueError("endpoint must be a non-empty URL")
+        if any(
+            ord(character) < 0x20 or ord(character) == 0x7F for character in endpoint
+        ):
+            raise ValueError("endpoint must not contain control characters")
+        parsed = urlsplit(endpoint.strip())
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("endpoint must use http or https and include a host")
+        try:
+            hostname = parsed.hostname
+        except ValueError as exc:
+            raise ValueError("endpoint host is invalid") from exc
+        if not hostname:
+            raise ValueError("endpoint must include a host")
+        if parsed.username is not None or parsed.password is not None:
+            raise ValueError("endpoint must not contain user information")
+        if parsed.query or parsed.fragment:
+            raise ValueError("endpoint must not contain a query or fragment")
+        if auth_token is not None:
+            if not isinstance(auth_token, str) or not auth_token.strip():
+                raise ValueError("auth_token must be non-empty when provided")
+            if any(
+                ord(character) < 0x20 or ord(character) == 0x7F
+                for character in auth_token
+            ):
+                raise ValueError("auth_token must not contain control characters")
+        is_loopback = hostname.lower() == "localhost"
+        if not is_loopback:
+            try:
+                is_loopback = ipaddress.ip_address(hostname).is_loopback
+            except ValueError:
+                is_loopback = False
+        if parsed.scheme != "https" and not is_loopback:
+            raise ValueError("non-loopback notification delivery requires https")
+        normalized_endpoint = urlunsplit(
+            (parsed.scheme, parsed.netloc, parsed.path, "", "")
+        )
+        if len(normalized_endpoint.encode("utf-8")) > _MAX_NOTIFICATION_ENDPOINT_BYTES:
+            raise ValueError("endpoint URL is too large")
+        if not isinstance(timeout_seconds, (int, float)) or isinstance(
+            timeout_seconds, bool
+        ):
+            raise ValueError("timeout_seconds must be a finite positive number")
+        try:
+            normalized_timeout = float(timeout_seconds)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError(
+                "timeout_seconds must be a finite positive number"
+            ) from exc
+        if not math.isfinite(normalized_timeout) or normalized_timeout <= 0:
+            raise ValueError("timeout_seconds must be a finite positive number")
+        for value, name, maximum in (
+            (max_request_bytes, "max_request_bytes", _MAX_NOTIFICATION_REQUEST_BYTES),
+            (
+                max_response_bytes,
+                "max_response_bytes",
+                _MAX_NOTIFICATION_RESPONSE_BYTES,
+            ),
+        ):
+            if (
+                not isinstance(value, int)
+                or isinstance(value, bool)
+                or not 0 < value <= maximum
+            ):
+                raise ValueError(f"{name} must be between 1 and {maximum}")
+        self.endpoint = normalized_endpoint
+        self.auth_token = auth_token
+        self.timeout_seconds = normalized_timeout
+        self.max_request_bytes = max_request_bytes
+        self.max_response_bytes = max_response_bytes
+
+    def notify(self, notification: HumanInputNotification) -> Result[None, Error]:
+        """POST one notification and require an explicit acceptance body."""
+        if not isinstance(notification, HumanInputNotification):
+            return Result.err(
+                _error(
+                    "HUMAN_INPUT_NOTIFICATION_INVALID",
+                    "notification must be a HumanInputNotification.",
+                )
+            )
+        try:
+            encoded = json.dumps(
+                {"notification": notification.to_dict()},
+                ensure_ascii=False,
+                allow_nan=False,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        except (TypeError, ValueError, OverflowError) as exc:
+            return Result.err(
+                _error(
+                    "HUMAN_INPUT_NOTIFICATION_INVALID",
+                    "notification is not JSON serializable.",
+                    reason=type(exc).__name__,
+                )
+            )
+        if len(encoded) > self.max_request_bytes:
+            return Result.err(
+                _error(
+                    "HUMAN_INPUT_NOTIFICATION_TOO_LARGE",
+                    "notification exceeds the configured request byte limit.",
+                    max_bytes=self.max_request_bytes,
+                )
+            )
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
+        if self.auth_token is not None:
+            headers["Authorization"] = f"Bearer {self.auth_token}"
+        request = Request(self.endpoint, data=encoded, headers=headers, method="POST")
+        try:
+            with urlopen(request, timeout=self.timeout_seconds) as response:
+                status = int(response.status)
+                raw = response.read(self.max_response_bytes + 1)
+        except HTTPError as exc:
+            status = int(exc.code)
+            exc.close()
+            return Result.err(
+                _error(
+                    "HUMAN_INPUT_NOTIFICATION_HTTP_ERROR",
+                    "remote notification endpoint returned an error.",
+                    status=status,
+                )
+            )
+        except (URLError, TimeoutError, OSError):
+            return Result.err(
+                _error(
+                    "HUMAN_INPUT_NOTIFICATION_TRANSPORT_ERROR",
+                    "remote notification endpoint could not be reached.",
+                )
+            )
+        if len(raw) > self.max_response_bytes:
+            return Result.err(
+                _error(
+                    "HUMAN_INPUT_NOTIFICATION_RESPONSE_TOO_LARGE",
+                    "remote notification response exceeds the configured byte limit.",
+                    max_bytes=self.max_response_bytes,
+                )
+            )
+        if not 200 <= status < 300:
+            return Result.err(
+                _error(
+                    "HUMAN_INPUT_NOTIFICATION_HTTP_ERROR",
+                    "remote notification endpoint returned an error.",
+                    status=status,
+                )
+            )
+        try:
+            decoded = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return Result.err(
+                _error(
+                    "HUMAN_INPUT_NOTIFICATION_RESPONSE_INVALID",
+                    "remote notification response is not valid JSON.",
+                )
+            )
+        if not isinstance(decoded, dict) or decoded.get("accepted") is not True:
+            return Result.err(
+                _error(
+                    "HUMAN_INPUT_NOTIFICATION_RESPONSE_INVALID",
+                    "remote notification response did not acknowledge acceptance.",
+                )
+            )
+        return Result.ok(None)
 
 
 class HumanInputAuthorizer(Protocol):

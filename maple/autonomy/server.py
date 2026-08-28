@@ -40,7 +40,12 @@ from .events import (
     validate_event_source_id,
 )
 from .handoffs import HandoffRecord, HandoffStore
-from .interactions import HumanInputRequest, HumanInputStore
+from .interactions import (
+    HumanInputNotification,
+    HumanInputNotifier,
+    HumanInputRequest,
+    HumanInputStore,
+)
 from .invocations import (
     AgentInvocationDeduplicationStore,
     AgentInvocationResponse,
@@ -166,6 +171,8 @@ def _required_scope(method: str, path: Tuple[str, ...]) -> Optional[str]:
             return "handoff:result"
         return "handoff:read" if method == "GET" else "handoff:write"
     if path[0:2] == ("v1", "interactions"):
+        if method == "POST" and path == ("v1", "interactions", "notifications"):
+            return "interaction:notify"
         if method == "GET":
             return "interaction:read"
         if method == "POST" and len(path) == 4 and path[3] == "consume":
@@ -1537,6 +1544,9 @@ class _RequestHandler(BaseHTTPRequestHandler):
             )
 
     def _interaction_route(self, method: str, path: Tuple[str, ...]) -> bool:
+        if method == "POST" and path == ("v1", "interactions", "notifications"):
+            self._receive_human_input_notification()
+            return True
         store = self.server.application.human_input_store
         if not path or path[0:2] != ("v1", "interactions"):
             return False
@@ -1771,6 +1781,80 @@ class _RequestHandler(BaseHTTPRequestHandler):
             return
         self._write_json(
             200, {"interaction": self._interaction_to_dict(result.unwrap())}
+        )
+
+    def _receive_human_input_notification(self) -> None:
+        """Validate and deliver one host-owned remote notification."""
+        handler = self.server.application.human_input_notification_handler
+        if handler is None:
+            self._write_error(
+                501,
+                _error(
+                    "HUMAN_INPUT_NOTIFICATION_UNAVAILABLE",
+                    "No human input notification handler is configured.",
+                ),
+            )
+            return
+        body = self._read_body()
+        raw_notification = body.get("notification")
+        if not isinstance(raw_notification, Mapping):
+            self._write_error(
+                400,
+                _error(
+                    "HUMAN_INPUT_NOTIFICATION_INVALID",
+                    "The human input notification is invalid.",
+                ),
+            )
+            return
+        try:
+            notification = HumanInputNotification.from_dict(raw_notification)
+        except (TypeError, ValueError):
+            self._write_error(
+                400,
+                _error(
+                    "HUMAN_INPUT_NOTIFICATION_INVALID",
+                    "The human input notification is invalid.",
+                ),
+            )
+            return
+        try:
+            delivered = handler.notify(notification)
+        except Exception:
+            self._write_error(
+                503,
+                _error(
+                    "HUMAN_INPUT_NOTIFICATION_HANDLER_ERROR",
+                    "The human input notification handler failed.",
+                ),
+            )
+            return
+        if not isinstance(delivered, Result):
+            self._write_error(
+                500,
+                _error(
+                    "HUMAN_INPUT_NOTIFICATION_HANDLER_INVALID",
+                    "The human input notification handler returned an invalid result.",
+                ),
+            )
+            return
+        if delivered.is_err():
+            self._write_error(
+                503,
+                _error(
+                    "HUMAN_INPUT_NOTIFICATION_HANDLER_ERROR",
+                    "The human input notification handler rejected the notification.",
+                ),
+            )
+            return
+        self._write_json(
+            200,
+            {
+                "accepted": True,
+                "notification": {
+                    "event_type": notification.event_type,
+                    "interaction_id": notification.interaction_id,
+                },
+            },
         )
 
     def _authorize(self) -> bool:
@@ -2997,6 +3081,7 @@ class RunServer:
         auth_principal: Optional[Principal] = None,
         approval_store: Optional[ApprovalStore] = None,
         human_input_store: Optional[HumanInputStore] = None,
+        human_input_notification_handler: Optional[HumanInputNotifier] = None,
         agent_registry: Optional[AgentRegistry] = None,
         agent_run_store: Optional[AgentRunStore] = None,
         agent_invocation_store: Optional[AgentInvocationDeduplicationStore] = None,
@@ -3058,6 +3143,15 @@ class RunServer:
                 raise TypeError(
                     "human_input_store must implement get, list_pending, respond, "
                     "reject, and consume"
+                )
+        if human_input_notification_handler is not None:
+            if auth_token is None:
+                raise ValueError(
+                    "auth_token is required when human_input_notification_handler is configured"
+                )
+            if not callable(getattr(human_input_notification_handler, "notify", None)):
+                raise TypeError(
+                    "human_input_notification_handler must implement notify"
                 )
         if agent_registry is not None:
             if not isinstance(agent_registry, AgentRegistry):
@@ -3143,6 +3237,7 @@ class RunServer:
         self._auth_principal = auth_principal
         self.approval_store = approval_store
         self.human_input_store = human_input_store
+        self.human_input_notification_handler = human_input_notification_handler
         self.agent_registry = agent_registry
         self.agent_run_store = agent_run_store
         self.agent_invocation_store = agent_invocation_store
@@ -3941,6 +4036,47 @@ class RunClient:
                 )
             )
         return self._request("GET", ("v1", "interactions", "pending", str(limit)))
+
+    def publish_human_input_notification(
+        self, notification: HumanInputNotification
+    ) -> Result[Dict[str, Any], Error]:
+        """Push one validated human-input notification to a remote host."""
+        if not isinstance(notification, HumanInputNotification):
+            return Result.err(
+                _error(
+                    "HUMAN_INPUT_NOTIFICATION_INVALID",
+                    "notification must be a HumanInputNotification.",
+                )
+            )
+        try:
+            payload = {"notification": notification.to_dict()}
+        except (TypeError, ValueError, OverflowError):
+            return Result.err(
+                _error(
+                    "HUMAN_INPUT_NOTIFICATION_INVALID",
+                    "notification is not JSON serializable.",
+                )
+            )
+        response = self._request(
+            "POST", ("v1", "interactions", "notifications"), payload
+        )
+        if response.is_err():
+            return Result.err(response.unwrap_err())
+        acknowledged = response.unwrap()
+        metadata = acknowledged.get("notification")
+        if (
+            acknowledged.get("accepted") is not True
+            or not isinstance(metadata, Mapping)
+            or metadata.get("event_type") != notification.event_type
+            or metadata.get("interaction_id") != notification.interaction_id
+        ):
+            return Result.err(
+                _error(
+                    "HUMAN_INPUT_NOTIFICATION_RESPONSE_INVALID",
+                    "Remote notification response did not acknowledge the requested notification.",
+                )
+            )
+        return Result.ok(acknowledged)
 
     def get_human_input(self, interaction_id: str) -> Result[Dict[str, Any], Error]:
         """Inspect one remote human-input request."""
