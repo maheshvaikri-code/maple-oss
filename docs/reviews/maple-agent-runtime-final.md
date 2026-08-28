@@ -719,3 +719,51 @@ remain explicit follow-on work.
 workspace-only Doctrine gold and fresh-verifier gates before publishing. The
 remaining Bandit findings are documented low-severity legacy debt; external
 publication remains awaiting explicit human approval.
+
+## 2026-08-28 current revalidation — Slices 171 and 172
+
+The current committed tip adds bounded host-owned invocation idempotency for
+named/capability agent calls and an explicit `RemoteHandoffTarget` binding that
+uses a supplied handoff ID as the remote idempotency key. Default adapter wire
+behavior remains unchanged. The implementation, ADRs, public docs, review,
+QA, and release-plan rows are filed in the committed release history.
+
+Real validation output:
+
+```text
+python -m pytest tests/autonomy/test_invocations.py tests/autonomy/test_invocation_transport.py -q --no-cov
+21 passed in 4.46s
+
+python -m pytest tests/autonomy/test_remote_handoff_idempotency.py tests/autonomy/test_server.py -q --no-cov
+54 passed in 21.77s
+
+python -m pytest -q --no-cov
+1674 passed, 1 skipped in 262.74s
+
+python -m maple.cli doctor --json
+{"checks": {"core": true, "evaluation": true, "events": true, "execution": true, "interop": true, "retrieval": true, "server": true, "sessions": true}, "network": false, "ready": true, "status": "SUCCESS", "version": "1.1.3"}
+
+clean git archive HEAD: source_archive_entries=815
+build_exit=0
+wheel_entries=106
+sdist_entries=729
+twine_exit=0
+install_exit=0
+isolated_import=passed
+version=1.1.3
+import_exit=0
+```
+
+Changed-surface Black, isort, Ruff, mypy, compile, secret, and dangerous-
+construct checks pass. The environment-wide dependency audit remains a
+pre-existing governance veto (`384` known vulnerabilities in `77` installed
+packages); no dependency was added. Gitleaks, Bandit, and the required fresh
+independent verifier session are unavailable in this tool context, so none is
+claimed as passed.
+
+**Current feature review:** PASS for the implemented bounded contracts.
+**Current publish readiness:** CONDITIONAL. The repository is technically
+packaged and locally verified, but release governance still requires an
+independent fresh-session review and human authorization before publication.
+No publication, deployment, cloud action, registry write, or website update
+was performed.

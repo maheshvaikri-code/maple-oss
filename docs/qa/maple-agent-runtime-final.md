@@ -751,3 +751,41 @@ slow Doctrine gold phase before interruption without a pytest summary.
 focused runtime checks, static checks, current clean archive, Twine, and
 network-free doctor gates pass. The workspace-only Doctrine gold verifier and
 fresh independent review remain open. No external release action was taken.
+
+## 2026-08-28 current QA revalidation
+
+Slices 171 and 172 are now included in the committed release history:
+bounded agent-invocation idempotency plus opt-in remote handoff-ID
+binding. The defaults remain backward-compatible, and their per-slice QA
+reports are filed at [Slice 171](maple-agent-runtime-slice171.md) and [Slice
+172](maple-agent-runtime-slice172.md).
+
+Current real gate output:
+
+```text
+python -m pytest -q --no-cov
+1674 passed, 1 skipped in 262.74s
+
+python -m maple.cli doctor --json
+{"checks": {"core": true, "evaluation": true, "events": true, "execution": true, "interop": true, "retrieval": true, "server": true, "sessions": true}, "network": false, "ready": true, "status": "SUCCESS", "version": "1.1.3"}
+
+clean git archive HEAD: source_archive_entries=815
+build_exit=0
+wheel_entries=106
+sdist_entries=729
+twine_exit=0
+install_exit=0
+isolated_import=passed
+version=1.1.3
+import_exit=0
+```
+
+The changed-surface static and targeted security scans pass. No dependency,
+publication, cloud action, registry write, or website mutation was performed.
+The established environment-wide pip-audit result remains a governance veto
+at `384` vulnerabilities in `77` packages; Gitleaks, Bandit, and the required
+fresh independent verifier session are unavailable here.
+
+**Current QA status: CONDITIONAL / NOT PUBLISH-READY.** Local code, tests,
+doctor, and package gates pass. Human release authorization and the independent
+fresh-session review remain required before publication.
