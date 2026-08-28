@@ -8,7 +8,7 @@ activity, advance only after sink writes, fence stale revisions, and fail
 closed on corrupt state. No managed store, connector network policy, retry,
 transaction, rollback, or publication behavior is included.
 
-Implementation commit: recorded after validation
+Implementation commit: `39d05d6`
 
 ## Evidence
 
@@ -24,12 +24,15 @@ Implementation commit: recorded after validation
 - Project dependency audit: `No known vulnerabilities found`
 - Source-only secret scan: `source_secret_high_confidence_matches=0`
 - Source-only dangerous-construct scan: `source_dangerous_construct_matches=0`
+- Clean committed-candidate archive build: exit `0`
+- Wheel: `104` entries; SHA256 `DE0288844250A8DC758062595B3999B72DF0252E7C17931CD75D1D48C69B0AEE`
+- Source distribution: `596` entries; SHA256 `7A430833079F99FB1FA880035F27EB00EBDFDC3DE572962967826A5B4FDF7B8A`
+- Twine checks: both artifacts `PASSED`
+- Isolated no-dependency wheel-target checkpoint export smoke: `passed`
 
 ## Disposition
 
-Local QA passes for the implementation and documentation changes. File
-checkpoint package gates and final committed-archive smoke remain to be
-recorded after the release commit. Environment-wide dependency governance
-remains a release veto from the prior audit: `384` known vulnerabilities across
-`77` installed packages. No publication, deployment, cloud action, or website
-update was performed.
+Local QA passes for the implementation, documentation, and committed package
+artifacts. Environment-wide dependency governance remains a release veto from
+the prior audit: `384` known vulnerabilities across `77` installed packages.
+No publication, deployment, cloud action, or website update was performed.
