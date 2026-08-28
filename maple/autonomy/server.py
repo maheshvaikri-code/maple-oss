@@ -3150,9 +3150,7 @@ class RemoteHandoffTarget:
                 )
             )
         if handoff_id is not None:
-            handoff_error = self._validate_remote_identifier(
-                handoff_id, "handoff_id"
-            )
+            handoff_error = self._validate_remote_identifier(handoff_id, "handoff_id")
             if handoff_error is not None:
                 return Result.err(
                     _error(
