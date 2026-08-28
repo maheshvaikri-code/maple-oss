@@ -1,8 +1,8 @@
 # MAPLE Agent Runtime Slice 175 Plan
 
-**Objective:** Add authenticated remote durable checkpoint export and restore.  
-**Class:** L  
-**Status:** In progress  
+**Objective:** Add authenticated remote durable checkpoint export and restore.
+**Class:** L
+**Status:** In progress
 **Owner:** Chief Architect
 
 ## Gates

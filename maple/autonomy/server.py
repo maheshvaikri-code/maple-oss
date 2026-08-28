@@ -2461,6 +2461,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             return
         save_method = getattr(store, "save", None)
         if not callable(save_method):
+            self._discard_bounded_request_body()
             self._write_error(
                 501,
                 _error(

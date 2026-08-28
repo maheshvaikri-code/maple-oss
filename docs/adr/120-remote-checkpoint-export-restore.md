@@ -1,6 +1,6 @@
 # ADR-120: Authenticated remote durable checkpoint export and restore
 
-**Date:** 2026-08-28 · **Status:** accepted  
+**Date:** 2026-08-28 · **Status:** accepted
 **Deciders:** Chief Architect
 
 ## Context

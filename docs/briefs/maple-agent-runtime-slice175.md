@@ -1,9 +1,9 @@
 # MAPLE Agent Runtime Slice 175 Brief
 
-**Title:** Authenticated remote durable checkpoint export and restore  
-**Class:** L  
-**Status:** Proposed implementation slice  
-**Date:** 2026-08-28  
+**Title:** Authenticated remote durable checkpoint export and restore
+**Class:** L
+**Status:** Proposed implementation slice
+**Date:** 2026-08-28
 **Owner:** Chief Architect
 
 ## Objective
