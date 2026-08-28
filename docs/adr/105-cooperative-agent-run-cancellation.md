@@ -1,6 +1,6 @@
 # ADR-105: Cooperative cancellation for native agent runs
 
-**Date:** 2026-08-28 · **Status:** accepted  
+**Date:** 2026-08-28 · **Status:** accepted
 **Deciders:** Chief Architect
 
 ## Context
