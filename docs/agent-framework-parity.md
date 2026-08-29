@@ -60,12 +60,20 @@ workers, hosted scheduler ownership, automatic retry, or exactly-once effects.
 
 The authenticated local control plane now exposes an optional configured queue
 through `RunServer(task_queue=...)` and `RunClient` task methods for bounded
-submit/list/inspect/claim/claim-next/complete/fail operations. Separate `task:*` scopes,
+submit/list/inspect/claim/claim-next/complete/fail/cancel operations. Separate `task:*` scopes,
 principal capability requirements, and exact worker-agent policy checks are
 applied before queue mutation, while the selected `TaskQueue` remains the
 authority for ownership and lifecycle conflicts. This is a process-boundary
 control plane only: worker heartbeats, distributed leases, automatic retry,
 handler execution, queue federation, and exactly-once effects remain separate.
+
+Slice 188 adds owner-safe remote task cancellation under `task:cancel`. The
+queue performs the owner check and cancellation transition atomically: queued
+work can be cancelled by the authorized actor, while assigned or running work
+requires its recorded owner. Terminal work, missing tasks, malformed bodies,
+and mismatched owners fail closed. This does not interrupt handlers, revoke
+leases, retry work, coordinate distributed workers, or provide exactly-once
+effects.
 
 Local scheduler assignment now uses an atomic queue-side claim, rejects
 duplicate task ownership, and returns scheduler assignment failures through

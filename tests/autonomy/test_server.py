@@ -190,6 +190,7 @@ def test_remote_task_queue_requires_auth_and_scopes_agent_targets():
         denied_agent = client.claim_task(task_id, "worker-b")
         denied_next = client.claim_next_task("worker-a", capabilities=["write"])
         claimed = client.claim_task(task_id, "worker-a")
+        denied_cancel = client.cancel_task(task_id, "worker-a")
         denied_failure = client.fail_task(task_id, "worker-a", "not now")
         denied_listing = RunClient(base_url).list_tasks()
     finally:
@@ -203,6 +204,8 @@ def test_remote_task_queue_requires_auth_and_scopes_agent_targets():
     assert denied_next.is_err()
     assert denied_next.unwrap_err()["errorType"] == "FORBIDDEN"
     assert claimed.is_ok()
+    assert denied_cancel.is_err()
+    assert denied_cancel.unwrap_err()["errorType"] == "FORBIDDEN"
     assert denied_failure.is_err()
     assert denied_failure.unwrap_err()["errorType"] == "FORBIDDEN"
     assert denied_listing.is_err()
@@ -253,6 +256,61 @@ def test_remote_task_claim_next_matches_capabilities_and_priority():
     assert none.unwrap()["task"] is None
     assert remaining.is_ok()
     assert [task["task_type"] for task in remaining.unwrap()["tasks"]] == ["write"]
+
+
+def test_remote_task_cancellation_enforces_owner_and_terminal_state():
+    queue = TaskQueue(max_queue_size=4)
+    server = RunServer(
+        WorkflowRegistry(),
+        auth_token="task-token",
+        task_queue=queue,
+    )
+    base_url = server.start()
+
+    try:
+        client = RunClient(base_url, auth_token="task-token")
+        queued = client.submit_task("queued", {})
+        assert queued.is_ok()
+        queued_id = queued.unwrap()["task_id"]
+        queued_cancelled = client.cancel_task(queued_id, "worker-a")
+
+        owned = client.submit_task("owned", {})
+        assert owned.is_ok()
+        owned_id = owned.unwrap()["task_id"]
+        assert client.claim_task(owned_id, "worker-a").is_ok()
+        wrong_owner = client.cancel_task(owned_id, "worker-b")
+        owner_cancelled = client.cancel_task(owned_id, "worker-a")
+
+        terminal = client.submit_task("terminal", {})
+        assert terminal.is_ok()
+        terminal_id = terminal.unwrap()["task_id"]
+        assert client.claim_task(terminal_id, "worker-a").is_ok()
+        assert client.complete_task(terminal_id, "worker-a").is_ok()
+        terminal_cancel = client.cancel_task(terminal_id, "worker-a")
+
+        malformed_status, malformed = _request(
+            f"{base_url}/v1/tasks/{queued_id}/cancel",
+            method="POST",
+            payload={"assigned_agent": "worker-a", "unexpected": True},
+            headers={"Authorization": "Bearer task-token"},
+        )
+        queued_state = client.inspect_task(queued_id)
+        owned_state = client.inspect_task(owned_id)
+    finally:
+        server.close()
+
+    assert queued_cancelled.is_ok()
+    assert wrong_owner.is_err()
+    assert wrong_owner.unwrap_err()["errorType"] == "TASK_CONFLICT"
+    assert owner_cancelled.is_ok()
+    assert terminal_cancel.is_err()
+    assert terminal_cancel.unwrap_err()["errorType"] == "TASK_CONFLICT"
+    assert malformed_status == 400
+    assert malformed["error"]["errorType"] == "TASK_INPUT_INVALID"
+    assert queued_state.is_ok()
+    assert queued_state.unwrap()["task"]["status"] == "cancelled"
+    assert owned_state.is_ok()
+    assert owned_state.unwrap()["task"]["status"] == "cancelled"
 
 
 def test_remote_task_queue_rejects_malformed_queries_and_payloads():

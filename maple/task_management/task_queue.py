@@ -457,9 +457,40 @@ class TaskQueue:
 
             return self.update_task_status(task_id, TaskStatus.FAILED, error=error)
 
-    def cancel_task(self, task_id: str) -> Result[Task, str]:
-        """Cancel a task."""
-        return self.update_task_status(task_id, TaskStatus.CANCELLED)
+    def cancel_task(
+        self, task_id: str, assigned_agent: Optional[str] = None
+    ) -> Result[Task, str]:
+        """Cancel a task, optionally enforcing its recorded owner."""
+        if assigned_agent is None:
+            return self.update_task_status(task_id, TaskStatus.CANCELLED)
+
+        with self._lock:
+            if not isinstance(assigned_agent, str) or not assigned_agent:
+                return Result.err("Assigned agent cannot be empty")
+            if task_id not in self.tasks:
+                return Result.err(f"Task {task_id} not found")
+
+            task = self.tasks[task_id]
+            if task.status == TaskStatus.QUEUED:
+                if (
+                    task.assigned_agent is not None
+                    and task.assigned_agent != assigned_agent
+                ):
+                    return Result.err(
+                        f"Task {task_id} is not assigned to {assigned_agent}"
+                    )
+            elif task.status in (TaskStatus.ASSIGNED, TaskStatus.RUNNING):
+                if task.assigned_agent != assigned_agent:
+                    return Result.err(
+                        f"Task {task_id} is not assigned to {assigned_agent}"
+                    )
+            else:
+                return Result.err(
+                    f"Task {task_id} cannot be cancelled from status "
+                    f"{task.status.value}"
+                )
+
+            return self.update_task_status(task_id, TaskStatus.CANCELLED)
 
     def requeue_task(self, task_id: str) -> Result[None, str]:
         """Requeue a failed task for retry."""

@@ -770,9 +770,11 @@ class FileTaskQueue(TaskQueue):
 
         return self._run_durable(fail)
 
-    def cancel_task(self, task_id: str) -> Result[Task, str]:
+    def cancel_task(
+        self, task_id: str, assigned_agent: Optional[str] = None
+    ) -> Result[Task, str]:
         return self._run_durable(
-            lambda: TaskQueue.update_task_status(self, task_id, TaskStatus.CANCELLED)
+            lambda: TaskQueue.cancel_task(self, task_id, assigned_agent)
         )
 
     def requeue_task(self, task_id: str) -> Result[None, str]:

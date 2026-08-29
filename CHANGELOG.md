@@ -10,6 +10,13 @@
 
 ### Additions
 
+- **Owner-safe remote task cancellation**: authenticated workers can call
+  `RunClient.cancel_task(...)` through `POST /v1/tasks/{task_id}/cancel` under
+  `task:cancel`. Queue-side ownership checks allow queued work or the recorded
+  owner of assigned/running work to cancel, while terminal tasks and mismatched
+  owners fail closed. Force termination, lease revocation, retries, and
+  distributed cancellation remain outside the contract.
+
 - **Non-blocking remote claim-next**: authenticated task workers can call
   `RunClient.claim_next_task(...)` to select bounded compatible work by
   priority, creation time, and task ID through `POST /v1/tasks/claim-next`.

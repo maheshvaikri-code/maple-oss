@@ -224,3 +224,29 @@ def test_file_task_queue_persists_terminal_error_and_metadata(tmp_path):
     assert raw["version"] == 1
     assert raw["tasks"][0]["status"] == TaskStatus.FAILED.value
     restored.stop()
+
+
+def test_file_task_queue_owner_safe_cancellation(tmp_path):
+    path = _queue_path(tmp_path)
+    queue = FileTaskQueue(path)
+    queue.start()
+    task_id = queue.submit_task("owned", {}).unwrap()
+    assert queue.assign_task(task_id, "worker-a").is_ok()
+
+    wrong_owner = queue.cancel_task(task_id, "worker-b")
+    cancelled = queue.cancel_task(task_id, "worker-a")
+    assert wrong_owner.is_err()
+    assert cancelled.is_ok()
+    assert cancelled.unwrap().status == TaskStatus.CANCELLED
+
+    terminal_id = queue.submit_task("terminal", {}).unwrap()
+    assert queue.assign_task(terminal_id, "worker-a").is_ok()
+    assert queue.complete_task(terminal_id, "worker-a").is_ok()
+    terminal_cancel = queue.cancel_task(terminal_id, "worker-a")
+    assert terminal_cancel.is_err()
+    queue.stop()
+
+    restored = FileTaskQueue(path)
+    assert restored.get_task(task_id).unwrap().status == TaskStatus.CANCELLED
+    assert restored.get_task(terminal_id).unwrap().status == TaskStatus.COMPLETED
+    restored.stop()
