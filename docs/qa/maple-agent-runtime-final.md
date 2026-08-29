@@ -1105,3 +1105,47 @@ tool reported a damaged archive; the successful rerun used Git's direct
 `--output` archive mode in a fresh temp directory. No repository data was
 changed by either attempt. No publication, deployment, cloud action, registry
 write, or website update was performed.
+
+## 2026-08-28 current QA revalidation - Slice 179 cross-process notification drain fence
+
+Acceptance criteria were exercised through the approval outbox adapter and
+the existing file lease manager. Coverage includes competing local drainers,
+no target call on lease denial, typed acquisition/storage failure, release
+failure after a committed delivery, release failure attached to a typed drain
+error, no-lease compatibility through the existing suite, target execution
+outside the outbox state lock, and finite bounded TTL validation.
+
+```text
+python -m pytest -q --no-cov tests/autonomy/test_notification_outbox.py tests/resources/test_file_lease.py
+20 passed in 0.66s
+
+python -m pytest -q --no-cov
+1720 passed, 1 skipped in 279.71s (0:04:39)
+
+python -m black --check maple/autonomy/notification_outbox.py maple/autonomy/interactions.py maple/autonomy/approval.py maple/autonomy/__init__.py maple/__init__.py tests/autonomy/test_notification_outbox.py
+6 files would be left unchanged.
+
+python -m isort --check-only maple/autonomy/notification_outbox.py maple/autonomy/interactions.py maple/autonomy/approval.py maple/autonomy/__init__.py maple/__init__.py tests/autonomy/test_notification_outbox.py
+exit=0
+
+python -m ruff check maple/autonomy/notification_outbox.py maple/autonomy/interactions.py maple/autonomy/approval.py maple/autonomy/__init__.py maple/__init__.py tests/autonomy/test_notification_outbox.py
+All checks passed!
+
+python -m mypy maple/autonomy/notification_outbox.py maple/autonomy/interactions.py maple/autonomy/approval.py --follow-imports=skip
+Success: no issues found in 3 source files
+
+python -m compileall -q maple/autonomy/notification_outbox.py maple/autonomy/interactions.py maple/autonomy/approval.py maple/autonomy/__init__.py maple/__init__.py tests/autonomy/test_notification_outbox.py
+compileall_exit=0
+```
+
+Adversarial result: competing workers are fenced before target invocation;
+lease storage and release faults fail closed; successful delivery state is
+retained even when release cannot be confirmed; and a TTL expiry remains
+truthfully at-least-once rather than exactly-once. No new dependency was
+added. The environment-wide `pip-audit` governance veto and unavailable
+Gitleaks, Bandit, actionlint, and fresh independent verifier remain
+documented. No external state was changed.
+
+**Slice 179 QA status: PASS for the optional local drain fence; clean archive
+package verification remains the next gate. Overall release status remains
+CONDITIONAL / NOT PUBLISH-READY.**

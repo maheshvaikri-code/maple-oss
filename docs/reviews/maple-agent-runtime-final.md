@@ -1079,3 +1079,50 @@ The successful package gate used Git's direct `--output` archive mode after a
 discarded Windows PowerShell binary-pipe attempt produced a damaged tar
 stream. No repository data was changed. No publication, deployment, cloud
 action, registry write, or website update was performed.
+
+## 2026-08-28 current revalidation - Slice 179 cross-process notification drain fence
+
+The changed boundary was reviewed for optional lease ownership, deterministic
+outbox resource identity, bounded TTL validation, acquisition classification,
+target-outside-state-lock behavior, release ordering, preservation of committed
+drain reports, and no-lease compatibility. The fence reuses the existing
+caller-owned `FileLeaseManager`; it does not introduce a second lease protocol,
+automatic renewal, retry worker, or exactly-once claim. No correctness or
+security boundary defect remains in the implementation.
+
+Review evidence on implementation commit `5a0affd`:
+
+```text
+python -m pytest -q --no-cov tests/autonomy/test_notification_outbox.py tests/resources/test_file_lease.py
+20 passed in 0.66s
+
+python -m black --check maple/autonomy/notification_outbox.py maple/autonomy/interactions.py maple/autonomy/approval.py maple/autonomy/__init__.py maple/__init__.py tests/autonomy/test_notification_outbox.py
+6 files would be left unchanged.
+
+python -m isort --check-only maple/autonomy/notification_outbox.py maple/autonomy/interactions.py maple/autonomy/approval.py maple/autonomy/__init__.py maple/__init__.py tests/autonomy/test_notification_outbox.py
+exit=0
+
+python -m ruff check maple/autonomy/notification_outbox.py maple/autonomy/interactions.py maple/autonomy/approval.py maple/autonomy/__init__.py maple/__init__.py tests/autonomy/test_notification_outbox.py
+All checks passed!
+
+python -m mypy maple/autonomy/notification_outbox.py maple/autonomy/interactions.py maple/autonomy/approval.py --follow-imports=skip
+Success: no issues found in 3 source files
+
+python -m compileall -q maple/autonomy/notification_outbox.py maple/autonomy/interactions.py maple/autonomy/approval.py maple/autonomy/__init__.py maple/__init__.py tests/autonomy/test_notification_outbox.py
+compileall_exit=0
+
+python -m pytest -q --no-cov
+1720 passed, 1 skipped in 279.71s (0:04:39)
+```
+
+The full suite includes the new competing-worker fence, acquisition-failure,
+release-failure, committed-report preservation, typed-error attachment, and
+bounded-TTL regressions. The environment-wide dependency audit, Gitleaks,
+Bandit, actionlint, and a fresh independent verifier session remain
+unavailable or governance-blocked in this tool context. No publication,
+deployment, cloud action, registry write, or website update was performed.
+
+**Slice 179 review:** PASS for the optional local drain fence; clean archive
+package verification remains the next gate. Overall release status remains
+CONDITIONAL / NOT PUBLISH-READY pending the documented release gates and human
+authorization.

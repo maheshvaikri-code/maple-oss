@@ -134,9 +134,16 @@ survives recreation of the outbox object. The host explicitly calls
 are retained as delivered for deduplication, while failures remain pending and
 return sanitized `NotificationOutboxReport` details. This is a local
 at-least-once boundary: a crash after downstream acceptance and before the
-delivered mark may duplicate a notification. MAPLE does not start a worker,
-retry automatically, delete records to make space, coordinate distributed
-drainers, or claim exactly-once external effects.
+delivered mark may duplicate a notification. Hosts running multiple local
+drainers can opt into a coarse cross-process fence by passing a caller-owned
+`FileLeaseManager` from `maple.resources` as `lease_manager`; a second drainer
+then returns `NOTIFICATION_OUTBOX_DRAIN_UNAVAILABLE` without calling its
+target. The bounded `lease_ttl_seconds` is not renewed automatically, so work
+that outlives the TTL can still duplicate delivery. A release failure returns
+`NOTIFICATION_OUTBOX_DRAIN_LEASE_RELEASE_ERROR` and includes the committed
+drain report for inspection. MAPLE does not start a worker, retry
+automatically, delete records to make space, or claim exactly-once external
+effects.
 
 ### Production Infrastructure
 

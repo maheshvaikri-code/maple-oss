@@ -2339,12 +2339,19 @@ from maple import (
     FileApprovalStore,
     HttpApprovalNotifier,
 )
+from maple.resources import FileLeaseManager
 
 target = HttpApprovalNotifier(
     "http://127.0.0.1:8787/v1/approvals/notifications",
     auth_token="operator-token",
 )
-outbox = FileApprovalNotificationOutbox("./.maple-approval-outbox", target=target)
+lease_manager = FileLeaseManager("./.maple-leases")
+outbox = FileApprovalNotificationOutbox(
+    "./.maple-approval-outbox",
+    target=target,
+    lease_manager=lease_manager,
+    lease_ttl_seconds=30.0,
+)
 approval_store = FileApprovalStore(
     "./.maple-approvals",
     notifier=outbox,
@@ -2361,10 +2368,16 @@ bytes, queue bytes, and drain batch size are bounded; a full queue returns
 sanitized failure details and calls the target outside the outbox state lock.
 The contract is local at-least-once delivery: a crash after downstream
 acceptance and before the delivered mark may duplicate a notification. MAPLE
-does not start a background worker, retry automatically, coordinate
-distributed drain leases, add a purge operation, or claim exactly-once
-external effects. Use the human-input adapter with `HttpHumanInputNotifier`
-and `FileHumanInputStore` for the corresponding interaction lifecycle.
+does not start a background worker, retry automatically, add a purge
+operation, or claim exactly-once external effects. If multiple local workers
+share one outbox directory, pass a caller-owned `FileLeaseManager` to establish
+one coarse outbox-wide drain owner. Acquisition denial returns
+`NOTIFICATION_OUTBOX_DRAIN_UNAVAILABLE`; release failure returns
+`NOTIFICATION_OUTBOX_DRAIN_LEASE_RELEASE_ERROR` and includes the completed
+drain report. The TTL is bounded and not renewed automatically, so target work
+that exceeds it can still produce at-least-once duplicates. Use the
+human-input adapter with `HttpHumanInputNotifier` and `FileHumanInputStore`
+for the corresponding interaction lifecycle.
 
 #### Remote approval push delivery
 

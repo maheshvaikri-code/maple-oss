@@ -10,6 +10,13 @@
 
 ### Additions
 
+- **Optional cross-process notification drain fencing**: notification outboxes
+  can use a caller-owned `FileLeaseManager` and bounded TTL to fence competing
+  local drainers. Acquisition denial is typed and makes no target call;
+  release failures preserve the committed drain report. No-lease behavior,
+  automatic renewal, distributed queueing, and exactly-once effects remain
+  unchanged or outside this slice.
+
 - **Durable notification outbox**: optional
   `FileHumanInputNotificationOutbox` and
   `FileApprovalNotificationOutbox` adapters provide bounded atomic local

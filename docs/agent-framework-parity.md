@@ -308,8 +308,16 @@ and are drained explicitly in bounded batches. Delivered records are retained
 for deduplication, failures remain pending with sanitized state, and queue
 limits fail closed without deleting records. The boundary is local
 at-least-once delivery with host-coordinated draining; automatic workers,
-retries, distributed leases, purge, hosted identity, and exactly-once external
-effects remain separate.
+retries, purge, hosted identity, and exactly-once external effects remain
+separate.
+
+Slice 179 adds an opt-in coarse cross-process drain fence using the existing
+caller-owned `FileLeaseManager`. A second local worker sharing the same outbox
+and lease root fails before its target call while the first owner is active;
+release failures preserve the completed drain report, and no-lease callers keep
+Slice 178 behavior. The bounded lease TTL is not renewed, so expiry during a
+slow target call can still permit at-least-once duplicates. Distributed queue
+federation, hosted identity, and exactly-once effects remain separate.
 
 ## Highest-value gaps before a publish claim
 
