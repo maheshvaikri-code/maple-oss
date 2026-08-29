@@ -372,6 +372,31 @@ def test_async_evaluation_calibration_preserves_order_and_accepts_sync_judge():
     assert [result.agreed for result in report.unwrap().results] == [True, True]
 
 
+def test_evaluation_calibration_redacts_trajectory_and_rejects_oversized_rationale():
+    case = EvalCalibrationCase(
+        "bounded",
+        EvalCase("bounded-fixture", "input", expected_output="ok"),
+        EvalObservation(
+            "ok",
+            trajectory=(EvalTrajectoryStep("lookup", {"api_key": "secret"}),),
+        ),
+        expected_passed=True,
+    )
+    observed = []
+
+    def judge(fixture, observation):
+        observed.append(observation)
+        return EvalJudgeResult(1.0, True, "x" * 4097)
+
+    report = EvaluationHarness().calibrate([case], judge)
+
+    assert report.is_ok()
+    result = report.unwrap().results[0]
+    assert result.errors[0]["errorType"] == "EVAL_JUDGE_RESULT_INVALID"
+    assert result.judge_score is None
+    assert observed[0].trajectory[0].arguments == {"api_key": "[REDACTED]"}
+
+
 def test_evaluation_calibration_rejects_invalid_dataset_before_judge_and_handles_empty():
     calls = []
     valid = EvalCalibrationCase(

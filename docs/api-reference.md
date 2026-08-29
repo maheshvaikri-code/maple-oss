@@ -1885,7 +1885,7 @@ calibration = EvaluationHarness().calibrate(
     ),
 )
 assert calibration.unwrap().agreement_rate == 1.0
-assert calibration.unwrap().mean_absolute_score_error == 0.1
+assert abs(calibration.unwrap().mean_absolute_score_error - 0.1) < 1e-9
 ```
 
 `EvalCalibrationReport` exposes `total`, `agreement_count`,
