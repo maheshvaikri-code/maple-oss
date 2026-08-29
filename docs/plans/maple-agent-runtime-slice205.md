@@ -10,7 +10,7 @@
 |---|---|---|---|---|---|
 | 1 | Durable file-backed lexical backend | Backend / Security | `maple/autonomy/retrieval.py`, retrieval tests | Configuration, envelope validation, atomic add/remove, restart, shared-instance fencing, refresh, failure redaction | complete locally: focused retrieval `35 passed` |
 | 2 | Public package and documentation surface | Interop / Tech Writer | `maple/autonomy/__init__.py`, `maple/__init__.py`, `README.md`, API/parity/changelog | Imports, runnable example, documentation consistency | complete locally: public import smoke, docs, and changelog updated |
-| 3 | Review, QA, packaging, and release evidence | Code Reviewer / QA / Security / Release | `docs/reviews/maple-agent-runtime-slice205.md`, `docs/qa/maple-agent-runtime-slice205.md`, release plan | Focused retrieval tests, full suite, static/security/package gates | todo |
+| 3 | Review, QA, packaging, and release evidence | Code Reviewer / QA / Security / Release | `docs/reviews/maple-agent-runtime-slice205.md`, `docs/qa/maple-agent-runtime-slice205.md`, release plan | Focused retrieval tests, full suite, static/security/package gates | complete locally: review/QA filed; full suite, project audit, static, and clean package smoke pass; publication remains conditional |
 
 ## Threat sketch
 
@@ -45,7 +45,12 @@ network or executable deserialization.
 
 ## Status snapshot
 
-G0 brief and G1 ADR are filed. Implementation is intentionally local-only and
-does not require a cloud target, new dependency, publication, or website
-change. The existing Slice 193 hosted-coordination, Slice 199 isolation, Slice
-200 CI-policy, and release-publication gates remain separate.
+G0 brief and G1 ADR are filed. Implementation, public surface, review, QA, and
+package evidence are complete locally. The implementation commits are
+`b9843d7` and bounded-read hardening `5135877`;
+the clean archive smoke reports `1838 passed, 1 skipped`, source archive `960`,
+wheel `109`, sdist `874`, build/Twine/install/import/doctor exit `0`, and
+network-free doctor readiness. This slice is intentionally local-only and does
+not require a cloud target, new dependency, publication, or website change.
+The existing Slice 193 hosted-coordination, Slice 199 isolation, Slice 200
+CI-policy, and release-publication gates remain separate.
