@@ -1,7 +1,7 @@
 # Slice 209 implementation plan - async host-owned vector retrieval tool
 
 **Class:** L
-**Status:** Design accepted; implementation pending
+**Status:** Complete locally; release-gated
 **Brief:** `docs/briefs/maple-agent-runtime-slice209.md`
 **ADR:** `docs/adr/153-async-vector-retrieval-tool.md`
 
@@ -11,11 +11,11 @@
 | --- | --- | --- |
 | G0 | Confirm the async vector RAG tool-loop gap, host-owned provider scope, non-goals, and acceptance tests. | Slice brief committed before implementation. |
 | G1 | Review the async-only API, executor boundary, shared citation shape, bounds, and cancellation/error policy. | ADR and this plan committed; Chief Architect role review. |
-| G2 | Implement the protocol/factory and public exports; add focused async success, validation, redaction, no-sync-call, and no-partial-output regressions. | Focused retrieval/tool output and diff inspection. |
-| G3 | Update API, README, parity, changelog, and release bookkeeping without widening provider or network claims. | Documentation smoke and diff inspection. |
-| G4 | Run focused tests, full suite, static checks, and project-scoped security audit. | Pasted real command output in QA evidence. |
-| G5 | Run a clean archived source/package smoke and file review/QA evidence. | Archive counts, build/Twine/install/import/doctor output. |
-| G6 | Reconcile release readiness only; do not publish, tag, deploy, or update the website. | Conditional release decision and explicit remaining gates. |
+| G2 | Implement the protocol/factory and public exports; add focused async success, validation, redaction, no-sync-call, and no-partial-output regressions. | `82c8a24`; focused retrieval/tool output and diff inspection. |
+| G3 | Update API, README, parity, changelog, and release bookkeeping without widening provider or network claims. | Public documentation and release-plan diff. |
+| G4 | Run focused tests, full suite, static checks, and project-scoped security audit. | QA evidence: `73 passed`; full `1876 passed, 1 skipped`; static/audit pass. |
+| G5 | Run a clean archived source/package smoke and file review/QA evidence. | QA evidence: source `980`, wheel `109`, sdist `894`; build/Twine/install/import/doctor pass. |
+| G6 | Reconcile release readiness only; do not publish, tag, deploy, or update the website. | Review/QA filed; release remains conditional. |
 
 ## Implementation units
 
