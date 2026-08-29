@@ -21,7 +21,7 @@
   `RunClient.start_task(...)` through `POST /v1/tasks/{task_id}/start` under
   `task:start` to transition their assigned task to `RUNNING`. The queue
   records `started_at` and remains authoritative for ownership/state conflicts;
-  leases, heartbeats, scheduling, and automatic execution remain outside the
+  leases, heartbeat expiry, scheduling, and automatic execution remain outside the
   contract.
 
 - **Authenticated remote task queue statistics**: `RunClient.task_queue_stats()`
@@ -29,6 +29,13 @@
   `GET /v1/tasks/stats` under `task:read`. Malformed optional queue statistics
   fail closed, and the route does not expose task payloads/results or claim a
   distributed monitoring snapshot.
+
+- **Owner-safe task heartbeat telemetry**: `RunClient.heartbeat_task()` and
+  `TaskQueue.heartbeat_task()` record a monotonic activity timestamp for the
+  recorded owner of `ASSIGNED` or `RUNNING` work through `task:heartbeat`.
+  The signal is persisted by `FileTaskQueue`, remains compatible with legacy
+  records, and does not provide lease renewal, expiry, reassignment,
+  distributed liveness, or exactly-once effects.
 
 - **Owner-safe remote task retry**: authenticated workers can call
   `RunClient.retry_task(...)` through `POST /v1/tasks/{task_id}/retry` under
@@ -56,7 +63,7 @@
   and `RunClient` methods expose bounded submit/list/inspect/claim/complete/fail
   operations under separate `task:*` scopes. Existing queue ownership and
   principal agent/capability policies remain authoritative; queue internals are
-  redacted from errors. Worker heartbeats, distributed scheduling, automatic
+  redacted from errors. Heartbeat expiry, distributed scheduling, automatic
   retry, handler execution, and exactly-once external effects remain outside
   the contract.
 

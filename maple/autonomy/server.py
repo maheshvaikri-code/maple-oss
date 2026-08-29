@@ -267,6 +267,7 @@ def _required_scope(method: str, path: Tuple[str, ...]) -> Optional[str]:
             return {
                 "claim": "task:claim",
                 "start": "task:start",
+                "heartbeat": "task:heartbeat",
                 "complete": "task:complete",
                 "fail": "task:fail",
                 "cancel": "task:cancel",
@@ -1506,6 +1507,7 @@ def _task_to_dict(task: Task) -> Dict[str, Any]:
         "assigned_agent": task.assigned_agent,
         "created_at": task.created_at,
         "started_at": task.started_at,
+        "heartbeat_at": task.heartbeat_at,
         "completed_at": task.completed_at,
         "retry_count": task.retry_count,
         "result": task.result,
@@ -1961,7 +1963,16 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 method == "POST"
                 and len(path) == 4
                 and path[0:2] == ("v1", "tasks")
-                and path[3] in {"claim", "start", "complete", "fail", "cancel", "retry"}
+                and path[3]
+                in {
+                    "claim",
+                    "start",
+                    "heartbeat",
+                    "complete",
+                    "fail",
+                    "cancel",
+                    "retry",
+                }
             ):
                 self._mutate_task(path[2], path[3])
                 return
@@ -2350,6 +2361,20 @@ class _RequestHandler(BaseHTTPRequestHandler):
 
             def operation() -> Result[Task, str]:
                 return queue.start_task(task_id, assigned_agent)
+
+        elif action == "heartbeat":
+            if set(body) != {"assigned_agent"}:
+                self._write_error(
+                    400,
+                    _error(
+                        "TASK_INPUT_INVALID",
+                        "heartbeat accepts only assigned_agent.",
+                    ),
+                )
+                return
+
+            def operation() -> Result[Task, str]:
+                return queue.heartbeat_task(task_id, assigned_agent)
 
         elif action == "complete":
             allowed = {"assigned_agent", "result"}
@@ -4768,6 +4793,22 @@ class RunClient:
         return self._request(
             "POST",
             ("v1", "tasks", task_id, "start"),
+            {"assigned_agent": assigned_agent},
+        )
+
+    def heartbeat_task(
+        self, task_id: str, assigned_agent: str
+    ) -> Result[Dict[str, Any], Error]:
+        """Record one owner-authenticated activity timestamp for active work."""
+        identifier_error = _validate_task_identifier(task_id, "task_id")
+        if identifier_error is not None:
+            return Result.err(identifier_error)
+        agent_error = _validate_agent_identifier(assigned_agent, "assigned_agent")
+        if agent_error is not None:
+            return Result.err(agent_error)
+        return self._request(
+            "POST",
+            ("v1", "tasks", task_id, "heartbeat"),
             {"assigned_agent": assigned_agent},
         )
 

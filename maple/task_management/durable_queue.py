@@ -275,7 +275,8 @@ class FileTaskQueue(TaskQueue):
             "result",
             "error",
         }
-        if set(record) != required:
+        heartbeat_required = required | {"heartbeat_at"}
+        if set(record) not in (required, heartbeat_required):
             return _queue_error("Durable queue task record fields are invalid.")
         if not _valid_text(record["task_id"], max_length=_MAX_DURABLE_TASK_ID_LENGTH):
             return _queue_error("Durable queue task ID is invalid.")
@@ -329,6 +330,8 @@ class FileTaskQueue(TaskQueue):
             return _queue_error("Durable queue task start time is invalid.")
         if not _valid_timestamp(record["completed_at"]):
             return _queue_error("Durable queue task completion time is invalid.")
+        if not _valid_timestamp(record.get("heartbeat_at")):
+            return _queue_error("Durable queue task heartbeat time is invalid.")
         error = record["error"]
         if error is not None and (
             not isinstance(error, str)
@@ -344,6 +347,7 @@ class FileTaskQueue(TaskQueue):
             return _queue_error("Durable queue task exceeds the byte limit.")
 
         started_at = record["started_at"]
+        heartbeat_at = record.get("heartbeat_at")
         try:
             task = Task(
                 task_id=record["task_id"],
@@ -358,6 +362,9 @@ class FileTaskQueue(TaskQueue):
                 assigned_agent=assigned_agent,
                 created_at=float(record["created_at"]),
                 started_at=(float(started_at) if started_at is not None else None),
+                heartbeat_at=(
+                    float(heartbeat_at) if heartbeat_at is not None else None
+                ),
                 completed_at=(
                     float(record["completed_at"])
                     if record["completed_at"] is not None
@@ -392,6 +399,7 @@ class FileTaskQueue(TaskQueue):
                 task.status = TaskStatus.QUEUED
                 task.assigned_agent = None
                 task.started_at = None
+                task.heartbeat_at = None
             if task.task_id in hydrated:
                 return _queue_error("Durable queue task IDs must be unique.")
             hydrated[task.task_id] = task
@@ -484,6 +492,7 @@ class FileTaskQueue(TaskQueue):
             "retry_count": task.retry_count,
             "result": task.result,
             "error": task.error,
+            "heartbeat_at": task.heartbeat_at,
         }
         try:
             if not isinstance(task.priority, TaskPriority) or not isinstance(
@@ -711,6 +720,11 @@ class FileTaskQueue(TaskQueue):
     def start_task(self, task_id: str, assigned_agent: str) -> Result[Task, str]:
         return self._run_durable(
             lambda: TaskQueue.start_task(self, task_id, assigned_agent)
+        )
+
+    def heartbeat_task(self, task_id: str, assigned_agent: str) -> Result[Task, str]:
+        return self._run_durable(
+            lambda: TaskQueue.heartbeat_task(self, task_id, assigned_agent)
         )
 
     def complete_task(

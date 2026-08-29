@@ -556,9 +556,10 @@ same scheduler-facing lifecycle methods while persisting bounded JSON records
 to a caller-selected file. Each operation uses a local cross-process fence and
 an atomic temporary-file replacement. Recreating the queue hydrates queued and
 terminal records; interrupted `ASSIGNED` or `RUNNING` records are returned to
-`QUEUED` with their ephemeral owner and start time cleared. This is explicit
-at-least-once local recovery: handlers are not replayed automatically, and
-external effects are not exactly once.
+`QUEUED` with their ephemeral owner, start time, and heartbeat cleared. Older
+records that omit the additive `heartbeat_at` field remain readable. This is
+explicit at-least-once local recovery: handlers are not replayed automatically,
+and external effects are not exactly once.
 
 ```python
 from maple.task_management import FileTaskQueue
@@ -611,6 +612,13 @@ recorded owner matches `current_agent`; empty or equal agent IDs, missing tasks,
 wrong owners, and `RUNNING` or terminal tasks fail without mutation.
 `TaskScheduler.rebalance_loads()` uses this path and updates local load maps
 only after the queue transfer succeeds.
+
+`TaskQueue.heartbeat_task(task_id, assigned_agent)` records a monotonic
+`heartbeat_at` timestamp for the recorded owner of an `ASSIGNED` or `RUNNING`
+task. Missing tasks, wrong owners, empty agent IDs, queued tasks, and terminal
+tasks fail without mutation. The timestamp is host-owned activity telemetry;
+it does not renew a lease, expire work, reassign a task, or prove distributed
+worker liveness.
 
 Before `TaskQueue.assign_task()` is attempted, `TaskScheduler` reserves one
 local capacity slot under its scheduler lock. A rejected queue claim removes
@@ -2980,29 +2988,30 @@ with RunServer(
     task_id = submitted.unwrap()["task_id"]
     claimed = client.claim_task(task_id, "worker-a")
     started = client.start_task(task_id, "worker-a")
+    heartbeat = client.heartbeat_task(task_id, "worker-a")
     completed = client.complete_task(task_id, "worker-a", {"ok": True})
 ```
 
 The routes are `POST /v1/tasks`, `GET /v1/tasks`, `GET /v1/tasks/stats`,
 `GET /v1/tasks/{task_id}`, `POST /v1/tasks/claim-next`, and
-`POST /v1/tasks/{task_id}/{action}` where `action` is `claim`, `complete`,
-`start`, `complete`, `fail`, `cancel`, or `retry`. The corresponding client methods are
+`POST /v1/tasks/{task_id}/{action}` where `action` is `claim`, `start`,
+`heartbeat`, `complete`, `fail`, `cancel`, or `retry`. The corresponding client methods are
 `submit_task`, `list_tasks`, `task_queue_stats`, `inspect_task`,
-`claim_next_task`, `claim_task`, `start_task`, `cancel_task`, `retry_task`, `complete_task`,
-and `fail_task`. Task submission accepts a bounded task type,
+`claim_next_task`, `claim_task`, `start_task`, `heartbeat_task`, `cancel_task`,
+`retry_task`, `complete_task`, and `fail_task`. Task submission accepts a bounded task type,
 JSON object payload/metadata, priority, capability requirements, timeout, and
 retry count. Completion results and failure text are bounded as well. Listing
 supports exact status/task-type filters and a limit of 1 through 100.
 
 The scopes are `task:submit`, `task:read`, `task:claim`, `task:start`,
-`task:complete`, `task:fail`, `task:cancel`, and `task:retry`. Principal `allowed_capabilities`
+`task:heartbeat`, `task:complete`, `task:fail`, `task:cancel`, and `task:retry`. Principal `allowed_capabilities`
 is applied to submission requirements and `allowed_agent_ids` is applied to
-claim/start/complete/fail/cancel/retry actor IDs. Queue ownership and lifecycle
+claim/start/heartbeat/complete/fail/cancel/retry actor IDs. Queue ownership and lifecycle
 conflicts remain authoritative in the selected implementation, and queue
 internals are not returned in errors.
 
 This is a bounded control plane, not a distributed scheduler. It does not
-provide worker heartbeats, leases, automatic retry, atomic submit-and-claim,
+provide heartbeat expiry, leases, automatic retry, atomic submit-and-claim,
 handler execution, queue federation, or exactly-once external effects. The
 `claim_next_task(assigned_agent, capabilities=...)` method is a non-blocking
 bounded candidate selection operation: it orders compatible work by priority,
@@ -3024,7 +3033,11 @@ queue statistics become `TASK_QUEUE_UNAVAILABLE`. It does not expose task
 payloads/results or provide a globally consistent distributed snapshot.
 The `start_task(task_id, assigned_agent)` method is an explicit owner-checked
 `ASSIGNED` to `RUNNING` transition that records `started_at`; it does not
-provide a worker lease, heartbeat, timeout monitor, or automatic execution.
+provide a worker lease, heartbeat expiry, timeout monitor, or automatic
+execution. The `heartbeat_task(task_id, assigned_agent)` method records a
+monotonic `heartbeat_at` value for an owned `ASSIGNED` or `RUNNING` task and
+returns the bounded task envelope. It is telemetry only: it does not renew a
+lease, trigger timeout/reassignment, or establish distributed liveness.
 
 ### Agent run HTTP transport
 

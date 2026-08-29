@@ -1,10 +1,12 @@
 # Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
 # MAPLE - Multi Agent Protocol Language Engine
 
-import unittest
-import time
 import threading
-from maple.task_management.task_queue import TaskQueue, TaskStatus, TaskPriority
+import time
+import unittest
+from unittest.mock import patch
+
+from maple.task_management.task_queue import TaskPriority, TaskQueue, TaskStatus
 
 
 class TestTaskSubmissionQueuing(unittest.TestCase):
@@ -197,6 +199,47 @@ class TestTaskSubmissionQueuing(unittest.TestCase):
         self.assertEqual(task.status, TaskStatus.COMPLETED)
         self.assertEqual(task.result, {"output": "processed_data"})
         self.assertIsNotNone(task.completed_at)
+
+    def test_heartbeat_task_requires_owner_and_active_state(self):
+        task_id = self.task_queue.submit_task("heartbeat", {}).unwrap()
+
+        queued = self.task_queue.heartbeat_task(task_id, "worker-a")
+        self.assertTrue(queued.is_err())
+        self.assertIsNone(self.task_queue.get_task(task_id).unwrap().heartbeat_at)
+
+        self.assertTrue(self.task_queue.assign_task(task_id, "worker-a").is_ok())
+        wrong_owner = self.task_queue.heartbeat_task(task_id, "worker-b")
+        self.assertTrue(wrong_owner.is_err())
+        self.assertIsNone(self.task_queue.get_task(task_id).unwrap().heartbeat_at)
+
+        with patch(
+            "maple.task_management.task_queue.time.time", return_value=100.0
+        ):
+            first = self.task_queue.heartbeat_task(task_id, "worker-a")
+        self.assertTrue(first.is_ok())
+        self.assertEqual(first.unwrap().heartbeat_at, 100.0)
+
+        with patch(
+            "maple.task_management.task_queue.time.time", return_value=99.0
+        ):
+            older = self.task_queue.heartbeat_task(task_id, "worker-a")
+        self.assertTrue(older.is_ok())
+        self.assertEqual(older.unwrap().heartbeat_at, 100.0)
+
+        self.assertTrue(self.task_queue.start_task(task_id, "worker-a").is_ok())
+        with patch(
+            "maple.task_management.task_queue.time.time", return_value=101.0
+        ):
+            running = self.task_queue.heartbeat_task(task_id, "worker-a")
+        self.assertTrue(running.is_ok())
+        self.assertEqual(running.unwrap().heartbeat_at, 101.0)
+
+        self.assertTrue(self.task_queue.complete_task(task_id, "worker-a").is_ok())
+        terminal = self.task_queue.heartbeat_task(task_id, "worker-a")
+        self.assertTrue(terminal.is_err())
+        self.assertEqual(
+            self.task_queue.get_task(task_id).unwrap().heartbeat_at, 101.0
+        )
     
     def test_cancel_task(self):
         """Test task cancellation."""

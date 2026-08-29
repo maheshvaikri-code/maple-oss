@@ -60,11 +60,11 @@ workers, hosted scheduler ownership, automatic retry, or exactly-once effects.
 
 The authenticated local control plane now exposes an optional configured queue
 through `RunServer(task_queue=...)` and `RunClient` task methods for bounded
-submit/list/stats/inspect/claim/claim-next/start/complete/fail/cancel/retry operations. Separate `task:*` scopes,
+submit/list/stats/inspect/claim/claim-next/start/heartbeat/complete/fail/cancel/retry operations. Separate `task:*` scopes,
 principal capability requirements, and exact worker-agent policy checks are
 applied before queue mutation, while the selected `TaskQueue` remains the
 authority for ownership and lifecycle conflicts. This is a process-boundary
-control plane only: worker heartbeats, distributed leases, automatic retry,
+control plane only: heartbeat expiry, distributed leases, automatic retry,
 handler execution, queue federation, and exactly-once effects remain separate.
 
 Slice 188 adds owner-safe remote task cancellation under `task:cancel`. The
@@ -91,9 +91,16 @@ Slice 191 adds an owner-safe authenticated task start operation under
 `task:start`. A recorded owner can transition an `ASSIGNED` task to `RUNNING`,
 which records `started_at` while preserving the queue's existing statistics
 accounting. The transition remains an explicit local lifecycle
-acknowledgement; worker
-heartbeats, leases, timeout monitoring, scheduling, and distributed ownership
+acknowledgement; heartbeat expiry, leases, timeout monitoring, scheduling, and
+distributed ownership
 remain separate.
+
+Slice 194 adds an owner-safe authenticated task heartbeat under
+`task:heartbeat`. A recorded owner can update a monotonic `heartbeat_at` value
+for `ASSIGNED` or `RUNNING` work, with the same local and durable queue
+behavior. The value is host-owned telemetry only; heartbeat expiry, lease
+renewal, reassignment, worker-failure reconciliation, and distributed
+ownership remain separate.
 
 Local scheduler assignment now uses an atomic queue-side claim, rejects
 duplicate task ownership, and returns scheduler assignment failures through
@@ -109,14 +116,14 @@ guarantee.
 
 Local rebalancing uses a separate atomic ownership transfer for `ASSIGNED`
 tasks. It cannot move `RUNNING` tasks or bypass the current owner check, so
-load maps and queue ownership remain aligned within one process. Worker
-heartbeats, crash reconciliation, distributed leases, and hosted scheduling
+load maps and queue ownership remain aligned within one process. Heartbeat
+interpretation, crash reconciliation, distributed leases, and hosted scheduling
 remain separate.
 
 Scheduler capacity is reserved under the local scheduler lock before the queue
 claim and rolled back if that claim fails. This closes concurrent local
 over-admission for `max_concurrent_per_agent`; it is not a distributed quota,
-worker heartbeat, or hosted admission service.
+heartbeat authority, or hosted admission service.
 
 Durable run stores now reject contradictory pending-request state before
 mutation: paused checkpoints identify exactly one approval or human-input

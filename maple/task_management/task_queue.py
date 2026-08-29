@@ -78,6 +78,9 @@ class Task:
     result: Optional[Any] = None
     error: Optional[str] = None
 
+    # Host-owned activity telemetry. This is not a lease or liveness verdict.
+    heartbeat_at: Optional[float] = None
+
     def __lt__(self, other: "Task") -> bool:
         """For priority queue ordering."""
         return self.priority.value < other.priority.value
@@ -375,6 +378,7 @@ class TaskQueue:
 
             task.status = TaskStatus.ASSIGNED
             task.assigned_agent = assigned_agent
+            task.heartbeat_at = None
             self._notify_task_callbacks(task_id, task)
             return Result.ok(task)
 
@@ -397,6 +401,29 @@ class TaskQueue:
                 )
 
             return self.update_task_status(task_id, TaskStatus.RUNNING)
+
+    def heartbeat_task(self, task_id: str, assigned_agent: str) -> Result[Task, str]:
+        """Record an owner-authenticated activity timestamp for active work."""
+
+        with self._lock:
+            if not assigned_agent:
+                return Result.err("Assigned agent cannot be empty")
+            if task_id not in self.tasks:
+                return Result.err(f"Task {task_id} not found")
+
+            task = self.tasks[task_id]
+            if task.assigned_agent != assigned_agent:
+                return Result.err(f"Task {task_id} is not assigned to {assigned_agent}")
+            if task.status not in (TaskStatus.ASSIGNED, TaskStatus.RUNNING):
+                return Result.err(
+                    f"Task {task_id} cannot be heartbeated from status "
+                    f"{task.status.value}"
+                )
+
+            observed_at = time.time()
+            if task.heartbeat_at is None or observed_at > task.heartbeat_at:
+                task.heartbeat_at = observed_at
+            return Result.ok(task)
 
     def complete_task(
         self, task_id: str, assigned_agent: str, result: Any = None
@@ -443,6 +470,7 @@ class TaskQueue:
                 return Result.err(f"Task {task_id} is not assigned to {current_agent}")
 
             task.assigned_agent = new_agent
+            task.heartbeat_at = None
             self._notify_task_callbacks(task_id, task)
             return Result.ok(task)
 
@@ -551,6 +579,7 @@ class TaskQueue:
             task.status = TaskStatus.QUEUED
             task.assigned_agent = None
             task.started_at = None
+            task.heartbeat_at = None
             task.completed_at = None
             task.retry_count += 1
             task.error = None

@@ -277,6 +277,40 @@ def test_file_task_queue_owner_safe_start_persists_and_recovers(tmp_path):
     restored.stop()
 
 
+def test_file_task_queue_persists_heartbeat_and_loads_legacy_records(
+    tmp_path, monkeypatch
+):
+    path = _queue_path(tmp_path)
+    queue = FileTaskQueue(path)
+    task_id = queue.submit_task("heartbeat", {}).unwrap()
+    assert queue.assign_task(task_id, "worker-a").is_ok()
+
+    monkeypatch.setattr("maple.task_management.task_queue.time.time", lambda: 100.0)
+    first = queue.heartbeat_task(task_id, "worker-a")
+    assert first.is_ok()
+    assert first.unwrap().heartbeat_at == 100.0
+    assert json.loads(path.read_text(encoding="utf-8"))["tasks"][0][
+        "heartbeat_at"
+    ] == 100.0
+
+    monkeypatch.setattr("maple.task_management.task_queue.time.time", lambda: 99.0)
+    older = queue.heartbeat_task(task_id, "worker-a")
+    assert older.is_ok()
+    assert older.unwrap().heartbeat_at == 100.0
+    queue.stop()
+
+    legacy = json.loads(path.read_text(encoding="utf-8"))
+    legacy["tasks"][0].pop("heartbeat_at")
+    path.write_text(json.dumps(legacy), encoding="utf-8")
+
+    restored = FileTaskQueue(path)
+    loaded = restored.get_task(task_id).unwrap()
+    assert loaded.status == TaskStatus.QUEUED
+    assert loaded.assigned_agent is None
+    assert loaded.heartbeat_at is None
+    restored.stop()
+
+
 def test_file_task_queue_owner_safe_retry(tmp_path):
     path = _queue_path(tmp_path)
     queue = FileTaskQueue(path)

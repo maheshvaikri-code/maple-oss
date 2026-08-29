@@ -192,6 +192,7 @@ def test_remote_task_queue_requires_auth_and_scopes_agent_targets():
         denied_retry = client.retry_task(task_id, "worker-a")
         claimed = client.claim_task(task_id, "worker-a")
         denied_start = client.start_task(task_id, "worker-a")
+        denied_heartbeat = client.heartbeat_task(task_id, "worker-a")
         denied_cancel = client.cancel_task(task_id, "worker-a")
         denied_failure = client.fail_task(task_id, "worker-a", "not now")
         denied_listing = RunClient(base_url).list_tasks()
@@ -210,6 +211,8 @@ def test_remote_task_queue_requires_auth_and_scopes_agent_targets():
     assert claimed.is_ok()
     assert denied_start.is_err()
     assert denied_start.unwrap_err()["errorType"] == "FORBIDDEN"
+    assert denied_heartbeat.is_err()
+    assert denied_heartbeat.unwrap_err()["errorType"] == "FORBIDDEN"
     assert denied_cancel.is_err()
     assert denied_cancel.unwrap_err()["errorType"] == "FORBIDDEN"
     assert denied_failure.is_err()
@@ -358,6 +361,64 @@ def test_remote_task_start_enforces_owner_state_and_statistics():
     assert stats.is_ok()
     assert stats.unwrap()["stats"]["running_tasks"] == 1
     assert completed.is_ok()
+
+
+def test_remote_task_heartbeat_enforces_owner_state_scope_and_monotonicity():
+    queue = TaskQueue(max_queue_size=4)
+    server = RunServer(
+        WorkflowRegistry(),
+        auth_token="task-token",
+        task_queue=queue,
+    )
+    base_url = server.start()
+
+    try:
+        client = RunClient(base_url, auth_token="task-token")
+        submitted = client.submit_task("heartbeat", {})
+        assert submitted.is_ok()
+        task_id = submitted.unwrap()["task_id"]
+
+        queued = client.heartbeat_task(task_id, "worker-a")
+        assert client.claim_task(task_id, "worker-a").is_ok()
+        wrong_owner = client.heartbeat_task(task_id, "worker-b")
+        assigned = client.heartbeat_task(task_id, "worker-a")
+        started = client.start_task(task_id, "worker-a")
+        running = client.heartbeat_task(task_id, "worker-a")
+        inspected = client.inspect_task(task_id)
+        completed = client.complete_task(task_id, "worker-a")
+        terminal = client.heartbeat_task(task_id, "worker-a")
+        malformed_status, malformed = _request(
+            f"{base_url}/v1/tasks/{task_id}/heartbeat",
+            method="POST",
+            payload={"assigned_agent": "worker-a", "unexpected": True},
+            headers={"Authorization": "Bearer task-token"},
+        )
+        unauthorized = RunClient(base_url).heartbeat_task(task_id, "worker-a")
+    finally:
+        server.close()
+
+    assert queued.is_err()
+    assert queued.unwrap_err()["errorType"] == "TASK_CONFLICT"
+    assert wrong_owner.is_err()
+    assert wrong_owner.unwrap_err()["errorType"] == "TASK_CONFLICT"
+    assert assigned.is_ok()
+    assigned_timestamp = assigned.unwrap()["task"]["heartbeat_at"]
+    assert isinstance(assigned_timestamp, float)
+    assert started.is_ok()
+    assert running.is_ok()
+    assert running.unwrap()["task"]["status"] == "running"
+    assert running.unwrap()["task"]["heartbeat_at"] >= assigned_timestamp
+    assert inspected.is_ok()
+    assert inspected.unwrap()["task"]["heartbeat_at"] == running.unwrap()[
+        "task"
+    ]["heartbeat_at"]
+    assert completed.is_ok()
+    assert terminal.is_err()
+    assert terminal.unwrap_err()["errorType"] == "TASK_CONFLICT"
+    assert malformed_status == 400
+    assert malformed["error"]["errorType"] == "TASK_INPUT_INVALID"
+    assert unauthorized.is_err()
+    assert unauthorized.unwrap_err()["errorType"] == "UNAUTHORIZED"
 
 
 def test_remote_task_retry_enforces_owner_failed_state_and_bounds():
