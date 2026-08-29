@@ -42,6 +42,13 @@ _CHECKPOINT_VERSION = 1
 DEFAULT_MAX_LEXICAL_INDEX_BYTES = 16 * 1024 * 1024
 _MAX_LEXICAL_INDEX_BYTES = 64 * 1024 * 1024
 _LEXICAL_INDEX_VERSION = 1
+DEFAULT_MAX_VECTOR_INDEX_BYTES = 16 * 1024 * 1024
+_MAX_VECTOR_INDEX_BYTES = 64 * 1024 * 1024
+_VECTOR_INDEX_VERSION = 1
+_MAX_FILE_VECTOR_DOCUMENTS = 100_000
+_MAX_FILE_VECTOR_COUNT = 1_000_000
+_MAX_FILE_VECTOR_DIMENSIONS = 16_384
+_MAX_FILE_VECTOR_RESULTS = 100_000
 
 
 def _error(error_type: str, message: str, **details: Any) -> Error:
@@ -2169,3 +2176,455 @@ class InMemoryVectorRetriever:
                 "vectors": len(self._vectors),
                 "dimensions": self._dimension or 0,
             }
+
+
+class FileVectorRetriever:
+    """Bounded, atomic, cross-process durable vector retrieval.
+
+    The host supplies embeddings; MAPLE persists the source documents and
+    vectors locally, then rebuilds the tested in-memory cosine index on each
+    operation. This class does not select an embedding model or call a
+    provider.
+    """
+
+    _FILENAME = "vector-index.json"
+    _TEMP_PREFIX = ".maple-vector-index-"
+
+    def __init__(
+        self,
+        directory: Union[str, Path],
+        chunker: Optional[TextChunker] = None,
+        *,
+        max_documents: int = 1_000,
+        max_vectors: int = 100_000,
+        max_dimensions: int = 4_096,
+        max_results: int = 100,
+        max_bytes: int = DEFAULT_MAX_VECTOR_INDEX_BYTES,
+        lease_ttl_seconds: float = 30.0,
+    ) -> None:
+        if chunker is not None and not isinstance(chunker, TextChunker):
+            raise TypeError("chunker must be a TextChunker")
+        self.chunker = chunker or TextChunker()
+        limits = (
+            ("max_documents", max_documents, _MAX_FILE_VECTOR_DOCUMENTS),
+            ("max_vectors", max_vectors, _MAX_FILE_VECTOR_COUNT),
+            ("max_dimensions", max_dimensions, _MAX_FILE_VECTOR_DIMENSIONS),
+            ("max_results", max_results, _MAX_FILE_VECTOR_RESULTS),
+        )
+        for name, value, maximum in limits:
+            if (
+                not isinstance(value, int)
+                or isinstance(value, bool)
+                or not 1 <= value <= maximum
+            ):
+                raise ValueError(f"{name} must be between 1 and {maximum}")
+        if (
+            not isinstance(max_bytes, int)
+            or isinstance(max_bytes, bool)
+            or not 512 <= max_bytes <= _MAX_VECTOR_INDEX_BYTES
+        ):
+            raise ValueError("max_bytes must be between 512 and 67108864")
+        if (
+            not isinstance(lease_ttl_seconds, (int, float))
+            or isinstance(lease_ttl_seconds, bool)
+            or not math.isfinite(float(lease_ttl_seconds))
+            or not 0.001 <= float(lease_ttl_seconds) <= 86_400.0
+        ):
+            raise ValueError("lease_ttl_seconds must be between 0.001 and 86400")
+        chunker_error = self.chunker.policy.validate()
+        if chunker_error is not None:
+            raise ValueError("chunker policy is invalid")
+
+        self.max_documents = max_documents
+        self.max_vectors = max_vectors
+        self.max_dimensions = max_dimensions
+        self.max_results = max_results
+        self.max_bytes = max_bytes
+        try:
+            self.directory = Path(directory)
+            self.directory.mkdir(parents=True, exist_ok=True)
+        except (OSError, TypeError, ValueError) as exc:
+            raise ValueError("vector index directory is unavailable") from exc
+        if not self.directory.is_dir():
+            raise ValueError("vector index path must be a directory")
+        self.path = self.directory / self._FILENAME
+        self._lock = threading.RLock()
+        try:
+            self._lease = DurableRecordLease(
+                self.directory,
+                namespace="retrieval-vector-index",
+                holder_label="vector-index",
+                lease_ttl_seconds=lease_ttl_seconds,
+            )
+        except (OSError, TypeError, ValueError) as exc:
+            raise ValueError("vector index lease is unavailable") from exc
+
+        self._index = self._new_index()
+        loaded = self._run("load", self._load_index_unlocked)
+        if loaded.is_err():
+            raise ValueError("vector index state is invalid")
+        self._index = loaded.unwrap()
+
+    def _new_index(self) -> InMemoryVectorRetriever:
+        return InMemoryVectorRetriever(
+            self.chunker,
+            max_documents=self.max_documents,
+            max_vectors=self.max_vectors,
+            max_dimensions=self.max_dimensions,
+            max_results=self.max_results,
+        )
+
+    def _read_records_unlocked(
+        self,
+    ) -> Result[List[Tuple[Document, List[Tuple[float, ...]]]], Error]:
+        try:
+            with self.path.open("rb") as handle:
+                encoded = handle.read(self.max_bytes + 1)
+        except FileNotFoundError:
+            return Result.ok([])
+        except OSError:
+            return Result.err(
+                _error(
+                    "RETRIEVAL_VECTOR_INDEX_LOAD_ERROR",
+                    "vector index could not be loaded.",
+                )
+            )
+        if len(encoded) > self.max_bytes:
+            return Result.err(
+                _error(
+                    "RETRIEVAL_VECTOR_INDEX_LOAD_ERROR",
+                    "vector index exceeds the byte limit.",
+                )
+            )
+        try:
+            data = json.loads(encoded.decode("utf-8"))
+        except (UnicodeError, TypeError, ValueError):
+            return Result.err(
+                _error(
+                    "RETRIEVAL_VECTOR_INDEX_LOAD_ERROR",
+                    "vector index could not be loaded.",
+                )
+            )
+        if (
+            not isinstance(data, Mapping)
+            or data.get("version") != _VECTOR_INDEX_VERSION
+        ):
+            return Result.err(
+                _error(
+                    "RETRIEVAL_VECTOR_INDEX_LOAD_ERROR",
+                    "vector index version is invalid.",
+                )
+            )
+        raw_policy = data.get("chunking_policy")
+        expected_policy = _chunking_policy_to_dict(self.chunker.policy)
+        if not isinstance(raw_policy, Mapping) or any(
+            type(raw_policy.get(name)) is not type(expected)
+            or raw_policy.get(name) != expected
+            for name, expected in expected_policy.items()
+        ):
+            return Result.err(
+                _error(
+                    "RETRIEVAL_VECTOR_INDEX_CONFIG_MISMATCH",
+                    "vector index chunking policy does not match.",
+                )
+            )
+        raw_documents = data.get("documents")
+        if (
+            not isinstance(raw_documents, list)
+            or len(raw_documents) > self.max_documents
+        ):
+            return Result.err(
+                _error(
+                    "RETRIEVAL_VECTOR_INDEX_LOAD_ERROR",
+                    "vector index document list is invalid.",
+                )
+            )
+
+        records: List[Tuple[Document, List[Tuple[float, ...]]]] = []
+        seen_ids: Set[str] = set()
+        vector_count = 0
+        for value in raw_documents:
+            if not isinstance(value, Mapping):
+                return Result.err(
+                    _error(
+                        "RETRIEVAL_VECTOR_INDEX_LOAD_ERROR",
+                        "vector index document record is invalid.",
+                    )
+                )
+            parsed_document = _document_from_dict(value.get("document"))
+            if parsed_document.is_err():
+                return Result.err(
+                    _error(
+                        "RETRIEVAL_VECTOR_INDEX_LOAD_ERROR",
+                        "vector index document is invalid.",
+                    )
+                )
+            document = parsed_document.unwrap()
+            if document.document_id in seen_ids:
+                return Result.err(
+                    _error(
+                        "RETRIEVAL_VECTOR_INDEX_LOAD_ERROR",
+                        "vector index contains duplicate documents.",
+                    )
+                )
+            raw_embeddings = value.get("embeddings")
+            if isinstance(raw_embeddings, (str, bytes)) or not isinstance(
+                raw_embeddings, list
+            ):
+                return Result.err(
+                    _error(
+                        "RETRIEVAL_VECTOR_INDEX_LOAD_ERROR",
+                        "vector index embeddings are invalid.",
+                    )
+                )
+            if vector_count + len(raw_embeddings) > self.max_vectors:
+                return Result.err(
+                    _error(
+                        "RETRIEVAL_VECTOR_INDEX_LOAD_ERROR",
+                        "vector index vector limit is invalid.",
+                    )
+                )
+            embeddings: List[Tuple[float, ...]] = []
+            for index, embedding in enumerate(raw_embeddings):
+                parsed_vector = _validate_vector(
+                    embedding,
+                    max_dimensions=self.max_dimensions,
+                    field_name=f"embedding[{index}]",
+                )
+                if parsed_vector.is_err():
+                    return Result.err(
+                        _error(
+                            "RETRIEVAL_VECTOR_INDEX_LOAD_ERROR",
+                            "vector index contains an invalid vector.",
+                        )
+                    )
+                embeddings.append(parsed_vector.unwrap())
+            seen_ids.add(document.document_id)
+            vector_count += len(embeddings)
+            records.append((document, embeddings))
+        return Result.ok(records)
+
+    def _load_index_unlocked(self) -> Result[InMemoryVectorRetriever, Error]:
+        records = self._read_records_unlocked()
+        if records.is_err():
+            return Result.err(records.unwrap_err())
+        index = self._new_index()
+        for document, embeddings in records.unwrap():
+            added = index.add_document(document, embeddings)
+            if added.is_err():
+                return Result.err(
+                    _error(
+                        "RETRIEVAL_VECTOR_INDEX_LOAD_ERROR",
+                        "vector index could not be rebuilt.",
+                    )
+                )
+        return Result.ok(index)
+
+    @staticmethod
+    def _records_from_index(
+        index: InMemoryVectorRetriever,
+    ) -> List[Tuple[Document, List[Tuple[float, ...]]]]:
+        records: List[Tuple[Document, List[Tuple[float, ...]]]] = []
+        for document_id, document in index._documents.items():
+            chunks = sorted(
+                (
+                    chunk
+                    for chunk in index._chunks.values()
+                    if chunk.document_id == document_id
+                ),
+                key=lambda chunk: chunk.index,
+            )
+            records.append(
+                (
+                    document,
+                    [index._vectors[chunk.chunk_id] for chunk in chunks],
+                )
+            )
+        return records
+
+    def _encode_records(
+        self,
+        records: Sequence[Tuple[Document, Sequence[Sequence[float]]]],
+    ) -> Result[str, Error]:
+        try:
+            encoded = json.dumps(
+                {
+                    "version": _VECTOR_INDEX_VERSION,
+                    "chunking_policy": _chunking_policy_to_dict(self.chunker.policy),
+                    "documents": [
+                        {
+                            "document": _document_to_dict(document),
+                            "embeddings": [list(vector) for vector in embeddings],
+                        }
+                        for document, embeddings in records
+                    ],
+                },
+                ensure_ascii=False,
+                allow_nan=False,
+                separators=(",", ":"),
+            )
+        except (TypeError, ValueError, OverflowError):
+            return Result.err(
+                _error(
+                    "RETRIEVAL_VECTOR_INDEX_SAVE_ERROR",
+                    "vector index is not JSON serializable.",
+                )
+            )
+        if len(encoded.encode("utf-8")) > self.max_bytes:
+            return Result.err(
+                _error(
+                    "RETRIEVAL_VECTOR_INDEX_SIZE",
+                    "vector index exceeds the byte limit.",
+                )
+            )
+        return Result.ok(encoded)
+
+    def _write_records_unlocked(
+        self,
+        records: Sequence[Tuple[Document, Sequence[Sequence[float]]]],
+    ) -> Result[None, Error]:
+        encoded = self._encode_records(records)
+        if encoded.is_err():
+            return Result.err(encoded.unwrap_err())
+        temporary_path: Optional[Path] = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=str(self.directory),
+                prefix=self._TEMP_PREFIX,
+                suffix=".tmp",
+                delete=False,
+            ) as handle:
+                temporary_path = Path(handle.name)
+                handle.write(encoded.unwrap())
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(str(temporary_path), str(self.path))
+            temporary_path = None
+            return Result.ok(None)
+        except (OSError, TypeError, ValueError):
+            return Result.err(
+                _error(
+                    "RETRIEVAL_VECTOR_INDEX_SAVE_ERROR",
+                    "vector index could not be saved.",
+                )
+            )
+        finally:
+            if temporary_path is not None:
+                try:
+                    temporary_path.unlink()
+                except OSError:
+                    pass
+
+    def _run(
+        self,
+        operation: str,
+        callback: Callable[[], Result[Any, Error]],
+    ) -> Result[Any, Error]:
+        try:
+            return self._lease.run(
+                "index",
+                operation,
+                callback,
+                acquire_error_type="RETRIEVAL_VECTOR_INDEX_LEASE_ERROR",
+                acquire_error_message="vector index lease could not be acquired.",
+                release_error_type="RETRIEVAL_VECTOR_INDEX_LEASE_RELEASE_ERROR",
+                release_error_message="vector index lease could not be released.",
+            )
+        except Exception:
+            return Result.err(
+                _error(
+                    "RETRIEVAL_VECTOR_INDEX_ERROR",
+                    "vector index operation failed.",
+                )
+            )
+
+    def add_document(
+        self, document: Document, embeddings: Sequence[Sequence[float]]
+    ) -> Result[List[DocumentChunk], Error]:
+        """Persist one document and its caller-supplied chunk embeddings."""
+        if not isinstance(document, Document):
+            return Result.err(
+                _error("RETRIEVAL_INPUT_INVALID", "document must be a Document.")
+            )
+        with self._lock:
+
+            def operation() -> Result[List[DocumentChunk], Error]:
+                loaded = self._load_index_unlocked()
+                if loaded.is_err():
+                    return Result.err(loaded.unwrap_err())
+                index = loaded.unwrap()
+                added = index.add_document(document, embeddings)
+                if added.is_err():
+                    return Result.err(added.unwrap_err())
+                records = self._records_from_index(index)
+                written = self._write_records_unlocked(records)
+                if written.is_err():
+                    return Result.err(written.unwrap_err())
+                self._index = index
+                return Result.ok(added.unwrap())
+
+            return self._run("add", operation)
+
+    def remove_document(self, document_id: str) -> Result[bool, Error]:
+        """Persist removal of one document, if present."""
+        error = _validate_identifier(document_id, "document_id")
+        if error is not None:
+            return Result.err(error)
+        with self._lock:
+
+            def operation() -> Result[bool, Error]:
+                loaded = self._load_index_unlocked()
+                if loaded.is_err():
+                    return Result.err(loaded.unwrap_err())
+                current = loaded.unwrap()
+                if document_id not in current._documents:
+                    self._index = current
+                    return Result.ok(False)
+                records = [
+                    record
+                    for record in self._records_from_index(current)
+                    if record[0].document_id != document_id
+                ]
+                candidate = self._new_index()
+                for document, embeddings in records:
+                    added = candidate.add_document(document, embeddings)
+                    if added.is_err():
+                        return Result.err(
+                            _error(
+                                "RETRIEVAL_VECTOR_INDEX_SAVE_ERROR",
+                                "vector index could not be rebuilt.",
+                            )
+                        )
+                written = self._write_records_unlocked(records)
+                if written.is_err():
+                    return Result.err(written.unwrap_err())
+                self._index = candidate
+                return Result.ok(True)
+
+            return self._run("remove", operation)
+
+    def search(
+        self,
+        query_vector: Sequence[float],
+        *,
+        top_k: int = 5,
+        min_score: float = 0.0,
+    ) -> Result[List[VectorRetrievalHit], Error]:
+        """Refresh the durable index and return deterministic vector hits."""
+        with self._lock:
+            loaded = self._run("search", self._load_index_unlocked)
+            if loaded.is_err():
+                return Result.err(loaded.unwrap_err())
+            self._index = loaded.unwrap()
+            return self._index.search(query_vector, top_k=top_k, min_score=min_score)
+
+    def stats(self) -> Dict[str, int]:
+        """Refresh and return bounded durable-vector counts."""
+        with self._lock:
+            loaded = self._run("stats", self._load_index_unlocked)
+            if loaded.is_err():
+                raise RuntimeError("vector index statistics unavailable")
+            self._index = loaded.unwrap()
+            return self._index.stats()

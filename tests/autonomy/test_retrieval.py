@@ -11,6 +11,7 @@ from maple.autonomy.retrieval import (
     DocumentBatch,
     DocumentCursorCheckpoint,
     FileLexicalRetriever,
+    FileVectorRetriever,
     FileDocumentCursorCheckpointStore,
     InMemoryDocumentConnectorRateLimiter,
     InMemoryDocumentCursorCheckpointStore,
@@ -658,6 +659,201 @@ def test_file_lexical_retriever_redacts_storage_failures(tmp_path, monkeypatch):
     assert result.is_err()
     assert result.unwrap_err()["errorType"] == "RETRIEVAL_INDEX_ERROR"
     assert "private-path-secret" not in str(result.unwrap_err())
+
+
+def test_file_vector_retriever_rejects_invalid_configuration(tmp_path):
+    with pytest.raises(ValueError, match="max_bytes"):
+        FileVectorRetriever(tmp_path, max_bytes=511)
+    with pytest.raises(ValueError, match="max_documents"):
+        FileVectorRetriever(tmp_path, max_documents=0)
+    with pytest.raises(ValueError, match="max_dimensions"):
+        FileVectorRetriever(tmp_path, max_dimensions=0)
+    with pytest.raises(ValueError, match="lease_ttl_seconds"):
+        FileVectorRetriever(tmp_path, lease_ttl_seconds=float("nan"))
+    with pytest.raises(TypeError, match="chunker"):
+        FileVectorRetriever(tmp_path, chunker=object())
+
+
+def test_file_vector_retriever_rejects_corrupt_oversized_or_mismatched_state(
+    tmp_path,
+):
+    index_path = tmp_path / "vector-index.json"
+    index_path.write_text("{", encoding="utf-8")
+    with pytest.raises(ValueError, match="state"):
+        FileVectorRetriever(tmp_path)
+
+    index_path.write_bytes(b"x" * 513)
+    with pytest.raises(ValueError, match="state"):
+        FileVectorRetriever(tmp_path, max_bytes=512)
+
+    index_path.write_bytes(b"\xff")
+    with pytest.raises(ValueError, match="state"):
+        FileVectorRetriever(tmp_path)
+
+    index_path.write_text(
+        json.dumps({"version": 99, "documents": []}), encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="state"):
+        FileVectorRetriever(tmp_path)
+
+    index_path.unlink()
+    first = FileVectorRetriever(
+        tmp_path,
+        chunker=TextChunker(ChunkingPolicy(max_chars=20, overlap_chars=5)),
+    )
+    assert first.add_document(
+        make_document("policy"), [(1.0, 0.0), (1.0, 0.0), (1.0, 0.0)]
+    ).is_ok()
+    with pytest.raises(ValueError, match="state"):
+        FileVectorRetriever(tmp_path)
+
+
+def test_file_vector_retriever_persists_and_reloads_embeddings(tmp_path):
+    first = FileVectorRetriever(tmp_path)
+    document = make_document("durable-vector", "durable agent resources")
+
+    added = first.add_document(document, [(1.0, 0.0)])
+    second = FileVectorRetriever(tmp_path)
+    found = second.search((1.0, 0.0))
+
+    assert added.is_ok()
+    assert len(added.unwrap()) == 1
+    assert found.is_ok()
+    assert [hit.chunk.document_id for hit in found.unwrap()] == ["durable-vector"]
+    assert found.unwrap()[0].chunk.source.uri == "memory://durable-vector"
+    assert second.stats() == {"documents": 1, "vectors": 1, "dimensions": 2}
+    persisted = json.loads(second.path.read_text(encoding="utf-8"))
+    assert persisted["version"] == 1
+    assert persisted["documents"][0]["embeddings"] == [[1.0, 0.0]]
+
+
+def test_file_vector_retriever_rejects_vector_dimension_mismatch_without_mutation(
+    tmp_path,
+):
+    retriever = FileVectorRetriever(tmp_path)
+    assert retriever.add_document(make_document("stable"), [(1.0, 0.0)]).is_ok()
+    before = retriever.path.read_bytes()
+
+    count_mismatch = retriever.add_document(make_document("count"), [])
+    dimension_mismatch = retriever.add_document(
+        make_document("dimension"), [(1.0, 0.0, 0.0)]
+    )
+
+    assert count_mismatch.is_err()
+    assert count_mismatch.unwrap_err()["errorType"] == "RETRIEVAL_VECTOR_COUNT_MISMATCH"
+    assert dimension_mismatch.is_err()
+    assert (
+        dimension_mismatch.unwrap_err()["errorType"]
+        == "RETRIEVAL_VECTOR_DIMENSION_MISMATCH"
+    )
+    assert retriever.path.read_bytes() == before
+    assert retriever.stats() == {"documents": 1, "vectors": 1, "dimensions": 2}
+
+
+def test_file_vector_retriever_remove_persists_and_is_fail_closed(
+    tmp_path, monkeypatch
+):
+    retriever = FileVectorRetriever(tmp_path)
+    document = make_document("remove-me", "remove me from durable vector index")
+    assert retriever.add_document(document, [(1.0, 0.0)]).is_ok()
+    before = retriever.path.read_bytes()
+
+    def fail_write(_records):
+        return Result.err(
+            {
+                "errorType": "RETRIEVAL_VECTOR_INDEX_SAVE_ERROR",
+                "message": "save failed",
+            }
+        )
+
+    monkeypatch.setattr(retriever, "_write_records_unlocked", fail_write)
+    failed = retriever.remove_document(document.document_id)
+
+    assert failed.is_err()
+    assert failed.unwrap_err()["errorType"] == "RETRIEVAL_VECTOR_INDEX_SAVE_ERROR"
+    assert retriever.path.read_bytes() == before
+    assert retriever.search((1.0, 0.0)).unwrap()
+
+    monkeypatch.undo()
+    assert retriever.remove_document(document.document_id).unwrap() is True
+    assert FileVectorRetriever(tmp_path).stats() == {
+        "documents": 0,
+        "vectors": 0,
+        "dimensions": 0,
+    }
+    assert retriever.remove_document(document.document_id).unwrap() is False
+
+
+def test_file_vector_retriever_serializes_shared_directory_mutations(tmp_path):
+    first = FileVectorRetriever(tmp_path)
+    second = FileVectorRetriever(tmp_path)
+    documents = (
+        (first, make_document("parallel-a", "parallel agent alpha")),
+        (second, make_document("parallel-b", "parallel agent beta")),
+    )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(
+            executor.map(
+                lambda pair: pair[0].add_document(pair[1], [(1.0, 0.0)]),
+                documents,
+            )
+        )
+
+    fresh = FileVectorRetriever(tmp_path)
+    assert all(result.is_ok() for result in results)
+    assert fresh.stats() == {"documents": 2, "vectors": 2, "dimensions": 2}
+    assert fresh.search((1.0, 0.0)).unwrap()[0].chunk.document_id == "parallel-a"
+
+
+def test_file_vector_retriever_refreshes_external_updates_and_bounds_queries(
+    tmp_path,
+):
+    first = FileVectorRetriever(tmp_path, max_results=2)
+    second = FileVectorRetriever(tmp_path, max_results=2)
+    assert first.add_document(
+        make_document("refresh", "refreshable agent"), [(1.0, 0.0)]
+    ).is_ok()
+
+    refreshed = second.search((1.0, 0.0), top_k=2)
+    invalid_top_k = second.search((1.0, 0.0), top_k=3)
+    invalid_query = second.search((float("nan"), 0.0), top_k=2)
+
+    assert refreshed.is_ok()
+    assert refreshed.unwrap()[0].chunk.document_id == "refresh"
+    assert invalid_top_k.unwrap_err()["errorType"] == "RETRIEVAL_QUERY_INVALID"
+    assert invalid_query.unwrap_err()["errorType"] == "RETRIEVAL_VECTOR_INVALID"
+
+
+def test_file_vector_retriever_rejects_non_json_documents_and_redacts_storage_failures(
+    tmp_path, monkeypatch
+):
+    retriever = FileVectorRetriever(tmp_path)
+    assert retriever.add_document(make_document("stable"), [(1.0, 0.0)]).is_ok()
+    before = retriever.path.read_bytes()
+    invalid = Document(
+        document_id="invalid",
+        text="not persisted",
+        source=SourceRef(uri="memory://invalid"),
+        metadata={"bad": object()},
+    )
+
+    invalid_result = retriever.add_document(invalid, [(1.0, 0.0)])
+
+    assert invalid_result.is_err()
+    assert invalid_result.unwrap_err()["errorType"] == "RETRIEVAL_NON_JSON_METADATA"
+    assert retriever.path.read_bytes() == before
+    assert retriever.stats()["documents"] == 1
+
+    def raise_private_failure(_records):
+        raise RuntimeError("private-path-secret")
+
+    monkeypatch.setattr(retriever, "_write_records_unlocked", raise_private_failure)
+    failed = retriever.add_document(make_document("redacted"), [(1.0, 0.0)])
+
+    assert failed.is_err()
+    assert failed.unwrap_err()["errorType"] == "RETRIEVAL_VECTOR_INDEX_ERROR"
+    assert "private-path-secret" not in str(failed.unwrap_err())
 
 
 def test_retriever_rejects_duplicates_and_removes_documents():
