@@ -23,6 +23,7 @@ from .approval import (
     ApprovalNotifier,
     ApprovalRequest,
     ApprovalStore,
+    FileApprovalNotificationOutbox,
     FileApprovalStore,
     HttpApprovalNotifier,
     InMemoryApprovalStore,
@@ -109,6 +110,7 @@ from .handoffs import (
     InMemoryHandoffStore,
 )
 from .interactions import (
+    FileHumanInputNotificationOutbox,
     FileHumanInputStore,
     HttpHumanInputNotifier,
     HumanInputAuthorizer,
@@ -135,6 +137,15 @@ from .invocations import (
 )
 from .mcp_tools import discover_mcp_tools, register_mcp_tools
 from .memory import EpisodicMemory, MemoryManager, SemanticMemory, WorkingMemory
+from .notification_outbox import (
+    DEFAULT_MAX_NOTIFICATION_OUTBOX_BYTES,
+    DEFAULT_MAX_NOTIFICATION_OUTBOX_DRAIN,
+    DEFAULT_MAX_NOTIFICATION_OUTBOX_RECORD_BYTES,
+    DEFAULT_MAX_NOTIFICATION_OUTBOX_RECORDS,
+    FileNotificationOutbox,
+    NotificationOutboxReport,
+    NotificationOutboxTarget,
+)
 from .observability import (
     AgentSnapshot,
     DecisionLogger,
@@ -352,7 +363,15 @@ __all__ = [
     "HumanInputRequest",
     "HumanInputStore",
     "FileHumanInputStore",
+    "FileHumanInputNotificationOutbox",
     "InMemoryHumanInputStore",
+    "DEFAULT_MAX_NOTIFICATION_OUTBOX_BYTES",
+    "DEFAULT_MAX_NOTIFICATION_OUTBOX_DRAIN",
+    "DEFAULT_MAX_NOTIFICATION_OUTBOX_RECORD_BYTES",
+    "DEFAULT_MAX_NOTIFICATION_OUTBOX_RECORDS",
+    "FileNotificationOutbox",
+    "NotificationOutboxReport",
+    "NotificationOutboxTarget",
     "DEFAULT_AGENT_INVOCATION_TTL_SECONDS",
     "DEFAULT_MAX_AGENT_INVOCATION_BYTES",
     "DEFAULT_MAX_AGENT_INVOCATION_ENTRIES",
@@ -393,6 +412,7 @@ __all__ = [
     "ApprovalNotifier",
     "ApprovalRequest",
     "ApprovalStore",
+    "FileApprovalNotificationOutbox",
     "FileApprovalStore",
     "HttpApprovalNotifier",
     "InMemoryApprovalStore",

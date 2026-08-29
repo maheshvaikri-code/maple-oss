@@ -21,6 +21,12 @@ from ..core.result import Result
 from ..resources.lease import FileLeaseManager
 from .contracts import validate_json_schema
 from .durable_leases import DurableRecordLease
+from .notification_outbox import (
+    DEFAULT_MAX_NOTIFICATION_OUTBOX_BYTES,
+    DEFAULT_MAX_NOTIFICATION_OUTBOX_RECORD_BYTES,
+    DEFAULT_MAX_NOTIFICATION_OUTBOX_RECORDS,
+    FileNotificationOutbox,
+)
 
 Error = Dict[str, Any]
 
@@ -745,6 +751,30 @@ class HttpHumanInputNotifier:
                 )
             )
         return Result.ok(None)
+
+
+class FileHumanInputNotificationOutbox(FileNotificationOutbox[HumanInputNotification]):
+    """Durably queue human-input notifications for explicit host draining."""
+
+    def __init__(
+        self,
+        directory: Union[str, Path],
+        *,
+        target: HumanInputNotifier,
+        max_record_bytes: int = DEFAULT_MAX_NOTIFICATION_OUTBOX_RECORD_BYTES,
+        max_records: int = DEFAULT_MAX_NOTIFICATION_OUTBOX_RECORDS,
+        max_queue_bytes: int = DEFAULT_MAX_NOTIFICATION_OUTBOX_BYTES,
+    ) -> None:
+        super().__init__(
+            directory,
+            target=target,
+            notification_type=HumanInputNotification,
+            encoder=lambda notification: notification.to_dict(),
+            decoder=HumanInputNotification.from_dict,
+            max_record_bytes=max_record_bytes,
+            max_records=max_records,
+            max_queue_bytes=max_queue_bytes,
+        )
 
 
 class HumanInputAuthorizer(Protocol):

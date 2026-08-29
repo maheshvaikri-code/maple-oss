@@ -40,6 +40,7 @@ from .autonomy.approval import (
     ApprovalNotifier,
     ApprovalRequest,
     ApprovalStore,
+    FileApprovalNotificationOutbox,
     FileApprovalStore,
     HttpApprovalNotifier,
     InMemoryApprovalStore,
@@ -126,6 +127,7 @@ from .autonomy.handoffs import (
     InMemoryHandoffStore,
 )
 from .autonomy.interactions import (
+    FileHumanInputNotificationOutbox,
     FileHumanInputStore,
     HttpHumanInputNotifier,
     HumanInputAuthorizer,
@@ -151,6 +153,15 @@ from .autonomy.invocations import (
     normalize_agent_idempotency_key,
 )
 from .autonomy.memory import MemoryManager
+from .autonomy.notification_outbox import (
+    DEFAULT_MAX_NOTIFICATION_OUTBOX_BYTES,
+    DEFAULT_MAX_NOTIFICATION_OUTBOX_DRAIN,
+    DEFAULT_MAX_NOTIFICATION_OUTBOX_RECORD_BYTES,
+    DEFAULT_MAX_NOTIFICATION_OUTBOX_RECORDS,
+    FileNotificationOutbox,
+    NotificationOutboxReport,
+    NotificationOutboxTarget,
+)
 from .autonomy.observability import SpanRecorder, TraceSpan
 from .autonomy.orchestrator import AgentOrchestrator
 from .autonomy.replay import (
@@ -457,7 +468,15 @@ __all__ = [
     "HumanInputRequest",
     "HumanInputStore",
     "FileHumanInputStore",
+    "FileHumanInputNotificationOutbox",
     "InMemoryHumanInputStore",
+    "DEFAULT_MAX_NOTIFICATION_OUTBOX_BYTES",
+    "DEFAULT_MAX_NOTIFICATION_OUTBOX_DRAIN",
+    "DEFAULT_MAX_NOTIFICATION_OUTBOX_RECORD_BYTES",
+    "DEFAULT_MAX_NOTIFICATION_OUTBOX_RECORDS",
+    "FileNotificationOutbox",
+    "NotificationOutboxReport",
+    "NotificationOutboxTarget",
     "DEFAULT_AGENT_INVOCATION_TTL_SECONDS",
     "DEFAULT_MAX_AGENT_INVOCATION_BYTES",
     "DEFAULT_MAX_AGENT_INVOCATION_ENTRIES",
@@ -498,6 +517,7 @@ __all__ = [
     "ApprovalNotifier",
     "ApprovalRequest",
     "ApprovalStore",
+    "FileApprovalNotificationOutbox",
     "FileApprovalStore",
     "HttpApprovalNotifier",
     "InMemoryApprovalStore",

@@ -20,6 +20,12 @@ from urllib.request import Request, urlopen
 from ..core.result import Result
 from ..resources.lease import FileLeaseManager
 from .durable_leases import DurableRecordLease
+from .notification_outbox import (
+    DEFAULT_MAX_NOTIFICATION_OUTBOX_BYTES,
+    DEFAULT_MAX_NOTIFICATION_OUTBOX_RECORD_BYTES,
+    DEFAULT_MAX_NOTIFICATION_OUTBOX_RECORDS,
+    FileNotificationOutbox,
+)
 
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
 _STATUSES = {"pending", "approved", "denied", "consumed"}
@@ -790,6 +796,30 @@ class HttpApprovalNotifier:
                 )
             )
         return Result.ok(None)
+
+
+class FileApprovalNotificationOutbox(FileNotificationOutbox[ApprovalNotification]):
+    """Durably queue approval notifications for explicit host draining."""
+
+    def __init__(
+        self,
+        directory: Union[str, Path],
+        *,
+        target: ApprovalNotifier,
+        max_record_bytes: int = DEFAULT_MAX_NOTIFICATION_OUTBOX_RECORD_BYTES,
+        max_records: int = DEFAULT_MAX_NOTIFICATION_OUTBOX_RECORDS,
+        max_queue_bytes: int = DEFAULT_MAX_NOTIFICATION_OUTBOX_BYTES,
+    ) -> None:
+        super().__init__(
+            directory,
+            target=target,
+            notification_type=ApprovalNotification,
+            encoder=lambda notification: notification.to_dict(),
+            decoder=ApprovalNotification.from_dict,
+            max_record_bytes=max_record_bytes,
+            max_records=max_records,
+            max_queue_bytes=max_queue_bytes,
+        )
 
 
 class ApprovalStore(Protocol):
