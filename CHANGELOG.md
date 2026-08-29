@@ -15,6 +15,13 @@
   behavior changes, suppressions, or new dependencies. The authoritative
   `mypy maple/ --ignore-missing-imports` audit now passes.
 
+### Fixes
+
+- **Synchronous judge awaitable cleanup**: synchronous evaluation and
+  calibration reject awaitable judge results with an actionable async-entry
+  point and close disposable coroutine-like results before returning the
+  typed per-case error.
+
 ### Additions
 
 - **Bounded provider-neutral judge calibration**: `EvalCalibrationCase`,

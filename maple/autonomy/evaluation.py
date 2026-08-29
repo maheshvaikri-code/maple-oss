@@ -921,6 +921,13 @@ class EvaluationHarness:
         )
 
     @staticmethod
+    def _dispose_sync_judge_awaitable(value: Any) -> None:
+        """Close a disposable awaitable rejected by a synchronous callback."""
+        close = getattr(value, "close", None)
+        if callable(close):
+            close()
+
+    @staticmethod
     def _valid_tool_names(value: Any) -> bool:
         return (
             isinstance(value, tuple)
@@ -1278,6 +1285,21 @@ class EvaluationHarness:
         for case, observation in prepared.unwrap():
             try:
                 judged_value = judge(case.fixture, observation)
+                if inspect.isawaitable(judged_value):
+                    self._dispose_sync_judge_awaitable(judged_value)
+                    results.append(
+                        self._calibration_error_result(
+                            case,
+                            {
+                                "errorType": "EVAL_JUDGE_RESULT_INVALID",
+                                "message": (
+                                    "synchronous calibration judge returned an "
+                                    "awaitable; use calibrate_async."
+                                ),
+                            },
+                        )
+                    )
+                    continue
                 results.append(self._calibration_result(case, judged_value))
             except Exception as exc:
                 results.append(
@@ -1485,7 +1507,18 @@ class EvaluationHarness:
                         try:
                             judged_value = judge(case, judge_observation)
                             judged: Optional[EvalJudgeResult] = None
-                            if isinstance(judged_value, Result):
+                            if inspect.isawaitable(judged_value):
+                                self._dispose_sync_judge_awaitable(judged_value)
+                                errors.append(
+                                    {
+                                        "errorType": "EVAL_JUDGE_RESULT_INVALID",
+                                        "message": (
+                                            "synchronous evaluation judge returned an "
+                                            "awaitable; use run_async."
+                                        ),
+                                    }
+                                )
+                            elif isinstance(judged_value, Result):
                                 if judged_value.is_err():
                                     errors.append(
                                         {

@@ -372,6 +372,76 @@ def test_async_evaluation_calibration_preserves_order_and_accepts_sync_judge():
     assert [result.agreed for result in report.unwrap().results] == [True, True]
 
 
+def test_evaluation_calibration_closes_awaitable_from_sync_judge():
+    case = EvalCalibrationCase(
+        "sync-judge",
+        EvalCase("sync-judge-fixture", "input", expected_output="ok"),
+        EvalObservation("ok"),
+        expected_passed=True,
+    )
+    awaitables = []
+
+    class ClosableAwaitable:
+        def __init__(self):
+            self.closed = False
+
+        def __await__(self):
+            if False:
+                yield
+            return EvalJudgeResult(1.0, True)
+
+        def close(self):
+            self.closed = True
+
+    def judge(fixture, observation):
+        value = ClosableAwaitable()
+        awaitables.append(value)
+        return value
+
+    report = EvaluationHarness().calibrate([case], judge)
+
+    assert report.is_ok()
+    assert len(awaitables) == 1
+    assert awaitables[0].closed
+    result = report.unwrap().results[0]
+    assert result.errors[0]["errorType"] == "EVAL_JUDGE_RESULT_INVALID"
+    assert "calibrate_async" in result.errors[0]["message"]
+    assert result.judge_passed is None
+
+
+def test_evaluation_run_closes_awaitable_from_sync_judge():
+    case = EvalCase("sync-judge", "input", expected_output="ok")
+    awaitables = []
+
+    class ClosableAwaitable:
+        def __init__(self):
+            self.closed = False
+
+        def __await__(self):
+            if False:
+                yield
+            return EvalJudgeResult(1.0, True)
+
+        def close(self):
+            self.closed = True
+
+    def judge(fixture, observation):
+        value = ClosableAwaitable()
+        awaitables.append(value)
+        return value
+
+    report = EvaluationHarness().run([case], lambda value: "ok", judge=judge)
+
+    assert report.is_ok()
+    assert len(awaitables) == 1
+    assert awaitables[0].closed
+    result = report.unwrap().results[0]
+    assert not result.passed
+    assert result.errors[0]["errorType"] == "EVAL_JUDGE_RESULT_INVALID"
+    assert "run_async" in result.errors[0]["message"]
+    assert result.judge_score is None
+
+
 def test_evaluation_calibration_redacts_trajectory_and_rejects_oversized_rationale():
     case = EvalCalibrationCase(
         "bounded",
