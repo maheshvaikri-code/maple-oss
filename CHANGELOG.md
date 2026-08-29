@@ -22,11 +22,11 @@
   point and close disposable coroutine-like results before returning the
   typed per-case error.
 
-- **Explicit session fork-target validation**: `fork(...,
-  new_session_id="")` now returns `INVALID_IDENTIFIER` instead of silently
-  generating an unnamed branch. Omitting the argument (`None`) retains the
-  documented generated-ID behavior, and invalid input cannot mutate either
-  built-in session store.
+- **Explicit session ID validation**: `create(session_id="")` and `fork(...,
+  new_session_id="")` now return `INVALID_IDENTIFIER` instead of silently
+  generating an unnamed session or branch. Omitting the optional ID (`None`)
+  retains the documented generated-ID behavior, and invalid input cannot
+  mutate either built-in session store.
 
 ### Additions
 

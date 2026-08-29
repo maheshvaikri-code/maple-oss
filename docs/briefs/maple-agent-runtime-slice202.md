@@ -64,11 +64,12 @@ surfaces.
 
 ## Direct-library correction completed
 
-The non-transport portion of criterion 7 is complete at `325d04e`. Both
-built-in stores now distinguish an omitted target (`None`, which generates a
-bounded ID) from an explicitly empty target (`""`, which returns
-`INVALID_IDENTIFIER`). The regression proves that the invalid call does not
-consume the configured session capacity or create a branch. The authenticated
+The non-transport portion of criterion 7 is complete at `b6ef016`, with the
+same explicit-ID rule extended to session creation during the follow-up audit.
+Both built-in stores now distinguish omitted IDs (`None`, which generates a
+bounded ID) from explicitly empty IDs (`""`, which returns
+`INVALID_IDENTIFIER`). Regressions prove invalid creation and fork calls do
+not consume configured session capacity or create state. The authenticated
 HTTP routes, scopes, and session-content responses remain human-gated.
 
 ## Constraints

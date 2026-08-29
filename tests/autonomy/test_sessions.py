@@ -302,6 +302,18 @@ def test_session_fork_rejects_explicit_empty_target_without_creating_branch(tmp_
         assert store.fork("fork-source", "explicit-branch").is_ok()
 
 
+def test_session_create_rejects_explicit_empty_id_without_creating_session(tmp_path):
+    for store in (
+        InMemorySessionStore(max_sessions=1),
+        FileSessionStore(tmp_path / "file-empty-create", max_sessions=1),
+    ):
+        invalid = store.create("")
+
+        assert invalid.is_err()
+        assert invalid.unwrap_err()["errorType"] == "INVALID_IDENTIFIER"
+        assert store.create("explicit-session").is_ok()
+
+
 def test_session_history_validates_bounds_and_constructor_limit():
     with pytest.raises(ValueError, match="max_history"):
         InMemorySessionStore(max_history=0)

@@ -2672,9 +2672,9 @@ history in one atomic envelope, read legacy direct-snapshot files without
 rewriting them during inspection, and migrate them only after a successful
 mutation.
 
-When `new_session_id` is omitted, the local store generates a bounded ID. An
-explicit empty or otherwise invalid target ID returns `INVALID_IDENTIFIER`
-before any source or target mutation.
+When `session_id` on `create()` or `new_session_id` on `fork()` is omitted, the
+local store generates a bounded ID. An explicit empty or otherwise invalid ID
+returns `INVALID_IDENTIFIER` before any source or target mutation.
 
 ```python
 history = store.history("chat-1", limit=5).unwrap()
