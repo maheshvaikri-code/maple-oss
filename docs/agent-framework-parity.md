@@ -480,6 +480,13 @@ closes local lexical restart persistence only; managed vector stores, semantic
 embedding generation, remote ingestion transactions, and distributed index
 coordination remain separate contracts.
 
+It also includes `FileVectorRetriever`: a bounded, versioned JSON
+source-of-truth for caller-supplied per-chunk embeddings with atomic
+replacement, restart rebuilds, external-instance refresh, and the same local
+fencing boundary. This closes local vector restart persistence only; embedding
+generation, managed vector stores, remote ingestion transactions, and
+distributed index coordination remain separate contracts.
+
 ## Official reference documentation
 
 These links were consulted on 2026-08-25 and should be rechecked before a

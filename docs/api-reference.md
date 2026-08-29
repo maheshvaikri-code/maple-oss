@@ -1382,6 +1382,36 @@ an empty index. Corrupt, oversized, unsupported-version, duplicate, or
 unrebuildable state fails closed, and storage errors are returned without
 host exception text or paths.
 
+For local restart persistence of caller-supplied embeddings, use
+`FileVectorRetriever`. It stores the validated source documents and one
+finite vector per generated chunk in a separate bounded versioned JSON file,
+then rebuilds the same deterministic cosine index on construction or query.
+The chunking policy must match when the store is reopened, and all non-empty
+vectors in one index must share a dimension:
+
+```python
+from maple import Document, FileVectorRetriever, SourceRef
+
+vector_retriever = FileVectorRetriever("./maple-vector-retrieval")
+added = vector_retriever.add_document(
+    Document(
+        document_id="guide-1",
+        text="MAPLE uses resource-aware agent orchestration.",
+        source=SourceRef(uri="https://example.invalid/guide"),
+    ),
+    [(0.8, 0.2, 0.1)],  # produced by the host's embedding pipeline
+)
+if added.is_ok():
+    hits = vector_retriever.search((0.7, 0.3, 0.1), top_k=3)
+```
+
+`FileVectorRetriever` is local-only and dependency-free. It does not generate
+embeddings, select a model, call a network service, provide a managed vector
+database, or claim distributed coordination. Missing state is empty; corrupt,
+oversized, unsupported-version, policy-mismatched, duplicate, dimension-
+mismatched, or unrebuildable state fails closed. Storage errors are returned
+without host exception text or paths.
+
 The reference backend is intentionally local; it is not a hosted vector
 database or embedding service. A vector index accepts one finite, bounded
 embedding per generated chunk and uses cosine similarity with deterministic
