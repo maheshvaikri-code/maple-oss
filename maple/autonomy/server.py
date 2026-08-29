@@ -38,6 +38,7 @@ from .approval import (
     ApprovalStore,
 )
 from .events import (
+    DEFAULT_MAX_EVENT_SEARCH_LIMIT,
     AgentEvent,
     EventCursor,
     EventDeduplicationStore,
@@ -268,6 +269,22 @@ def _validate_event_input(event_type: Any, run_id: Optional[Any]) -> Optional[Er
         or any(ord(char) < 32 or ord(char) == 127 for char in run_id)
     ):
         return _error("EVENT_INPUT_INVALID", "run_id must be bounded when provided.")
+    return None
+
+
+def _validate_event_search_filter(
+    value: Any, field: str, max_length: int
+) -> Optional[Error]:
+    if (
+        not isinstance(value, str)
+        or not value
+        or len(value) > max_length
+        or any(ord(char) < 32 or ord(char) == 127 for char in value)
+    ):
+        return _error(
+            "EVENT_SEARCH_INVALID",
+            f"{field} must be bounded text when provided.",
+        )
     return None
 
 
@@ -1563,6 +1580,9 @@ class _RequestHandler(BaseHTTPRequestHandler):
             if method == "GET" and path == ("v1", "events"):
                 self._read_events()
                 return
+            if method == "GET" and path == ("v1", "events", "search"):
+                self._search_events()
+                return
             if method == "GET" and path == ("v1", "agents"):
                 self._list_agents()
                 return
@@ -2773,6 +2793,71 @@ class _RequestHandler(BaseHTTPRequestHandler):
             self._write_error(
                 _status_for_error(result.unwrap_err()), result.unwrap_err()
             )
+            return
+        self._write_json(200, {"batch": result.unwrap().to_dict()})
+
+    def _search_events(self) -> None:
+        stream = self.server.application.event_stream
+        if stream is None:
+            self._write_error(
+                503,
+                _error(
+                    "EVENT_STREAM_UNAVAILABLE",
+                    "No event stream is configured.",
+                ),
+            )
+            return
+        parsed = urlsplit(self.path)
+        try:
+            pairs = parse_qsl(
+                parsed.query,
+                keep_blank_values=True,
+                strict_parsing=True,
+                max_num_fields=5,
+            )
+        except ValueError:
+            self._write_error(
+                400,
+                _error("EVENT_SEARCH_INVALID", "event search parameters are invalid."),
+            )
+            return
+        allowed = {"trace_id", "run_id", "event_type", "after", "limit"}
+        if any(key not in allowed for key, _ in pairs) or len(
+            {key for key, _ in pairs}
+        ) != len(pairs):
+            self._write_error(
+                400,
+                _error(
+                    "EVENT_SEARCH_INVALID",
+                    "event search supports one value for each known parameter.",
+                ),
+            )
+            return
+        query = dict(pairs)
+        try:
+            after = int(query.get("after", "0"))
+            limit = int(
+                query.get(
+                    "limit",
+                    str(min(stream.max_events, DEFAULT_MAX_EVENT_SEARCH_LIMIT)),
+                )
+            )
+        except (TypeError, ValueError):
+            self._write_error(
+                400,
+                _error("EVENT_SEARCH_INVALID", "after and limit must be integers."),
+            )
+            return
+        result = stream.search(
+            trace_id=query.get("trace_id"),
+            run_id=query.get("run_id"),
+            event_type=query.get("event_type"),
+            after_sequence=after,
+            limit=limit,
+        )
+        if result.is_err():
+            error = result.unwrap_err()
+            self._write_error(_status_for_error(error), error)
             return
         self._write_json(200, {"batch": result.unwrap().to_dict()})
 
@@ -4074,6 +4159,68 @@ class RunClient:
         if limit is not None:
             query["limit"] = str(limit)
         return self._request("GET", ("v1", "events"), query=query)
+
+    def search_events(
+        self,
+        *,
+        trace_id: Optional[str] = None,
+        run_id: Optional[str] = None,
+        event_type: Optional[str] = None,
+        after_sequence: int = 0,
+        limit: Optional[int] = None,
+    ) -> Result[Dict[str, Any], Error]:
+        """Search a bounded remote retained event window by exact filters."""
+        if trace_id is None and run_id is None and event_type is None:
+            return Result.err(
+                _error(
+                    "EVENT_SEARCH_INVALID",
+                    "at least one search filter is required.",
+                )
+            )
+        for value, field, max_length in (
+            (trace_id, "trace_id", 128),
+            (run_id, "run_id", 256),
+            (event_type, "event_type", 128),
+        ):
+            if value is not None:
+                invalid = _validate_event_search_filter(value, field, max_length)
+                if invalid is not None:
+                    return Result.err(invalid)
+        if (
+            not isinstance(after_sequence, int)
+            or isinstance(after_sequence, bool)
+            or after_sequence < 0
+        ):
+            return Result.err(
+                _error(
+                    "EVENT_SEARCH_INVALID",
+                    "after_sequence must be non-negative.",
+                )
+            )
+        query: Dict[str, str] = {
+            "after": str(after_sequence),
+        }
+        if limit is not None:
+            if (
+                not isinstance(limit, int)
+                or isinstance(limit, bool)
+                or not 0 < limit <= DEFAULT_MAX_EVENT_SEARCH_LIMIT
+            ):
+                return Result.err(
+                    _error(
+                        "EVENT_SEARCH_INVALID",
+                        "limit must be positive and within the search bound.",
+                        max_limit=DEFAULT_MAX_EVENT_SEARCH_LIMIT,
+                    )
+                )
+            query["limit"] = str(limit)
+        if trace_id is not None:
+            query["trace_id"] = trace_id
+        if run_id is not None:
+            query["run_id"] = run_id
+        if event_type is not None:
+            query["event_type"] = event_type
+        return self._request("GET", ("v1", "events", "search"), query=query)
 
     def inspect_agent_run(
         self, agent_id: str, run_id: str

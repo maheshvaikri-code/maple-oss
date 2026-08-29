@@ -49,6 +49,7 @@ DEFAULT_MAX_FORWARD_BATCHES_PER_TICK = 1
 DEFAULT_MAX_EVENT_DEDUP_ENTRIES = 10_000
 DEFAULT_EVENT_DEDUP_TTL_SECONDS = 3_600.0
 DEFAULT_MAX_EVENT_DEDUP_BYTES = 16 * 1024 * 1024
+DEFAULT_MAX_EVENT_SEARCH_LIMIT = 1_000
 _EVENT_JOURNAL_VERSION = 1
 _EVENT_CURSOR_VERSION = 1
 _EVENT_DEDUPLICATION_VERSION = 1
@@ -1618,6 +1619,22 @@ def _validate_event_record(event: Any) -> Optional[Error]:
     return None
 
 
+def _validate_event_search_filter(
+    value: Any, field: str, max_length: int
+) -> Optional[Error]:
+    if (
+        not isinstance(value, str)
+        or not value
+        or len(value) > max_length
+        or any(ord(char) < 32 or ord(char) == 127 for char in value)
+    ):
+        return _error(
+            "EVENT_SEARCH_INVALID",
+            f"{field} must be bounded text when provided.",
+        )
+    return None
+
+
 def _event_from_dict(value: Any) -> Result[AgentEvent, Error]:
     if not isinstance(value, Mapping):
         return Result.err(
@@ -2918,6 +2935,102 @@ class EventStream:
         if limit is not None:
             events = events[:limit]
         return Result.ok(events)
+
+    def search(
+        self,
+        *,
+        trace_id: Optional[str] = None,
+        run_id: Optional[str] = None,
+        event_type: Optional[str] = None,
+        after_sequence: int = 0,
+        limit: Optional[int] = None,
+    ) -> Result[EventBatch, Error]:
+        """Search retained redacted events with exact bounded filters.
+
+        ``trace_id`` is matched only against a top-level value in the already
+        redacted event payload. Search is a retained-window diagnostic seam;
+        it does not query unretained or remote event storage.
+        """
+        if trace_id is None and run_id is None and event_type is None:
+            return Result.err(
+                _error(
+                    "EVENT_SEARCH_INVALID",
+                    "at least one search filter is required.",
+                )
+            )
+        for value, field, max_length in (
+            (trace_id, "trace_id", 128),
+            (run_id, "run_id", 256),
+            (event_type, "event_type", 128),
+        ):
+            if value is not None:
+                invalid = _validate_event_search_filter(value, field, max_length)
+                if invalid is not None:
+                    return Result.err(invalid)
+        if (
+            not isinstance(after_sequence, int)
+            or isinstance(after_sequence, bool)
+            or after_sequence < 0
+        ):
+            return Result.err(
+                _error(
+                    "EVENT_SEARCH_INVALID",
+                    "after_sequence must be non-negative.",
+                )
+            )
+        max_limit = min(self.max_events, DEFAULT_MAX_EVENT_SEARCH_LIMIT)
+        effective_limit = max_limit if limit is None else limit
+        if (
+            not isinstance(effective_limit, int)
+            or isinstance(effective_limit, bool)
+            or not 0 < effective_limit <= max_limit
+        ):
+            return Result.err(
+                _error(
+                    "EVENT_SEARCH_INVALID",
+                    "limit must be positive and within the search bound.",
+                    max_limit=max_limit,
+                )
+            )
+        with self._condition:
+            retained = list(self._events)
+            oldest = retained[0].sequence if retained else None
+            latest = retained[-1].sequence if retained else None
+            if oldest is not None and after_sequence < oldest - 1:
+                return Result.err(
+                    _error(
+                        "EVENT_CURSOR_EXPIRED",
+                        "search cursor precedes the retained event window.",
+                        cursor_sequence=after_sequence,
+                        oldest_sequence=oldest,
+                        latest_sequence=latest,
+                    )
+                )
+            matches = []
+            for event in retained:
+                if event.sequence <= after_sequence:
+                    continue
+                if run_id is not None and event.run_id != run_id:
+                    continue
+                if event_type is not None and event.event_type != event_type:
+                    continue
+                if trace_id is not None and (
+                    not isinstance(event.payload, Mapping)
+                    or event.payload.get("trace_id") != trace_id
+                ):
+                    continue
+                matches.append(event)
+                if len(matches) == effective_limit:
+                    break
+        next_sequence = matches[-1].sequence if matches else after_sequence
+        return Result.ok(
+            EventBatch(
+                events=tuple(matches),
+                next_cursor=EventCursor(sequence=next_sequence),
+                oldest_sequence=oldest,
+                latest_sequence=latest,
+            )
+        )
 
     def read(
         self,

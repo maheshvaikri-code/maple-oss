@@ -2088,6 +2088,77 @@ def test_authenticated_event_transport_reads_redacted_batches_by_cursor():
     assert unauthorized.unwrap_err()["errorType"] == "UNAUTHORIZED"
 
 
+def test_authenticated_event_transport_searches_redacted_trace_window():
+    stream = EventStream(max_events=4)
+    assert stream.publish(
+        "model.started",
+        {"trace_id": "trace-a", "secret": "hidden"},
+        run_id="run-a",
+    ).is_ok()
+    assert stream.publish(
+        "tool.started", {"trace_id": "trace-b"}, run_id="run-a"
+    ).is_ok()
+    assert stream.publish(
+        "model.finished", {"trace_id": "trace-a"}, run_id="run-b"
+    ).is_ok()
+    server = RunServer(
+        WorkflowRegistry(),
+        event_stream=stream,
+        auth_token="event-token",
+        auth_principal=Principal("reader", ("event:read",)),
+    )
+    base_url = server.start()
+    try:
+        client = RunClient(base_url, auth_token="event-token")
+        by_trace = client.search_events(trace_id="trace-a", limit=1)
+        by_run = client.search_events(run_id="run-a")
+        missing_filter = client.search_events()
+        invalid_limit = client.search_events(trace_id="trace-a", limit=0)
+        unknown_query = client._request(
+            "GET",
+            ("v1", "events", "search"),
+            query={"trace_id": "trace-a", "unknown": "1"},
+        )
+        unauthorized = RunClient(base_url).search_events(trace_id="trace-a")
+    finally:
+        server.close()
+
+    restricted = RunServer(
+        WorkflowRegistry(),
+        event_stream=stream,
+        auth_token="restricted-token",
+        auth_principal=Principal("restricted", ("agent:read",)),
+    )
+    restricted_url = restricted.start()
+    try:
+        forbidden = RunClient(
+            restricted_url, auth_token="restricted-token"
+        ).search_events(trace_id="trace-a")
+    finally:
+        restricted.close()
+
+    assert by_trace.is_ok()
+    trace_batch = by_trace.unwrap()["batch"]
+    assert [event["sequence"] for event in trace_batch["events"]] == [1]
+    assert trace_batch["events"][0]["payload"]["secret"] == "[REDACTED]"
+    assert trace_batch["next_cursor"] == {"sequence": 1}
+    assert by_run.is_ok()
+    assert [event["event_type"] for event in by_run.unwrap()["batch"]["events"]] == [
+        "model.started",
+        "tool.started",
+    ]
+    assert missing_filter.is_err()
+    assert missing_filter.unwrap_err()["errorType"] == "EVENT_SEARCH_INVALID"
+    assert invalid_limit.is_err()
+    assert invalid_limit.unwrap_err()["errorType"] == "EVENT_SEARCH_INVALID"
+    assert unknown_query.is_err()
+    assert unknown_query.unwrap_err()["errorType"] == "EVENT_SEARCH_INVALID"
+    assert unauthorized.is_err()
+    assert unauthorized.unwrap_err()["errorType"] == "UNAUTHORIZED"
+    assert forbidden.is_err()
+    assert forbidden.unwrap_err()["errorType"] == "FORBIDDEN"
+
+
 def test_authenticated_handoff_transport_preserves_store_ownership_state():
     store = InMemoryHandoffStore()
     record = HandoffRecord.pending(

@@ -162,6 +162,58 @@ def test_cursor_and_read_bounds_fail_closed():
     assert invalid_limit.unwrap_err()["errorType"] == "EVENT_QUERY_INVALID"
 
 
+def test_search_matches_exact_redacted_trace_run_and_event_filters():
+    stream = EventStream(max_events=4)
+    stream.publish(
+        "model.started",
+        {"trace_id": "trace-a", "secret": "hidden"},
+        run_id="run-a",
+    )
+    stream.publish(
+        "model.finished",
+        {"trace_id": "trace-b", "nested": {"trace_id": "trace-a"}},
+        run_id="run-a",
+    )
+    stream.publish("tool.started", {"trace_id": "trace-a"}, run_id="run-b")
+
+    by_trace = stream.search(trace_id="trace-a", limit=1)
+    by_run = stream.search(run_id="run-a")
+    by_type = stream.search(event_type="tool.started")
+    next_page = stream.search(trace_id="trace-a", after_sequence=1)
+
+    assert by_trace.is_ok()
+    assert [event.sequence for event in by_trace.unwrap().events] == [1]
+    assert by_trace.unwrap().events[0].payload["secret"] == "[REDACTED]"
+    assert by_trace.unwrap().next_cursor.sequence == 1
+    assert by_run.is_ok()
+    assert [event.event_type for event in by_run.unwrap().events] == [
+        "model.started",
+        "model.finished",
+    ]
+    assert by_type.is_ok()
+    assert [event.run_id for event in by_type.unwrap().events] == ["run-b"]
+    assert next_page.is_ok()
+    assert [event.sequence for event in next_page.unwrap().events] == [3]
+
+
+def test_search_requires_bounded_filters_and_preserves_cursor_expiry():
+    stream = EventStream(max_events=2)
+    stream.publish("one", {}, run_id="run-a")
+    stream.publish("two", {}, run_id="run-a")
+    stream.publish("three", {}, run_id="run-a")
+
+    missing_filter = stream.search()
+    invalid_filter = stream.search(trace_id="bad\ntrace")
+    expired = stream.search(run_id="run-a", after_sequence=0)
+
+    assert missing_filter.is_err()
+    assert missing_filter.unwrap_err()["errorType"] == "EVENT_SEARCH_INVALID"
+    assert invalid_filter.is_err()
+    assert invalid_filter.unwrap_err()["errorType"] == "EVENT_SEARCH_INVALID"
+    assert expired.is_err()
+    assert expired.unwrap_err()["errorType"] == "EVENT_CURSOR_EXPIRED"
+
+
 def test_wait_for_supports_cooperative_cancellation():
     token = CancellationToken()
     token.cancel()
