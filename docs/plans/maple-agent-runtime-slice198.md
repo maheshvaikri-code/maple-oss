@@ -8,9 +8,9 @@
 
 | # | Slice | Role | Files touched | Proven by (tests) | Status |
 |---|---|---|---|---|---|
-| 1 | Calibration data/report contracts | Backend / ML | `maple/autonomy/evaluation.py`, autonomy/root exports, evaluation tests | validation, empty set, agreement, optional MAE, bounded JSON report | todo |
-| 2 | Sync/async calibration execution | ML / Interop | `maple/autonomy/evaluation.py`, evaluation tests, API docs | sequential sync/async callbacks, redaction, disagreement, judge error isolation | todo |
-| 3 | Review, QA, security, package, and parity closure | Code Reviewer / QA / Security / Release | review/QA/release/parity docs, README, changelog | focused/full tests, adversarial bounds, no-network package smoke | todo |
+| 1 | Calibration data/report contracts | Backend / ML | `maple/autonomy/evaluation.py`, autonomy/root exports, evaluation tests | validation, empty set, agreement, optional MAE, bounded JSON report | complete: `35b446e`; focused evaluation suite `35 passed` |
+| 2 | Sync/async calibration execution | ML / Interop | `maple/autonomy/evaluation.py`, evaluation tests, API docs | sequential sync/async callbacks, redaction, disagreement, judge error isolation | complete: `35b446e`, `904f48a`; focused evaluation suite `35 passed` |
+| 3 | Review, QA, security, package, and parity closure | Code Reviewer / QA / Security / Release | review/QA/release/parity docs, README, changelog | focused/full tests, adversarial bounds, no-network package smoke | complete: review `a3d6e8a`; QA/security `docs/qa/maple-agent-runtime-slice198.md`; clean candidate `1678 passed, 1 skipped`, wheel `108`, sdist `842`, Twine/install/import/doctor pass |
 
 ## Threat sketch
 
@@ -41,7 +41,7 @@ normalization, and sequential bounded processing.
 
 ## Status snapshot
 
-G0/G1/G2 accepted for the bounded provider-neutral calibration contract. Next:
-implement the typed report and sync/async execution paths. Blocked on: none
-for this local slice; provider-owned and hosted calibration remain separate
-human-gated work.
+G0/G1/G2 accepted; G3 implementation and G4/G5/G6 review, QA, security,
+package, and parity closure are complete for the bounded local contract.
+Blocked on: none for this local slice; provider-owned and hosted calibration
+remain separate human-gated work.
