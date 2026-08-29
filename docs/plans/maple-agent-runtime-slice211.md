@@ -1,7 +1,7 @@
 # Slice 211 implementation plan - asynchronous document ingestion
 
 **Class:** L
-**Status:** G0-G5 complete; G6 release reconciliation in progress
+**Status:** G0-G6 complete locally; publication remains human-gated
 **Brief:** `docs/briefs/maple-agent-runtime-slice211.md`
 **ADR:** `docs/adr/155-async-document-ingestion.md`
 
@@ -15,7 +15,7 @@
 | G3 | Export and document the additive contract; do not add providers, network clients, or hosted behavior. | `maple.autonomy`, `maple`, API/README/parity/changelog updates committed with the implementation. |
 | G4 | Review event-loop blocking, cancellation, duplicate delivery, bounds, error disclosure, and unrelated diff scope. | `docs/reviews/maple-agent-runtime-slice211.md`; no findings. |
 | G5 | Run focused/full tests, static checks, project audit, and clean archive smoke. | `docs/qa/maple-agent-runtime-slice211.md`; full/static/audit/package gates pass; unavailable security tools explicitly recorded. |
-| G6 | Reconcile release readiness only; no version bump, tag, publication, cloud, or website action. | Release plan and `docs/releases/v1.1.4.md` updated; publication gates remain closed. |
+| G6 | Reconcile release readiness only; no version bump, tag, publication, cloud, or website action. | Release plan and `docs/releases/v1.1.4.md` updated; local release gates reconciled and publication gates remain closed. |
 
 ## Implemented slice scope
 
@@ -64,8 +64,8 @@ within the stated non-goals.
 Done (with evidence): Slice 210 locally closed; Slice 211 implementation,
 focused regressions, exports, public documentation, code review, QA/security,
 and exact package smoke are complete. Next: release reconciliation only;
-publication remains human-gated. Blocked on: none within the approved Slice
-211 scope.
+only human-gated release decisions remain. Blocked on: none within the
+approved Slice 211 scope.
 
 ## Pre-implementation package revalidation
 
