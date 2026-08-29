@@ -68,6 +68,9 @@ from .autonomy.contracts import (
 )
 from .autonomy.evaluation import (
     AsyncEvalJudge,
+    EvalCalibrationCase,
+    EvalCalibrationReport,
+    EvalCalibrationResult,
     EvalCase,
     EvalJudge,
     EvalJudgeResult,
@@ -495,6 +498,9 @@ __all__ = [
     "fingerprint_agent_invocation",
     "normalize_agent_idempotency_key",
     "EvalCase",
+    "EvalCalibrationCase",
+    "EvalCalibrationReport",
+    "EvalCalibrationResult",
     "AsyncEvalJudge",
     "EvalJudge",
     "EvalJudgeResult",

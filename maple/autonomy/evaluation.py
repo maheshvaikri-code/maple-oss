@@ -689,6 +689,139 @@ class EvalReport:
         }
 
 
+@dataclass(frozen=True)
+class EvalCalibrationCase:
+    """One human-labeled fixture used to calibrate a host-supplied judge."""
+
+    case_id: str
+    fixture: EvalCase
+    observation: EvalObservation
+    expected_passed: bool
+    expected_score: Optional[float] = None
+
+    def validate(self) -> Optional[Error]:
+        if (
+            not isinstance(self.case_id, str)
+            or not self.case_id
+            or len(self.case_id) > 256
+            or any(ord(char) < 32 for char in self.case_id)
+        ):
+            return {
+                "errorType": "EVAL_CALIBRATION_CASE_INVALID",
+                "message": "calibration case_id must be bounded and non-empty.",
+            }
+        if not isinstance(self.fixture, EvalCase):
+            return {
+                "errorType": "EVAL_CALIBRATION_CASE_INVALID",
+                "message": "calibration fixture must be an EvalCase.",
+            }
+        if self.fixture.validate() is not None:
+            return {
+                "errorType": "EVAL_CALIBRATION_CASE_INVALID",
+                "message": "calibration fixture is invalid.",
+            }
+        if not isinstance(self.observation, EvalObservation):
+            return {
+                "errorType": "EVAL_CALIBRATION_CASE_INVALID",
+                "message": "calibration observation must be an EvalObservation.",
+            }
+        if not isinstance(self.expected_passed, bool):
+            return {
+                "errorType": "EVAL_CALIBRATION_CASE_INVALID",
+                "message": "expected_passed must be a boolean.",
+            }
+        if self.expected_score is not None:
+            is_number = isinstance(
+                self.expected_score, (int, float)
+            ) and not isinstance(self.expected_score, bool)
+            if is_number:
+                try:
+                    finite = math.isfinite(self.expected_score)
+                except OverflowError:
+                    finite = False
+            else:
+                finite = False
+            if not is_number or not finite or not 0.0 <= self.expected_score <= 1.0:
+                return {
+                    "errorType": "EVAL_CALIBRATION_CASE_INVALID",
+                    "message": "expected_score must be a finite number between 0 and 1.",
+                }
+        return None
+
+
+@dataclass(frozen=True)
+class EvalCalibrationResult:
+    """One bounded comparison between a human label and a judge result."""
+
+    case_id: str
+    expected_passed: bool
+    judge_passed: Optional[bool] = None
+    agreed: bool = False
+    expected_score: Optional[float] = None
+    judge_score: Optional[float] = None
+    absolute_score_error: Optional[float] = None
+    rationale: Optional[str] = None
+    errors: Tuple[Error, ...] = ()
+
+
+@dataclass(frozen=True)
+class EvalCalibrationReport:
+    """Aggregate descriptive calibration metrics for a bounded fixture set."""
+
+    results: Tuple[EvalCalibrationResult, ...]
+
+    @property
+    def total(self) -> int:
+        return len(self.results)
+
+    @property
+    def agreement_count(self) -> int:
+        return sum(1 for result in self.results if result.agreed)
+
+    @property
+    def agreement_rate(self) -> float:
+        return self.agreement_count / self.total if self.total else 0.0
+
+    @property
+    def scored_cases(self) -> int:
+        return sum(
+            1 for result in self.results if result.absolute_score_error is not None
+        )
+
+    @property
+    def mean_absolute_score_error(self) -> Optional[float]:
+        errors = [
+            result.absolute_score_error
+            for result in self.results
+            if result.absolute_score_error is not None
+        ]
+        return sum(errors) / len(errors) if errors else None
+
+    def as_dict(self) -> Dict[str, Any]:
+        """Return a JSON-compatible bounded calibration report mapping."""
+        return {
+            "total": self.total,
+            "agreement_count": self.agreement_count,
+            "agreement_rate": self.agreement_rate,
+            "scored_cases": self.scored_cases,
+            "mean_absolute_score_error": self.mean_absolute_score_error,
+            "results": [
+                {
+                    "case_id": result.case_id,
+                    "expected_passed": result.expected_passed,
+                    "judge_passed": result.judge_passed,
+                    "agreed": result.agreed,
+                    "expected_score": result.expected_score,
+                    "judge_score": result.judge_score,
+                    "absolute_score_error": result.absolute_score_error,
+                    "rationale": result.rationale,
+                    "errors": list(result.errors),
+                }
+                for result in self.results
+            ],
+        }
+
+
 class EvaluationHarness:
     """Run deterministic cases against a local callable or scripted agent."""
 
@@ -959,6 +1092,238 @@ class EvaluationHarness:
                 "message": "case count exceeds the limit.",
             }
         return None
+
+    def _validate_calibration_inputs(
+        self,
+        cases: Sequence[EvalCalibrationCase],
+        judge: Callable[..., Any],
+    ) -> Optional[Error]:
+        if (
+            not isinstance(self.max_cases, int)
+            or isinstance(self.max_cases, bool)
+            or self.max_cases <= 0
+        ):
+            return {
+                "errorType": "EVAL_CONFIG_INVALID",
+                "message": "max_cases must be positive.",
+            }
+        if (
+            not isinstance(self.max_value_bytes, int)
+            or isinstance(self.max_value_bytes, bool)
+            or self.max_value_bytes <= 0
+        ):
+            return {
+                "errorType": "EVAL_CONFIG_INVALID",
+                "message": "max_value_bytes must be positive.",
+            }
+        if not isinstance(cases, (list, tuple)):
+            return {
+                "errorType": "EVAL_CALIBRATION_INPUT_INVALID",
+                "message": "calibration cases must be a list or tuple.",
+            }
+        if not callable(judge):
+            return {
+                "errorType": "EVAL_CALIBRATION_INPUT_INVALID",
+                "message": "calibration judge must be callable.",
+            }
+        if len(cases) > self.max_cases:
+            return {
+                "errorType": "EVAL_CALIBRATION_CASE_LIMIT",
+                "message": "calibration case count exceeds the limit.",
+            }
+        return None
+
+    def _prepare_calibration_observation(
+        self, observation: EvalObservation
+    ) -> Result[EvalObservation, Error]:
+        if not isinstance(observation, EvalObservation):
+            return Result.err(
+                {
+                    "errorType": "EVAL_CALIBRATION_CASE_INVALID",
+                    "message": "calibration observation must be an EvalObservation.",
+                }
+            )
+        if not self._valid_tool_names(observation.tool_names):
+            return Result.err(
+                {
+                    "errorType": "EVAL_CALIBRATION_CASE_INVALID",
+                    "message": "calibration observation tool names are invalid.",
+                }
+            )
+        if not self._valid_trajectory(observation.trajectory):
+            return Result.err(
+                {
+                    "errorType": "EVAL_CALIBRATION_CASE_INVALID",
+                    "message": "calibration observation trajectory is invalid.",
+                }
+            )
+        safe_trajectory = self._safe_trajectory(observation.trajectory)
+        if safe_trajectory is None:
+            return Result.err(
+                {
+                    "errorType": "EVAL_CALIBRATION_CASE_INVALID",
+                    "message": "calibration observation exceeds the report bound.",
+                }
+            )
+        tool_names = observation.tool_names
+        if observation.trajectory:
+            trajectory_names = tuple(step.tool_name for step in observation.trajectory)
+            if tool_names and tuple(tool_names) != trajectory_names:
+                return Result.err(
+                    {
+                        "errorType": "EVAL_CALIBRATION_CASE_INVALID",
+                        "message": "tool_names must match trajectory tool names.",
+                    }
+                )
+            tool_names = trajectory_names
+        return Result.ok(
+            EvalObservation(
+                output=self._safe_output(observation.output),
+                tool_names=tuple(tool_names),
+                trajectory=tuple(safe_trajectory),
+            )
+        )
+
+    def _prepare_calibration_cases(
+        self, cases: Sequence[EvalCalibrationCase]
+    ) -> Result[Tuple[Tuple[EvalCalibrationCase, EvalObservation], ...], Error]:
+        prepared: List[Tuple[EvalCalibrationCase, EvalObservation]] = []
+        seen_case_ids = set()
+        for case in cases:
+            if not isinstance(case, EvalCalibrationCase):
+                return Result.err(
+                    {
+                        "errorType": "EVAL_CALIBRATION_CASE_INVALID",
+                        "message": "calibration cases must use EvalCalibrationCase.",
+                    }
+                )
+            try:
+                case_error = case.validate()
+            except Exception:
+                case_error = {
+                    "errorType": "EVAL_CALIBRATION_CASE_INVALID",
+                    "message": "calibration case validation failed.",
+                }
+            if case_error is not None:
+                return Result.err(case_error)
+            if case.case_id in seen_case_ids:
+                return Result.err(
+                    {
+                        "errorType": "EVAL_CALIBRATION_CASE_INVALID",
+                        "message": "calibration case IDs must be unique.",
+                    }
+                )
+            seen_case_ids.add(case.case_id)
+            observation = self._prepare_calibration_observation(case.observation)
+            if observation.is_err():
+                return Result.err(observation.unwrap_err())
+            prepared.append((case, observation.unwrap()))
+        return Result.ok(tuple(prepared))
+
+    def _calibration_error_result(
+        self, case: EvalCalibrationCase, error: Error
+    ) -> EvalCalibrationResult:
+        return EvalCalibrationResult(
+            case_id=case.case_id,
+            expected_passed=case.expected_passed,
+            expected_score=case.expected_score,
+            errors=(error,),
+        )
+
+    def _calibration_result(
+        self,
+        case: EvalCalibrationCase,
+        judged_value: Any,
+    ) -> EvalCalibrationResult:
+        normalized = self._normalize_judge_result(judged_value)
+        if normalized.is_err():
+            return self._calibration_error_result(case, normalized.unwrap_err())
+        judged = normalized.unwrap()
+        judge_error = judged.validate()
+        if judge_error is not None:
+            return self._calibration_error_result(case, judge_error)
+        absolute_score_error = None
+        if case.expected_score is not None:
+            absolute_score_error = abs(judged.score - case.expected_score)
+        return EvalCalibrationResult(
+            case_id=case.case_id,
+            expected_passed=case.expected_passed,
+            judge_passed=judged.passed,
+            agreed=judged.passed == case.expected_passed,
+            expected_score=case.expected_score,
+            judge_score=judged.score,
+            absolute_score_error=absolute_score_error,
+            rationale=self._safe_judge_rationale(judged.rationale),
+        )
+
+    def calibrate(
+        self,
+        cases: Sequence[EvalCalibrationCase],
+        judge: EvalJudge,
+    ) -> Result[EvalCalibrationReport, Error]:
+        """Compare a local judge with bounded caller-supplied human labels.
+
+        Calibration is descriptive only: MAPLE does not select or invoke a
+        provider, train or tune a judge, or claim semantic validity. The
+        callback receives only redacted and size-bounded observations.
+        """
+        input_error = self._validate_calibration_inputs(cases, judge)
+        if input_error is not None:
+            return Result.err(input_error)
+        prepared = self._prepare_calibration_cases(cases)
+        if prepared.is_err():
+            return Result.err(prepared.unwrap_err())
+
+        results: List[EvalCalibrationResult] = []
+        for case, observation in prepared.unwrap():
+            try:
+                judged_value = judge(case.fixture, observation)
+                results.append(self._calibration_result(case, judged_value))
+            except Exception as exc:
+                results.append(
+                    self._calibration_error_result(
+                        case,
+                        {
+                            "errorType": "EVAL_JUDGE_EXCEPTION",
+                            "message": "judge raised an exception.",
+                            "details": {"exception": type(exc).__name__},
+                        },
+                    )
+                )
+        return Result.ok(EvalCalibrationReport(results=tuple(results)))
+
+    async def calibrate_async(
+        self,
+        cases: Sequence[EvalCalibrationCase],
+        judge: AsyncEvalJudge,
+    ) -> Result[EvalCalibrationReport, Error]:
+        """Run bounded calibration sequentially with sync or async callbacks."""
+        input_error = self._validate_calibration_inputs(cases, judge)
+        if input_error is not None:
+            return Result.err(input_error)
+        prepared = self._prepare_calibration_cases(cases)
+        if prepared.is_err():
+            return Result.err(prepared.unwrap_err())
+
+        results: List[EvalCalibrationResult] = []
+        for case, observation in prepared.unwrap():
+            try:
+                judged_value = judge(case.fixture, observation)
+                if inspect.isawaitable(judged_value):
+                    judged_value = await judged_value
+                results.append(self._calibration_result(case, judged_value))
+            except Exception as exc:
+                results.append(
+                    self._calibration_error_result(
+                        case,
+                        {
+                            "errorType": "EVAL_JUDGE_EXCEPTION",
+                            "message": "judge raised an exception.",
+                            "details": {"exception": type(exc).__name__},
+                        },
+                    )
+                )
+        return Result.ok(EvalCalibrationReport(results=tuple(results)))
 
     def run(
         self,

@@ -5,6 +5,7 @@ import asyncio
 import pytest
 
 from maple.autonomy.evaluation import (
+    EvalCalibrationCase,
     EvalCase,
     EvalJudgeResult,
     EvalObservation,
@@ -244,6 +245,163 @@ def test_evaluation_judge_errors_and_invalid_results_fail_closed():
     assert invalid_score.unwrap().results[0].errors[0]["errorType"] == (
         "EVAL_JUDGE_RESULT_INVALID"
     )
+
+
+def test_evaluation_calibration_reports_agreement_and_score_error():
+    cases = [
+        EvalCalibrationCase(
+            "human-one",
+            EvalCase("fixture-one", "input-one", expected_output="ok"),
+            EvalObservation({"answer": "ok", "api_key": "secret"}),
+            expected_passed=True,
+            expected_score=0.8,
+        ),
+        EvalCalibrationCase(
+            "human-two",
+            EvalCase("fixture-two", "input-two", expected_output="ok"),
+            EvalObservation("wrong"),
+            expected_passed=False,
+            expected_score=0.2,
+        ),
+    ]
+    observed = []
+
+    def judge(fixture, observation):
+        observed.append((fixture.case_id, observation.output))
+        return EvalJudgeResult(
+            score=0.7 if fixture.case_id == "fixture-one" else 0.4,
+            passed=fixture.case_id == "fixture-one",
+            rationale="calibrated",
+        )
+
+    report = EvaluationHarness().calibrate(cases, judge)
+
+    assert report.is_ok()
+    calibration = report.unwrap()
+    assert calibration.total == 2
+    assert calibration.agreement_count == 2
+    assert calibration.agreement_rate == 1.0
+    assert calibration.scored_cases == 2
+    assert calibration.mean_absolute_score_error == pytest.approx(0.15)
+    assert observed == [
+        ("fixture-one", {"answer": "ok", "api_key": "[REDACTED]"}),
+        ("fixture-two", "wrong"),
+    ]
+    assert calibration.as_dict()["results"][0]["absolute_score_error"] == pytest.approx(
+        0.1
+    )
+    assert "secret" not in str(calibration.as_dict())
+
+
+def test_evaluation_calibration_keeps_disagreements_and_judge_failures_visible():
+    cases = [
+        EvalCalibrationCase(
+            "disagreement",
+            EvalCase("disagreement-fixture", "input", expected_output="ok"),
+            EvalObservation("ok"),
+            expected_passed=False,
+        ),
+        EvalCalibrationCase(
+            "returned-error",
+            EvalCase("error-fixture", "input", expected_output="ok"),
+            EvalObservation("ok"),
+            expected_passed=True,
+        ),
+        EvalCalibrationCase(
+            "invalid-result",
+            EvalCase("invalid-fixture", "input", expected_output="ok"),
+            EvalObservation("ok"),
+            expected_passed=True,
+        ),
+        EvalCalibrationCase(
+            "exception",
+            EvalCase("exception-fixture", "input", expected_output="ok"),
+            EvalObservation("ok"),
+            expected_passed=True,
+        ),
+    ]
+
+    def judge(fixture, observation):
+        if fixture.case_id == "disagreement-fixture":
+            return EvalJudgeResult(0.3, True)
+        if fixture.case_id == "error-fixture":
+            return Result.err({"errorType": "PRIVATE", "message": "hidden"})
+        if fixture.case_id == "invalid-fixture":
+            return {"passed": True}
+        raise RuntimeError("private details")
+
+    report = EvaluationHarness().calibrate(cases, judge)
+
+    assert report.is_ok()
+    results = report.unwrap().results
+    assert not results[0].agreed
+    assert results[0].judge_passed is True
+    assert results[0].errors == ()
+    assert results[1].errors[0]["errorType"] == "EVAL_JUDGE_ERROR"
+    assert results[2].errors[0]["errorType"] == "EVAL_JUDGE_RESULT_INVALID"
+    assert results[3].errors[0]["errorType"] == "EVAL_JUDGE_EXCEPTION"
+    assert all(result.judge_score is None for result in results[1:])
+    assert report.unwrap().agreement_count == 0
+
+
+def test_async_evaluation_calibration_preserves_order_and_accepts_sync_judge():
+    cases = [
+        EvalCalibrationCase(
+            "first",
+            EvalCase("first-fixture", "one", expected_output="ok"),
+            EvalObservation("one"),
+            expected_passed=True,
+        ),
+        EvalCalibrationCase(
+            "second",
+            EvalCase("second-fixture", "two", expected_output="ok"),
+            EvalObservation("two"),
+            expected_passed=False,
+        ),
+    ]
+    calls = []
+
+    async def judge(fixture, observation):
+        calls.append(fixture.case_id)
+        return EvalJudgeResult(1.0, fixture.case_id == "first-fixture")
+
+    report = asyncio.run(EvaluationHarness().calibrate_async(cases, judge))
+
+    assert report.is_ok()
+    assert calls == ["first-fixture", "second-fixture"]
+    assert [result.agreed for result in report.unwrap().results] == [True, True]
+
+
+def test_evaluation_calibration_rejects_invalid_dataset_before_judge_and_handles_empty():
+    calls = []
+    valid = EvalCalibrationCase(
+        "valid",
+        EvalCase("fixture", "input", expected_output="ok"),
+        EvalObservation("ok"),
+        expected_passed=True,
+    )
+    invalid = EvalCalibrationCase(
+        "invalid",
+        EvalCase("invalid-fixture", "input", expected_output="ok"),
+        EvalObservation("ok"),
+        expected_passed="yes",
+    )
+
+    def judge(fixture, observation):
+        calls.append(fixture.case_id)
+        return EvalJudgeResult(1.0, True)
+
+    invalid_result = EvaluationHarness().calibrate([valid, invalid], judge)
+    limited_result = EvaluationHarness(max_cases=1).calibrate([valid, valid], judge)
+    empty_result = EvaluationHarness().calibrate([], judge)
+
+    assert invalid_result.unwrap_err()["errorType"] == "EVAL_CALIBRATION_CASE_INVALID"
+    assert limited_result.unwrap_err()["errorType"] == "EVAL_CALIBRATION_CASE_LIMIT"
+    assert calls == []
+    assert empty_result.is_ok()
+    assert empty_result.unwrap().total == 0
+    assert empty_result.unwrap().agreement_rate == 0.0
+    assert empty_result.unwrap().mean_absolute_score_error is None
 
 
 def test_evaluation_rejects_invalid_fixture_versions_and_trajectories():
