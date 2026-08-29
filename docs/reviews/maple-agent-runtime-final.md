@@ -1120,10 +1120,33 @@ fresh independent verifier session remain unavailable or governance-blocked
 in this tool context. No publication, deployment, cloud action, registry
 write, or website update was performed.
 
-**Slice 181 review:** PASS for the host-owned resolver boundary; clean archive
-package verification remains the next gate. Overall release status remains
-CONDITIONAL / NOT PUBLISH-READY pending the documented release gates and
-human authorization.
+**Slice 181 review:** PASS for the host-owned resolver boundary and clean
+archive package gate. Overall release status remains CONDITIONAL / NOT
+PUBLISH-READY pending the documented release gates and human authorization.
+
+Clean archive/package verification was then run from exact committed `af37173`:
+
+```text
+clean git archive HEAD: source_archive_entries=850
+python -m pytest -q --no-cov
+1607 passed, 1 skipped in 264.35s (0:04:24)
+build_exit=0
+wheel_entries=107
+sdist_entries=764
+twine_exit=0
+install_exit=0
+version=1.1.3
+resolver=AuthPrincipalResolver
+principal=Principal
+server=RunServer
+import_exit=0
+{"checks": {"core": true, "evaluation": true, "events": true, "execution": true, "interop": true, "retrieval": true, "server": true, "sessions": true}, "network": false, "ready": true, "status": "SUCCESS", "version": "1.1.3"}
+doctor_exit=0
+```
+
+The package gate was run from a clean Git archive, so preserved untracked
+doctrine files were not included. No publication, deployment, cloud action,
+registry write, or website update was performed.
 
 ## 2026-08-28 current revalidation - Slice 180 least-privilege agent target policy
 
