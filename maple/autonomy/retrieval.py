@@ -1632,18 +1632,28 @@ class FileLexicalRetriever:
         )
 
     def _read_documents_unlocked(self) -> Result[List[Document], Error]:
-        if not self.path.exists():
-            return Result.ok([])
         try:
-            if self.path.stat().st_size > self.max_bytes:
-                return Result.err(
-                    _error(
-                        "RETRIEVAL_INDEX_LOAD_ERROR",
-                        "retrieval index exceeds the byte limit.",
-                    )
+            with self.path.open("rb") as handle:
+                encoded = handle.read(self.max_bytes + 1)
+        except FileNotFoundError:
+            return Result.ok([])
+        except OSError:
+            return Result.err(
+                _error(
+                    "RETRIEVAL_INDEX_LOAD_ERROR",
+                    "retrieval index could not be loaded.",
                 )
-            data = json.loads(self.path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeError, TypeError, ValueError, json.JSONDecodeError):
+            )
+        if len(encoded) > self.max_bytes:
+            return Result.err(
+                _error(
+                    "RETRIEVAL_INDEX_LOAD_ERROR",
+                    "retrieval index exceeds the byte limit.",
+                )
+            )
+        try:
+            data = json.loads(encoded.decode("utf-8"))
+        except (UnicodeError, TypeError, ValueError):
             return Result.err(
                 _error(
                     "RETRIEVAL_INDEX_LOAD_ERROR",

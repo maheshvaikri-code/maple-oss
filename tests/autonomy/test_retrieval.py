@@ -501,6 +501,28 @@ def test_file_lexical_retriever_rejects_corrupt_or_oversized_state(tmp_path):
     with pytest.raises(ValueError, match="state"):
         FileLexicalRetriever(tmp_path, max_bytes=512)
 
+    index_path.write_bytes(b"\xff")
+    with pytest.raises(ValueError, match="state"):
+        FileLexicalRetriever(tmp_path)
+
+    index_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "chunking_policy": {
+                    "max_chars": 1200,
+                    "overlap_chars": 200,
+                    "max_chunks": 10000,
+                    "max_document_bytes": 5 * 1024 * 1024,
+                },
+                "documents": [{"source": {}}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="state"):
+        FileLexicalRetriever(tmp_path)
+
     index_path.write_text(
         json.dumps({"version": 99, "documents": []}), encoding="utf-8"
     )
