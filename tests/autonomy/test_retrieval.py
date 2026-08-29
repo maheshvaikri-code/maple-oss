@@ -696,6 +696,12 @@ def test_file_vector_retriever_rejects_corrupt_oversized_or_mismatched_state(
     with pytest.raises(ValueError, match="state"):
         FileVectorRetriever(tmp_path)
 
+    index_path.write_text(
+        json.dumps({"version": True, "documents": []}), encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="state"):
+        FileVectorRetriever(tmp_path)
+
     index_path.unlink()
     first = FileVectorRetriever(
         tmp_path,

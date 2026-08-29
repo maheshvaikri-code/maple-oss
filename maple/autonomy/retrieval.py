@@ -2316,6 +2316,7 @@ class FileVectorRetriever:
             )
         if (
             not isinstance(data, Mapping)
+            or type(data.get("version")) is not int
             or data.get("version") != _VECTOR_INDEX_VERSION
         ):
             return Result.err(
