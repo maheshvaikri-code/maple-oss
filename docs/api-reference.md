@@ -1954,6 +1954,13 @@ an exhausted chain returns the final error type with bounded
 wrapped. Usage is tracked by the wrapper without mutating the returned
 `LLMResponse`.
 
+The built-in OpenAI-compatible and Anthropic completion adapters also validate
+their normalized response boundary before usage accounting or caller-owned
+tool execution. Malformed tool arguments or present malformed usage metadata
+return the typed `LLM_PROVIDER_RESPONSE_INVALID` error; a missing usage object
+means that provider usage is unavailable. The offline fixtures for this
+boundary do not claim live SDK or service-version compatibility.
+
 ```python
 from maple import Result
 from maple.llm import (

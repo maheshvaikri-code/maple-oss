@@ -17,6 +17,13 @@
 
 ### Additions
 
+- **Offline provider completion contracts**: deterministic OpenAI-compatible
+  and Anthropic sync/async fixtures now cover payload mapping, multimodal
+  inputs, tool calls, stop reasons, and usage normalization. Completion
+  parsers reject malformed tool arguments and present malformed usage metadata
+  with `LLM_PROVIDER_RESPONSE_INVALID` before tool execution or usage
+  accounting; live SDK/service compatibility remains separate.
+
 - **Bounded provider failover**: `ProviderRouter.create(..., failover=True)`
   can return an opt-in `FallbackLLMProvider` that makes at most eight
   completion attempts in deterministic capability order for classified
