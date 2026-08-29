@@ -1,6 +1,6 @@
 # Slice 192 plan - whole-package type-boundary closure
 
-**Status:** proposed
+**Status:** complete
 **Date:** 2026-08-29
 
 ## Design
@@ -17,12 +17,12 @@
 
 ## Verification and release evidence
 
-- [ ] Run focused invocation and server regressions.
-- [ ] Run whole-package mypy and changed-boundary formatting, lint, and compile
+- [x] Run focused invocation and server regressions.
+- [x] Run whole-package mypy and changed-boundary formatting, lint, and compile
   checks.
-- [ ] Run the full workspace regression.
-- [ ] Update release/parity review and QA evidence.
-- [ ] Build and package-smoke-test the current source tree.
-- [ ] Rebuild a clean source archive and package-smoke-test it at the
+- [x] Run the full workspace regression.
+- [x] Update release/parity review and QA evidence.
+- [x] Build and package-smoke-test the current source tree.
+- [x] Rebuild a clean source archive and package-smoke-test it at the
   implementation commit.
 - [x] Keep publication, cloud, and website actions out of scope.
