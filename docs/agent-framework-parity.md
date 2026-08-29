@@ -473,6 +473,13 @@ surface use the explicit synchronous compatibility fallback; this is not a
 non-blocking guarantee. Other provider-specific async behavior remains subject
 to adapter contract fixtures.
 
+The local retrieval parity surface now includes `FileLexicalRetriever`: a
+bounded, versioned JSON source-of-truth with atomic replacement, restart
+rebuilds, external-instance refresh, and cross-process mutation fencing. This
+closes local lexical restart persistence only; managed vector stores, semantic
+embedding generation, remote ingestion transactions, and distributed index
+coordination remain separate contracts.
+
 ## Official reference documentation
 
 These links were consulted on 2026-08-25 and should be rechecked before a

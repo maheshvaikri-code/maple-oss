@@ -10,6 +10,12 @@
 
 ### Release hardening
 
+- **Durable local lexical retrieval**: `FileLexicalRetriever` persists
+  validated source documents in a bounded versioned JSON file, rebuilds the
+  deterministic lexical index after restart, refreshes across instances, and
+  serializes mutations with the existing cross-process file lease. Writes are
+  atomic and storage failures fail closed without exposing host exception text.
+
 - **Trusted local task worker**: `TrustedTaskWorker` now connects registered
   host-owned handlers to bounded in-memory and file-backed task lifecycle
   transitions, with task-type/capability filtering, execution bounds, and

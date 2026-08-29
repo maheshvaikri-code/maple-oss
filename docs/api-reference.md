@@ -1346,6 +1346,42 @@ if hits.is_ok():
         print(hit.score, hit.chunk.source.uri, hit.chunk.text)
 ```
 
+For local restart persistence, `FileLexicalRetriever` stores the validated
+source `Document` records in a bounded versioned JSON file and rebuilds the
+same deterministic lexical index when constructed or queried. The persisted
+chunking policy must match the policy supplied when reopening the store;
+otherwise the state is rejected rather than silently re-chunked. Writes use a
+same-directory temporary file, flush/fsync, atomic replacement, and the
+existing durable file lease to serialize mutations across processes:
+
+```python
+from maple import Document, FileLexicalRetriever, SourceRef
+
+retriever = FileLexicalRetriever(
+    "./maple-retrieval",
+    max_documents=10_000,
+    max_chunks=100_000,
+)
+added = retriever.add_document(
+    Document(
+        document_id="guide-1",
+        text="MAPLE uses resource-aware agent orchestration.",
+        source=SourceRef(uri="https://example.invalid/guide", title="Guide"),
+    )
+)
+if added.is_ok():
+    hits = retriever.search("resource-aware orchestration", top_k=3)
+```
+
+The backend is local-only: it does not select an embedding model, call a
+network service, provide a managed vector database, or execute retrieved
+content. The default serialized index limit is 16 MiB and the hard maximum is
+64 MiB; document, chunk, query, and result bounds remain configurable within
+the same validation rules as `InMemoryLexicalRetriever`. Missing state means
+an empty index. Corrupt, oversized, unsupported-version, duplicate, or
+unrebuildable state fails closed, and storage errors are returned without
+host exception text or paths.
+
 The reference backend is intentionally local; it is not a hosted vector
 database or embedding service. A vector index accepts one finite, bounded
 embedding per generated chunk and uses cosine similarity with deterministic

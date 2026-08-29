@@ -39,6 +39,9 @@ _MAX_CONNECTOR_DOCUMENTS = 10_000
 _MAX_CONNECTOR_BATCHES = 100
 _DEFAULT_MAX_CHECKPOINT_BYTES = 4_096
 _CHECKPOINT_VERSION = 1
+DEFAULT_MAX_LEXICAL_INDEX_BYTES = 16 * 1024 * 1024
+_MAX_LEXICAL_INDEX_BYTES = 64 * 1024 * 1024
+_LEXICAL_INDEX_VERSION = 1
 
 
 def _error(error_type: str, message: str, **details: Any) -> Error:
@@ -1494,6 +1497,401 @@ class InMemoryLexicalRetriever:
                 "chunks": len(self._chunks),
                 "terms": len(self._term_index),
             }
+
+
+def _source_to_dict(source: SourceRef) -> Dict[str, Any]:
+    return {
+        "uri": source.uri,
+        "title": source.title,
+        "metadata": dict(source.metadata),
+    }
+
+
+def _document_to_dict(document: Document) -> Dict[str, Any]:
+    return {
+        "document_id": document.document_id,
+        "text": document.text,
+        "source": _source_to_dict(document.source),
+        "metadata": dict(document.metadata),
+    }
+
+
+def _chunking_policy_to_dict(policy: ChunkingPolicy) -> Dict[str, int]:
+    return {
+        "max_chars": policy.max_chars,
+        "overlap_chars": policy.overlap_chars,
+        "max_chunks": policy.max_chunks,
+        "max_document_bytes": policy.max_document_bytes,
+    }
+
+
+def _document_from_dict(value: Any) -> Result[Document, Error]:
+    if not isinstance(value, Mapping):
+        return Result.err(
+            _error("RETRIEVAL_INDEX_LOAD_ERROR", "retrieval index document is invalid.")
+        )
+    source_value = value.get("source")
+    if not isinstance(source_value, Mapping):
+        return Result.err(
+            _error("RETRIEVAL_INDEX_LOAD_ERROR", "retrieval index source is invalid.")
+        )
+    document = Document(
+        document_id=cast(str, value.get("document_id")),
+        text=cast(str, value.get("text")),
+        source=SourceRef(
+            uri=cast(str, source_value.get("uri")),
+            title=cast(Optional[str], source_value.get("title")),
+            metadata=cast(Mapping[str, Any], source_value.get("metadata", {})),
+        ),
+        metadata=cast(Mapping[str, Any], value.get("metadata", {})),
+    )
+    if document.validate() is not None:
+        return Result.err(
+            _error("RETRIEVAL_INDEX_LOAD_ERROR", "retrieval index document is invalid.")
+        )
+    return Result.ok(document)
+
+
+class FileLexicalRetriever:
+    """Bounded, atomic, cross-process durable lexical retrieval."""
+
+    _FILENAME = "lexical-index.json"
+    _TEMP_PREFIX = ".maple-lexical-index-"
+
+    def __init__(
+        self,
+        directory: Union[str, Path],
+        chunker: Optional[TextChunker] = None,
+        *,
+        max_documents: int = 1_000,
+        max_chunks: int = 100_000,
+        max_query_bytes: int = 16_384,
+        max_results: int = 100,
+        max_bytes: int = DEFAULT_MAX_LEXICAL_INDEX_BYTES,
+        lease_ttl_seconds: float = 30.0,
+    ) -> None:
+        if chunker is not None and not isinstance(chunker, TextChunker):
+            raise TypeError("chunker must be a TextChunker")
+        self.chunker = chunker or TextChunker()
+        limits = (
+            ("max_documents", max_documents),
+            ("max_chunks", max_chunks),
+            ("max_query_bytes", max_query_bytes),
+            ("max_results", max_results),
+        )
+        for name, value in limits:
+            if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+                raise ValueError(f"{name} must be a positive integer")
+        if (
+            not isinstance(max_bytes, int)
+            or isinstance(max_bytes, bool)
+            or not 512 <= max_bytes <= _MAX_LEXICAL_INDEX_BYTES
+        ):
+            raise ValueError("max_bytes must be between 512 and 67108864")
+        chunker_error = self.chunker.policy.validate()
+        if chunker_error is not None:
+            raise ValueError("chunker policy is invalid")
+
+        self.max_documents = max_documents
+        self.max_chunks = max_chunks
+        self.max_query_bytes = max_query_bytes
+        self.max_results = max_results
+        self.max_bytes = max_bytes
+        try:
+            self.directory = Path(directory)
+            self.directory.mkdir(parents=True, exist_ok=True)
+        except (OSError, TypeError, ValueError) as exc:
+            raise ValueError("retrieval index directory is unavailable") from exc
+        if not self.directory.is_dir():
+            raise ValueError("retrieval index path must be a directory")
+        self.path = self.directory / self._FILENAME
+        self._lock = threading.RLock()
+        try:
+            self._lease = DurableRecordLease(
+                self.directory,
+                namespace="retrieval-index",
+                holder_label="lexical-index",
+                lease_ttl_seconds=lease_ttl_seconds,
+            )
+        except (OSError, TypeError, ValueError) as exc:
+            raise ValueError("retrieval index lease is unavailable") from exc
+
+        self._index = self._new_index()
+        loaded = self._run("load", self._load_index_unlocked)
+        if loaded.is_err():
+            raise ValueError("retrieval index state is invalid")
+        self._index = loaded.unwrap()
+
+    def _new_index(self) -> InMemoryLexicalRetriever:
+        return InMemoryLexicalRetriever(
+            self.chunker,
+            max_documents=self.max_documents,
+            max_chunks=self.max_chunks,
+            max_query_bytes=self.max_query_bytes,
+            max_results=self.max_results,
+        )
+
+    def _read_documents_unlocked(self) -> Result[List[Document], Error]:
+        if not self.path.exists():
+            return Result.ok([])
+        try:
+            if self.path.stat().st_size > self.max_bytes:
+                return Result.err(
+                    _error(
+                        "RETRIEVAL_INDEX_LOAD_ERROR",
+                        "retrieval index exceeds the byte limit.",
+                    )
+                )
+            data = json.loads(self.path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, TypeError, ValueError, json.JSONDecodeError):
+            return Result.err(
+                _error(
+                    "RETRIEVAL_INDEX_LOAD_ERROR",
+                    "retrieval index could not be loaded.",
+                )
+            )
+        if (
+            not isinstance(data, Mapping)
+            or data.get("version") != _LEXICAL_INDEX_VERSION
+        ):
+            return Result.err(
+                _error(
+                    "RETRIEVAL_INDEX_LOAD_ERROR",
+                    "retrieval index version is invalid.",
+                )
+            )
+        raw_policy = data.get("chunking_policy")
+        expected_policy = _chunking_policy_to_dict(self.chunker.policy)
+        if not isinstance(raw_policy, Mapping) or any(
+            type(raw_policy.get(name)) is not type(expected)
+            or raw_policy.get(name) != expected
+            for name, expected in expected_policy.items()
+        ):
+            return Result.err(
+                _error(
+                    "RETRIEVAL_INDEX_CONFIG_MISMATCH",
+                    "retrieval index chunking policy does not match.",
+                )
+            )
+        raw_documents = data.get("documents")
+        if (
+            not isinstance(raw_documents, list)
+            or len(raw_documents) > self.max_documents
+        ):
+            return Result.err(
+                _error(
+                    "RETRIEVAL_INDEX_LOAD_ERROR",
+                    "retrieval index document list is invalid.",
+                )
+            )
+        documents: List[Document] = []
+        seen_ids: Set[str] = set()
+        for value in raw_documents:
+            parsed = _document_from_dict(value)
+            if parsed.is_err():
+                return Result.err(parsed.unwrap_err())
+            document = parsed.unwrap()
+            if document.document_id in seen_ids:
+                return Result.err(
+                    _error(
+                        "RETRIEVAL_INDEX_LOAD_ERROR",
+                        "retrieval index contains duplicate documents.",
+                    )
+                )
+            seen_ids.add(document.document_id)
+            documents.append(document)
+        return Result.ok(documents)
+
+    def _load_index_unlocked(self) -> Result[InMemoryLexicalRetriever, Error]:
+        documents = self._read_documents_unlocked()
+        if documents.is_err():
+            return Result.err(documents.unwrap_err())
+        index = self._new_index()
+        for document in documents.unwrap():
+            added = index.add_document(document)
+            if added.is_err():
+                return Result.err(
+                    _error(
+                        "RETRIEVAL_INDEX_LOAD_ERROR",
+                        "retrieval index could not be rebuilt.",
+                    )
+                )
+        return Result.ok(index)
+
+    def _encode_documents(self, documents: Sequence[Document]) -> Result[str, Error]:
+        try:
+            encoded = json.dumps(
+                {
+                    "version": _LEXICAL_INDEX_VERSION,
+                    "chunking_policy": _chunking_policy_to_dict(self.chunker.policy),
+                    "documents": [
+                        _document_to_dict(document) for document in documents
+                    ],
+                },
+                ensure_ascii=False,
+                allow_nan=False,
+                separators=(",", ":"),
+            )
+        except (TypeError, ValueError, OverflowError):
+            return Result.err(
+                _error(
+                    "RETRIEVAL_INDEX_SAVE_ERROR",
+                    "retrieval index is not JSON serializable.",
+                )
+            )
+        if len(encoded.encode("utf-8")) > self.max_bytes:
+            return Result.err(
+                _error(
+                    "RETRIEVAL_INDEX_SIZE",
+                    "retrieval index exceeds the byte limit.",
+                )
+            )
+        return Result.ok(encoded)
+
+    def _write_documents_unlocked(
+        self, documents: Sequence[Document]
+    ) -> Result[None, Error]:
+        encoded = self._encode_documents(documents)
+        if encoded.is_err():
+            return Result.err(encoded.unwrap_err())
+        temporary_path: Optional[Path] = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=str(self.directory),
+                prefix=self._TEMP_PREFIX,
+                suffix=".tmp",
+                delete=False,
+            ) as handle:
+                temporary_path = Path(handle.name)
+                handle.write(encoded.unwrap())
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(str(temporary_path), str(self.path))
+            temporary_path = None
+            return Result.ok(None)
+        except (OSError, TypeError, ValueError):
+            return Result.err(
+                _error(
+                    "RETRIEVAL_INDEX_SAVE_ERROR",
+                    "retrieval index could not be saved.",
+                )
+            )
+        finally:
+            if temporary_path is not None:
+                try:
+                    temporary_path.unlink()
+                except OSError:
+                    pass
+
+    def _run(
+        self,
+        operation: str,
+        callback: Callable[[], Result[Any, Error]],
+    ) -> Result[Any, Error]:
+        try:
+            return self._lease.run(
+                "index",
+                operation,
+                callback,
+                acquire_error_type="RETRIEVAL_INDEX_LEASE_ERROR",
+                acquire_error_message="retrieval index lease could not be acquired.",
+                release_error_type="RETRIEVAL_INDEX_LEASE_RELEASE_ERROR",
+                release_error_message="retrieval index lease could not be released.",
+            )
+        except Exception:
+            return Result.err(
+                _error(
+                    "RETRIEVAL_INDEX_ERROR",
+                    "retrieval index operation failed.",
+                )
+            )
+
+    def add_document(self, document: Document) -> Result[List[DocumentChunk], Error]:
+        """Persist one document and return its deterministic chunks."""
+        if not isinstance(document, Document):
+            return Result.err(
+                _error("RETRIEVAL_INPUT_INVALID", "document must be a Document.")
+            )
+        with self._lock:
+
+            def operation() -> Result[List[DocumentChunk], Error]:
+                loaded = self._load_index_unlocked()
+                if loaded.is_err():
+                    return Result.err(loaded.unwrap_err())
+                index = loaded.unwrap()
+                added = index.add_document(document)
+                if added.is_err():
+                    return Result.err(added.unwrap_err())
+                documents = list(index._documents.values())
+                written = self._write_documents_unlocked(documents)
+                if written.is_err():
+                    return Result.err(written.unwrap_err())
+                self._index = index
+                return Result.ok(added.unwrap())
+
+            result = self._run("add", operation)
+        return result
+
+    def remove_document(self, document_id: str) -> Result[bool, Error]:
+        """Persist removal of one document, if present."""
+        error = _validate_identifier(document_id, "document_id")
+        if error is not None:
+            return Result.err(error)
+        with self._lock:
+
+            def operation() -> Result[bool, Error]:
+                loaded = self._load_index_unlocked()
+                if loaded.is_err():
+                    return Result.err(loaded.unwrap_err())
+                current = loaded.unwrap()
+                if document_id not in current._documents:
+                    self._index = current
+                    return Result.ok(False)
+                documents = [
+                    document
+                    for identifier, document in current._documents.items()
+                    if identifier != document_id
+                ]
+                candidate = self._new_index()
+                for document in documents:
+                    added = candidate.add_document(document)
+                    if added.is_err():
+                        return Result.err(
+                            _error(
+                                "RETRIEVAL_INDEX_SAVE_ERROR",
+                                "retrieval index could not be rebuilt.",
+                            )
+                        )
+                written = self._write_documents_unlocked(documents)
+                if written.is_err():
+                    return Result.err(written.unwrap_err())
+                self._index = candidate
+                return Result.ok(True)
+
+            result = self._run("remove", operation)
+        return result
+
+    def search(
+        self, query: str, *, top_k: int = 5, min_score: float = 0.0
+    ) -> Result[List[RetrievalHit], Error]:
+        """Refresh the durable index and return deterministic lexical hits."""
+        with self._lock:
+            loaded = self._run("search", self._load_index_unlocked)
+            if loaded.is_err():
+                return Result.err(loaded.unwrap_err())
+            self._index = loaded.unwrap()
+            return self._index.search(query, top_k=top_k, min_score=min_score)
+
+    def stats(self) -> Dict[str, int]:
+        """Refresh and return bounded durable-index counts."""
+        with self._lock:
+            loaded = self._run("stats", self._load_index_unlocked)
+            if loaded.is_err():
+                raise RuntimeError("retrieval index statistics unavailable")
+            self._index = loaded.unwrap()
+            return self._index.stats()
 
 
 def _validate_vector(

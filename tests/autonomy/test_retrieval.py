@@ -1,10 +1,16 @@
 """Tests for bounded retrieval and source-bearing data contracts."""
 
+import json
+from concurrent.futures import ThreadPoolExecutor
+
+import pytest
+
 from maple.autonomy.retrieval import (
     ChunkingPolicy,
     Document,
     DocumentBatch,
     DocumentCursorCheckpoint,
+    FileLexicalRetriever,
     FileDocumentCursorCheckpointStore,
     InMemoryDocumentConnectorRateLimiter,
     InMemoryDocumentCursorCheckpointStore,
@@ -474,6 +480,162 @@ def test_retriever_search_is_bounded_and_empty_queries_fail():
     assert oversized.unwrap_err()["errorType"] == "RETRIEVAL_QUERY_TOO_LARGE"
     assert invalid_top_k.is_err()
     assert invalid_top_k.unwrap_err()["errorType"] == "RETRIEVAL_QUERY_INVALID"
+
+
+def test_file_lexical_retriever_rejects_invalid_configuration(tmp_path):
+    with pytest.raises(ValueError, match="max_bytes"):
+        FileLexicalRetriever(tmp_path, max_bytes=511)
+    with pytest.raises(ValueError, match="max_documents"):
+        FileLexicalRetriever(tmp_path, max_documents=0)
+    with pytest.raises(TypeError, match="chunker"):
+        FileLexicalRetriever(tmp_path, chunker=object())
+
+
+def test_file_lexical_retriever_rejects_corrupt_or_oversized_state(tmp_path):
+    index_path = tmp_path / "lexical-index.json"
+    index_path.write_text("{", encoding="utf-8")
+    with pytest.raises(ValueError, match="state"):
+        FileLexicalRetriever(tmp_path)
+
+    index_path.write_bytes(b"x" * 513)
+    with pytest.raises(ValueError, match="state"):
+        FileLexicalRetriever(tmp_path, max_bytes=512)
+
+    index_path.write_text(
+        json.dumps({"version": 99, "documents": []}), encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="state"):
+        FileLexicalRetriever(tmp_path)
+
+
+def test_file_lexical_retriever_persists_and_reloads_documents(tmp_path):
+    first = FileLexicalRetriever(tmp_path)
+    document = make_document("durable", "durable agent resources")
+
+    added = first.add_document(document)
+    second = FileLexicalRetriever(tmp_path)
+    found = second.search("durable resources")
+
+    assert added.is_ok()
+    assert found.is_ok()
+    assert [hit.chunk.document_id for hit in found.unwrap()] == ["durable"]
+    assert found.unwrap()[0].chunk.source.uri == "memory://durable"
+    assert second.stats() == {"documents": 1, "chunks": 1, "terms": 3}
+
+
+def test_file_lexical_retriever_rejects_chunking_policy_mismatch(tmp_path):
+    first = FileLexicalRetriever(
+        tmp_path,
+        chunker=TextChunker(ChunkingPolicy(max_chars=20, overlap_chars=5)),
+    )
+    assert first.add_document(make_document("policy")).is_ok()
+
+    with pytest.raises(ValueError, match="state"):
+        FileLexicalRetriever(tmp_path)
+
+
+def test_file_lexical_retriever_remove_persists_and_is_fail_closed(
+    tmp_path, monkeypatch
+):
+    retriever = FileLexicalRetriever(tmp_path)
+    document = make_document("remove-me", "remove me from durable index")
+    assert retriever.add_document(document).is_ok()
+    before = retriever.path.read_bytes()
+
+    def fail_write(_documents):
+        return Result.err(
+            {"errorType": "RETRIEVAL_INDEX_SAVE_ERROR", "message": "save failed"}
+        )
+
+    monkeypatch.setattr(retriever, "_write_documents_unlocked", fail_write)
+    failed = retriever.remove_document(document.document_id)
+
+    assert failed.is_err()
+    assert failed.unwrap_err()["errorType"] == "RETRIEVAL_INDEX_SAVE_ERROR"
+    assert retriever.path.read_bytes() == before
+    assert retriever.search("durable index").unwrap()
+
+    monkeypatch.undo()
+    assert retriever.remove_document(document.document_id).unwrap() is True
+    assert FileLexicalRetriever(tmp_path).stats() == {
+        "documents": 0,
+        "chunks": 0,
+        "terms": 0,
+    }
+    assert retriever.remove_document(document.document_id).unwrap() is False
+
+
+def test_file_lexical_retriever_serializes_shared_directory_mutations(tmp_path):
+    first = FileLexicalRetriever(tmp_path)
+    second = FileLexicalRetriever(tmp_path)
+    documents = (
+        make_document("parallel-a", "parallel agent alpha"),
+        make_document("parallel-b", "parallel agent beta"),
+    )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(
+            executor.map(
+                lambda pair: pair[0].add_document(pair[1]),
+                ((first, documents[0]), (second, documents[1])),
+            )
+        )
+
+    fresh = FileLexicalRetriever(tmp_path)
+    assert all(result.is_ok() for result in results)
+    assert fresh.stats()["documents"] == 2
+    assert fresh.search("alpha").unwrap()[0].chunk.document_id == "parallel-a"
+    assert fresh.search("beta").unwrap()[0].chunk.document_id == "parallel-b"
+
+
+def test_file_lexical_retriever_refreshes_external_updates_and_bounds_queries(
+    tmp_path,
+):
+    first = FileLexicalRetriever(tmp_path, max_query_bytes=5, max_results=2)
+    second = FileLexicalRetriever(tmp_path, max_query_bytes=5, max_results=2)
+    assert first.add_document(make_document("refresh", "refreshable agent")).is_ok()
+
+    refreshed = second.search("agent", top_k=2)
+    oversized = second.search("too long", top_k=2)
+    invalid_top_k = second.search("agent", top_k=3)
+
+    assert refreshed.is_ok()
+    assert refreshed.unwrap()[0].chunk.document_id == "refresh"
+    assert oversized.unwrap_err()["errorType"] == "RETRIEVAL_QUERY_TOO_LARGE"
+    assert invalid_top_k.unwrap_err()["errorType"] == "RETRIEVAL_QUERY_INVALID"
+
+
+def test_file_lexical_retriever_rejects_non_json_documents_without_mutation(tmp_path):
+    retriever = FileLexicalRetriever(tmp_path)
+    assert retriever.add_document(make_document("stable")).is_ok()
+    before = retriever.path.read_bytes()
+    invalid = Document(
+        document_id="invalid",
+        text="not persisted",
+        source=SourceRef(uri="memory://invalid"),
+        metadata={"bad": object()},
+    )
+
+    result = retriever.add_document(invalid)
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "RETRIEVAL_NON_JSON_METADATA"
+    assert retriever.path.read_bytes() == before
+    assert retriever.stats()["documents"] == 1
+
+
+def test_file_lexical_retriever_redacts_storage_failures(tmp_path, monkeypatch):
+    retriever = FileLexicalRetriever(tmp_path)
+
+    def raise_private_failure(_documents):
+        raise RuntimeError("private-path-secret")
+
+    monkeypatch.setattr(retriever, "_write_documents_unlocked", raise_private_failure)
+    result = retriever.add_document(make_document("redacted"))
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "RETRIEVAL_INDEX_ERROR"
+    assert "private-path-secret" not in str(result.unwrap_err())
 
 
 def test_retriever_rejects_duplicates_and_removes_documents():
