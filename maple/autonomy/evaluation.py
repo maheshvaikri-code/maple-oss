@@ -24,6 +24,7 @@ from typing import (
 from ..core.result import Result
 from .contracts import validate_json_schema
 from .events import RedactionPolicy
+from .observability import TraceSpan
 from .retrieval import RetrievalHit, VectorRetrievalHit
 
 Error = Dict[str, Any]
@@ -37,6 +38,9 @@ _EVAL_MAX_TOOL_NAME_LENGTH = 256
 _EVAL_MAX_TRAJECTORY_STEP_BYTES = 65_536
 _EVAL_MAX_TRAJECTORY_DURATION_MS = 86_400_000.0
 _EVAL_MAX_JUDGE_RATIONALE_BYTES = 4_096
+_EVAL_MAX_TRACE_SPANS = 256
+_EVAL_MAX_TRACE_NAME_LENGTH = 256
+_TRACE_STATUSES = ("running", "ok", "error", "cancelled")
 _GROUNDING_STOPWORDS = frozenset(
     {
         "a",
@@ -138,6 +142,118 @@ class EvalTrajectoryStep:
             "status": self.status,
             "duration_ms": self.duration_ms,
         }
+
+
+@dataclass(frozen=True)
+class TraceEvalSpan:
+    """Identifier-free span shape used by deterministic trace fixtures."""
+
+    name: str
+    status: str = "ok"
+    parent_index: Optional[int] = None
+
+    def validate(self, *, index: Optional[int] = None) -> Optional[Error]:
+        if (
+            not isinstance(self.name, str)
+            or not self.name
+            or len(self.name) > _EVAL_MAX_TRACE_NAME_LENGTH
+            or any(ord(char) < 32 for char in self.name)
+        ):
+            return {
+                "errorType": "TRACE_SPAN_INVALID",
+                "message": "trace span name must be bounded text.",
+            }
+        if not isinstance(self.status, str) or self.status not in _TRACE_STATUSES:
+            return {
+                "errorType": "TRACE_SPAN_INVALID",
+                "message": "trace span status is invalid.",
+            }
+        if self.parent_index is not None and (
+            not isinstance(self.parent_index, int)
+            or isinstance(self.parent_index, bool)
+            or self.parent_index < 0
+            or self.parent_index >= _EVAL_MAX_TRACE_SPANS
+            or (index is not None and self.parent_index >= index)
+        ):
+            return {
+                "errorType": "TRACE_PARENT_INVALID",
+                "message": "trace span parent_index must reference an earlier span.",
+            }
+        return None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Return the stable identifier-free fixture representation."""
+        return {
+            "name": self.name,
+            "status": self.status,
+            "parent_index": self.parent_index,
+        }
+
+
+@dataclass(frozen=True)
+class TraceEvalCase:
+    """One bounded versioned fixture for deterministic trace scoring."""
+
+    case_id: str
+    input: Any
+    expected_trace: Tuple[TraceEvalSpan, ...]
+    min_score: float = 1.0
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+    fixture_version: int = 1
+
+    def validate(self) -> Optional[Error]:
+        if (
+            not isinstance(self.case_id, str)
+            or not self.case_id
+            or len(self.case_id) > 256
+        ):
+            return {
+                "errorType": "TRACE_CASE_INVALID",
+                "message": "case_id must be bounded and non-empty.",
+            }
+        if (
+            not isinstance(self.fixture_version, int)
+            or isinstance(self.fixture_version, bool)
+            or self.fixture_version < 1
+            or self.fixture_version > _EVAL_MAX_FIXTURE_VERSION
+        ):
+            return {
+                "errorType": "TRACE_CASE_INVALID",
+                "message": "fixture_version must be between 1 and 32.",
+            }
+        if (
+            not isinstance(self.expected_trace, tuple)
+            or not self.expected_trace
+            or len(self.expected_trace) > _EVAL_MAX_TRACE_SPANS
+            or not all(isinstance(span, TraceEvalSpan) for span in self.expected_trace)
+        ):
+            return {
+                "errorType": "TRACE_CASE_INVALID",
+                "message": "expected_trace must be a bounded non-empty tuple.",
+            }
+        for index, span in enumerate(self.expected_trace):
+            span_error = span.validate(index=index)
+            if span_error is not None:
+                return span_error
+        if (
+            not isinstance(self.min_score, (int, float))
+            or isinstance(self.min_score, bool)
+            or not math.isfinite(float(self.min_score))
+            or self.min_score < 0.0
+            or self.min_score > 1.0
+        ):
+            return {
+                "errorType": "TRACE_CASE_INVALID",
+                "message": "min_score must be a finite number between 0 and 1.",
+            }
+        try:
+            json.dumps(self.metadata, allow_nan=False)
+        except (TypeError, ValueError, OverflowError):
+            return {
+                "errorType": "TRACE_CASE_INVALID",
+                "message": "case metadata must be JSON serializable.",
+            }
+        return None
 
 
 @dataclass(frozen=True)
@@ -519,6 +635,7 @@ class EvalResult:
     judge_rationale: Optional[str] = None
     actual_trajectory: Tuple[EvalTrajectoryStep, ...] = ()
     actual_tool_names: Tuple[str, ...] = ()
+    actual_trace: Tuple[TraceEvalSpan, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -565,6 +682,7 @@ class EvalReport:
                     "actual_trajectory": [
                         step.to_dict() for step in result.actual_trajectory
                     ],
+                    "actual_trace": [span.to_dict() for span in result.actual_trace],
                 }
                 for result in self.results
             ],
@@ -693,6 +811,113 @@ class EvaluationHarness:
                 for step in value
             )
         )
+
+    @staticmethod
+    def _normalize_trace(value: Any) -> Result[Tuple[TraceEvalSpan, ...], Error]:
+        """Project native spans to bounded identifier-free evaluation spans."""
+        if not isinstance(value, (list, tuple)):
+            return Result.err(
+                {
+                    "errorType": "TRACE_OBSERVATION_INVALID",
+                    "message": "trace runner must return a span sequence.",
+                }
+            )
+        if len(value) > _EVAL_MAX_TRACE_SPANS:
+            return Result.err(
+                {
+                    "errorType": "TRACE_SPAN_LIMIT",
+                    "message": "trace span count exceeds the limit.",
+                }
+            )
+
+        normalized: List[TraceEvalSpan] = []
+        native_span_indexes: Dict[str, int] = {}
+        for index, candidate in enumerate(value):
+            if isinstance(candidate, TraceEvalSpan):
+                span = candidate
+            elif isinstance(candidate, TraceSpan):
+                parent_index: Optional[int] = None
+                if candidate.parent_span_id is not None:
+                    if candidate.parent_span_id not in native_span_indexes:
+                        return Result.err(
+                            {
+                                "errorType": "TRACE_PARENT_NOT_FOUND",
+                                "message": "native trace span parent is not in the sequence.",
+                            }
+                        )
+                    parent_index = native_span_indexes[candidate.parent_span_id]
+                span = TraceEvalSpan(
+                    name=candidate.name,
+                    status=candidate.status,
+                    parent_index=parent_index,
+                )
+                if candidate.span_id in native_span_indexes:
+                    return Result.err(
+                        {
+                            "errorType": "TRACE_OBSERVATION_INVALID",
+                            "message": "native trace span IDs must be unique.",
+                        }
+                    )
+                native_span_indexes[candidate.span_id] = index
+            else:
+                return Result.err(
+                    {
+                        "errorType": "TRACE_OBSERVATION_INVALID",
+                        "message": "trace runner returned an unknown span type.",
+                    }
+                )
+            span_error = span.validate(index=index)
+            if span_error is not None:
+                return Result.err(
+                    {
+                        "errorType": "TRACE_OBSERVATION_INVALID",
+                        "message": span_error["message"],
+                        "cause": span_error["errorType"],
+                    }
+                )
+            normalized.append(span)
+        return Result.ok(tuple(normalized))
+
+    @staticmethod
+    def _score_trace(
+        expected: Tuple[TraceEvalSpan, ...], actual: Tuple[TraceEvalSpan, ...]
+    ) -> Dict[str, float]:
+        """Return deterministic positional component scores for two traces."""
+        denominator = max(len(expected), len(actual), 1)
+        name_matches = sum(
+            index < len(actual) and expected[index].name == actual[index].name
+            for index in range(len(expected))
+        )
+        status_matches = sum(
+            index < len(actual) and expected[index].status == actual[index].status
+            for index in range(len(expected))
+        )
+        parent_matches = sum(
+            index < len(actual)
+            and expected[index].parent_index == actual[index].parent_index
+            for index in range(len(expected))
+        )
+        name_score = name_matches / denominator
+        status_score = status_matches / denominator
+        parent_score = parent_matches / denominator
+        return {
+            "name_score": name_score,
+            "status_score": status_score,
+            "parent_score": parent_score,
+            "score": (name_score + status_score + parent_score) / 3.0,
+        }
+
+    def _trace_report_fits(self, trace: Tuple[TraceEvalSpan, ...]) -> bool:
+        try:
+            encoded = json.dumps(
+                [span.to_dict() for span in trace],
+                ensure_ascii=False,
+                allow_nan=False,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        except (TypeError, ValueError, OverflowError):
+            return False
+        return len(encoded) <= self.max_value_bytes
 
     def _validate_run_inputs(
         self,
@@ -1103,6 +1328,148 @@ class EvaluationHarness:
                 )
             )
         return Result.ok(EvalReport(results=tuple(updated_results)))
+
+    def run_trace(
+        self,
+        cases: Sequence[TraceEvalCase],
+        runner: Callable[[Any], Any],
+    ) -> Result[EvalReport, Error]:
+        """Score bounded trace structure using deterministic local fixtures.
+
+        The runner may return native ``TraceSpan`` values or identifier-free
+        ``TraceEvalSpan`` values. Native IDs, timestamps, and attributes are
+        discarded before scoring; this method does not establish semantic,
+        causal, provider, or hosted trace correctness.
+        """
+        if (
+            not isinstance(self.max_cases, int)
+            or isinstance(self.max_cases, bool)
+            or self.max_cases <= 0
+        ):
+            return Result.err(
+                {
+                    "errorType": "EVAL_CONFIG_INVALID",
+                    "message": "max_cases must be positive.",
+                }
+            )
+        if (
+            not isinstance(self.max_value_bytes, int)
+            or isinstance(self.max_value_bytes, bool)
+            or self.max_value_bytes <= 0
+        ):
+            return Result.err(
+                {
+                    "errorType": "EVAL_CONFIG_INVALID",
+                    "message": "max_value_bytes must be positive.",
+                }
+            )
+        if not callable(runner):
+            return Result.err(
+                {
+                    "errorType": "EVAL_INPUT_INVALID",
+                    "message": "runner must be callable.",
+                }
+            )
+        if len(cases) > self.max_cases:
+            return Result.err(
+                {
+                    "errorType": "EVAL_CASE_LIMIT",
+                    "message": "case count exceeds the limit.",
+                }
+            )
+
+        results: List[EvalResult] = []
+        for case in cases:
+            case_error = case.validate()
+            if case_error is not None:
+                return Result.err(case_error)
+            started = time.perf_counter()
+            errors: List[Error] = []
+            actual_trace: Tuple[TraceEvalSpan, ...] = ()
+            actual: Any = None
+            score = 0.0
+            try:
+                encoded_case = json.dumps(
+                    {
+                        "expected_trace": [
+                            span.to_dict() for span in case.expected_trace
+                        ],
+                        "metadata": case.metadata,
+                    },
+                    ensure_ascii=False,
+                    allow_nan=False,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+                if len(encoded_case) > self.max_value_bytes:
+                    errors.append(
+                        {
+                            "errorType": "TRACE_CASE_SIZE",
+                            "message": "trace case exceeds the value byte limit.",
+                        }
+                    )
+                else:
+                    observation = runner(case.input)
+                    if isinstance(observation, Result):
+                        if observation.is_err():
+                            errors.append(
+                                {
+                                    "errorType": "TRACE_RUNNER_ERROR",
+                                    "message": "trace runner returned an error.",
+                                }
+                            )
+                        else:
+                            observation = observation.unwrap()
+                    if not errors:
+                        normalized = self._normalize_trace(observation)
+                        if normalized.is_err():
+                            errors.append(normalized.unwrap_err())
+                        else:
+                            actual_trace = normalized.unwrap()
+                            if not self._trace_report_fits(actual_trace):
+                                errors.append(
+                                    {
+                                        "errorType": "TRACE_REPORT_SIZE",
+                                        "message": "trace observation exceeds the value byte limit.",
+                                    }
+                                )
+                            else:
+                                components = self._score_trace(
+                                    case.expected_trace, actual_trace
+                                )
+                                score = components["score"]
+                                actual = {
+                                    "expected_span_count": len(case.expected_trace),
+                                    "actual_span_count": len(actual_trace),
+                                    **components,
+                                }
+                                if score < case.min_score:
+                                    errors.append(
+                                        {
+                                            "errorType": "TRACE_SCORE_LOW",
+                                            "message": "trace score was below the threshold.",
+                                        }
+                                    )
+            except Exception as exc:
+                errors.append(
+                    {
+                        "errorType": "TRACE_RUNNER_EXCEPTION",
+                        "message": "trace runner raised an exception.",
+                        "details": {"exception": type(exc).__name__},
+                    }
+                )
+            results.append(
+                EvalResult(
+                    case_id=case.case_id,
+                    passed=not errors,
+                    score=score,
+                    actual_output=self._safe_output(actual),
+                    errors=tuple(errors),
+                    duration_ms=(time.perf_counter() - started) * 1000,
+                    fixture_version=case.fixture_version,
+                    actual_trace=actual_trace,
+                )
+            )
+        return Result.ok(EvalReport(results=tuple(results)))
 
     def run_groundedness(
         self,

@@ -62,6 +62,8 @@ from .evaluation import (
     GroundednessObservation,
     GroundingSource,
     RetrievalEvalCase,
+    TraceEvalCase,
+    TraceEvalSpan,
 )
 from .events import (
     DEFAULT_EVENT_DEDUP_TTL_SECONDS,
@@ -398,6 +400,8 @@ __all__ = [
     "GroundednessObservation",
     "GroundingSource",
     "RetrievalEvalCase",
+    "TraceEvalCase",
+    "TraceEvalSpan",
     "InteropEnvelope",
     "round_trip_json",
     "HandoffRecord",

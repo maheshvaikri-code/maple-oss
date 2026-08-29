@@ -14,7 +14,10 @@ from maple.autonomy.evaluation import (
     GroundednessObservation,
     GroundingSource,
     RetrievalEvalCase,
+    TraceEvalCase,
+    TraceEvalSpan,
 )
+from maple.autonomy.observability import TraceSpan
 from maple.autonomy.retrieval import (
     Document,
     DocumentChunk,
@@ -382,6 +385,138 @@ def test_evaluation_rejects_trajectory_report_overflow():
     assert report.is_ok()
     assert report.unwrap().results[0].errors[0]["errorType"] == (
         "EVAL_OBSERVATION_INVALID"
+    )
+
+
+def test_trace_evaluation_scores_native_spans_without_ids_or_attributes():
+    root = TraceSpan(
+        trace_id="trace-secret",
+        span_id="span-root",
+        name="agent.run",
+        start_time=1.0,
+        end_time=2.0,
+        status="ok",
+        attributes={"token": "secret"},
+    )
+    child = TraceSpan(
+        trace_id="trace-secret",
+        span_id="span-child",
+        name="agent.tool",
+        start_time=1.1,
+        end_time=1.5,
+        parent_span_id="span-root",
+        status="ok",
+        attributes={"prompt": "private"},
+    )
+    case = TraceEvalCase(
+        "trace-v1",
+        "input",
+        expected_trace=(
+            TraceEvalSpan("agent.run", status="ok"),
+            TraceEvalSpan("agent.tool", status="ok", parent_index=0),
+        ),
+        fixture_version=2,
+    )
+
+    report = EvaluationHarness().run_trace([case], lambda value: [root, child])
+
+    assert report.is_ok()
+    result = report.unwrap().results[0]
+    assert result.passed
+    assert result.score == 1.0
+    assert result.fixture_version == 2
+    assert result.actual_trace == (
+        TraceEvalSpan("agent.run", status="ok"),
+        TraceEvalSpan("agent.tool", status="ok", parent_index=0),
+    )
+    serialized = report.unwrap().as_dict()
+    assert serialized["results"][0]["actual_trace"] == [
+        {"name": "agent.run", "status": "ok", "parent_index": None},
+        {"name": "agent.tool", "status": "ok", "parent_index": 0},
+    ]
+    assert "trace-secret" not in str(serialized)
+    assert "secret" not in str(serialized)
+    assert "prompt" not in str(serialized)
+
+
+def test_trace_evaluation_reports_component_scores_and_threshold_failures():
+    case = TraceEvalCase(
+        "trace-partial",
+        "input",
+        expected_trace=(
+            TraceEvalSpan("agent.run"),
+            TraceEvalSpan("agent.tool", parent_index=0),
+        ),
+        min_score=0.9,
+    )
+
+    report = EvaluationHarness().run_trace(
+        [case], lambda value: (TraceEvalSpan("agent.run"),)
+    )
+
+    assert report.is_ok()
+    result = report.unwrap().results[0]
+    assert not result.passed
+    assert result.score == pytest.approx(0.5)
+    assert result.actual_output == {
+        "expected_span_count": 2,
+        "actual_span_count": 1,
+        "name_score": 0.5,
+        "status_score": 0.5,
+        "parent_score": 0.5,
+        "score": 0.5,
+    }
+    assert result.errors[0]["errorType"] == "TRACE_SCORE_LOW"
+
+
+def test_trace_evaluation_rejects_invalid_fixtures_and_native_parents():
+    invalid_fixture = TraceEvalCase(
+        "invalid", "input", expected_trace=[TraceEvalSpan("agent.run")]
+    )
+    future_parent = TraceEvalCase(
+        "future-parent",
+        "input",
+        expected_trace=(TraceEvalSpan("child", parent_index=1), TraceEvalSpan("root")),
+    )
+    unknown_parent = TraceSpan(
+        trace_id="trace",
+        span_id="child",
+        name="child",
+        start_time=1.0,
+        end_time=2.0,
+        parent_span_id="missing",
+        status="ok",
+    )
+
+    invalid_result = EvaluationHarness().run_trace([invalid_fixture], lambda value: [])
+    future_result = EvaluationHarness().run_trace([future_parent], lambda value: [])
+    unknown_result = EvaluationHarness().run_trace(
+        [TraceEvalCase("unknown-parent", "input", (TraceEvalSpan("child"),))],
+        lambda value: [unknown_parent],
+    )
+
+    assert invalid_result.is_err()
+    assert invalid_result.unwrap_err()["errorType"] == "TRACE_CASE_INVALID"
+    assert future_result.is_err()
+    assert future_result.unwrap_err()["errorType"] == "TRACE_PARENT_INVALID"
+    assert unknown_result.unwrap().results[0].errors[0]["errorType"] == (
+        "TRACE_PARENT_NOT_FOUND"
+    )
+
+
+def test_trace_evaluation_bounds_observations_and_runner_errors():
+    case = TraceEvalCase("bounded", "input", (TraceEvalSpan("agent.run"),))
+    oversized = tuple(TraceEvalSpan(f"span-{index}") for index in range(257))
+    oversized_result = EvaluationHarness().run_trace([case], lambda value: oversized)
+    error_result = EvaluationHarness().run_trace(
+        [case], lambda value: Result.err({"details": "hidden"})
+    )
+
+    assert oversized_result.unwrap().results[0].errors[0]["errorType"] == (
+        "TRACE_SPAN_LIMIT"
+    )
+    assert error_result.unwrap().results[0].errors[0]["errorType"] == (
+        "TRACE_RUNNER_ERROR"
     )
 
 
