@@ -1080,6 +1080,51 @@ discarded Windows PowerShell binary-pipe attempt produced a damaged tar
 stream. No repository data was changed. No publication, deployment, cloud
 action, registry write, or website update was performed.
 
+## 2026-08-28 current revalidation - Slice 181 host-owned token-to-principal resolution
+
+The changed boundary was reviewed for resolver/static configuration
+exclusivity, bounded bearer extraction, callback-before-body ordering,
+per-request principal selection, generic rejection handling, callback exception
+redaction, and reuse of the selected principal by scope, discovery, and
+agent-target authorization. The resolver accepts only a Principal or
+Result.ok(Principal); no callback error, token, or request payload is returned
+to the caller. No correctness or security boundary defect remains.
+
+Review evidence on implementation/hardening commits dcc5001 and 85fde19:
+
+```text
+python -m pytest -q --no-cov tests/autonomy/test_server.py
+54 passed in 22.74s
+
+python -m black --check maple/autonomy/server.py maple/autonomy/__init__.py maple/__init__.py tests/autonomy/test_server.py
+4 files would be left unchanged.
+
+python -m isort --check-only maple/autonomy/server.py maple/autonomy/__init__.py maple/__init__.py tests/autonomy/test_server.py
+exit=0
+
+python -m ruff check maple/autonomy/server.py maple/autonomy/__init__.py maple/__init__.py tests/autonomy/test_server.py
+All checks passed!
+
+python -m mypy maple/autonomy/server.py --follow-imports=skip
+Success: no issues found in 1 source file
+
+python -m compileall -q maple/autonomy/server.py maple/autonomy/__init__.py maple/__init__.py tests/autonomy/test_server.py
+compileall_exit=0
+
+python -m pytest -q --no-cov
+1724 passed, 1 skipped in 282.12s (0:04:42)
+```
+
+The environment-wide dependency audit, Gitleaks, Bandit, actionlint, and a
+fresh independent verifier session remain unavailable or governance-blocked
+in this tool context. No publication, deployment, cloud action, registry
+write, or website update was performed.
+
+**Slice 181 review:** PASS for the host-owned resolver boundary; clean archive
+package verification remains the next gate. Overall release status remains
+CONDITIONAL / NOT PUBLISH-READY pending the documented release gates and
+human authorization.
+
 ## 2026-08-28 current revalidation - Slice 180 least-privilege agent target policy
 
 The changed boundary was reviewed for exact allowlist validation, empty-list

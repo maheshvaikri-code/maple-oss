@@ -10,6 +10,12 @@
 
 ### Additions
 
+- **Host-owned token-to-principal resolution**: RunServer can resolve each
+  bounded bearer token to a distinct Principal, applying the selected scopes
+  and agent-target policy to the request. Resolver rejection, exceptions,
+  invalid results, and malformed credentials fail closed with generic 401;
+  token issuance, federation, tenancy, and revocation remain host-owned.
+
 - **Least-privilege agent target policy**: the host-configured `Principal`
   accepts bounded exact `allowed_agent_ids` and `allowed_capabilities`
   allowlists. Agent discovery filters denied descriptors, named-agent routes

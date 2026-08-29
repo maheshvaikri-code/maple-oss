@@ -6,9 +6,9 @@
 
 | # | Slice | Role | Files touched | Proven by (tests) | Status |
 |---|-------|------|---------------|-------------------|--------|
-| 1 | Add resolver configuration and request principal selection | Backend / Security | maple/autonomy/server.py, exports if needed | Static/resolver exclusivity and per-request selection | todo |
-| 2 | Enforce fail-closed resolver and compatibility behavior | Backend / Security / QA | maple/autonomy/server.py, server tests | Generic 401, no body/callback detail, static regression | todo |
-| 3 | Public contract, parity, and package evidence | Tech Writer / Release | README/API/parity/changelog, QA/review/release artifacts | Full/static/clean archive/package checks | todo |
+| 1 | Add resolver configuration and request principal selection | Backend / Security | maple/autonomy/server.py, exports if needed | Static/resolver exclusivity and per-request selection | complete: dcc5001 |
+| 2 | Enforce fail-closed resolver and compatibility behavior | Backend / Security / QA | maple/autonomy/server.py, server tests | Generic 401, no body/callback detail, static regression | complete: 85fde19; focused 54 passed; full workspace 1724 passed, 1 skipped |
+| 3 | Public contract, parity, and package evidence | Tech Writer / Release | README/API/parity/changelog, QA/review/release artifacts | Full/static/clean archive/package checks | in progress: implementation evidence recorded; public/package gate pending |
 
 ## Threat sketch
 
@@ -38,5 +38,6 @@ authorization path.
 
 ## Status snapshot
 
-Done (with evidence): design brief and ADR. Next: implement the bounded
-resolver boundary. Blocked on: none.
+Done (with evidence): design brief/ADR, resolver implementation, per-request
+principal selection, fail-closed regressions, and static/full validation. Next:
+public contract and clean archive package gate. Blocked on: none.

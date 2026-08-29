@@ -1174,6 +1174,49 @@ The package gate was run from a clean Git archive, so the repository's
 untracked doctrine files were not included. No publication, deployment, cloud
 action, registry write, or website update was performed.
 
+## 2026-08-28 current QA revalidation - Slice 181 host-owned token-to-principal resolution
+
+Acceptance criteria were exercised through the existing local agent server:
+static/resolver exclusivity, direct and Result-wrapped principal resolution,
+per-token filtered discovery, per-token named and capability routing, denial
+before an oversized request body is read, generic rejection for resolver
+errors/exceptions/invalid results, and no callback on missing credentials.
+
+```text
+python -m pytest -q --no-cov tests/autonomy/test_server.py
+54 passed in 22.74s
+
+python -m pytest -q --no-cov
+1724 passed, 1 skipped in 282.12s (0:04:42)
+
+python -m black --check maple/autonomy/server.py maple/autonomy/__init__.py maple/__init__.py tests/autonomy/test_server.py
+4 files would be left unchanged.
+
+python -m isort --check-only maple/autonomy/server.py maple/autonomy/__init__.py maple/__init__.py tests/autonomy/test_server.py
+exit=0
+
+python -m ruff check maple/autonomy/server.py maple/autonomy/__init__.py maple/__init__.py tests/autonomy/test_server.py
+All checks passed!
+
+python -m mypy maple/autonomy/server.py --follow-imports=skip
+Success: no issues found in 1 source file
+
+python -m compileall -q maple/autonomy/server.py maple/autonomy/__init__.py maple/__init__.py tests/autonomy/test_server.py
+compileall_exit=0
+```
+
+Adversarial result: invalid or rejected bearer values fail closed with bounded
+401 responses; callback failures do not leak resolver data; every protected
+authorization consumer uses the request-selected principal; and existing
+static-token tests remain green. No new dependency was added. The
+environment-wide dependency audit, Gitleaks, Bandit, actionlint, and fresh
+independent verifier remain unavailable or governance-blocked. No external
+state was changed.
+
+**Slice 181 QA status: PASS for the host-owned resolver boundary. Overall
+release status remains CONDITIONAL / NOT PUBLISH-READY pending clean
+archive/package verification and human authorization.**
+
 ## 2026-08-28 current QA revalidation - Slice 180 least-privilege agent target policy
 
 Acceptance criteria were exercised through the existing local agent server:

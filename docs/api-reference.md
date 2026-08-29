@@ -2777,6 +2777,38 @@ with RunServer(
     client = RunClient(server.url, auth_token="local-token")
 ```
 
+For distinct local principals, use a host-owned synchronous resolver instead
+of `auth_token` and `auth_principal`:
+
+```python
+from maple import Principal, RunServer
+from maple.core.result import Result
+
+def resolve_principal(bearer_token):
+    if bearer_token == "alpha-token":
+        return Principal(
+            "alpha-operator",
+            ("agent:read", "agent:invoke"),
+            allowed_agent_ids=("alpha",),
+        )
+    return Result.err({"errorType": "TOKEN_REJECTED", "message": "denied"})
+
+with RunServer(
+    registry,
+    auth_principal_resolver=resolve_principal,
+) as server:
+    ...
+```
+
+The resolver receives only a syntactically valid bounded bearer value and may
+return a `Principal` or `Result.ok(Principal)`. Rejection, exceptions, invalid
+results, malformed credentials, or missing credentials return the same generic
+`401` response; resolver errors and bearer values are not returned to callers.
+The host owns token validation, expiry, revocation, federation, and callback
+lifecycle. Resolver mode cannot be combined with static `auth_token` or
+`auth_principal`. The selected principal is used by every existing scope,
+discovery, and agent-target check.
+
 Known route scope families are:
 
 | Route family | Scope examples |
@@ -2803,7 +2835,8 @@ must not infer exactly-once effects from this transport.
 
 When `RunServer` receives `human_input_store=...`, the same authenticated
 contract exposes bounded human-in-the-loop control; configuring that store
-requires `RunServer(auth_token="...")`. `RunClient` provides
+requires `RunServer(auth_token="...")` or
+`RunServer(auth_principal_resolver=...)`. `RunClient` provides
 `list_pending_human_input(limit)`, `get_human_input(id)`,
 `respond_human_input(id, response, actor_id=...)`,
 `reject_human_input(id, reason, actor_id=...)`,
