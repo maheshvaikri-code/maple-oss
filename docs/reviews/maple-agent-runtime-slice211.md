@@ -1,19 +1,19 @@
-# Code Review — asynchronous document ingestion @ 7e2da52
+# Code Review — asynchronous document ingestion @ 910bb00
 
 **Reviewer role:** Code Reviewer · **Date:** 2026-08-29
 **Reviewed against:** `docs/briefs/maple-agent-runtime-slice211.md`,
 `docs/adr/155-async-document-ingestion.md`, and
 `docs/plans/maple-agent-runtime-slice211.md`
-**Reviewed commits:** `6703e5d..7e2da52`
+**Reviewed commits:** `6703e5d..910bb00`
 
 **Executed:**
 
 ```text
 python -m pytest tests/autonomy/test_retrieval.py -q
-============================= 87 passed in 5.53s ==============================
+============================= 95 passed in 9.19s ==============================
 
 python -m pytest -q
-================= 1895 passed, 1 skipped in 428.08s (0:07:08) ================
+================= 1903 passed, 1 skipped in 419.00s (0:06:58) ================
 
 python -m mypy maple --ignore-missing-imports
 Success: no issues found in 102 source files

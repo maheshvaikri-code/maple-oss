@@ -1,7 +1,7 @@
 # Slice 211 implementation plan - asynchronous document ingestion
 
 **Class:** L
-**Status:** G0/G1/G2/G3 implementation and documentation complete; G4/G5/G6 in progress
+**Status:** G0-G5 complete; G6 release reconciliation in progress
 **Brief:** `docs/briefs/maple-agent-runtime-slice211.md`
 **ADR:** `docs/adr/155-async-document-ingestion.md`
 
@@ -11,13 +11,13 @@
 | --- | --- | --- |
 | G0 | Define the async retrieval parity problem, bounded acceptance criteria, non-goals, and contract questions. | Slice brief; human confirmed 2026-08-29. |
 | G1 | Decide public protocol shape, executor ownership, cancellation, checkpoint, and at-least-once semantics. | ADR-155 accepted; human approved 2026-08-29. |
-| G2 | Implement the approved design; preserve synchronous ingestion and add focused async regressions. | `maple/autonomy/retrieval.py`; `tests/autonomy/test_retrieval.py`; focused suite `82 passed in 11.38s`. |
+| G2 | Implement the approved design; preserve synchronous ingestion and add focused async regressions. | `maple/autonomy/retrieval.py`; `tests/autonomy/test_retrieval.py`; focused suite `95 passed in 9.19s`. |
 | G3 | Export and document the additive contract; do not add providers, network clients, or hosted behavior. | `maple.autonomy`, `maple`, API/README/parity/changelog updates committed with the implementation. |
-| G4 | Review event-loop blocking, cancellation, duplicate delivery, bounds, error disclosure, and unrelated diff scope. | Planned review report. |
-| G5 | Run focused/full tests, static checks, project audit, and clean archive smoke. | Planned QA/security report. |
-| G6 | Reconcile release readiness only; no version bump, tag, publication, cloud, or website action. | Planned release-plan evidence. |
+| G4 | Review event-loop blocking, cancellation, duplicate delivery, bounds, error disclosure, and unrelated diff scope. | `docs/reviews/maple-agent-runtime-slice211.md`; no findings. |
+| G5 | Run focused/full tests, static checks, project audit, and clean archive smoke. | `docs/qa/maple-agent-runtime-slice211.md`; full/static/audit/package gates pass; unavailable security tools explicitly recorded. |
+| G6 | Reconcile release readiness only; no version bump, tag, publication, cloud, or website action. | Release plan and `docs/releases/v1.1.4.md` updated; publication gates remain closed. |
 
-## Proposed slices after approval
+## Implemented slice scope
 
 1. Add `AsyncDocumentConnector` and `ingest_documents_async()` with one-page
    async fetch, existing validation, executor-backed sync host callbacks,
@@ -53,22 +53,19 @@ disclosure; and no network or execution behavior.
   share validation/serialization helpers or keep behaviorally identical
   boundary tests -> rollback: return to host adapters until a shared core is
   designed.
-- Risk: public API is approved before async callback ownership is clear ->
-  mitigation: keep implementation gated on the two brief questions ->
-  rollback: do not enter G2.
-
 ## Approval gate closed
 
 Human approval was received on 2026-08-29 for the additive public contract
-and recommended executor/cancellation tradeoff. Implementation may proceed
+and recommended executor/cancellation tradeoff. Implementation is complete
 within the stated non-goals.
 
 ## Status snapshot
 
-Done (with evidence): Slice 210 locally closed; Slice 211 brief and ADR
-approved; the async ingestion helper, focused regressions, exports, and public
-documentation are complete. Next: review, full QA/security, and release
-reconciliation. Blocked on: none within the approved Slice 211 scope.
+Done (with evidence): Slice 210 locally closed; Slice 211 implementation,
+focused regressions, exports, public documentation, code review, QA/security,
+and exact package smoke are complete. Next: release reconciliation only;
+publication remains human-gated. Blocked on: none within the approved Slice
+211 scope.
 
 ## Pre-implementation package revalidation
 
