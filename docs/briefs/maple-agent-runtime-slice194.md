@@ -3,7 +3,7 @@
 **Date:** 2026-08-29
 **Class:** L
 **Role:** Chief Architect / Backend / Interop / Security / QA / Release
-**Status:** proposed
+**Status:** complete
 
 ## Objective
 
@@ -41,3 +41,16 @@ ownership or allowing MAPLE to infer distributed liveness.
    exact request fields, and stable task errors.
 6. Public docs explicitly state that the signal is telemetry only and makes no
    distributed liveness or exactly-once claim.
+
+## Closure evidence
+
+Implementation commit `bb7690c` satisfies the queue, durable-record, and
+authenticated transport contract. Focused queue/server coverage reports
+`105 passed in 30.91s`; the full dirty workspace reports `1759 passed, 1
+skipped in 324.36s`; and the exact clean archive reports `1642 passed, 1
+skipped in 255.17s`. Whole-package mypy reports no issues in 101 source files.
+Review and QA are filed at
+`docs/reviews/maple-agent-runtime-slice194.md` and
+`docs/qa/maple-agent-runtime-slice194.md`. Clean wheel/sdist build, Twine,
+isolated install/import, and network-free doctor passed. No publication,
+cloud, or website action was performed.

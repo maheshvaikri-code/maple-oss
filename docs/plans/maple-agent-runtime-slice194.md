@@ -8,9 +8,9 @@
 
 | # | Slice | Role | Files touched | Proven by (tests) | Status |
 |---|---|---|---|---|---|
-| 1 | Queue model and durable record compatibility | Backend / Database | task queue, durable queue, queue tests | Owner/state checks, monotonic timestamp, legacy record load, restart persistence | todo |
-| 2 | Authenticated transport | Backend / Interop / Security | server, client, server tests, API docs | Scope, principal policy, route/body bounds, stable errors, detached envelope | todo |
-| 3 | Release evidence | QA / Code Reviewer / Release | README, parity, changelog, review/QA/release docs | Focused/full regression, static checks, clean/current package smoke | todo |
+| 1 | Queue model and durable record compatibility | Backend / Database | task queue, durable queue, queue tests | Owner/state checks, monotonic timestamp, legacy record load, restart persistence | complete |
+| 2 | Authenticated transport | Backend / Interop / Security | server, client, server tests, API docs | Scope, principal policy, route/body bounds, stable errors, detached envelope | complete |
+| 3 | Release evidence | QA / Code Reviewer / Release | README, parity, changelog, review/QA/release docs | Focused/full regression, static checks, clean/current package smoke | complete |
 
 ## Threat sketch
 
@@ -40,6 +40,7 @@ contain the boundary.
 
 ## Status snapshot
 
-Design is ready for implementation. Next: queue model and durable record
-compatibility. Blocked on: nothing for this local telemetry-only slice;
-distributed liveness remains outside scope.
+Implementation and release evidence are complete for this local
+telemetry-only slice. Focused, full dirty-worktree, exact clean-archive,
+static, package, install, and doctor gates passed. Distributed liveness remains
+outside scope.

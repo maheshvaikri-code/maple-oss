@@ -1,7 +1,7 @@
 # ADR-138: Owner-safe task heartbeat signal
 
 **Date:** 2026-08-29
-**Status:** proposed
+**Status:** accepted
 **Deciders:** Chief Architect
 
 ## Context
