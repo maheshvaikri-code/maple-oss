@@ -392,6 +392,141 @@ def test_agent_target_policy_filters_discovery_and_blocks_denied_routes():
     )
 
 
+def test_run_server_resolves_distinct_principals_before_agent_routes():
+    calls = []
+    resolver_calls = []
+
+    def make_handler(agent_id):
+        def handler(task, context, *, session_id, run_id):
+            calls.append((agent_id, task))
+            return Result.ok(
+                AgentRun(agent_id, run_id, "completed", {"agent": agent_id})
+            )
+
+        return handler
+
+    agents = AgentRegistry()
+    assert agents.register(
+        "alpha", make_handler("alpha"), capabilities=["research"]
+    ).is_ok()
+    assert agents.register(
+        "beta", make_handler("beta"), capabilities=["billing"]
+    ).is_ok()
+
+    def resolve(token):
+        resolver_calls.append(token)
+        if token == "alpha-token":
+            return Result.ok(
+                Principal(
+                    "alpha-operator",
+                    ("agent:read", "agent:invoke"),
+                    allowed_agent_ids=("alpha",),
+                    allowed_capabilities=("research",),
+                )
+            )
+        if token == "beta-token":
+            return Principal(
+                "beta-operator",
+                ("agent:read", "agent:invoke"),
+                allowed_agent_ids=("beta",),
+                allowed_capabilities=("billing",),
+            )
+        if token == "rejected-token":
+            return Result.err(
+                {"errorType": "TOKEN_REJECTED", "message": "private reason"}
+            )
+        if token == "broken-token":
+            raise RuntimeError("private resolver details")
+        return object()
+
+    server = RunServer(
+        WorkflowRegistry(),
+        agent_registry=agents,
+        auth_principal_resolver=resolve,
+        max_body_bytes=128,
+    )
+    base_url = server.start()
+
+    try:
+        alpha_client = RunClient(base_url, auth_token="alpha-token")
+        beta_client = RunClient(base_url, auth_token="beta-token")
+        alpha_listing = alpha_client.list_agents()
+        beta_listing = beta_client.list_agents()
+        alpha_run = alpha_client.run_agent("alpha", "find", run_id="alpha-run")
+        beta_route = beta_client.route_agent("billing", "charge")
+        denied_status, denied = _request(
+            f"{base_url}/v1/agents/alpha/runs",
+            method="POST",
+            payload={"task": "secret " + "x" * 500},
+            headers={"Authorization": "Bearer beta-token"},
+        )
+        rejected = RunClient(base_url, auth_token="rejected-token").healthz()
+        broken = RunClient(base_url, auth_token="broken-token").healthz()
+        unknown = RunClient(base_url, auth_token="unknown-token").healthz()
+        missing = RunClient(base_url).healthz()
+    finally:
+        server.close()
+
+    assert alpha_listing.is_ok()
+    assert alpha_listing.unwrap() == {
+        "agents": [{"agent_id": "alpha", "capabilities": ["research"]}]
+    }
+    assert beta_listing.is_ok()
+    assert beta_listing.unwrap() == {
+        "agents": [{"agent_id": "beta", "capabilities": ["billing"]}]
+    }
+    assert alpha_run.is_ok()
+    assert alpha_run.unwrap()["run"]["agent_id"] == "alpha"
+    assert beta_route.is_ok()
+    assert beta_route.unwrap()["run"]["agent_id"] == "beta"
+    assert denied_status == 403
+    assert denied["error"]["errorType"] == "FORBIDDEN"
+    assert denied["error"]["details"]["principal_id"] == "beta-operator"
+    assert denied["error"]["details"]["policy"] == "allowed_agent_ids"
+    assert "secret" not in str(denied)
+    assert rejected.is_err()
+    assert rejected.unwrap_err()["errorType"] == "UNAUTHORIZED"
+    assert "private reason" not in str(rejected.unwrap_err())
+    assert broken.is_err()
+    assert broken.unwrap_err()["errorType"] == "UNAUTHORIZED"
+    assert "private resolver details" not in str(broken.unwrap_err())
+    assert unknown.is_err()
+    assert unknown.unwrap_err()["errorType"] == "UNAUTHORIZED"
+    assert missing.is_err()
+    assert missing.unwrap_err()["errorType"] == "UNAUTHORIZED"
+    assert resolver_calls == [
+        "alpha-token",
+        "beta-token",
+        "alpha-token",
+        "beta-token",
+        "beta-token",
+        "rejected-token",
+        "broken-token",
+        "unknown-token",
+    ]
+    assert calls == [("alpha", "find"), ("beta", "charge")]
+
+
+def test_run_server_rejects_ambiguous_principal_resolver_configuration():
+    with pytest.raises(TypeError):
+        RunServer(
+            WorkflowRegistry(),
+            auth_principal_resolver="not-callable",
+        )
+    with pytest.raises(ValueError):
+        RunServer(
+            WorkflowRegistry(),
+            auth_token="static-token",
+            auth_principal_resolver=lambda token: Principal("operator"),
+        )
+    with pytest.raises(ValueError):
+        RunServer(
+            WorkflowRegistry(),
+            auth_principal=Principal("operator"),
+            auth_principal_resolver=lambda token: Principal("resolved"),
+        )
+
+
 def test_run_client_bounds_inputs_and_normalizes_transport_errors():
     with pytest.raises(ValueError):
         RunClient("file:///tmp/maple")

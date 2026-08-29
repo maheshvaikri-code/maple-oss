@@ -75,6 +75,7 @@ _MAX_HANDOFF_LIMIT = 100
 _MAX_AGENT_HISTORY_LIMIT = 100
 _MAX_AGENTS = 64
 _MAX_AGENT_IDENTIFIER_BYTES = 256
+_MAX_AUTH_TOKEN_BYTES = 4_096
 _MAX_AGENT_TASK_BYTES = 8 * 1024
 _MAX_AGENT_CONTEXT_KEYS = 32
 _MAX_AGENT_CONTEXT_ITEMS = 128
@@ -103,6 +104,20 @@ def _validate_auth_token(auth_token: Optional[str]) -> None:
         raise ValueError("auth_token must be a non-empty string when provided")
     if any(ord(character) < 0x20 or ord(character) == 0x7F for character in auth_token):
         raise ValueError("auth_token must not contain control characters")
+
+
+def _extract_bearer_token(authorization: Any) -> Optional[str]:
+    """Extract one bounded bearer value without normalizing credentials."""
+    if not isinstance(authorization, str) or not authorization.startswith("Bearer "):
+        return None
+    token = authorization[len("Bearer ") :]
+    if not token or len(token.encode("utf-8")) > _MAX_AUTH_TOKEN_BYTES:
+        return None
+    try:
+        _validate_auth_token(token)
+    except ValueError:
+        return None
+    return token
 
 
 @dataclass(frozen=True)
@@ -176,6 +191,13 @@ class Principal:
         """Return whether this principal may route by one capability label."""
 
         return not self.allowed_capabilities or capability in self.allowed_capabilities
+
+
+class AuthPrincipalResolver(Protocol):
+    """Host callback that resolves one validated bearer token to a principal."""
+
+    def __call__(self, bearer_token: str) -> Any:
+        """Return a Principal or Result.ok(Principal), or reject the token."""
 
 
 def _required_scope(method: str, path: Tuple[str, ...]) -> Optional[str]:
@@ -1445,6 +1467,7 @@ class _MAPLEHTTPServer(ThreadingHTTPServer):
 class _RequestHandler(BaseHTTPRequestHandler):
     server: _MAPLEHTTPServer
     protocol_version = "HTTP/1.1"
+    _request_principal: Optional[Principal] = None
 
     def log_message(self, format: str, *args: Any) -> None:
         """Do not log request bodies, session content, or credentials."""
@@ -1978,8 +2001,54 @@ class _RequestHandler(BaseHTTPRequestHandler):
         )
 
     def _authorize(self) -> bool:
-        expected_token = self.server.application.auth_token
+        application = self.server.application
+        resolver = application.auth_principal_resolver
+        expected_token = application.auth_token
+        if resolver is not None:
+            presented_token = _extract_bearer_token(
+                self.headers.get("Authorization", "")
+            )
+            if presented_token is None:
+                self._discard_bounded_request_body()
+                self._write_json(
+                    401,
+                    {
+                        "error": _error(
+                            "UNAUTHORIZED",
+                            "A valid bearer token is required.",
+                        )
+                    },
+                    extra_headers={"WWW-Authenticate": "Bearer"},
+                )
+                return False
+            try:
+                resolved = resolver(presented_token)
+                if isinstance(resolved, Result):
+                    if resolved.is_err():
+                        resolved_principal = None
+                    else:
+                        resolved_principal = resolved.unwrap()
+                else:
+                    resolved_principal = resolved
+            except Exception:
+                resolved_principal = None
+            if not isinstance(resolved_principal, Principal):
+                self._discard_bounded_request_body()
+                self._write_json(
+                    401,
+                    {
+                        "error": _error(
+                            "UNAUTHORIZED",
+                            "A valid bearer token is required.",
+                        )
+                    },
+                    extra_headers={"WWW-Authenticate": "Bearer"},
+                )
+                return False
+            self._request_principal = resolved_principal
+            return True
         if expected_token is None:
+            self._request_principal = application.auth_principal
             return True
         presented = self.headers.get("Authorization", "")
         expected = f"Bearer {expected_token}"
@@ -1991,11 +2060,12 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 extra_headers={"WWW-Authenticate": "Bearer"},
             )
             return False
+        self._request_principal = application.auth_principal
         return True
 
     def _authorize_scope(self, method: str, path: Tuple[str, ...]) -> bool:
         required_scope = _required_scope(method, path)
-        principal = self.server.application.auth_principal
+        principal = self._request_principal
         if required_scope is None or principal is None:
             return True
         if principal.allows(required_scope):
@@ -2016,7 +2086,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
 
     def _authorize_agent_target(self, path: Tuple[str, ...]) -> bool:
         """Enforce optional exact agent targeting before reading a body."""
-        principal = self.server.application.auth_principal
+        principal = self._request_principal
         if principal is None or path[0:2] != ("v1", "agents") or len(path) < 3:
             return True
         agent_id = path[2]
@@ -2302,7 +2372,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 _status_for_error(result.unwrap_err()), result.unwrap_err()
             )
             return
-        principal = self.server.application.auth_principal
+        principal = self._request_principal
         descriptors = result.unwrap()
         if principal is not None:
             descriptors = [
@@ -2342,7 +2412,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             self._write_error(_status_for_error(error), error)
             return
         capability = cast(str, capability_result.unwrap()[0])
-        principal = self.server.application.auth_principal
+        principal = self._request_principal
         if principal is not None and not principal.allows_capability(capability):
             self._write_json(
                 403,
@@ -3288,6 +3358,7 @@ class RunServer:
         max_response_bytes: int = _DEFAULT_MAX_RESPONSE_BYTES,
         auth_token: Optional[str] = None,
         auth_principal: Optional[Principal] = None,
+        auth_principal_resolver: Optional[AuthPrincipalResolver] = None,
         approval_store: Optional[ApprovalStore] = None,
         approval_notification_handler: Optional[ApprovalNotifier] = None,
         human_input_store: Optional[HumanInputStore] = None,
@@ -3323,14 +3394,29 @@ class RunServer:
         ):
             raise ValueError("server limits must be positive integers")
         _validate_auth_token(auth_token)
+        authentication_configured = (
+            auth_token is not None or auth_principal_resolver is not None
+        )
+        if auth_principal_resolver is not None and not callable(
+            auth_principal_resolver
+        ):
+            raise TypeError("auth_principal_resolver must be callable")
+        if auth_principal_resolver is not None and (
+            auth_token is not None or auth_principal is not None
+        ):
+            raise ValueError(
+                "auth_principal_resolver cannot be combined with auth_token or "
+                "auth_principal"
+            )
         if auth_principal is not None and not isinstance(auth_principal, Principal):
             raise TypeError("auth_principal must be a Principal")
-        if auth_principal is not None and auth_token is None:
+        if auth_principal is not None and not authentication_configured:
             raise ValueError("auth_token is required when auth_principal is configured")
         if approval_store is not None:
-            if auth_token is None:
+            if not authentication_configured:
                 raise ValueError(
-                    "auth_token is required when approval_store is configured"
+                    "auth_token or auth_principal_resolver is required when "
+                    "approval_store is configured"
                 )
             approval_required_methods = ("get", "list_pending", "decide")
             if any(
@@ -3341,9 +3427,10 @@ class RunServer:
                     "approval_store must implement get, list_pending, and decide"
                 )
         if human_input_store is not None:
-            if auth_token is None:
+            if not authentication_configured:
                 raise ValueError(
-                    "auth_token is required when human_input_store is configured"
+                    "auth_token or auth_principal_resolver is required when "
+                    "human_input_store is configured"
                 )
             required_methods = ("get", "list_pending", "respond", "reject", "consume")
             if any(
@@ -3355,39 +3442,44 @@ class RunServer:
                     "reject, and consume"
                 )
         if human_input_notification_handler is not None:
-            if auth_token is None:
+            if not authentication_configured:
                 raise ValueError(
-                    "auth_token is required when human_input_notification_handler is configured"
+                    "auth_token or auth_principal_resolver is required when "
+                    "human_input_notification_handler is configured"
                 )
             if not callable(getattr(human_input_notification_handler, "notify", None)):
                 raise TypeError(
                     "human_input_notification_handler must implement notify"
                 )
         if approval_notification_handler is not None:
-            if auth_token is None:
+            if not authentication_configured:
                 raise ValueError(
-                    "auth_token is required when approval_notification_handler is configured"
+                    "auth_token or auth_principal_resolver is required when "
+                    "approval_notification_handler is configured"
                 )
             if not callable(getattr(approval_notification_handler, "notify", None)):
                 raise TypeError("approval_notification_handler must implement notify")
         if agent_registry is not None:
             if not isinstance(agent_registry, AgentRegistry):
                 raise TypeError("agent_registry must be an AgentRegistry")
-            if auth_token is None:
+            if not authentication_configured:
                 raise ValueError(
-                    "auth_token is required when agent_registry is configured"
+                    "auth_token or auth_principal_resolver is required when "
+                    "agent_registry is configured"
                 )
         if agent_run_store is not None:
-            if auth_token is None:
+            if not authentication_configured:
                 raise ValueError(
-                    "auth_token is required when agent_run_store is configured"
+                    "auth_token or auth_principal_resolver is required when "
+                    "agent_run_store is configured"
                 )
             if not callable(getattr(agent_run_store, "load", None)):
                 raise TypeError("agent_run_store must implement load")
         if agent_invocation_store is not None:
-            if auth_token is None:
+            if not authentication_configured:
                 raise ValueError(
-                    "auth_token is required when agent_invocation_store is configured"
+                    "auth_token or auth_principal_resolver is required when "
+                    "agent_invocation_store is configured"
                 )
             invocation_required_methods = ("claim", "complete", "abort")
             if any(
@@ -3398,9 +3490,10 @@ class RunServer:
                     "agent_invocation_store must implement claim, complete, and abort"
                 )
         if handoff_store is not None:
-            if auth_token is None:
+            if not authentication_configured:
                 raise ValueError(
-                    "auth_token is required when handoff_store is configured"
+                    "auth_token or auth_principal_resolver is required when "
+                    "handoff_store is configured"
                 )
             handoff_required_methods = (
                 "create",
@@ -3419,9 +3512,10 @@ class RunServer:
                     "fail, and list_open"
                 )
         if event_stream is not None:
-            if auth_token is None:
+            if not authentication_configured:
                 raise ValueError(
-                    "auth_token is required when event_stream is configured"
+                    "auth_token or auth_principal_resolver is required when "
+                    "event_stream is configured"
                 )
             if any(
                 not callable(getattr(event_stream, name, None))
@@ -3433,9 +3527,10 @@ class RunServer:
                 raise ValueError(
                     "event_stream is required when event deduplication is configured"
                 )
-            if auth_token is None:
+            if not authentication_configured:
                 raise ValueError(
-                    "auth_token is required when event deduplication is configured"
+                    "auth_token or auth_principal_resolver is required when "
+                    "event deduplication is configured"
                 )
             dedup_required_methods = ("claim", "complete", "abort")
             if any(
@@ -3452,6 +3547,7 @@ class RunServer:
         self.max_response_bytes = max_response_bytes
         self._auth_token = auth_token
         self._auth_principal = auth_principal
+        self._auth_principal_resolver = auth_principal_resolver
         self.approval_store = approval_store
         self.approval_notification_handler = approval_notification_handler
         self.human_input_store = human_input_store
@@ -3479,6 +3575,11 @@ class RunServer:
     def auth_principal(self) -> Optional[Principal]:
         """Return the configured principal without exposing a setter."""
         return self._auth_principal
+
+    @property
+    def auth_principal_resolver(self) -> Optional[AuthPrincipalResolver]:
+        """Return the host-owned resolver without exposing a setter."""
+        return self._auth_principal_resolver
 
     @property
     def url(self) -> str:
