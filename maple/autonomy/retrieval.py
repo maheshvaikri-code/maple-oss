@@ -1942,7 +1942,16 @@ def _validate_vector(
                     index=index,
                 )
             )
-        converted = float(value)
+        try:
+            converted = float(value)
+        except (OverflowError, TypeError, ValueError):
+            return Result.err(
+                _error(
+                    "RETRIEVAL_VECTOR_INVALID",
+                    f"{field_name} contains a non-finite value.",
+                    index=index,
+                )
+            )
         if not math.isfinite(converted):
             return Result.err(
                 _error(

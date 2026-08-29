@@ -744,6 +744,7 @@ def test_file_vector_retriever_rejects_vector_dimension_mismatch_without_mutatio
         make_document("dimension"), [(1.0, 0.0, 0.0)]
     )
     duplicate = retriever.add_document(make_document("stable"), [(1.0, 0.0)])
+    huge_component = retriever.add_document(make_document("huge"), [(10**10_000, 0.0)])
 
     assert count_mismatch.is_err()
     assert count_mismatch.unwrap_err()["errorType"] == "RETRIEVAL_VECTOR_COUNT_MISMATCH"
@@ -754,6 +755,8 @@ def test_file_vector_retriever_rejects_vector_dimension_mismatch_without_mutatio
     )
     assert duplicate.is_err()
     assert duplicate.unwrap_err()["errorType"] == "RETRIEVAL_DUPLICATE_DOCUMENT"
+    assert huge_component.is_err()
+    assert huge_component.unwrap_err()["errorType"] == "RETRIEVAL_VECTOR_INVALID"
     assert retriever.path.read_bytes() == before
     assert retriever.stats() == {"documents": 1, "vectors": 1, "dimensions": 2}
 
