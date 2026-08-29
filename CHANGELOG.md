@@ -24,6 +24,13 @@
   corpus authorization, managed stores, and network retrieval remain
   host-owned; embedding vectors are never exposed to the model.
 
+- **Async bounded vector retrieval tool**: `create_async_vector_retrieval_tool()`
+  composes one awaited caller-owned `AsyncEmbeddingProvider` call with one
+  executor-backed local vector search and the same bounded citation envelope,
+  output limits, and generic fail-closed error boundary. The tool is
+  explicitly async-only; provider/model selection, retries, corpus
+  authorization, managed stores, and network retrieval remain host-owned.
+
 - **Durable local lexical retrieval**: `FileLexicalRetriever` persists
   validated source documents in a bounded versioned JSON file, rebuilds the
   deterministic lexical index after restart, refreshes across instances, and

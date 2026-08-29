@@ -1494,6 +1494,45 @@ retrieved text. Provider/backend exceptions, malformed vectors or hits,
 duplicate chunks, non-finite scores, and non-JSON-safe results fail closed
 without raw provider/backend details.
 
+For an asynchronous embedding service, use
+`create_async_vector_retrieval_tool()`. It accepts an `AsyncEmbeddingProvider`
+and an existing vector retriever, awaits one host provider call, and runs the
+synchronous local vector search in the default executor. Call it through
+`execute_async()`; direct `execute()` fails with
+`RETRIEVAL_TOOL_ASYNC_REQUIRED` without invoking either callback:
+
+```python
+from maple import (
+    AsyncEmbeddingProvider,
+    InMemoryVectorRetriever,
+    create_async_vector_retrieval_tool,
+)
+from maple.core.result import Result
+
+
+class HostAsyncEmbeddings:
+    async def embed(self, text):
+        # The host selects the model, credentials, and network policy.
+        return Result.ok((0.8, 0.2, 0.1))
+
+
+async_tool = create_async_vector_retrieval_tool(
+    InMemoryVectorRetriever(),
+    HostAsyncEmbeddings(),
+    max_top_k=5,
+)
+result = await async_tool.execute_async(query="resource-aware orchestration")
+```
+
+`AsyncEmbeddingProvider` is a protocol for a host-owned awaitable
+`embed(text) -> Result[Sequence[float], Error]`; MAPLE does not implement,
+select, retry, or cancel a provider that ignores cancellation. Invalid
+queries are rejected before awaiting the provider, and provider/backend
+errors, invalid vectors/hits, and oversized complete results fail closed with
+the same redacted boundary as the synchronous factories. Async embedding,
+provider-specific routing, corpus authorization, network retrieval, and
+managed stores remain host-owned.
+
 The reference backend is intentionally local; it is not a hosted vector
 database or embedding service. A vector index accepts one finite, bounded
 embedding per generated chunk and uses cosine similarity with deterministic
