@@ -113,11 +113,15 @@ class Principal:
     Hosts may attach it to the single configured bearer-token boundary to
     narrow what that token can do. A scope ending in ``:*`` grants the
     corresponding scope family; ``*`` preserves the legacy all-routes
-    behavior when no narrower principal is configured.
+    behavior when no narrower principal is configured. Optional exact
+    ``allowed_agent_ids`` and ``allowed_capabilities`` further narrow agent
+    discovery and routing; empty tuples preserve scope-only behavior.
     """
 
     principal_id: str
     scopes: Tuple[str, ...] = ("*",)
+    allowed_agent_ids: Tuple[str, ...] = ()
+    allowed_capabilities: Tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.principal_id, str) or not re.fullmatch(
@@ -133,6 +137,23 @@ class Principal:
         for scope in self.scopes:
             if not isinstance(scope, str) or not re.fullmatch(_SCOPE_PATTERN, scope):
                 raise ValueError("scopes must be bounded lowercase scope names")
+        if (
+            not isinstance(self.allowed_agent_ids, tuple)
+            or len(self.allowed_agent_ids) > _MAX_AGENTS
+        ):
+            raise ValueError("allowed_agent_ids must be a tuple of at most 64 values")
+        for agent_id in self.allowed_agent_ids:
+            identifier_error = _validate_agent_identifier(agent_id, "agent_id")
+            if identifier_error is not None:
+                raise ValueError(identifier_error["message"])
+        if len(set(self.allowed_agent_ids)) != len(self.allowed_agent_ids):
+            raise ValueError("allowed_agent_ids must be unique")
+        if not isinstance(self.allowed_capabilities, tuple):
+            raise ValueError("allowed_capabilities must be a tuple")
+        capabilities_result = _normalize_agent_capabilities(self.allowed_capabilities)
+        if capabilities_result.is_err():
+            raise ValueError(capabilities_result.unwrap_err()["message"])
+        object.__setattr__(self, "allowed_capabilities", capabilities_result.unwrap())
 
     def allows(self, required_scope: str) -> bool:
         """Return whether this principal grants one required scope."""
@@ -145,6 +166,16 @@ class Principal:
             return True
         family = required_scope.split(":", 1)[0]
         return f"{family}:*" in self.scopes
+
+    def allows_agent(self, agent_id: str) -> bool:
+        """Return whether this principal may address one named agent."""
+
+        return not self.allowed_agent_ids or agent_id in self.allowed_agent_ids
+
+    def allows_capability(self, capability: str) -> bool:
+        """Return whether this principal may route by one capability label."""
+
+        return not self.allowed_capabilities or capability in self.allowed_capabilities
 
 
 def _required_scope(method: str, path: Tuple[str, ...]) -> Optional[str]:
@@ -748,17 +779,20 @@ class AgentRegistry:
         *,
         session_id: Optional[str] = None,
         run_id: Optional[str] = None,
+        allowed_agent_ids: Optional[Iterable[str]] = None,
     ) -> Result[AgentRun, Error]:
         """Route to the first exact capability match without retry or failover."""
         capability_result = _normalize_agent_capabilities((capability,))
         if capability_result.is_err():
             return Result.err(capability_result.unwrap_err())
         selected_capability = capability_result.unwrap()[0]
+        allowed_agents = None if allowed_agent_ids is None else set(allowed_agent_ids)
         with self._lock:
             candidates = [
                 agent_id
                 for agent_id in sorted(self._agents)
                 if selected_capability in self._capabilities.get(agent_id, ())
+                and (allowed_agents is None or agent_id in allowed_agents)
             ]
         if not candidates:
             return Result.err(
@@ -1430,6 +1464,8 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 return
             if not self._authorize_scope(method, path):
                 return
+            if not self._authorize_agent_target(path):
+                return
             if method == "GET" and path == ("healthz",):
                 self._write_json(200, {"status": "ok", "service": "maple-run-server"})
                 return
@@ -1978,6 +2014,55 @@ class _RequestHandler(BaseHTTPRequestHandler):
         )
         return False
 
+    def _authorize_agent_target(self, path: Tuple[str, ...]) -> bool:
+        """Enforce optional exact agent targeting before reading a body."""
+        principal = self.server.application.auth_principal
+        if principal is None or path[0:2] != ("v1", "agents") or len(path) < 3:
+            return True
+        agent_id = path[2]
+        if principal.allows_agent(agent_id) and self._agent_matches_policy(
+            agent_id, principal
+        ):
+            return True
+        self._discard_bounded_request_body()
+        policy = (
+            "allowed_agent_ids"
+            if not principal.allows_agent(agent_id)
+            else "allowed_capabilities"
+        )
+        self._write_json(
+            403,
+            {
+                "error": _error(
+                    "FORBIDDEN",
+                    "The authenticated principal cannot address this agent.",
+                    principal_id=principal.principal_id,
+                    policy=policy,
+                    agent_id=agent_id,
+                )
+            },
+        )
+        return False
+
+    def _agent_matches_policy(self, agent_id: str, principal: Principal) -> bool:
+        """Check capability policy without reading a request body."""
+        if not principal.allowed_capabilities:
+            return True
+        registry = self.server.application.agent_registry
+        if registry is None:
+            return False
+        result = registry.list_agents()
+        if result.is_err():
+            return False
+        return any(
+            descriptor.agent_id == agent_id
+            and any(
+                principal.allows_capability(capability)
+                for capability in descriptor.capabilities
+            )
+            for descriptor in result.unwrap()
+        )
+
     def _discard_bounded_request_body(self, *, allow_oversized: bool = False) -> None:
         """Drain a bounded rejected body before closing the connection."""
         raw_length = self.headers.get("Content-Length")
@@ -2217,9 +2302,24 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 _status_for_error(result.unwrap_err()), result.unwrap_err()
             )
             return
+        principal = self.server.application.auth_principal
+        descriptors = result.unwrap()
+        if principal is not None:
+            descriptors = [
+                descriptor
+                for descriptor in descriptors
+                if principal.allows_agent(descriptor.agent_id)
+                and (
+                    not principal.allowed_capabilities
+                    or any(
+                        principal.allows_capability(capability)
+                        for capability in descriptor.capabilities
+                    )
+                )
+            ]
         self._write_json(
             200,
-            {"agents": [descriptor.to_dict() for descriptor in result.unwrap()]},
+            {"agents": [descriptor.to_dict() for descriptor in descriptors]},
         )
 
     def _route_agent(self) -> None:
@@ -2242,6 +2342,21 @@ class _RequestHandler(BaseHTTPRequestHandler):
             self._write_error(_status_for_error(error), error)
             return
         capability = cast(str, capability_result.unwrap()[0])
+        principal = self.server.application.auth_principal
+        if principal is not None and not principal.allows_capability(capability):
+            self._write_json(
+                403,
+                {
+                    "error": _error(
+                        "FORBIDDEN",
+                        "The authenticated principal cannot route this capability.",
+                        principal_id=principal.principal_id,
+                        policy="allowed_capabilities",
+                        capability=capability,
+                    )
+                },
+            )
+            return
         key_result = normalize_agent_idempotency_key(body.get("idempotency_key"))
         if key_result.is_err():
             error = cast(Error, key_result.unwrap_err())
@@ -2254,6 +2369,11 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 body.get("context", {}),
                 session_id=body.get("session_id"),
                 run_id=body.get("run_id"),
+                allowed_agent_ids=(
+                    principal.allowed_agent_ids
+                    if principal is not None and principal.allowed_agent_ids
+                    else None
+                ),
             )
             if result.is_err():
                 error = cast(Error, result.unwrap_err())
@@ -2279,6 +2399,11 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 request.context,
                 session_id=request.session_id,
                 run_id=chosen_run_id,
+                allowed_agent_ids=(
+                    principal.allowed_agent_ids
+                    if principal is not None and principal.allowed_agent_ids
+                    else None
+                ),
             ),
         )
 

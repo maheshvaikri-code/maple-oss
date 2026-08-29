@@ -271,6 +271,127 @@ def test_principal_scope_families_and_configuration_fail_closed():
         RunServer(WorkflowRegistry(), auth_principal=principal)
 
 
+def test_principal_target_allowlists_are_bounded_and_exact():
+    principal = Principal(
+        "operator",
+        ("agent:read", "agent:invoke"),
+        allowed_agent_ids=("alpha",),
+        allowed_capabilities=("research",),
+    )
+
+    assert principal.allows_agent("alpha")
+    assert not principal.allows_agent("beta")
+    assert principal.allows_capability("research")
+    assert not principal.allows_capability("billing")
+    assert Principal("operator", ("agent:invoke",)).allows_agent("any-agent")
+    with pytest.raises(ValueError):
+        Principal("operator", ("agent:invoke",), allowed_agent_ids=["alpha"])
+    with pytest.raises(ValueError):
+        Principal(
+            "operator",
+            ("agent:invoke",),
+            allowed_agent_ids=("alpha", "alpha"),
+        )
+    with pytest.raises(ValueError):
+        Principal(
+            "operator",
+            ("agent:invoke",),
+            allowed_capabilities=("research", "research"),
+        )
+
+
+def test_agent_target_policy_filters_discovery_and_blocks_denied_routes():
+    calls = []
+
+    def make_handler(agent_id):
+        def handler(task, context, *, session_id, run_id):
+            calls.append((agent_id, task, dict(context), session_id, run_id))
+            return Result.ok(
+                AgentRun(agent_id, run_id, "completed", {"agent": agent_id})
+            )
+
+        return handler
+
+    agents = AgentRegistry()
+    assert agents.register(
+        "alpha", make_handler("alpha"), capabilities=["research"]
+    ).is_ok()
+    assert agents.register(
+        "beta", make_handler("beta"), capabilities=["billing"]
+    ).is_ok()
+    server = RunServer(
+        WorkflowRegistry(),
+        agent_registry=agents,
+        auth_token="policy-token",
+        max_body_bytes=128,
+        auth_principal=Principal(
+            "operator",
+            ("agent:read", "agent:invoke"),
+            allowed_agent_ids=("alpha",),
+            allowed_capabilities=("research",),
+        ),
+    )
+    base_url = server.start()
+
+    try:
+        client = RunClient(base_url, auth_token="policy-token")
+        listing = client.list_agents()
+        allowed_named = client.run_agent("alpha", "research", run_id="allowed-run")
+        denied_named_status, denied_named = _request(
+            f"{base_url}/v1/agents/beta/runs",
+            method="POST",
+            payload={"task": "secret " + "x" * 500},
+            headers={"Authorization": "Bearer policy-token"},
+        )
+        allowed_route = client.route_agent("research", "find")
+        denied_route = client.route_agent("billing", "charge")
+    finally:
+        server.close()
+
+    assert listing.is_ok()
+    assert listing.unwrap() == {
+        "agents": [{"agent_id": "alpha", "capabilities": ["research"]}]
+    }
+    assert allowed_named.is_ok()
+    assert allowed_named.unwrap()["run"]["agent_id"] == "alpha"
+    assert denied_named_status == 403
+    assert denied_named["error"]["errorType"] == "FORBIDDEN"
+    assert denied_named["error"]["details"]["policy"] == "allowed_agent_ids"
+    assert "secret" not in str(denied_named)
+    assert allowed_route.is_ok()
+    assert allowed_route.unwrap()["run"]["agent_id"] == "alpha"
+    assert denied_route.is_err()
+    assert denied_route.unwrap_err()["errorType"] == "FORBIDDEN"
+    assert denied_route.unwrap_err()["details"]["policy"] == "allowed_capabilities"
+    assert len(calls) == 2
+    assert calls[0] == ("alpha", "research", {}, None, "allowed-run")
+    assert calls[1][0:4] == ("alpha", "find", {}, None)
+
+    capability_server = RunServer(
+        WorkflowRegistry(),
+        agent_registry=agents,
+        auth_token="policy-token",
+        auth_principal=Principal(
+            "capability-operator",
+            ("agent:invoke",),
+            allowed_capabilities=("research",),
+        ),
+    )
+    capability_url = capability_server.start()
+    try:
+        capability_denied = RunClient(
+            capability_url, auth_token="policy-token"
+        ).run_agent("beta", "secret")
+    finally:
+        capability_server.close()
+
+    assert capability_denied.is_err()
+    assert capability_denied.unwrap_err()["errorType"] == "FORBIDDEN"
+    assert capability_denied.unwrap_err()["details"]["policy"] == (
+        "allowed_capabilities"
+    )
+
+
 def test_run_client_bounds_inputs_and_normalizes_transport_errors():
     with pytest.raises(ValueError):
         RunClient("file:///tmp/maple")
