@@ -8,7 +8,7 @@
 |---|-------|------|---------------|-------------------|--------|
 | 1 | Extend `Principal` with bounded exact allowlists | Backend / Security | `maple/autonomy/server.py`, exports | Constructor validation and allow semantics | complete: `8b97e52` |
 | 2 | Enforce policy on discovery and agent routes | Backend / Security | `maple/autonomy/server.py` | No target on named/capability denial; filtered descriptors | complete: `8b97e52` |
-| 3 | Regression, public contract, and package evidence | QA / Tech Writer / Release | server tests, README/API/parity/changelog, QA/review/release artifacts | Full/static/clean archive/package checks | in progress: public contract and implementation evidence recorded; package gate pending |
+| 3 | Regression, public contract, and package evidence | QA / Tech Writer / Release | server tests, README/API/parity/changelog, QA/review/release artifacts | Full/static/clean archive/package checks | complete: `abb21c9` |
 
 ## Threat sketch
 
@@ -35,6 +35,6 @@ new authentication mechanism.
 
 ## Status snapshot
 
-Done (with evidence): design brief/ADR, bounded target policy, and server
-regressions. Next: public contract and clean archive package gate. Blocked on:
-none.
+Done (with evidence): design brief/ADR, bounded target policy, server
+regressions, public contract, and clean archive package gate. Next: continue
+the next explicitly scoped parity gap. Blocked on: none.

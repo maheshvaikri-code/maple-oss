@@ -1214,6 +1214,30 @@ environment-wide dependency audit, Gitleaks, Bandit, actionlint, and fresh
 independent verifier remain unavailable or governance-blocked. No external
 state was changed.
 
-**Slice 180 QA status: PASS for the least-privilege local target policy.
-Overall release status remains CONDITIONAL / NOT PUBLISH-READY pending clean
-archive/package verification and human authorization.**
+**Slice 180 QA status: PASS for the least-privilege local target policy and
+clean archive/package gate. Overall release status remains CONDITIONAL / NOT
+PUBLISH-READY pending the documented release gates and human authorization.**
+
+Clean archive/package verification was run from exact committed `abb21c9`:
+
+```text
+clean git archive HEAD: source_archive_entries=847
+python -m pytest -q --no-cov
+1605 passed, 1 skipped in 237.77s (0:03:57)
+build_exit=0
+wheel_entries=107
+sdist_entries=761
+twine_exit=0
+install_exit=0
+version=1.1.3
+principal=Principal
+outbox=FileApprovalNotificationOutbox
+lease_manager=FileLeaseManager
+corrected_import_exit=0
+{"checks": {"core": true, "evaluation": true, "events": true, "execution": true, "interop": true, "retrieval": true, "server": true, "sessions": true}, "network": false, "ready": true, "status": "SUCCESS", "version": "1.1.3"}
+doctor_exit=0
+```
+
+The package gate used a clean Git archive and therefore excluded preserved
+untracked doctrine files. No publication, deployment, cloud action, registry
+write, or website update was performed.
