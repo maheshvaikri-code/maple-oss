@@ -1,6 +1,6 @@
 # Code Review — bounded code-block artifact materialization @ 3382595
 
-**Reviewer role:** Code Reviewer · **Date:** 2026-08-29  
+**Reviewer role:** Code Reviewer · **Date:** 2026-08-29
 **Reviewed against:** [Slice 195 brief](../briefs/maple-agent-runtime-slice195.md) · [Slice 195 plan](../plans/maple-agent-runtime-slice195.md) · [ADR-139](../adr/139-bounded-code-block-artifact-materialization.md)
 
 **Executed:**

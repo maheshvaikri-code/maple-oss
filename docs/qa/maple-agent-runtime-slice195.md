@@ -1,6 +1,6 @@
 # QA + Security Report — bounded code-block artifact materialization @ 3382595
 
-**QA Engineer** · **Security Reviewer** · **Date:** 2026-08-29  
+**QA Engineer** · **Security Reviewer** · **Date:** 2026-08-29
 **Build under test:** exact implementation commit `3382595`
 
 ## Acceptance criteria verification
