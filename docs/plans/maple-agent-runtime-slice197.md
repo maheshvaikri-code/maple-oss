@@ -10,7 +10,7 @@
 |---|---|---|---|---|---|
 | 1 | Provider response validation | Backend / ML | `maple/llm/provider.py`, provider parsers, provider tests | malformed JSON/non-object tool arguments and usage fail closed; counters unchanged | complete |
 | 2 | Offline OpenAI/Anthropic completion contracts | ML / Interop | `tests/llm/test_provider_contracts.py` | sync/async request mapping, multimodal/tool/system/stop/usage normalization | complete |
-| 3 | Review, QA, and package evidence | Code Reviewer / QA / Security / Release | review/QA/release/parity docs | focused/full tests, no-network fixture run, package smoke | todo |
+| 3 | Review, QA, and package evidence | Code Reviewer / QA / Security / Release | review/QA/release/parity docs | focused/full tests, no-network fixture run, package smoke | complete |
 
 ## Threat sketch
 
@@ -41,7 +41,8 @@ non-negative integer usage validation, and no raw response/error aggregation.
 
 ## Status snapshot
 
-G0/G1/G2 accepted for the bounded offline contract. Implementation and focused
-contract evidence are complete; next: independent code/security review, QA,
-and package evidence. Blocked on: none for this local slice; hosted
-coordination remains a separate contract gate.
+G0/G1/G2 accepted for the bounded offline contract. Implementation, review,
+QA/security, and clean package evidence are complete for the local slice.
+Independent verifier sessions were unavailable in this environment and are
+recorded as a release limitation, not claimed as passed. Hosted coordination
+remains a separate contract gate.
