@@ -288,6 +288,20 @@ def test_session_fork_rejects_stale_existing_and_evicted_versions(tmp_path):
         assert store.load("evicted-branch").unwrap() is None
 
 
+def test_session_fork_rejects_explicit_empty_target_without_creating_branch(tmp_path):
+    for store in (
+        InMemorySessionStore(max_sessions=2),
+        FileSessionStore(tmp_path / "file-empty-target", max_sessions=2),
+    ):
+        assert store.create("fork-source").is_ok()
+
+        invalid = store.fork("fork-source", "")
+
+        assert invalid.is_err()
+        assert invalid.unwrap_err()["errorType"] == "INVALID_IDENTIFIER"
+        assert store.fork("fork-source", "explicit-branch").is_ok()
+
+
 def test_session_history_validates_bounds_and_constructor_limit():
     with pytest.raises(ValueError, match="max_history"):
         InMemorySessionStore(max_history=0)

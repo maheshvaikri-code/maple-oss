@@ -1198,7 +1198,9 @@ class InMemorySessionStore(_SessionStoreSupport):
         source_result = self._session_id(session_id)
         if source_result.is_err():
             return Result.err(source_result.unwrap_err())
-        resolved_id = new_session_id or f"session-{uuid.uuid4().hex}"
+        resolved_id = (
+            f"session-{uuid.uuid4().hex}" if new_session_id is None else new_session_id
+        )
         target_result = self._session_id(resolved_id)
         if target_result.is_err():
             return Result.err(target_result.unwrap_err())
@@ -1516,7 +1518,9 @@ class FileSessionStore(_SessionStoreSupport):
         source_result = self._session_id(session_id)
         if source_result.is_err():
             return Result.err(source_result.unwrap_err())
-        resolved_id = new_session_id or f"session-{uuid.uuid4().hex}"
+        resolved_id = (
+            f"session-{uuid.uuid4().hex}" if new_session_id is None else new_session_id
+        )
         target_result = self._session_id(resolved_id)
         if target_result.is_err():
             return Result.err(target_result.unwrap_err())
