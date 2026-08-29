@@ -3034,7 +3034,12 @@ with RunServer(
 `{"agents": [...]}` envelopes; their typed counterparts return
 `AgentDescriptor` values. `AgentRegistry.route(...)` and
 `RunClient.route_agent(...)` accept one exact, case-sensitive capability plus
-the normal bounded task/context/session/run fields. `route_agent_typed()`
+the normal bounded task/context/session/run fields. The optional
+`allowed_agent_ids` route policy is an exact iterable of unique, bounded agent
+IDs; strings/bytes, malformed IDs, duplicates, oversized values, and
+unhashable values return typed `AGENT_ALLOWLIST_INVALID` errors before agent
+lookup or handler invocation. `None` remains unrestricted and an empty valid
+allowlist selects no agent. `route_agent_typed()`
 returns the selected `AgentRun`, including the selected agent ID. When several
 agents match, selection is deterministic by lexicographic agent ID. No match
 returns `AGENT_ROUTE_NOT_FOUND` (`404` over HTTP); invalid labels return a

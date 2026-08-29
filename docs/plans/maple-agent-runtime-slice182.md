@@ -8,7 +8,7 @@
 |---|-------|------|---------------|-------------------|--------|
 | 1 | Normalize route allowlist inputs | Backend / Security | maple/autonomy/server.py | Typed invalid-policy errors; valid/None compatibility | complete: implementation checkpoint |
 | 2 | Add malformed-policy and no-handler regressions | QA / Security | tests/autonomy/test_server.py | Strings, duplicates, overflow, unhashable values, empty allowlist | complete: 55 focused; 1725 full passed, 1 skipped |
-| 3 | Review, public records, and package evidence | Tech Writer / Release | QA/review/release artifacts | Full/static/clean archive/package checks | todo |
+| 3 | Review, public records, and package evidence | Tech Writer / Release | QA/review/release artifacts | Full/static/clean archive/package checks | in progress: implementation review and public docs |
 
 ## Threat sketch
 

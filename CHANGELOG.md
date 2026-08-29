@@ -10,6 +10,12 @@
 
 ### Additions
 
+- **Bounded route-policy validation**: direct `AgentRegistry.route(...)`
+  callers now receive typed `AGENT_ALLOWLIST_INVALID` errors for malformed,
+  duplicate, oversized, or unhashable `allowed_agent_ids` values before
+  registry lookup or handler invocation. `None`, valid exact iterables, and
+  empty allowlists preserve their existing behavior.
+
 - **Host-owned token-to-principal resolution**: RunServer can resolve each
   bounded bearer token to a distinct Principal, applying the selected scopes
   and agent-target policy to the request. Resolver rejection, exceptions,

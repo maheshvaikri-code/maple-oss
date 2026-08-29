@@ -334,6 +334,13 @@ invalid results, and malformed credentials return generic `401` responses.
 Token issuance, revocation, JWT/JWKS/OAuth processing, identity federation,
 tenancy, caching, and remote policy remain host-owned or outside the contract.
 
+Slice 182 hardens the public `AgentRegistry.route(...)` boundary by validating
+direct `allowed_agent_ids` inputs before registry lookup. Invalid text,
+malformed IDs, duplicates, oversized values, and unhashable values now return
+typed `AGENT_ALLOWLIST_INVALID` errors without invoking a handler, while
+`None`, valid lists/tuples, and empty allowlists retain their documented
+behavior.
+
 ## Highest-value gaps before a publish claim
 
 The next implementation work should be ordered by runtime correctness, not by
