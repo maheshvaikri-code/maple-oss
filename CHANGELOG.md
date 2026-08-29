@@ -8,6 +8,13 @@
 
 ## Unreleased
 
+### Release hardening
+
+- **Whole-package type-boundary closure**: the final invocation-store and
+  remote handoff typing diagnostics are narrowed or annotated without runtime
+  behavior changes, suppressions, or new dependencies. The authoritative
+  `mypy maple/ --ignore-missing-imports` audit now passes.
+
 ### Additions
 
 - **Owner-safe remote task start**: authenticated workers can call

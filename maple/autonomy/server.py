@@ -6082,7 +6082,7 @@ class RemoteHandoffTarget:
                     status=run.status,
                 )
             )
-        result = Result.ok(
+        result: Result[RemoteHandoffResult, Error] = Result.ok(
             RemoteHandoffResult(
                 agent_id=run.agent_id,
                 goal_id=run.run_id,

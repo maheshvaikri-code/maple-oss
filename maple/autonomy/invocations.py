@@ -478,9 +478,12 @@ class InMemoryAgentInvocationDeduplicationStore:
             )
             self._records[idempotency_key] = completed
             self._records.move_to_end(idempotency_key)
-            return Result.ok(
-                _copy_record_response(completed.response, self.max_response_bytes)
+            copied_completed = _copy_record_response(
+                completed.response, self.max_response_bytes
             )
+            if copied_completed is None:
+                raise RuntimeError("completed invocation response disappeared")
+            return Result.ok(copied_completed)
 
     def abort(
         self, target_id: str, idempotency_key: str, request_digest: str
@@ -910,9 +913,12 @@ class FileAgentInvocationDeduplicationStore:
             saved = self._write_unlocked(records)
             if saved.is_err():
                 return Result.err(saved.unwrap_err())
-            return Result.ok(
-                _copy_record_response(completed.response, self.max_response_bytes)
+            copied_completed = _copy_record_response(
+                completed.response, self.max_response_bytes
             )
+            if copied_completed is None:
+                raise RuntimeError("completed invocation response disappeared")
+            return Result.ok(copied_completed)
 
         with self._lock:
             result = self._run("complete", operation)
