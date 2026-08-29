@@ -191,6 +191,7 @@ def test_remote_task_queue_requires_auth_and_scopes_agent_targets():
         denied_next = client.claim_next_task("worker-a", capabilities=["write"])
         denied_retry = client.retry_task(task_id, "worker-a")
         claimed = client.claim_task(task_id, "worker-a")
+        denied_start = client.start_task(task_id, "worker-a")
         denied_cancel = client.cancel_task(task_id, "worker-a")
         denied_failure = client.fail_task(task_id, "worker-a", "not now")
         denied_listing = RunClient(base_url).list_tasks()
@@ -207,6 +208,8 @@ def test_remote_task_queue_requires_auth_and_scopes_agent_targets():
     assert denied_retry.is_err()
     assert denied_retry.unwrap_err()["errorType"] == "FORBIDDEN"
     assert claimed.is_ok()
+    assert denied_start.is_err()
+    assert denied_start.unwrap_err()["errorType"] == "FORBIDDEN"
     assert denied_cancel.is_err()
     assert denied_cancel.unwrap_err()["errorType"] == "FORBIDDEN"
     assert denied_failure.is_err()
@@ -314,6 +317,47 @@ def test_remote_task_cancellation_enforces_owner_and_terminal_state():
     assert queued_state.unwrap()["task"]["status"] == "cancelled"
     assert owned_state.is_ok()
     assert owned_state.unwrap()["task"]["status"] == "cancelled"
+
+
+def test_remote_task_start_enforces_owner_state_and_statistics():
+    queue = TaskQueue(max_queue_size=4)
+    server = RunServer(
+        WorkflowRegistry(),
+        auth_token="task-token",
+        task_queue=queue,
+    )
+    base_url = server.start()
+
+    try:
+        client = RunClient(base_url, auth_token="task-token")
+        submitted = client.submit_task("running", {})
+        assert submitted.is_ok()
+        task_id = submitted.unwrap()["task_id"]
+        queued_start = client.start_task(task_id, "worker-a")
+        assert client.claim_task(task_id, "worker-a").is_ok()
+        wrong_owner = client.start_task(task_id, "worker-b")
+        started = client.start_task(task_id, "worker-a")
+        repeated = client.start_task(task_id, "worker-a")
+        inspected = client.inspect_task(task_id)
+        stats = client.task_queue_stats()
+        completed = client.complete_task(task_id, "worker-a")
+    finally:
+        server.close()
+
+    assert queued_start.is_err()
+    assert queued_start.unwrap_err()["errorType"] == "TASK_CONFLICT"
+    assert wrong_owner.is_err()
+    assert wrong_owner.unwrap_err()["errorType"] == "TASK_CONFLICT"
+    assert started.is_ok()
+    assert started.unwrap()["task"]["status"] == "running"
+    assert started.unwrap()["task"]["started_at"] is not None
+    assert repeated.is_err()
+    assert repeated.unwrap_err()["errorType"] == "TASK_CONFLICT"
+    assert inspected.is_ok()
+    assert inspected.unwrap()["task"]["status"] == "running"
+    assert stats.is_ok()
+    assert stats.unwrap()["stats"]["running_tasks"] == 1
+    assert completed.is_ok()
 
 
 def test_remote_task_retry_enforces_owner_failed_state_and_bounds():

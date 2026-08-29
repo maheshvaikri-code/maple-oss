@@ -266,6 +266,7 @@ def _required_scope(method: str, path: Tuple[str, ...]) -> Optional[str]:
         if method == "POST" and len(path) == 4:
             return {
                 "claim": "task:claim",
+                "start": "task:start",
                 "complete": "task:complete",
                 "fail": "task:fail",
                 "cancel": "task:cancel",
@@ -1960,7 +1961,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 method == "POST"
                 and len(path) == 4
                 and path[0:2] == ("v1", "tasks")
-                and path[3] in {"claim", "complete", "fail", "cancel", "retry"}
+                and path[3] in {"claim", "start", "complete", "fail", "cancel", "retry"}
             ):
                 self._mutate_task(path[2], path[3])
                 return
@@ -2338,6 +2339,17 @@ class _RequestHandler(BaseHTTPRequestHandler):
 
             def operation() -> Result[Task, str]:
                 return queue.assign_task(task_id, assigned_agent)
+
+        elif action == "start":
+            if set(body) != {"assigned_agent"}:
+                self._write_error(
+                    400,
+                    _error("TASK_INPUT_INVALID", "start accepts only assigned_agent."),
+                )
+                return
+
+            def operation() -> Result[Task, str]:
+                return queue.start_task(task_id, assigned_agent)
 
         elif action == "complete":
             allowed = {"assigned_agent", "result"}
@@ -4741,6 +4753,22 @@ class RunClient:
                 "assigned_agent": assigned_agent,
                 "capabilities": list(capabilities_result.unwrap()),
             },
+        )
+
+    def start_task(
+        self, task_id: str, assigned_agent: str
+    ) -> Result[Dict[str, Any], Error]:
+        """Start one assigned remote task with an atomic owner check."""
+        identifier_error = _validate_task_identifier(task_id, "task_id")
+        if identifier_error is not None:
+            return Result.err(identifier_error)
+        agent_error = _validate_agent_identifier(assigned_agent, "assigned_agent")
+        if agent_error is not None:
+            return Result.err(agent_error)
+        return self._request(
+            "POST",
+            ("v1", "tasks", task_id, "start"),
+            {"assigned_agent": assigned_agent},
         )
 
     def cancel_task(

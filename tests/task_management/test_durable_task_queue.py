@@ -252,6 +252,31 @@ def test_file_task_queue_owner_safe_cancellation(tmp_path):
     restored.stop()
 
 
+def test_file_task_queue_owner_safe_start_persists_and_recovers(tmp_path):
+    path = _queue_path(tmp_path)
+    queue = FileTaskQueue(path)
+    queue.start()
+    task_id = queue.submit_task("running", {}).unwrap()
+    assert queue.assign_task(task_id, "worker-a").is_ok()
+
+    wrong_owner = queue.start_task(task_id, "worker-b")
+    started = queue.start_task(task_id, "worker-a")
+    persisted = queue.get_task(task_id).unwrap()
+    queue.stop()
+
+    assert wrong_owner.is_err()
+    assert started.is_ok()
+    assert started.unwrap().status == TaskStatus.RUNNING
+    assert persisted.status == TaskStatus.RUNNING
+    assert persisted.started_at is not None
+
+    restored = FileTaskQueue(path)
+    recovered = restored.get_task(task_id).unwrap()
+    assert recovered.status == TaskStatus.QUEUED
+    assert recovered.assigned_agent is None
+    restored.stop()
+
+
 def test_file_task_queue_owner_safe_retry(tmp_path):
     path = _queue_path(tmp_path)
     queue = FileTaskQueue(path)

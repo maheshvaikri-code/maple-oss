@@ -10,6 +10,13 @@
 
 ### Additions
 
+- **Owner-safe remote task start**: authenticated workers can call
+  `RunClient.start_task(...)` through `POST /v1/tasks/{task_id}/start` under
+  `task:start` to transition their assigned task to `RUNNING`. The queue
+  records `started_at` and remains authoritative for ownership/state conflicts;
+  leases, heartbeats, scheduling, and automatic execution remain outside the
+  contract.
+
 - **Authenticated remote task queue statistics**: `RunClient.task_queue_stats()`
   reads fixed finite counters and timing/throughput values through
   `GET /v1/tasks/stats` under `task:read`. Malformed optional queue statistics

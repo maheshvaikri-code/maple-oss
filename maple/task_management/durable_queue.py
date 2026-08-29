@@ -708,6 +708,11 @@ class FileTaskQueue(TaskQueue):
             lambda: TaskQueue.assign_task(self, task_id, assigned_agent)
         )
 
+    def start_task(self, task_id: str, assigned_agent: str) -> Result[Task, str]:
+        return self._run_durable(
+            lambda: TaskQueue.start_task(self, task_id, assigned_agent)
+        )
+
     def complete_task(
         self, task_id: str, assigned_agent: str, result: Any = None
     ) -> Result[Task, str]:

@@ -2979,24 +2979,25 @@ with RunServer(
     )
     task_id = submitted.unwrap()["task_id"]
     claimed = client.claim_task(task_id, "worker-a")
+    started = client.start_task(task_id, "worker-a")
     completed = client.complete_task(task_id, "worker-a", {"ok": True})
 ```
 
 The routes are `POST /v1/tasks`, `GET /v1/tasks`, `GET /v1/tasks/stats`,
 `GET /v1/tasks/{task_id}`, `POST /v1/tasks/claim-next`, and
 `POST /v1/tasks/{task_id}/{action}` where `action` is `claim`, `complete`,
-`fail`, `cancel`, or `retry`. The corresponding client methods are
+`start`, `complete`, `fail`, `cancel`, or `retry`. The corresponding client methods are
 `submit_task`, `list_tasks`, `task_queue_stats`, `inspect_task`,
-`claim_next_task`, `claim_task`, `cancel_task`, `retry_task`, `complete_task`,
+`claim_next_task`, `claim_task`, `start_task`, `cancel_task`, `retry_task`, `complete_task`,
 and `fail_task`. Task submission accepts a bounded task type,
 JSON object payload/metadata, priority, capability requirements, timeout, and
 retry count. Completion results and failure text are bounded as well. Listing
 supports exact status/task-type filters and a limit of 1 through 100.
 
-The scopes are `task:submit`, `task:read`, `task:claim`, `task:complete`,
-`task:fail`, `task:cancel`, and `task:retry`. Principal `allowed_capabilities`
+The scopes are `task:submit`, `task:read`, `task:claim`, `task:start`,
+`task:complete`, `task:fail`, `task:cancel`, and `task:retry`. Principal `allowed_capabilities`
 is applied to submission requirements and `allowed_agent_ids` is applied to
-claim/complete/fail/cancel/retry actor IDs. Queue ownership and lifecycle
+claim/start/complete/fail/cancel/retry actor IDs. Queue ownership and lifecycle
 conflicts remain authoritative in the selected implementation, and queue
 internals are not returned in errors.
 
@@ -3021,6 +3022,9 @@ The `task_queue_stats()` method returns only the fixed aggregate counters and
 finite timing/throughput values from the selected queue; malformed optional
 queue statistics become `TASK_QUEUE_UNAVAILABLE`. It does not expose task
 payloads/results or provide a globally consistent distributed snapshot.
+The `start_task(task_id, assigned_agent)` method is an explicit owner-checked
+`ASSIGNED` to `RUNNING` transition that records `started_at`; it does not
+provide a worker lease, heartbeat, timeout monitor, or automatic execution.
 
 ### Agent run HTTP transport
 
