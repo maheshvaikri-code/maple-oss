@@ -551,6 +551,35 @@ retry count, and error unchanged. This is an in-process queue contract; it
 does not provide durable queue storage, distributed worker ownership, hosted
 scheduling, force cancellation, or exactly-once external effects.
 
+`FileTaskQueue` is the opt-in local durable implementation. It accepts the
+same scheduler-facing lifecycle methods while persisting bounded JSON records
+to a caller-selected file. Each operation uses a local cross-process fence and
+an atomic temporary-file replacement. Recreating the queue hydrates queued and
+terminal records; interrupted `ASSIGNED` or `RUNNING` records are returned to
+`QUEUED` with their ephemeral owner and start time cleared. This is explicit
+at-least-once local recovery: handlers are not replayed automatically, and
+external effects are not exactly once.
+
+```python
+from maple.task_management import FileTaskQueue
+
+queue = FileTaskQueue("./maple-tasks.json", max_queue_size=100)
+queue.start()
+try:
+    task_id = queue.submit_task("research", {"query": "MAPLE"}).unwrap()
+    task = queue.get_next_task(timeout_seconds=0.1).unwrap()
+finally:
+    queue.stop()
+```
+
+Durable payloads, metadata, results, and task records must be JSON-safe and
+fit the configured per-task and whole-file byte limits. Malformed state,
+oversized state, fence contention, and persistence failures fail closed; a
+failed persistence attempt restores the in-memory pre-operation state. Durable
+terminal records are retained until the host removes or replaces the state
+file. The implementation is local-only and does not provide distributed
+worker leases, hosted scheduling, automatic retry, or exactly-once effects.
+
 `TaskQueue.assign_task(task_id, assigned_agent)` is the scheduler-facing
 atomic claim. It accepts a `QUEUED` task or a task just removed by
 `get_next_task()` with `ASSIGNED` status but no owner; a second owner, terminal

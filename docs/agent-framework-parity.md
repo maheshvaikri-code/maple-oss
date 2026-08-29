@@ -52,8 +52,11 @@ than semantic retrieval or a distributed index.
 The local `TaskQueue` now validates a bounded `1..100,000` capacity shared by
 all priorities, discards stale cancelled or completed tuples before assignment,
 and preserves failed-task state when a requeue is rejected for capacity. This
-is an in-process admission boundary; durable queues, distributed scheduling,
-remote workers, and hosted scheduler ownership remain separate.
+is an in-process admission boundary. `FileTaskQueue` adds bounded JSON
+durability, atomic local persistence, cross-process fencing, terminal history,
+and explicit at-least-once restart recovery for interrupted assignments. A
+durable local queue still does not provide distributed scheduling, remote
+workers, hosted scheduler ownership, automatic retry, or exactly-once effects.
 
 Local scheduler assignment now uses an atomic queue-side claim, rejects
 duplicate task ownership, and returns scheduler assignment failures through
@@ -355,6 +358,15 @@ and sequence-local parent indexes, including safe projection from native
 spans lower the equal-weight structural score; semantic faithfulness, causal
 correctness, provider judges, calibration, hosted aggregation, and trace
 persistence remain separate.
+
+Slice 185 adds `FileTaskQueue`, a bounded JSON-compatible durable sibling of
+`TaskQueue`. Atomic replacement and the existing file-backed lease primitive
+fence local read/modify/write operations; queued and terminal records survive
+recreation, while interrupted `ASSIGNED`/`RUNNING` work is normalized back to
+`QUEUED` for explicit at-least-once delivery. Malformed, oversized, fenced, or
+failed-persistence operations fail closed. Distributed scheduling, automatic
+retry, hosted queues, remote workers, and exactly-once external effects remain
+separate.
 
 ## Highest-value gaps before a publish claim
 

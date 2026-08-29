@@ -10,6 +10,14 @@
 
 ### Additions
 
+- **Durable local task queue**: `FileTaskQueue` persists bounded JSON task
+  records through atomic replacement behind a local cross-process fence,
+  retains terminal history across restart, and returns interrupted
+  `ASSIGNED`/`RUNNING` work to `QUEUED` with explicit at-least-once semantics.
+  Malformed, oversized, fence-contended, and persistence-failed operations
+  fail closed; distributed scheduling, automatic retry, hosted queues, and
+  exactly-once external effects remain outside the contract.
+
 - **Bounded deterministic trace scoring**: `TraceEvalCase` and
   `EvaluationHarness.run_trace(...)` compare versioned identifier-free span
   fixtures by positional name, status, and parent structure. Native

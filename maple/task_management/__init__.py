@@ -16,6 +16,7 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 # Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
 # MAPLE - Multi Agent Protocol Language Engine
 
+from .durable_queue import FileTaskQueue
 from .fault_tolerance import FaultTolerantExecutor
 from .monitor import TaskMonitor
 from .performance_optimizer import PerformanceOptimizer
@@ -25,6 +26,7 @@ from .task_queue import TaskQueue
 
 __all__ = [
     "TaskQueue",
+    "FileTaskQueue",
     "TaskScheduler",
     "TaskMonitor",
     "FaultTolerantExecutor",
