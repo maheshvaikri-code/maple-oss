@@ -17,6 +17,12 @@
 
 ### Additions
 
+- **Bounded code-block artifact materialization**: `CodeBlock.sha256` and
+  `materialize_code_block(...)` preserve exact UTF-8 code bytes and stable
+  block index/language metadata through the existing content-addressed
+  artifact stores. The helper is data-only; execution, sandboxing, and remote
+  distribution remain outside the contract.
+
 - **Owner-safe remote task start**: authenticated workers can call
   `RunClient.start_task(...)` through `POST /v1/tasks/{task_id}/start` under
   `task:start` to transition their assigned task to `RUNNING`. The queue

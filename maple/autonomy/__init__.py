@@ -35,6 +35,7 @@ from .artifacts import (
     FileArtifactStore,
     InMemoryArtifactStore,
     extract_code_blocks,
+    materialize_code_block,
 )
 from .contracts import (
     Guardrail,
@@ -414,6 +415,7 @@ __all__ = [
     "FileArtifactStore",
     "InMemoryArtifactStore",
     "extract_code_blocks",
+    "materialize_code_block",
     "ApprovalDecision",
     "ApprovalNotification",
     "ApprovalNotifier",

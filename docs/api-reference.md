@@ -719,6 +719,34 @@ with `executor=...`; the trusted executor supervises cancellation but does not
 inject the token into handler kwargs. Handlers remain responsible for checking
 the signal while working.
 
+## Artifacts and Code Blocks (preview)
+
+`extract_code_blocks(...)` returns bounded `CodeBlock` values as data. A block
+can be materialized through the existing `ArtifactStore` boundary with
+`materialize_code_block(store, block, *, name=None)`. The helper encodes the
+exact code text as UTF-8, uses `text/plain`, and derives the artifact's
+SHA-256-addressed ID from those bytes. When `name` is absent, the deterministic
+name is `code-block-{index}.{language}`. The materialization cap is 128 KiB per
+block; the store's own artifact and total-store quotas still apply.
+
+```python
+from maple import InMemoryArtifactStore, extract_code_blocks, materialize_code_block
+
+source = "```" + "python\nprint('data only')\n" + "```"
+block = extract_code_blocks(source).unwrap()[0]
+store = InMemoryArtifactStore()
+artifact = materialize_code_block(store, block).unwrap()
+
+assert artifact.sha256 == block.sha256
+assert store.get(artifact.artifact_id).unwrap() == b"print('data only')\n"
+```
+
+Invalid block/store values, unsafe names, and oversized code return typed
+`Result` errors before the helper calls the store. Store failures are
+propagated as typed errors. This operation never evaluates, compiles, writes
+directly to a caller path, or fetches the code; sandboxing, execution, and
+remote artifact distribution remain outside MAPLE's contract.
+
 ## Typed Agent Contracts (preview)
 
 MAPLE can validate tool inputs and outputs against a bounded JSON-Schema subset

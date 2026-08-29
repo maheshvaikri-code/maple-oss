@@ -21,6 +21,7 @@ DEFAULT_MAX_STORE_BYTES = 64 * 1024 * 1024
 DEFAULT_MAX_SOURCE_BYTES = 1024 * 1024
 DEFAULT_MAX_CODE_BLOCKS = 64
 DEFAULT_MAX_CODE_BLOCK_BYTES = 128 * 1024
+_MAX_CODE_BLOCK_INDEX = 1_000_000
 _ARTIFACT_ID = re.compile(r"^sha256:[0-9a-f]{64}$")
 _LANGUAGE = re.compile(r"^[A-Za-z0-9_+.#-]{1,32}$")
 
@@ -60,9 +61,26 @@ class CodeBlock:
     language: str
     code: str
 
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.index, int)
+            or isinstance(self.index, bool)
+            or not 0 <= self.index <= _MAX_CODE_BLOCK_INDEX
+        ):
+            raise ValueError("code-block index is invalid")
+        if not isinstance(self.language, str) or not _LANGUAGE.fullmatch(self.language):
+            raise ValueError("code-block language is invalid")
+        if not isinstance(self.code, str):
+            raise ValueError("code-block code must be text")
+
     @property
     def byte_size(self) -> int:
         return len(self.code.encode("utf-8"))
+
+    @property
+    def sha256(self) -> str:
+        """Return the digest of the exact UTF-8 code bytes."""
+        return hashlib.sha256(self.code.encode("utf-8")).hexdigest()
 
 
 class ArtifactStore(Protocol):
@@ -491,6 +509,80 @@ def extract_code_blocks(
     return Result.ok(blocks)
 
 
+def materialize_code_block(
+    store: ArtifactStore,
+    block: CodeBlock,
+    *,
+    name: Optional[str] = None,
+) -> Result[Artifact, Error]:
+    """Store one bounded code block as an immutable, non-executable artifact.
+
+    The default name retains the block index and language for inspection while
+    the artifact ID is derived from the exact UTF-8 bytes. The existing store
+    remains responsible for quota enforcement, persistence, and hash checks.
+    """
+    if not isinstance(block, CodeBlock):
+        return Result.err(
+            _error("CODE_BLOCK_INVALID", "Code block must be a CodeBlock instance")
+        )
+    if block.byte_size > DEFAULT_MAX_CODE_BLOCK_BYTES:
+        return Result.err(
+            _error(
+                "CODE_BLOCK_TOO_LARGE",
+                "Code block exceeds the materialization byte limit",
+                maxBytes=DEFAULT_MAX_CODE_BLOCK_BYTES,
+            )
+        )
+    artifact_name = (
+        f"code-block-{block.index}.{block.language}" if name is None else name
+    )
+    if (
+        not isinstance(artifact_name, str)
+        or not artifact_name
+        or len(artifact_name) > 128
+        or artifact_name in {".", ".."}
+        or "/" in artifact_name
+        or "\\" in artifact_name
+        or any(ord(char) < 32 or ord(char) == 127 for char in artifact_name)
+    ):
+        return Result.err(
+            _error(
+                "CODE_ARTIFACT_NAME_INVALID",
+                "Code block artifact name is invalid",
+            )
+        )
+    put = getattr(store, "put", None)
+    if not callable(put):
+        return Result.err(
+            _error(
+                "CODE_ARTIFACT_STORE_INVALID",
+                "Code block artifact store must implement put",
+            )
+        )
+    try:
+        result = put(
+            block.code.encode("utf-8"),
+            name=artifact_name,
+            media_type="text/plain",
+        )
+    except Exception as exc:
+        return Result.err(
+            _error(
+                "CODE_ARTIFACT_STORE_ERROR",
+                "Code block artifact store failed",
+                exception=type(exc).__name__,
+            )
+        )
+    if not isinstance(result, Result):
+        return Result.err(
+            _error(
+                "CODE_ARTIFACT_STORE_INVALID",
+                "Code block artifact store returned an invalid result",
+            )
+        )
+    return result
+
+
 __all__ = [
     "Artifact",
     "ArtifactStore",
@@ -498,4 +590,5 @@ __all__ = [
     "FileArtifactStore",
     "InMemoryArtifactStore",
     "extract_code_blocks",
+    "materialize_code_block",
 ]

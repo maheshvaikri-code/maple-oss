@@ -52,6 +52,7 @@ from .autonomy.artifacts import (
     FileArtifactStore,
     InMemoryArtifactStore,
     extract_code_blocks,
+    materialize_code_block,
 )
 from .autonomy.contracts import (
     Guardrail,
@@ -519,6 +520,7 @@ __all__ = [
     "FileArtifactStore",
     "InMemoryArtifactStore",
     "extract_code_blocks",
+    "materialize_code_block",
     "ApprovalDecision",
     "ApprovalNotification",
     "ApprovalNotifier",

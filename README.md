@@ -101,7 +101,7 @@ Most agent frameworks give you either **infrastructure** (messaging, security, f
 - **Bounded Workflow Execution Journal (preview)** — Record normalized node outputs before checkpoint commits and recover persisted running checkpoints after a crash-window failure through deterministic execution keys and bounded in-memory or atomic file journals; arbitrary external side effects still require idempotent handlers.
 - **Bounded Workflow Retry (preview)** — Configure capped exponential-backoff retries for ordinary nodes and parallel branches; retry counts, scheduled retry timestamps, and typed exhaustion are persisted in workflow checkpoints, while external effects remain at-least-once and require idempotent handlers.
 - **Interop Envelope + Doctor CLI (preview)** — Strict adapter round-trip envelopes and a network-free `maple doctor --json` readiness report for the runtime surfaces.
-- **Artifacts and Code Blocks (preview)** — Store immutable SHA-256-addressed files with bounded in-memory or file-backed stores, and extract Markdown code blocks as data without executing them.
+- **Artifacts and Code Blocks (preview)** — Store immutable SHA-256-addressed files with bounded in-memory or file-backed stores, extract Markdown code blocks as data, and materialize each bounded block through one provenance-preserving helper without executing it.
 - **Three-Tier Memory** — Working memory (context window), episodic memory (task history), semantic memory (learned facts). LLM-assisted summarization when context fills up.
 - **Multi-Agent Orchestration** — Form teams by capability, execute via bounded parallel supervisor delegation or consensus voting with deterministic joins, and use async cancellation or total time budgets for request-scoped fan-out.
 - **MCP Tool Discovery** — Discover live `tools/list` descriptors over bounded Streamable HTTP and use approved external tools as native MAPLE tools; the legacy URL-only helper remains offline for compatibility.
@@ -741,22 +741,23 @@ remain outside the contract.
 Code is treated as data until a separately approved isolation provider exists:
 
 ```python
-from maple.autonomy import InMemoryArtifactStore, extract_code_blocks
+from maple.autonomy import (
+    InMemoryArtifactStore,
+    extract_code_blocks,
+    materialize_code_block,
+)
 
 blocks = extract_code_blocks(model_text).unwrap()
 artifacts = InMemoryArtifactStore()
 for block in blocks:
-    artifact = artifacts.put(
-        block.code.encode("utf-8"),
-        name=f"block-{block.index}.txt",
-        media_type="text/plain",
-    ).unwrap()
+    artifact = materialize_code_block(artifacts, block).unwrap()
     print(artifact.artifact_id, artifact.size)
 ```
 
-The parser and stores enforce source, block, artifact, and total-store limits,
-verify content hashes on reads, and reject path-like artifact names. They do
-not run Python, shell, browser, or computer-use code.
+The parser, materialization helper, and stores enforce source, block, artifact,
+and total-store limits, preserve the exact UTF-8 bytes, derive the artifact ID
+from SHA-256, and reject path-like artifact names. They do not run Python,
+shell, browser, or computer-use code.
 
 | Example | Description |
 |---------|-------------|
