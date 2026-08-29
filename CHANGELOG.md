@@ -10,6 +10,15 @@
 
 ### Additions
 
+- **Durable notification outbox**: optional
+  `FileHumanInputNotificationOutbox` and
+  `FileApprovalNotificationOutbox` adapters provide bounded atomic local
+  enqueue, deterministic canonical deduplication, restart loading, and
+  explicit drain reports for the existing notifier hooks. Failures remain
+  pending, delivered records are retained, and queue limits fail closed;
+  automatic workers/retries, distributed leases, purge, hosted identity, and
+  exactly-once effects remain outside the contract.
+
 - **Remote approval push delivery**: `ApprovalNotification`,
   `HttpApprovalNotifier`, optional in-memory/file-store notifier hooks, and the
   authenticated `POST /v1/approvals/notifications` route connect approval

@@ -1006,3 +1006,53 @@ update was performed.
 **Slice 177 review:** PASS for the implemented local/remote approval
 notification boundary. Overall release status remains CONDITIONAL / NOT
 PUBLISH-READY pending the documented release gates and human authorization.
+
+## 2026-08-28 current revalidation - Slice 178 durable notification outbox
+
+The changed boundary was reviewed for atomic enqueue and state marks,
+canonical payload identity, restart loading, bounded queue accounting, unsafe
+path/malformed-record rejection, lock ordering around downstream delivery,
+failure redaction, and the absence of automatic retry or destructive purge.
+The human-input and approval adapters preserve the existing notifier protocol
+and store-authority contracts. No correctness or security boundary defect was
+found in the committed implementation.
+
+Review evidence on the committed candidate `83336eb`:
+
+```text
+git diff --check 07f3ef2..83336eb
+scoped_diff_check=clean
+
+python -m pytest -q tests/autonomy/test_notification_outbox.py tests/autonomy/test_approval.py tests/autonomy/test_interactions.py tests/autonomy/test_remote_approval_notification.py --no-cov
+36 passed in 4.69s
+
+python -m black --check maple/autonomy/notification_outbox.py maple/autonomy/interactions.py maple/autonomy/approval.py maple/autonomy/__init__.py maple/__init__.py tests/autonomy/test_notification_outbox.py
+6 files would be left unchanged.
+
+python -m isort --check-only maple/autonomy/notification_outbox.py maple/autonomy/interactions.py maple/autonomy/approval.py maple/autonomy/__init__.py maple/__init__.py tests/autonomy/test_notification_outbox.py
+exit=0
+
+python -m ruff check maple/autonomy/notification_outbox.py maple/autonomy/interactions.py maple/autonomy/approval.py maple/autonomy/__init__.py maple/__init__.py tests/autonomy/test_notification_outbox.py
+All checks passed!
+
+python -m mypy maple/autonomy/notification_outbox.py maple/autonomy/interactions.py maple/autonomy/approval.py --follow-imports=skip
+Success: no issues found in 3 source files
+
+python -m compileall -q maple tests/autonomy/test_notification_outbox.py
+compile_exit=0
+
+python -m pytest -q --no-cov
+1715 passed, 1 skipped in 280.37s (0:04:40)
+```
+
+The repository-wide default mypy invocation still reports its established
+unrelated invocation, optional broker/adapter import, and server annotation
+errors; the changed-boundary invocation above is clean. The environment-wide
+dependency audit, Gitleaks, Bandit, actionlint, and a fresh independent
+verifier session remain unavailable or governance-blocked in this tool
+context. No publication, deployment, cloud action, registry write, or
+website update was performed.
+
+**Slice 178 review:** PASS for the bounded local outbox boundary. Overall
+release status remains CONDITIONAL / NOT PUBLISH-READY pending the documented
+release gates and human authorization.

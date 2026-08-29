@@ -6,10 +6,10 @@
 
 | # | Slice | Role | Files touched | Proven by (tests) | Status |
 |---|-------|------|---------------|-------------------|--------|
-| 1 | Implement bounded generic file outbox and typed reports | Backend / Security | `maple/autonomy/notification_outbox.py`, exports | Atomic enqueue, canonical deduplication, restart load, malformed-state rejection, bounds | todo |
-| 2 | Add human-input and approval protocol adapters | Backend / Interop | `maple/autonomy/interactions.py`, `maple/autonomy/approval.py`, exports | Both built-in stores enqueue typed notifications; notifier compatibility remains green | todo |
-| 3 | Prove drain, failure, concurrency, and adversarial behavior | QA / Security | `tests/autonomy/test_notification_outbox.py` | Success mark, retained failure, explicit retry, sanitized state, no network under lock, no mutation on invalid state | todo |
-| 4 | Publish contract and package evidence | Tech Writer / Release | README, API/parity/changelog, QA/review/release artifacts | Static checks, full suite, clean archive, isolated import/package smoke | todo |
+| 1 | Implement bounded generic file outbox and typed reports | Backend / Security | `maple/autonomy/notification_outbox.py`, exports | Atomic enqueue, canonical deduplication, restart load, malformed-state rejection, bounds | complete: implementation `995f659`; focused outbox suite `10 passed in 0.43s` |
+| 2 | Add human-input and approval protocol adapters | Backend / Interop | `maple/autonomy/interactions.py`, `maple/autonomy/approval.py`, exports | Both built-in stores enqueue typed notifications; notifier compatibility remains green | complete: implementation `995f659`; focused compatibility set `34 passed in 4.64s` |
+| 3 | Prove drain, failure, concurrency, and adversarial behavior | QA / Security | `tests/autonomy/test_notification_outbox.py` | Success mark, retained failure, explicit retry, sanitized state, no network under lock, no mutation on invalid state | complete: test additions `83336eb`; full workspace `1715 passed, 1 skipped in 280.37s`; Black/isort/Ruff/mypy changed-boundary/compile pass |
+| 4 | Publish contract and package evidence | Tech Writer / Release | README, API/parity/changelog, QA/review/release artifacts | Static checks, full suite, clean archive, isolated import/package smoke | in progress |
 
 ## Threat sketch
 
@@ -43,5 +43,6 @@ to free space.
 
 ## Status snapshot
 
-Done (with evidence): design brief and ADR. Next: implement the generic
-outbox and typed adapters. Blocked on: none.
+Done (with evidence): design, implementation, focused regressions, full suite,
+and changed-boundary static gates. Next: file review/QA and clean-archive
+package evidence. Blocked on: none.

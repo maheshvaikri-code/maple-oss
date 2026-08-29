@@ -1035,3 +1035,49 @@ verifier were unavailable. No external state was changed.
 
 **Slice 177 QA status: PASS for the implemented boundary; overall release
 status remains CONDITIONAL / NOT PUBLISH-READY.**
+
+## 2026-08-28 current QA revalidation - Slice 178 durable notification outbox
+
+Acceptance criteria were exercised through both typed adapters and the
+generic outbox contract. Coverage includes atomic enqueue, canonical
+deduplication, restart loading, successful durable delivery marks, retained
+failures and explicit retry, sanitized target exceptions, queue and record
+byte bounds, bounded drain/list limits, malformed-state rejection, no
+mutation on invalid state, store integration, and a concurrent observer that
+confirms target delivery does not hold the outbox state lock.
+
+```text
+python -m pytest -q tests/autonomy/test_notification_outbox.py --no-cov
+10 passed in 0.43s
+
+python -m pytest -q tests/autonomy/test_notification_outbox.py tests/autonomy/test_approval.py tests/autonomy/test_interactions.py tests/autonomy/test_remote_approval_notification.py --no-cov
+36 passed in 4.69s
+
+python -m pytest -q --no-cov
+1715 passed, 1 skipped in 280.37s (0:04:40)
+
+python -m black --check maple/autonomy/notification_outbox.py maple/autonomy/interactions.py maple/autonomy/approval.py maple/autonomy/__init__.py maple/__init__.py tests/autonomy/test_notification_outbox.py
+6 files would be left unchanged.
+
+python -m isort --check-only maple/autonomy/notification_outbox.py maple/autonomy/interactions.py maple/autonomy/approval.py maple/autonomy/__init__.py maple/__init__.py tests/autonomy/test_notification_outbox.py
+exit=0
+
+python -m ruff check maple/autonomy/notification_outbox.py maple/autonomy/interactions.py maple/autonomy/approval.py maple/autonomy/__init__.py maple/__init__.py tests/autonomy/test_notification_outbox.py
+All checks passed!
+
+python -m mypy maple/autonomy/notification_outbox.py maple/autonomy/interactions.py maple/autonomy/approval.py --follow-imports=skip
+Success: no issues found in 3 source files
+
+python -m compileall -q maple tests/autonomy/test_notification_outbox.py
+compile_exit=0
+```
+
+Adversarial result: malformed, oversized, unsafe, full-queue, invalid-limit,
+downstream-rejection, downstream-exception, and concurrent-observer cases
+behaved as specified. No new dependency was added. The environment-wide
+`pip-audit --format json` governance veto and unavailable Gitleaks, Bandit,
+actionlint, and fresh independent verifier session remain documented. No
+external state was changed.
+
+**Slice 178 QA status: PASS for the bounded local outbox; overall release
+status remains CONDITIONAL / NOT PUBLISH-READY.**

@@ -126,6 +126,18 @@ tool arguments but never execution outcomes; it is one-shot and host-owned,
 with no queue, retry, deduplication, hosted identity, or exactly-once effect
 claim.
 
+The local durable notification outbox is available through
+`FileHumanInputNotificationOutbox` and `FileApprovalNotificationOutbox`. An
+outbox atomically stores one canonical notification per payload identity and
+survives recreation of the outbox object. The host explicitly calls
+`drain(max_items=...)` to make bounded delivery attempts; successful records
+are retained as delivered for deduplication, while failures remain pending and
+return sanitized `NotificationOutboxReport` details. This is a local
+at-least-once boundary: a crash after downstream acceptance and before the
+delivered mark may duplicate a notification. MAPLE does not start a worker,
+retry automatically, delete records to make space, coordinate distributed
+drainers, or claim exactly-once external effects.
+
 ### Production Infrastructure
 
 - **Result\<T,E\> Error Handling** — Rust-inspired type-safe results. No silent failures, no uncaught exceptions. Chain with `.map()`, `.and_then()`, `.map_err()`.

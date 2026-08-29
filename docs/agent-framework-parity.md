@@ -301,6 +301,16 @@ outcomes remain excluded; both notification seams are one-shot and host-owned.
 The remaining P0 work is hosted identity/principal policy, durable distributed
 queues, replay/deduplication, and a side-effect policy for remote coordination.
 
+Slice 178 adds optional local `FileHumanInputNotificationOutbox` and
+`FileApprovalNotificationOutbox` adapters. Canonical notification payloads are
+stored atomically under deterministic identities, survive outbox recreation,
+and are drained explicitly in bounded batches. Delivered records are retained
+for deduplication, failures remain pending with sanitized state, and queue
+limits fail closed without deleting records. The boundary is local
+at-least-once delivery with host-coordinated draining; automatic workers,
+retries, distributed leases, purge, hosted identity, and exactly-once external
+effects remain separate.
+
 ## Highest-value gaps before a publish claim
 
 The next implementation work should be ordered by runtime correctness, not by

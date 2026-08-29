@@ -2324,6 +2324,48 @@ notification is not persisted by the receiver, and delivery is at most one
 request attempt per local callback; hosts own queue, retry, deduplication,
 identity, TLS, and side-effect policy.
 
+#### Durable notification outbox
+
+Use `FileHumanInputNotificationOutbox` or
+`FileApprovalNotificationOutbox` when a host needs local restart durability
+around either one-shot notifier. The outbox is passed as the existing store
+`notifier`; `notify()` atomically enqueues and returns without making a
+network call. A host-owned worker or lifecycle hook explicitly calls
+`drain(max_items=...)`:
+
+```python
+from maple import (
+    FileApprovalNotificationOutbox,
+    FileApprovalStore,
+    HttpApprovalNotifier,
+)
+
+target = HttpApprovalNotifier(
+    "http://127.0.0.1:8787/v1/approvals/notifications",
+    auth_token="operator-token",
+)
+outbox = FileApprovalNotificationOutbox("./.maple-approval-outbox", target=target)
+approval_store = FileApprovalStore(
+    "./.maple-approvals",
+    notifier=outbox,
+)
+report = outbox.drain(max_items=100).unwrap()
+```
+
+`list_pending(limit=...)` returns typed pending notifications. Canonical
+payloads are deduplicated by deterministic identity across outbox recreation;
+delivered records are retained, while failed records remain pending and are
+only attempted again by a later explicit `drain()`. Record count, record
+bytes, queue bytes, and drain batch size are bounded; a full queue returns
+`NOTIFICATION_OUTBOX_FULL` and does not delete older records. Drain reports
+sanitized failure details and calls the target outside the outbox state lock.
+The contract is local at-least-once delivery: a crash after downstream
+acceptance and before the delivered mark may duplicate a notification. MAPLE
+does not start a background worker, retry automatically, coordinate
+distributed drain leases, add a purge operation, or claim exactly-once
+external effects. Use the human-input adapter with `HttpHumanInputNotifier`
+and `FileHumanInputStore` for the corresponding interaction lifecycle.
+
 #### Remote approval push delivery
 
 Use `HttpApprovalNotifier` when a host wants each persisted approval
