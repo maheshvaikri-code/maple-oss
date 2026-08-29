@@ -1173,3 +1173,47 @@ doctor_exit=0
 The package gate was run from a clean Git archive, so the repository's
 untracked doctrine files were not included. No publication, deployment, cloud
 action, registry write, or website update was performed.
+
+## 2026-08-28 current QA revalidation - Slice 180 least-privilege agent target policy
+
+Acceptance criteria were exercised through the existing local agent server:
+bounded exact agent and capability allowlists, empty-list compatibility,
+filtered discovery, named-agent denial before request-body parsing, capability
+denial before routing and idempotency claims, no handler invocation on denial,
+and bounded non-sensitive policy errors. Capability-only named routes fail
+closed when no matching registered agent exists.
+
+```text
+python -m pytest -q --no-cov tests/autonomy/test_server.py
+52 passed in 22.08s
+
+python -m pytest -q --no-cov
+1722 passed, 1 skipped in 290.87s (0:04:50)
+
+python -m black --check maple/autonomy/server.py tests/autonomy/test_server.py
+2 files would be left unchanged.
+
+python -m isort --check-only maple/autonomy/server.py tests/autonomy/test_server.py
+exit=0
+
+python -m ruff check maple/autonomy/server.py tests/autonomy/test_server.py
+All checks passed!
+
+python -m mypy maple/autonomy/server.py --follow-imports=skip
+Success: no issues found in 1 source file
+
+python -m compileall -q maple/autonomy/server.py tests/autonomy/test_server.py
+compileall_exit=0
+```
+
+Adversarial result: denied named routes do not read oversized secret bodies;
+denied capability routes do not claim idempotency or invoke handlers; allowed
+routes preserve existing behavior; and exact allowlists cannot be widened by
+duplicate or over-bound entries. No new dependency was added. The
+environment-wide dependency audit, Gitleaks, Bandit, actionlint, and fresh
+independent verifier remain unavailable or governance-blocked. No external
+state was changed.
+
+**Slice 180 QA status: PASS for the least-privilege local target policy.
+Overall release status remains CONDITIONAL / NOT PUBLISH-READY pending clean
+archive/package verification and human authorization.**

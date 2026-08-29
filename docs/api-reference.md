@@ -2766,6 +2766,8 @@ from maple import Principal, RunClient, RunServer
 operator = Principal(
     "operator",
     ("health:read", "workflow:read", "workflow:invoke", "approval:decide"),
+    allowed_agent_ids=("researcher",),
+    allowed_capabilities=("research",),
 )
 with RunServer(
     registry,
@@ -2789,9 +2791,13 @@ Known route scope families are:
 
 `Principal("operator", ("workflow:*",))` grants a scope family and
 `Principal("operator", ("*",))` preserves the legacy all-routes behavior.
-Missing scopes return `403` and the bounded request body is discarded. This is
-a host-configured authorization policy, not token issuance, identity
-verification, TLS, multi-tenant authorization, per-agent delivery, or a
+Missing scopes return `403` and the bounded request body is discarded. The
+optional `allowed_agent_ids` and `allowed_capabilities` fields are exact,
+bounded allowlists; empty tuples preserve the scope-only behavior. Agent
+discovery is filtered, named-agent denial happens before body parsing, and
+capability denial happens before routing or idempotency claims. This is a
+host-configured authorization policy, not token issuance, identity
+verification, TLS, multi-tenant authorization, identity federation, or a
 hard-sandbox boundary. A remote deployment must supply those controls and
 must not infer exactly-once effects from this transport.
 

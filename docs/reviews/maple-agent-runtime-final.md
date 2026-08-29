@@ -1080,6 +1080,52 @@ discarded Windows PowerShell binary-pipe attempt produced a damaged tar
 stream. No repository data was changed. No publication, deployment, cloud
 action, registry write, or website update was performed.
 
+## 2026-08-28 current revalidation - Slice 180 least-privilege agent target policy
+
+The changed boundary was reviewed for exact allowlist validation, empty-list
+compatibility, discovery filtering, named-agent pre-body denial, capability
+pre-routing denial, invocation-idempotency ordering, handler non-invocation,
+and bounded policy metadata. The implementation narrows the existing local
+principal without adding token issuance, identity federation, tenancy, or a
+remote policy engine. One duplicate request-body read in the already-parsed
+capability denial branch was corrected and the server suite was rerun. No
+correctness or security boundary defect remains.
+
+Review evidence on implementation commit `8b97e52`:
+
+```text
+python -m pytest -q --no-cov tests/autonomy/test_server.py
+52 passed in 22.08s
+
+python -m black --check maple/autonomy/server.py tests/autonomy/test_server.py
+2 files would be left unchanged.
+
+python -m isort --check-only maple/autonomy/server.py tests/autonomy/test_server.py
+exit=0
+
+python -m ruff check maple/autonomy/server.py tests/autonomy/test_server.py
+All checks passed!
+
+python -m mypy maple/autonomy/server.py --follow-imports=skip
+Success: no issues found in 1 source file
+
+python -m compileall -q maple/autonomy/server.py tests/autonomy/test_server.py
+compileall_exit=0
+
+python -m pytest -q --no-cov
+1722 passed, 1 skipped in 290.87s (0:04:50)
+```
+
+The environment-wide dependency audit, Gitleaks, Bandit, actionlint, and a
+fresh independent verifier session remain unavailable or governance-blocked
+in this tool context. No publication, deployment, cloud action, registry
+write, or website update was performed.
+
+**Slice 180 review:** PASS for the least-privilege local target policy; clean
+archive package verification remains the next gate. Overall release status
+remains CONDITIONAL / NOT PUBLISH-READY pending the documented release gates
+and human authorization.
+
 ## 2026-08-28 current revalidation - Slice 179 cross-process notification drain fence
 
 The changed boundary was reviewed for optional lease ownership, deterministic

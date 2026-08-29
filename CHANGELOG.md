@@ -10,6 +10,13 @@
 
 ### Additions
 
+- **Least-privilege agent target policy**: the host-configured `Principal`
+  accepts bounded exact `allowed_agent_ids` and `allowed_capabilities`
+  allowlists. Agent discovery filters denied descriptors, named-agent routes
+  deny before body parsing, and capability routes deny before routing or
+  idempotency claims. Token issuance, identity federation, tenancy, and
+  dynamic policy evaluation remain outside this local contract.
+
 - **Optional cross-process notification drain fencing**: notification outboxes
   can use a caller-owned `FileLeaseManager` and bounded TTL to fence competing
   local drainers. Acquisition denial is typed and makes no target call;
