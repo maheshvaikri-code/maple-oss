@@ -1241,6 +1241,47 @@ The package gate used a clean Git archive and therefore excluded preserved
 untracked doctrine files. No publication, deployment, cloud action, registry
 write, or website update was performed.
 
+## 2026-08-28 current QA revalidation - Slice 184 bounded deterministic trace scoring
+
+Acceptance criteria were exercised through the local evaluation harness:
+versioned fixture validation, native span projection, parent-index mapping,
+equal-weight name/status/parent scoring, missing/extra span penalties,
+identifier/attribute non-disclosure, oversized observations, invalid parents,
+runner errors, and below-threshold failures. Existing evaluation,
+observability, and public-import behavior remained green.
+
+```text
+python -m pytest -q --no-cov tests/autonomy/test_evaluation.py tests/autonomy/test_observability.py
+50 passed in 0.51s
+
+python -m pytest -q --no-cov
+1732 passed, 1 skipped in 292.49s (0:04:52)
+
+python -m black --check maple/autonomy/evaluation.py maple/autonomy/__init__.py maple/__init__.py tests/autonomy/test_evaluation.py
+4 files would be left unchanged.
+
+python -m isort --check-only maple/autonomy/evaluation.py maple/autonomy/__init__.py maple/__init__.py tests/autonomy/test_evaluation.py
+All checks passed!
+
+python -m ruff check maple/autonomy/evaluation.py maple/autonomy/__init__.py maple/__init__.py tests/autonomy/test_evaluation.py
+All checks passed!
+
+python -m mypy maple/autonomy/evaluation.py --follow-imports=skip
+Success: no issues found in 1 source file
+
+python -m compileall -q maple
+compileall exit 0
+```
+
+Adversarial result: native trace identity and attributes do not cross into the
+report; malformed parents, unknown span types, oversized traces, runner
+exceptions/errors, and low scores fail closed with bounded typed results. No
+new dependency was added. The environment-wide dependency audit, Gitleaks,
+Bandit, actionlint, and fresh independent verifier remain unavailable or
+governance-blocked. **Slice 184 QA status: PASS for the local deterministic
+trace-scoring boundary; clean archive/package evidence is still pending.** No
+external state was changed.
+
 ## 2026-08-28 current QA revalidation - Slice 180 least-privilege agent target policy
 
 Acceptance criteria were exercised through the existing local agent server:

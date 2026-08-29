@@ -348,6 +348,14 @@ preserving sequence order, bounded results, cursor expiry, and the existing
 `event:read` scope. Arbitrary payload queries, fleet-wide indexes, hosted
 aggregation, and distributed search remain separate.
 
+Slice 184 adds bounded deterministic trace evaluation. `TraceEvalCase` and
+`EvaluationHarness.run_trace()` compare identifier-free span names, statuses,
+and sequence-local parent indexes, including safe projection from native
+`TraceSpan` records without IDs, timestamps, or attributes. Missing or extra
+spans lower the equal-weight structural score; semantic faithfulness, causal
+correctness, provider judges, calibration, hosted aggregation, and trace
+persistence remain separate.
+
 ## Highest-value gaps before a publish claim
 
 The next implementation work should be ordered by runtime correctness, not by
@@ -367,18 +375,19 @@ the number of framework checkmarks:
    and exactly-once side-effect policy around those local boundaries.
 3. **Unified streaming and observability:** local provider chunk aggregation and
 bounded local scheduling now exist; hosted aggregation, remote deduplication,
-hosted scheduling, approval-replay correlation, and remote trace search remain
-separate.
-   and metadata-only `model.chunk` lifecycle events now link bounded usage and
+hosted scheduling, approval-replay correlation, and hosted trace search remain
+separate. Metadata-only `model.chunk` lifecycle events now link bounded usage and
    provider correlation into agent runs, and optional local model spans link
    chunks, responses, decisions, and normal tool executions. Percentile latency
    views are now local and bounded; `EventForwarder` adds explicit bounded
    remote aggregation with fenced durable cursors while retaining local
    sampling, cancellation, and the host-owned exporter seam. Hosted aggregation,
-   provider-owned judge orchestration, calibration, and trace scoring remain
-   separate.
-4. **Evaluation depth:** retain deterministic retrieval/grounding metrics and
-   add versioned trajectory fixtures plus an optional model-judge contract.
+   provider-owned judge orchestration, calibration, and semantic trace
+   evaluation remain separate.
+4. **Evaluation depth:** deterministic retrieval/grounding metrics, versioned
+   trajectory fixtures, bounded structural trace scoring, and an optional
+   model-judge contract are now local surfaces; provider-owned judge
+   orchestration and calibration remain separate.
 5. **Execution integrations:** treat sandbox/browser/computer use, managed
    vector stores, hosted runtime, visual tooling, and additional languages as
    separate reviewed projects—not implicit parity work.

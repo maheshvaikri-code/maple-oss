@@ -10,6 +10,14 @@
 
 ### Additions
 
+- **Bounded deterministic trace scoring**: `TraceEvalCase` and
+  `EvaluationHarness.run_trace(...)` compare versioned identifier-free span
+  fixtures by positional name, status, and parent structure. Native
+  `TraceSpan` values are projected without IDs, timestamps, or attributes;
+  malformed/oversized traces and below-threshold scores fail closed. Semantic
+  faithfulness, provider judges, calibration, hosted aggregation, and trace
+  persistence remain outside the local contract.
+
 - **Bounded remote event/trace search**: authenticated event readers can query
   the retained redacted window by exact `trace_id`, `run_id`, or `event_type`
   with bounded results, sequence cursors, typed filter errors, and explicit

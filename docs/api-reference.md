@@ -1675,6 +1675,45 @@ report = EvaluationHarness().run(
 )
 ```
 
+For deterministic trace regression fixtures, use `TraceEvalCase` with an
+identifier-free `TraceEvalSpan` sequence and `EvaluationHarness.run_trace(...)`.
+The runner may return native `TraceSpan` values; MAPLE projects them to span
+name, terminal status, and sequence-local parent index, discarding trace IDs,
+span IDs, timestamps, and attributes. The score is the equal-weight mean of
+positional name, status, and parent-structure scores. Missing or extra spans
+lower the score, and `min_score` is bounded from 0 to 1.
+
+```python
+from maple import EvaluationHarness, TraceEvalCase, TraceEvalSpan
+
+case = TraceEvalCase(
+    case_id="agent-trace-v1",
+    input={"query": "MAPLE"},
+    expected_trace=(
+        TraceEvalSpan("agent.run"),
+        TraceEvalSpan("agent.tool", parent_index=0),
+    ),
+    min_score=1.0,
+    fixture_version=1,
+)
+report = EvaluationHarness().run_trace(
+    [case],
+    lambda value: (
+        TraceEvalSpan("agent.run"),
+        TraceEvalSpan("agent.tool", parent_index=0),
+    ),
+)
+assert report.unwrap().results[0].score == 1.0
+```
+
+`run_trace` accepts only bounded lists or tuples of `TraceSpan` or
+`TraceEvalSpan` values. Invalid parents, unknown span types, oversized traces,
+runner errors, and below-threshold scores become typed per-case failures.
+Reports expose only the identifier-free `actual_trace`; trace payloads and
+attributes are never copied. This is a deterministic structural proxy, not a
+semantic faithfulness, causal correctness, provider-judge, calibration, or
+hosted trace contract.
+
 An optional host-supplied judge can add a generation-quality check without
 making MAPLE select a provider. The callback receives the case and a redacted,
 bounded `EvalObservation`, and returns `EvalJudgeResult` directly or through

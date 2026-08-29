@@ -1,6 +1,6 @@
 # Slice 184 plan — bounded deterministic trace scoring
 
-**Status:** in progress  
+**Status:** verification complete; package gate pending
 **Date:** 2026-08-28
 
 ## Design
@@ -11,16 +11,16 @@
 
 ## Implementation
 
-- [ ] Add `TraceEvalSpan` and `TraceEvalCase` validation.
-- [ ] Add native `TraceSpan` projection and `EvaluationHarness.run_trace(...)`.
-- [ ] Export the new public types.
-- [ ] Add focused regression tests.
+- [x] Add `TraceEvalSpan` and `TraceEvalCase` validation.
+- [x] Add native `TraceSpan` projection and `EvaluationHarness.run_trace(...)`.
+- [x] Export the new public types.
+- [x] Add focused regression tests.
 
 ## Verification and release evidence
 
-- [ ] Run focused trace/evaluation regressions.
-- [ ] Run Black, isort, Ruff, mypy, compileall, and diff/security checks.
-- [ ] Run the full workspace regression.
-- [ ] Update API/README/parity/changelog and review/QA evidence.
+- [x] Run focused trace/evaluation regressions.
+- [x] Run Black, isort, Ruff, mypy, compileall, and diff/security checks.
+- [x] Run the full workspace regression.
+- [x] Update API/README/parity/changelog and review/QA evidence.
 - [ ] Rebuild a clean source archive and package smoke-test it.
 - [ ] Keep publication, cloud, and website actions out of scope.
