@@ -4,12 +4,26 @@ import base64
 import json
 from concurrent.futures import ThreadPoolExecutor
 
+import pytest
+
 from maple.autonomy import (
     FileSessionStore,
     InMemorySessionStore,
     SessionMessage,
+    SessionSnapshot,
 )
 from maple.llm.types import ChatMessage, ChatRole, ImageContent, ToolCall
+
+
+def _session_store_variants(tmp_path, *, max_history=100):
+    return [
+        InMemorySessionStore(max_messages=8, max_history=max_history),
+        FileSessionStore(
+            tmp_path / f"file-{max_history}",
+            max_messages=8,
+            max_history=max_history,
+        ),
+    ]
 
 
 def test_in_memory_session_appends_versioned_messages_and_returns_copies():
@@ -180,3 +194,209 @@ def test_session_message_round_trips_typed_image_content():
     restored = SessionMessage.from_dict(stored.to_dict()).to_chat_message()
 
     assert restored.content == original.content
+
+
+def test_session_history_is_bounded_chronological_and_detached(tmp_path):
+    for store in _session_store_variants(tmp_path, max_history=2):
+        assert store.create("history-session").is_ok()
+        for index in range(3):
+            assert store.append(
+                "history-session",
+                SessionMessage(role="user", content=f"message-{index}"),
+            ).is_ok()
+
+        history = store.history("history-session")
+
+        assert history.is_ok()
+        assert [snapshot.version for snapshot in history.unwrap()] == [2, 3]
+        assert [snapshot.messages[-1].content for snapshot in history.unwrap()] == [
+            "message-1",
+            "message-2",
+        ]
+        history.unwrap()[0].messages[0].metadata["changed"] = True
+        assert (
+            "changed"
+            not in store.history("history-session").unwrap()[0].messages[0].metadata
+        )
+
+
+def test_session_fork_copies_selected_version_without_sharing_state(tmp_path):
+    for store in _session_store_variants(tmp_path):
+        assert store.create(
+            "source-session", metadata={"tenant": "demo", "labels": ["a"]}
+        ).is_ok()
+        assert store.append(
+            "source-session",
+            SessionMessage(role="user", content="first"),
+        ).is_ok()
+        assert store.append(
+            "source-session",
+            SessionMessage(role="assistant", content="second"),
+        ).is_ok()
+
+        forked = store.fork("source-session", "branch-session", at_version=1)
+
+        assert forked.is_ok()
+        branch = forked.unwrap()
+        assert branch.version == 0
+        assert [message.content for message in branch.messages] == ["first"]
+        assert branch.metadata == {"tenant": "demo", "labels": ["a"]}
+        branch.metadata["labels"].append("branch")
+        branch.messages[0].metadata["branch"] = True
+        assert store.load("source-session").unwrap().metadata == {
+            "tenant": "demo",
+            "labels": ["a"],
+        }
+        assert (
+            "branch" not in store.load("source-session").unwrap().messages[0].metadata
+        )
+        assert store.append(
+            "branch-session",
+            SessionMessage(role="user", content="branch-only"),
+            expected_version=0,
+        ).is_ok()
+        assert store.load("source-session").unwrap().version == 2
+
+
+def test_session_fork_rejects_stale_existing_and_evicted_versions(tmp_path):
+    for store in _session_store_variants(tmp_path, max_history=2):
+        assert store.create("fork-source").is_ok()
+        for index in range(3):
+            assert store.append(
+                "fork-source",
+                SessionMessage(role="user", content=str(index)),
+            ).is_ok()
+
+        stale = store.fork(
+            "fork-source",
+            "stale-branch",
+            expected_version=1,
+        )
+        evicted = store.fork("fork-source", "evicted-branch", at_version=1)
+        assert stale.is_err()
+        assert stale.unwrap_err()["errorType"] == "SESSION_CONFLICT"
+        assert evicted.is_err()
+        assert evicted.unwrap_err()["errorType"] == "SESSION_VERSION_UNAVAILABLE"
+        assert store.create("existing-branch").is_ok()
+        existing = store.fork("fork-source", "existing-branch")
+        missing = store.fork("missing-source", "missing-branch")
+        assert existing.is_err()
+        assert existing.unwrap_err()["errorType"] == "SESSION_EXISTS"
+        assert missing.is_err()
+        assert missing.unwrap_err()["errorType"] == "SESSION_NOT_FOUND"
+        assert store.load("stale-branch").unwrap() is None
+        assert store.load("evicted-branch").unwrap() is None
+
+
+def test_session_history_validates_bounds_and_constructor_limit():
+    with pytest.raises(ValueError, match="max_history"):
+        InMemorySessionStore(max_history=0)
+    with pytest.raises(ValueError, match="max_history"):
+        InMemorySessionStore(max_history=10_001)
+
+    store = InMemorySessionStore(max_history=2)
+    assert store.create("history-limits").is_ok()
+    invalid_limit = store.history("history-limits", limit=True)
+    oversized_limit = store.history("history-limits", limit=3)
+    assert invalid_limit.is_err()
+    assert invalid_limit.unwrap_err()["errorType"] == "SESSION_HISTORY_LIMIT"
+    assert oversized_limit.is_err()
+    assert oversized_limit.unwrap_err()["errorType"] == "SESSION_HISTORY_LIMIT"
+
+
+def test_file_session_legacy_snapshot_is_read_without_rewrite_then_migrated(tmp_path):
+    legacy = SessionSnapshot(session_id="legacy-session")
+    path = tmp_path / "legacy-session.json"
+    path.write_text(json.dumps(legacy.to_dict(), indent=2), encoding="utf-8")
+    before = path.read_bytes()
+    store = FileSessionStore(tmp_path)
+
+    inspected = store.history("legacy-session")
+
+    assert inspected.is_ok()
+    assert [snapshot.version for snapshot in inspected.unwrap()] == [0]
+    assert path.read_bytes() == before
+    appended = store.append(
+        "legacy-session", SessionMessage(role="user", content="migrated")
+    )
+
+    assert appended.is_ok()
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["schema_version"] == 2
+    assert [snapshot["version"] for snapshot in payload["history"]] == [0, 1]
+
+
+def test_file_session_history_can_be_reopened_with_a_smaller_bound(tmp_path):
+    original = FileSessionStore(tmp_path, max_history=3)
+    assert original.create("resize-session").is_ok()
+    for index in range(3):
+        assert original.append(
+            "resize-session", SessionMessage(role="user", content=str(index))
+        ).is_ok()
+
+    resized = FileSessionStore(tmp_path, max_history=2)
+
+    assert [item.version for item in resized.history("resize-session").unwrap()] == [
+        2,
+        3,
+    ]
+    assert resized.append(
+        "resize-session",
+        SessionMessage(role="user", content="new"),
+        expected_version=3,
+    ).is_ok()
+    assert [item.version for item in resized.history("resize-session").unwrap()] == [
+        3,
+        4,
+    ]
+
+
+def test_file_session_malformed_history_fails_closed_without_rewriting(tmp_path):
+    store = FileSessionStore(tmp_path)
+    assert store.create("corrupt-history").is_ok()
+    path = tmp_path / "corrupt-history.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["history"] = []
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    before = path.read_bytes()
+
+    inspected = store.history("corrupt-history")
+    blocked = store.append(
+        "corrupt-history", SessionMessage(role="user", content="blocked")
+    )
+
+    assert inspected.is_err()
+    assert inspected.unwrap_err()["errorType"] == "SESSION_HISTORY_INVALID"
+    assert blocked.is_err()
+    assert blocked.unwrap_err()["errorType"] == "SESSION_HISTORY_INVALID"
+    assert path.read_bytes() == before
+
+
+def test_session_history_size_limit_rejects_mutation_without_partial_state(tmp_path):
+    stores = [
+        InMemorySessionStore(
+            max_messages=2,
+            max_message_bytes=600,
+            max_session_bytes=600,
+            max_history=2,
+        ),
+        FileSessionStore(
+            tmp_path / "size-file",
+            max_messages=2,
+            max_message_bytes=600,
+            max_session_bytes=600,
+            max_history=2,
+        ),
+    ]
+    for store in stores:
+        created = store.create("size-session")
+        assert created.is_ok()
+        before = store.load("size-session").unwrap().to_dict()
+
+        appended = store.append(
+            "size-session", SessionMessage(role="user", content="fits alone")
+        )
+
+        assert appended.is_err()
+        assert appended.unwrap_err()["errorType"] == "SESSION_SIZE_EXCEEDED"
+        assert store.load("size-session").unwrap().to_dict() == before

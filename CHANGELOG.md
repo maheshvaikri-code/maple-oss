@@ -24,6 +24,13 @@
 
 ### Additions
 
+- **Bounded session history and forking**: `InMemorySessionStore` and
+  `FileSessionStore` retain bounded version-ordered snapshots through
+  `history()` and create independent version-zero branches through `fork()`.
+  File stores use one atomic history envelope and read legacy direct snapshots
+  without rewriting them during inspection. History and branches are data-only;
+  they never execute or replay stored messages or external effects.
+
 - **Bounded provider-neutral judge calibration**: `EvalCalibrationCase`,
   `EvalCalibrationResult`, `EvalCalibrationReport`, and synchronous/asynchronous
   `EvaluationHarness.calibrate(...)` methods compare host-supplied judge

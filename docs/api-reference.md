@@ -2660,6 +2660,31 @@ summarization remain separate host/runtime decisions. The built-in stores also
 implement the optional `SessionCompactionStore` contract for an explicit,
 host-supplied summary:
 
+The built-in stores retain a bounded, version-ordered history of successful
+session mutations. `history(session_id, limit=N)` returns detached snapshots
+from the newest retained tail; the default limit is the store's configured
+`max_history` (100 by default, with a hard maximum of 10,000). `fork(...)`
+creates an independent version-zero session from the current tip or a retained
+`at_version`, and can require an `expected_version` to protect against a stale
+source. Missing or evicted versions, existing targets, invalid limits, and
+stale versions fail without mutating either session. File stores persist the
+history in one atomic envelope, read legacy direct-snapshot files without
+rewriting them during inspection, and migrate them only after a successful
+mutation.
+
+```python
+history = store.history("chat-1", limit=5).unwrap()
+branch = store.fork(
+    "chat-1",
+    "chat-1-review",
+    at_version=history[-1].version,
+    expected_version=snapshot.version,
+).unwrap()
+```
+
+History is data-only: it does not execute, interpret, or replay stored
+messages, handlers, tools, or external effects.
+
 ```python
 from maple import InMemorySessionStore, SessionMessage
 

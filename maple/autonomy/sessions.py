@@ -35,6 +35,8 @@ DEFAULT_MAX_MESSAGES = 100
 DEFAULT_MAX_MESSAGE_BYTES = 128 * 1024
 DEFAULT_MAX_METADATA_BYTES = 64 * 1024
 DEFAULT_MAX_SESSION_BYTES = 1 * 1024 * 1024
+DEFAULT_MAX_HISTORY = 100
+MAX_HISTORY = 10_000
 
 
 def _error(error_type: str, message: str, **details: Any) -> Error:
@@ -426,6 +428,14 @@ class SessionSnapshot:
         )
 
 
+@dataclass(frozen=True)
+class _StoredSession:
+    """Validated current snapshot and retained history for a file record."""
+
+    snapshot: SessionSnapshot
+    history: Tuple[SessionSnapshot, ...]
+
+
 class SessionStore(Protocol):
     """Persistence contract for bounded conversation sessions."""
 
@@ -453,6 +463,19 @@ class SessionStore(Protocol):
         expected_version: Optional[int] = None,
     ) -> Result[SessionSnapshot, Error]: ...
 
+    def history(
+        self, session_id: str, *, limit: Optional[int] = None
+    ) -> Result[Tuple[SessionSnapshot, ...], Error]: ...
+
+    def fork(
+        self,
+        session_id: str,
+        new_session_id: Optional[str] = None,
+        *,
+        at_version: Optional[int] = None,
+        expected_version: Optional[int] = None,
+    ) -> Result[SessionSnapshot, Error]: ...
+
 
 class SessionCompactionStore(Protocol):
     """Optional host-supplied-summary compaction contract."""
@@ -476,6 +499,7 @@ class _SessionStoreSupport:
         max_message_bytes: int,
         max_metadata_bytes: int,
         max_session_bytes: int,
+        max_history: int,
     ) -> None:
         limits = (
             max_sessions,
@@ -483,19 +507,29 @@ class _SessionStoreSupport:
             max_message_bytes,
             max_metadata_bytes,
             max_session_bytes,
+            max_history,
         )
         if any(
             not isinstance(value, int) or isinstance(value, bool) or value <= 0
-            for value in limits
+            for value in limits[:-1]
         ):
             raise ValueError("session limits must be positive integers")
+        if (
+            not isinstance(max_history, int)
+            or isinstance(max_history, bool)
+            or max_history <= 0
+        ):
+            raise ValueError("max_history must be a positive integer")
         if max_message_bytes > max_session_bytes:
             raise ValueError("max_message_bytes cannot exceed max_session_bytes")
+        if max_history > MAX_HISTORY:
+            raise ValueError(f"max_history cannot exceed {MAX_HISTORY}")
         self.max_sessions = max_sessions
         self.max_messages = max_messages
         self.max_message_bytes = max_message_bytes
         self.max_metadata_bytes = max_metadata_bytes
         self.max_session_bytes = max_session_bytes
+        self.max_history = max_history
 
     def _session_id(self, session_id: Any) -> Result[str, Error]:
         error = _valid_identifier(session_id, "session_id")
@@ -520,6 +554,35 @@ class _SessionStoreSupport:
         if copied.is_err():
             return Result.err(copied.unwrap_err())
         return Result.ok(copied.unwrap())
+
+    def _history_limit(self, limit: Any) -> Result[int, Error]:
+        if (
+            not isinstance(limit, int)
+            or isinstance(limit, bool)
+            or limit <= 0
+            or limit > self.max_history
+        ):
+            return Result.err(
+                _error(
+                    "SESSION_HISTORY_LIMIT",
+                    "history limit must be a positive integer within the configured bound.",
+                    max_history=self.max_history,
+                )
+            )
+        return Result.ok(limit)
+
+    def _version(self, value: Any, field_name: str) -> Result[Optional[int], Error]:
+        if value is not None and (
+            not isinstance(value, int) or isinstance(value, bool) or value < 0
+        ):
+            return Result.err(
+                _error(
+                    "SESSION_VERSION_INVALID",
+                    f"{field_name} must be a non-negative integer or null.",
+                    field=field_name,
+                )
+            )
+        return Result.ok(value)
 
     def _copy_snapshot(
         self, snapshot: SessionSnapshot
@@ -592,6 +655,155 @@ class _SessionStoreSupport:
                 )
             )
         return Result.ok(copied)
+
+    def _validate_history(
+        self,
+        history: Tuple[SessionSnapshot, ...],
+        current: SessionSnapshot,
+        *,
+        max_history: Optional[int] = None,
+    ) -> Result[Tuple[SessionSnapshot, ...], Error]:
+        history_bound = self.max_history if max_history is None else max_history
+        if not history or len(history) > history_bound:
+            return Result.err(
+                _error(
+                    "SESSION_HISTORY_INVALID",
+                    "Session history must contain 1-{} snapshots.".format(
+                        history_bound
+                    ),
+                    max_history=self.max_history,
+                )
+            )
+        copied_history: List[SessionSnapshot] = []
+        previous_version = -1
+        for snapshot in history:
+            copied = self._copy_snapshot(snapshot)
+            if copied.is_err():
+                return Result.err(copied.unwrap_err())
+            value = copied.unwrap()
+            if (
+                value.session_id != current.session_id
+                or value.version <= previous_version
+            ):
+                return Result.err(
+                    _error(
+                        "SESSION_HISTORY_INVALID",
+                        "Session history must use one session ID and strictly increase versions.",
+                    )
+                )
+            copied_history.append(value)
+            previous_version = value.version
+        if copied_history[-1].to_dict() != current.to_dict():
+            return Result.err(
+                _error(
+                    "SESSION_HISTORY_INVALID",
+                    "The newest history entry must equal the current snapshot.",
+                )
+            )
+        try:
+            history_bytes = len(
+                json.dumps(
+                    {
+                        "schema_version": 2,
+                        "snapshot": current.to_dict(),
+                        "history": [item.to_dict() for item in copied_history],
+                    },
+                    ensure_ascii=False,
+                    allow_nan=False,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            )
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            return Result.err(
+                _error(
+                    "SESSION_VALUE_INVALID",
+                    "Session history is not JSON serializable.",
+                    reason=str(exc)[:256],
+                )
+            )
+        if history_bytes > self.max_session_bytes:
+            return Result.err(
+                _error(
+                    "SESSION_SIZE_EXCEEDED",
+                    "Session history exceeds the configured byte limit.",
+                    max_bytes=self.max_session_bytes,
+                )
+            )
+        return Result.ok(tuple(copied_history))
+
+    def _next_history(
+        self,
+        history: Tuple[SessionSnapshot, ...],
+        candidate: SessionSnapshot,
+    ) -> Result[Tuple[SessionSnapshot, ...], Error]:
+        values = (history + (candidate,))[-self.max_history :]
+        return self._validate_history(values, candidate)
+
+    def _history_tail(
+        self, history: Tuple[SessionSnapshot, ...], limit: Optional[int]
+    ) -> Result[Tuple[SessionSnapshot, ...], Error]:
+        limit_result = self._history_limit(self.max_history if limit is None else limit)
+        if limit_result.is_err():
+            return Result.err(limit_result.unwrap_err())
+        if not history:
+            return Result.err(
+                _error("SESSION_HISTORY_INVALID", "Session history is empty.")
+            )
+        return Result.ok(tuple(history[-limit_result.unwrap() :]))
+
+    def _select_fork_snapshot(
+        self,
+        current: SessionSnapshot,
+        history: Tuple[SessionSnapshot, ...],
+        at_version: Optional[int],
+        expected_version: Optional[int],
+    ) -> Result[SessionSnapshot, Error]:
+        at_result = self._version(at_version, "at_version")
+        if at_result.is_err():
+            return Result.err(at_result.unwrap_err())
+        expected_result = self._version(expected_version, "expected_version")
+        if expected_result.is_err():
+            return Result.err(expected_result.unwrap_err())
+        expected = expected_result.unwrap()
+        if expected is not None and expected != current.version:
+            return Result.err(
+                _error(
+                    "SESSION_CONFLICT",
+                    "Session version does not match.",
+                    session_id=current.session_id,
+                    expected_version=expected,
+                    actual_version=current.version,
+                )
+            )
+        requested = at_result.unwrap()
+        selected_version = current.version if requested is None else requested
+        for snapshot in history:
+            if snapshot.version == selected_version:
+                return self._copy_snapshot(snapshot)
+        return Result.err(
+            _error(
+                "SESSION_VERSION_UNAVAILABLE",
+                "The requested session version is not retained.",
+                session_id=current.session_id,
+                requested_version=selected_version,
+                current_version=current.version,
+            )
+        )
+
+    def _fork_snapshot(
+        self, source: SessionSnapshot, new_session_id: str
+    ) -> Result[SessionSnapshot, Error]:
+        now = time.time()
+        return self._copy_snapshot(
+            SessionSnapshot(
+                session_id=new_session_id,
+                messages=source.messages,
+                metadata=source.metadata,
+                version=0,
+                created_at=now,
+                updated_at=now,
+            )
+        )
 
     def _message(self, message: SessionMessage) -> Result[SessionMessage, Error]:
         if not isinstance(message, SessionMessage):
@@ -784,6 +996,7 @@ class InMemorySessionStore(_SessionStoreSupport):
         max_message_bytes: int = DEFAULT_MAX_MESSAGE_BYTES,
         max_metadata_bytes: int = DEFAULT_MAX_METADATA_BYTES,
         max_session_bytes: int = DEFAULT_MAX_SESSION_BYTES,
+        max_history: int = DEFAULT_MAX_HISTORY,
     ) -> None:
         self._configure_limits(
             max_sessions=max_sessions,
@@ -791,8 +1004,10 @@ class InMemorySessionStore(_SessionStoreSupport):
             max_message_bytes=max_message_bytes,
             max_metadata_bytes=max_metadata_bytes,
             max_session_bytes=max_session_bytes,
+            max_history=max_history,
         )
         self._sessions: Dict[str, SessionSnapshot] = {}
+        self._history: Dict[str, Tuple[SessionSnapshot, ...]] = {}
         self._lock = threading.RLock()
 
     def create(
@@ -826,7 +1041,12 @@ class InMemorySessionStore(_SessionStoreSupport):
             if snapshot_result.is_err():
                 return Result.err(snapshot_result.unwrap_err())
             snapshot = snapshot_result.unwrap()
+            history = self._validate_history((snapshot,), snapshot)
+            if history.is_err():
+                return Result.err(history.unwrap_err())
+            snapshot = history.unwrap()[-1]
             self._sessions[resolved_id] = snapshot
+            self._history[resolved_id] = history.unwrap()
             return Result.ok(self._copy_snapshot(snapshot).unwrap())
 
     def load(self, session_id: str) -> Result[Optional[SessionSnapshot], Error]:
@@ -865,7 +1085,13 @@ class InMemorySessionStore(_SessionStoreSupport):
             candidate = self._append_snapshot(current, message, expected_version)
             if candidate.is_err():
                 return Result.err(candidate.unwrap_err())
+            next_history = self._next_history(
+                self._history[session_id], candidate.unwrap()
+            )
+            if next_history.is_err():
+                return Result.err(next_history.unwrap_err())
             self._sessions[session_id] = candidate.unwrap()
+            self._history[session_id] = next_history.unwrap()
             return Result.ok(self._copy_snapshot(candidate.unwrap()).unwrap())
 
     def clear(
@@ -890,7 +1116,13 @@ class InMemorySessionStore(_SessionStoreSupport):
             candidate = self._clear_snapshot(current, expected_version)
             if candidate.is_err():
                 return Result.err(candidate.unwrap_err())
+            next_history = self._next_history(
+                self._history[session_id], candidate.unwrap()
+            )
+            if next_history.is_err():
+                return Result.err(next_history.unwrap_err())
             self._sessions[session_id] = candidate.unwrap()
+            self._history[session_id] = next_history.unwrap()
             return Result.ok(self._copy_snapshot(candidate.unwrap()).unwrap())
 
     def compact(
@@ -919,8 +1151,98 @@ class InMemorySessionStore(_SessionStoreSupport):
             )
             if candidate.is_err():
                 return Result.err(candidate.unwrap_err())
+            next_history = self._next_history(
+                self._history[session_id], candidate.unwrap()
+            )
+            if next_history.is_err():
+                return Result.err(next_history.unwrap_err())
             self._sessions[session_id] = candidate.unwrap()
+            self._history[session_id] = next_history.unwrap()
             return Result.ok(self._copy_snapshot(candidate.unwrap()).unwrap())
+
+    def history(
+        self, session_id: str, *, limit: Optional[int] = None
+    ) -> Result[Tuple[SessionSnapshot, ...], Error]:
+        id_result = self._session_id(session_id)
+        if id_result.is_err():
+            return Result.err(id_result.unwrap_err())
+        with self._lock:
+            history = self._history.get(session_id)
+            if history is None:
+                return Result.err(
+                    _error(
+                        "SESSION_NOT_FOUND",
+                        "Session was not found.",
+                        session_id=session_id,
+                    )
+                )
+            tail = self._history_tail(history, limit)
+            if tail.is_err():
+                return Result.err(tail.unwrap_err())
+            copied: List[SessionSnapshot] = []
+            for snapshot in tail.unwrap():
+                value = self._copy_snapshot(snapshot)
+                if value.is_err():
+                    return Result.err(value.unwrap_err())
+                copied.append(value.unwrap())
+            return Result.ok(tuple(copied))
+
+    def fork(
+        self,
+        session_id: str,
+        new_session_id: Optional[str] = None,
+        *,
+        at_version: Optional[int] = None,
+        expected_version: Optional[int] = None,
+    ) -> Result[SessionSnapshot, Error]:
+        source_result = self._session_id(session_id)
+        if source_result.is_err():
+            return Result.err(source_result.unwrap_err())
+        resolved_id = new_session_id or f"session-{uuid.uuid4().hex}"
+        target_result = self._session_id(resolved_id)
+        if target_result.is_err():
+            return Result.err(target_result.unwrap_err())
+        with self._lock:
+            current = self._sessions.get(session_id)
+            if current is None:
+                return Result.err(
+                    _error(
+                        "SESSION_NOT_FOUND",
+                        "Session was not found.",
+                        session_id=session_id,
+                    )
+                )
+            if resolved_id in self._sessions:
+                return Result.err(
+                    _error(
+                        "SESSION_EXISTS",
+                        "A session with this ID already exists.",
+                        session_id=resolved_id,
+                    )
+                )
+            if len(self._sessions) >= self.max_sessions:
+                return Result.err(
+                    _error(
+                        "SESSION_LIMIT",
+                        "The session store has reached its session limit.",
+                        max_sessions=self.max_sessions,
+                    )
+                )
+            source = self._select_fork_snapshot(
+                current,
+                self._history[session_id],
+                at_version,
+                expected_version,
+            )
+            if source.is_err():
+                return Result.err(source.unwrap_err())
+            target = self._fork_snapshot(source.unwrap(), resolved_id)
+            if target.is_err():
+                return Result.err(target.unwrap_err())
+            snapshot = target.unwrap()
+            self._sessions[resolved_id] = snapshot
+            self._history[resolved_id] = (snapshot,)
+            return Result.ok(self._copy_snapshot(snapshot).unwrap())
 
 
 class FileSessionStore(_SessionStoreSupport):
@@ -935,6 +1257,7 @@ class FileSessionStore(_SessionStoreSupport):
         max_message_bytes: int = DEFAULT_MAX_MESSAGE_BYTES,
         max_metadata_bytes: int = DEFAULT_MAX_METADATA_BYTES,
         max_session_bytes: int = DEFAULT_MAX_SESSION_BYTES,
+        max_history: int = DEFAULT_MAX_HISTORY,
     ) -> None:
         self._configure_limits(
             max_sessions=max_sessions,
@@ -942,6 +1265,7 @@ class FileSessionStore(_SessionStoreSupport):
             max_message_bytes=max_message_bytes,
             max_metadata_bytes=max_metadata_bytes,
             max_session_bytes=max_session_bytes,
+            max_history=max_history,
         )
         self.directory = Path(directory).expanduser().resolve()
         self.directory.mkdir(parents=True, exist_ok=True)
@@ -958,7 +1282,7 @@ class FileSessionStore(_SessionStoreSupport):
 
     def _read_unlocked(
         self, session_id: str
-    ) -> Result[Optional[SessionSnapshot], Error]:
+    ) -> Result[Optional[_StoredSession], Error]:
         try:
             path = self._path(session_id)
             if not path.exists():
@@ -972,12 +1296,29 @@ class FileSessionStore(_SessionStoreSupport):
                     )
                 )
             with path.open("r", encoding="utf-8") as handle:
-                snapshot = SessionSnapshot.from_dict(json.load(handle))
-            copied = self._copy_snapshot(snapshot)
-            if copied.is_err():
-                return Result.err(copied.unwrap_err())
-            return Result[Optional[SessionSnapshot], Error].ok(copied.unwrap())
-        except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
+                payload = json.load(handle)
+            if not isinstance(payload, Mapping):
+                raise ValueError("session record must be an object")
+            if "schema_version" not in payload:
+                snapshot = SessionSnapshot.from_dict(payload)
+                history: Tuple[SessionSnapshot, ...] = (snapshot,)
+            else:
+                if payload.get("schema_version") != 2:
+                    raise ValueError("unsupported session record schema")
+                snapshot = SessionSnapshot.from_dict(payload["snapshot"])
+                raw_history = payload.get("history")
+                if not isinstance(raw_history, list):
+                    raise ValueError("session history must be a list")
+                history = tuple(SessionSnapshot.from_dict(item) for item in raw_history)
+            validated = self._validate_history(
+                history, snapshot, max_history=MAX_HISTORY
+            )
+            if validated.is_err():
+                return Result.err(validated.unwrap_err())
+            retained = validated.unwrap()[-self.max_history :]
+            current = retained[-1]
+            return Result.ok(_StoredSession(snapshot=current, history=retained))
+        except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
             return Result.err(
                 _error(
                     "SESSION_LOAD_ERROR",
@@ -987,19 +1328,34 @@ class FileSessionStore(_SessionStoreSupport):
             )
 
     def _write_unlocked(
-        self, snapshot: SessionSnapshot
+        self,
+        snapshot: SessionSnapshot,
+        history: Tuple[SessionSnapshot, ...],
     ) -> Result[SessionSnapshot, Error]:
-        serialized = self._copy_snapshot(snapshot)
-        if serialized.is_err():
-            return Result.err(serialized.unwrap_err())
+        validated = self._validate_history(history, snapshot)
+        if validated.is_err():
+            return Result.err(validated.unwrap_err())
+        serialized = validated.unwrap()[-1]
         temporary_path: Optional[Path] = None
         try:
             payload = json.dumps(
-                serialized.unwrap().to_dict(),
+                {
+                    "schema_version": 2,
+                    "snapshot": serialized.to_dict(),
+                    "history": [item.to_dict() for item in validated.unwrap()],
+                },
                 ensure_ascii=False,
                 allow_nan=False,
                 indent=2,
             )
+            if len(payload.encode("utf-8")) > self.max_session_bytes:
+                return Result.err(
+                    _error(
+                        "SESSION_SIZE_EXCEEDED",
+                        "Session history exceeds the configured byte limit.",
+                        max_bytes=self.max_session_bytes,
+                    )
+                )
             with tempfile.NamedTemporaryFile(
                 mode="w",
                 encoding="utf-8",
@@ -1014,7 +1370,7 @@ class FileSessionStore(_SessionStoreSupport):
                 os.fsync(handle.fileno())
             os.replace(str(temporary_path), str(self._path(snapshot.session_id)))
             temporary_path = None
-            return Result.ok(serialized.unwrap())
+            return Result.ok(serialized)
         except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
             return Result.err(
                 _error(
@@ -1075,14 +1431,21 @@ class FileSessionStore(_SessionStoreSupport):
             snapshot = self._new_snapshot(resolved_id, metadata)
             if snapshot.is_err():
                 return Result.err(snapshot.unwrap_err())
-            return self._write_unlocked(snapshot.unwrap())
+            created = snapshot.unwrap()
+            return self._write_unlocked(created, (created,))
 
     def load(self, session_id: str) -> Result[Optional[SessionSnapshot], Error]:
         id_result = self._session_id(session_id)
         if id_result.is_err():
             return Result.err(id_result.unwrap_err())
         with self._lock:
-            return self._read_unlocked(session_id)
+            record = self._read_unlocked(session_id)
+            if record.is_err():
+                return Result.err(record.unwrap_err())
+            stored = record.unwrap()
+            if stored is None:
+                return Result.ok(None)
+            return Result.ok(stored.snapshot)
 
     def append(
         self,
@@ -1098,8 +1461,8 @@ class FileSessionStore(_SessionStoreSupport):
             current = self._read_unlocked(session_id)
             if current.is_err():
                 return Result.err(current.unwrap_err())
-            current_snapshot = current.unwrap()
-            if current_snapshot is None:
+            record = current.unwrap()
+            if record is None:
                 return Result.err(
                     _error(
                         "SESSION_NOT_FOUND",
@@ -1107,12 +1470,113 @@ class FileSessionStore(_SessionStoreSupport):
                         session_id=session_id,
                     )
                 )
+            current_snapshot = record.snapshot
             candidate = self._append_snapshot(
                 current_snapshot, message, expected_version
             )
             if candidate.is_err():
                 return Result.err(candidate.unwrap_err())
-            return self._write_unlocked(candidate.unwrap())
+            next_history = self._next_history(record.history, candidate.unwrap())
+            if next_history.is_err():
+                return Result.err(next_history.unwrap_err())
+            return self._write_unlocked(candidate.unwrap(), next_history.unwrap())
+
+    def history(
+        self, session_id: str, *, limit: Optional[int] = None
+    ) -> Result[Tuple[SessionSnapshot, ...], Error]:
+        id_result = self._session_id(session_id)
+        if id_result.is_err():
+            return Result.err(id_result.unwrap_err())
+        with self._lock:
+            record = self._read_unlocked(session_id)
+            if record.is_err():
+                return Result.err(record.unwrap_err())
+            stored = record.unwrap()
+            if stored is None:
+                return Result.err(
+                    _error(
+                        "SESSION_NOT_FOUND",
+                        "Session was not found.",
+                        session_id=session_id,
+                    )
+                )
+            tail = self._history_tail(stored.history, limit)
+            if tail.is_err():
+                return Result.err(tail.unwrap_err())
+            return tail
+
+    def fork(
+        self,
+        session_id: str,
+        new_session_id: Optional[str] = None,
+        *,
+        at_version: Optional[int] = None,
+        expected_version: Optional[int] = None,
+    ) -> Result[SessionSnapshot, Error]:
+        source_result = self._session_id(session_id)
+        if source_result.is_err():
+            return Result.err(source_result.unwrap_err())
+        resolved_id = new_session_id or f"session-{uuid.uuid4().hex}"
+        target_result = self._session_id(resolved_id)
+        if target_result.is_err():
+            return Result.err(target_result.unwrap_err())
+        with self._lock:
+            source_record = self._read_unlocked(session_id)
+            if source_record.is_err():
+                return Result.err(source_record.unwrap_err())
+            source = source_record.unwrap()
+            if source is None:
+                return Result.err(
+                    _error(
+                        "SESSION_NOT_FOUND",
+                        "Session was not found.",
+                        session_id=session_id,
+                    )
+                )
+            existing = self._read_unlocked(resolved_id)
+            if existing.is_err():
+                return Result.err(existing.unwrap_err())
+            if existing.unwrap() is not None:
+                return Result.err(
+                    _error(
+                        "SESSION_EXISTS",
+                        "A session with this ID already exists.",
+                        session_id=resolved_id,
+                    )
+                )
+            try:
+                session_count = sum(
+                    1 for path in self.directory.glob("*.json") if path.is_file()
+                )
+            except OSError as exc:
+                return Result.err(
+                    _error(
+                        "SESSION_SAVE_ERROR",
+                        "Failed to inspect session store.",
+                        reason=str(exc)[:256],
+                    )
+                )
+            if session_count >= self.max_sessions:
+                return Result.err(
+                    _error(
+                        "SESSION_LIMIT",
+                        "The session store has reached its session limit.",
+                        max_sessions=self.max_sessions,
+                    )
+                )
+            selected = self._select_fork_snapshot(
+                source.snapshot,
+                source.history,
+                at_version,
+                expected_version,
+            )
+            if selected.is_err():
+                return Result.err(selected.unwrap_err())
+            target = self._fork_snapshot(selected.unwrap(), resolved_id)
+            if target.is_err():
+                return Result.err(target.unwrap_err())
+            snapshot = target.unwrap()
+            return self._write_unlocked(snapshot, (snapshot,))
 
     def clear(
         self,
@@ -1127,8 +1591,8 @@ class FileSessionStore(_SessionStoreSupport):
             current = self._read_unlocked(session_id)
             if current.is_err():
                 return Result.err(current.unwrap_err())
-            current_snapshot = current.unwrap()
-            if current_snapshot is None:
+            record = current.unwrap()
+            if record is None:
                 return Result.err(
                     _error(
                         "SESSION_NOT_FOUND",
@@ -1136,10 +1600,14 @@ class FileSessionStore(_SessionStoreSupport):
                         session_id=session_id,
                     )
                 )
+            current_snapshot = record.snapshot
             candidate = self._clear_snapshot(current_snapshot, expected_version)
             if candidate.is_err():
                 return Result.err(candidate.unwrap_err())
-            return self._write_unlocked(candidate.unwrap())
+            next_history = self._next_history(record.history, candidate.unwrap())
+            if next_history.is_err():
+                return Result.err(next_history.unwrap_err())
+            return self._write_unlocked(candidate.unwrap(), next_history.unwrap())
 
     def compact(
         self,
@@ -1156,8 +1624,8 @@ class FileSessionStore(_SessionStoreSupport):
             current = self._read_unlocked(session_id)
             if current.is_err():
                 return Result.err(current.unwrap_err())
-            current_snapshot = current.unwrap()
-            if current_snapshot is None:
+            record = current.unwrap()
+            if record is None:
                 return Result.err(
                     _error(
                         "SESSION_NOT_FOUND",
@@ -1165,15 +1633,20 @@ class FileSessionStore(_SessionStoreSupport):
                         session_id=session_id,
                     )
                 )
+            current_snapshot = record.snapshot
             candidate = self._compact_snapshot(
                 current_snapshot, summary, keep_last, expected_version
             )
             if candidate.is_err():
                 return Result.err(candidate.unwrap_err())
-            return self._write_unlocked(candidate.unwrap())
+            next_history = self._next_history(record.history, candidate.unwrap())
+            if next_history.is_err():
+                return Result.err(next_history.unwrap_err())
+            return self._write_unlocked(candidate.unwrap(), next_history.unwrap())
 
 
 __all__ = [
+    "DEFAULT_MAX_HISTORY",
     "DEFAULT_MAX_MESSAGES",
     "DEFAULT_MAX_MESSAGE_BYTES",
     "DEFAULT_MAX_METADATA_BYTES",
@@ -1181,6 +1654,7 @@ __all__ = [
     "DEFAULT_MAX_SESSIONS",
     "FileSessionStore",
     "InMemorySessionStore",
+    "MAX_HISTORY",
     "SessionCompactionStore",
     "SessionMessage",
     "SessionSnapshot",
