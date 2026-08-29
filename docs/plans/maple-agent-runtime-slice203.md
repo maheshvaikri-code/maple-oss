@@ -1,7 +1,7 @@
 # Slice 203 plan — native run-ID validation correction
 
-**Brief:** [maple-agent-runtime-slice203.md](../briefs/maple-agent-runtime-slice203.md)  
-**ADR:** [ADR-147](../adr/147-native-run-id-validation.md)  
+**Brief:** [maple-agent-runtime-slice203.md](../briefs/maple-agent-runtime-slice203.md)
+**ADR:** [ADR-147](../adr/147-native-run-id-validation.md)
 **Class:** M
 
 | Slice | Role | Scope | Status |
