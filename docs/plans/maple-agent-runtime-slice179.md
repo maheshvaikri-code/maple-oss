@@ -8,7 +8,7 @@
 |---|-------|------|---------------|-------------------|--------|
 | 1 | Add optional durable outbox-wide lease ownership | Backend / Security | `maple/autonomy/notification_outbox.py`, exports | Acquisition fencing, no-target-on-denial, bounded TTL, release | complete: `5a0affd` |
 | 2 | Prove compatibility and concurrent drain behavior | QA / Security | `tests/autonomy/test_notification_outbox.py` | Existing outbox suite plus competing worker and release/error cases | complete: `20 passed in 0.66s`; full suite `1720 passed, 1 skipped` |
-| 3 | Publish contract and package evidence | Tech Writer / Release | README, API/parity/changelog, QA/review/release artifacts | Static checks, full suite, clean archive, isolated package smoke | in progress: public contract and review/QA evidence recorded; package gate pending |
+| 3 | Publish contract and package evidence | Tech Writer / Release | README, API/parity/changelog, QA/review/release artifacts | Static checks, full suite, clean archive, isolated package smoke | complete: public docs/review/QA and clean package gate from `c331f36` |
 
 ## Threat sketch
 
@@ -37,5 +37,5 @@ state lock, no automatic renewal, and explicit at-least-once documentation.
 ## Status snapshot
 
 Done (with evidence): design brief/ADR, optional lease ownership, concurrent
-drain regressions, and public contract/review/QA evidence. Next: clean archive
+drain regressions, public contract/review/QA evidence, and the clean archive
 package gate. Blocked on: none.
