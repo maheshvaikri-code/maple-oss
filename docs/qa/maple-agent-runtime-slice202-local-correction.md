@@ -36,6 +36,30 @@ python -m pytest tests/autonomy/test_sessions.py -q --no-cov
 
 No retry, test weakening, or test deletion was used.
 
+## Clean package smoke
+
+The first smoke harness attempt selected the archive's `.github` directory as
+the project root and failed before building; no repository files changed. The
+corrected run used the archive root and produced:
+
+```text
+source_archive_entries=883
+wheel_entries=108
+sdist_bytes=1369568
+build_exit=0
+twine_exit=0
+install_exit=0
+import_exit=0
+doctor_exit=0
+import_ok 1.1.3 100 10000
+{"checks": {"core": true, "evaluation": true, "events": true, "execution": true, "interop": true, "retrieval": true, "server": true, "sessions": true}, "network": false, "ready": true, "status": "SUCCESS", "version": "1.1.3"}
+wheel_sha256=17439FCAD0CB52B07304542F7A781AEA09214D5832EF75EC1F71CF0A9077207A
+sdist_sha256=D2CDAD141860562BD97E3535FDA76A6AA04D7AFB98F49C0DB9020D78B9157790
+```
+
+This was built from clean tracked `HEAD` (`2c6c3c3`) and no registry write was
+attempted.
+
 ## Status
 
 The direct-library correction is verified. Slice 202's authenticated HTTP
