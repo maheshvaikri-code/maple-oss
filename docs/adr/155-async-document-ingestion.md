@@ -16,7 +16,7 @@ managed-store, authorization, or exactly-once behavior.
 
 ## Decision
 
-We propose adding an `AsyncDocumentConnector` protocol with
+We will add an `AsyncDocumentConnector` protocol with
 `async fetch(cursor, *, limit) -> Result[DocumentBatch, Error]` and an
 `async ingest_documents_async()` helper. The helper would reuse the existing
 bounded batch, cursor, duplicate-ID, checkpoint, rate-limit, sink, and
