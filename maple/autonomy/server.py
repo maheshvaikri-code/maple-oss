@@ -28,7 +28,7 @@ from typing import (
 )
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qsl, quote, unquote, urlencode, urlsplit, urlunsplit
-from urllib.request import Request, urlopen
+from urllib.request import Request
 
 from ..core.result import Result
 from ..task_management.task_queue import (
@@ -53,6 +53,7 @@ from .events import (
     validate_event_source_id,
 )
 from .handoffs import HandoffRecord, HandoffStore
+from .http_transport import open_http_request
 from .interactions import (
     HumanInputNotification,
     HumanInputNotifier,
@@ -5842,7 +5843,7 @@ class RunClient:
             headers["Content-Type"] = "application/json"
         request = Request(url, data=data, headers=headers, method=method)
         try:
-            with urlopen(request, timeout=self.timeout_seconds) as response:
+            with open_http_request(request, timeout=self.timeout_seconds) as response:
                 return self._decode_response(response, int(response.status))
         except HTTPError as exc:
             decoded = self._decode_response(exc, int(exc.code))

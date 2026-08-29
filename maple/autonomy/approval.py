@@ -15,11 +15,12 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Protocol, Union
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit, urlunsplit
-from urllib.request import Request, urlopen
+from urllib.request import Request
 
 from ..core.result import Result
 from ..resources.lease import FileLeaseManager
 from .durable_leases import DurableRecordLease
+from .http_transport import open_http_request
 from .notification_outbox import (
     DEFAULT_MAX_NOTIFICATION_OUTBOX_BYTES,
     DEFAULT_MAX_NOTIFICATION_OUTBOX_RECORD_BYTES,
@@ -744,7 +745,7 @@ class HttpApprovalNotifier:
             headers["Authorization"] = f"Bearer {self.auth_token}"
         request = Request(self.endpoint, data=encoded, headers=headers, method="POST")
         try:
-            with urlopen(request, timeout=self.timeout_seconds) as response:
+            with open_http_request(request, timeout=self.timeout_seconds) as response:
                 status = int(response.status)
                 raw = response.read(self.max_response_bytes + 1)
         except HTTPError as exc:

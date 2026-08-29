@@ -371,6 +371,34 @@ def test_http_event_exporter_failure_isolated_from_event_publish():
     assert stream.metrics()["exporter_failures"] == 1
 
 
+def test_http_event_exporter_rejects_unsafe_redirects_without_leaking_event():
+    class RedirectHandler(BaseHTTPRequestHandler):
+        def do_POST(self):  # noqa: N802
+            self.send_response(302)
+            self.send_header("Location", "file:///tmp/maple-secret")
+            self.end_headers()
+
+        def log_message(self, format, *args):
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), RedirectHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        exporter = HttpEventExporter(
+            f"http://127.0.0.1:{server.server_address[1]}/events"
+        )
+        stream = EventStream(exporter=exporter)
+        published = stream.publish("safe", {"secret": "never-sent"})
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+    assert published.is_ok()
+    assert stream.metrics()["exporter_failures"] == 1
+
+
 def test_file_event_journal_rehydrates_redacted_events_and_sequence(tmp_path):
     journal = FileEventJournal(tmp_path, max_events=2)
     stream = EventStream(max_events=2, journal=journal)
