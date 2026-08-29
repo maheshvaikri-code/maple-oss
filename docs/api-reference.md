@@ -2983,10 +2983,11 @@ with RunServer(
 ```
 
 The routes are `POST /v1/tasks`, `GET /v1/tasks`,
-`GET /v1/tasks/{task_id}`, and `POST /v1/tasks/{task_id}/{action}` where
-`action` is `claim`, `complete`, or `fail`. The corresponding client methods
-are `submit_task`, `list_tasks`, `inspect_task`, `claim_task`,
-`complete_task`, and `fail_task`. Task submission accepts a bounded task type,
+`GET /v1/tasks/{task_id}`, `POST /v1/tasks/claim-next`, and
+`POST /v1/tasks/{task_id}/{action}` where `action` is `claim`, `complete`, or
+`fail`. The corresponding client methods are `submit_task`, `list_tasks`,
+`inspect_task`, `claim_next_task`, `claim_task`, `complete_task`, and
+`fail_task`. Task submission accepts a bounded task type,
 JSON object payload/metadata, priority, capability requirements, timeout, and
 retry count. Completion results and failure text are bounded as well. Listing
 supports exact status/task-type filters and a limit of 1 through 100.
@@ -3000,8 +3001,12 @@ selected implementation, and queue internals are not returned in errors.
 This is a bounded control plane, not a distributed scheduler. It does not
 provide worker heartbeats, leases, automatic retry, atomic submit-and-claim,
 handler execution, queue federation, or exactly-once external effects. The
-client performs no retries; hosts own worker lifecycle, TLS, tenancy, and
-execution policy. A server without a configured queue returns `503`.
+`claim_next_task(assigned_agent, capabilities=...)` method is a non-blocking
+bounded candidate selection operation: it orders compatible work by priority,
+creation time, and task ID, then uses the queue's ownership claim; no work is
+reported as `{"task": null}`. The client performs no retries; hosts own worker
+lifecycle, polling cadence, TLS, tenancy, and execution policy. A server
+without a configured queue returns `503`.
 
 ### Agent run HTTP transport
 

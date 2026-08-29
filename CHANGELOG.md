@@ -10,6 +10,14 @@
 
 ### Additions
 
+- **Non-blocking remote claim-next**: authenticated task workers can call
+  `RunClient.claim_next_task(...)` to select bounded compatible work by
+  priority, creation time, and task ID through `POST /v1/tasks/claim-next`.
+  Queue-side ownership races are retried only across the bounded candidate
+  set, and no work returns an explicit empty task envelope. Blocking polling,
+  worker liveness, fairness, distributed scheduling, and exactly-once effects
+  remain outside the contract.
+
 - **Authenticated remote task-queue control**: optional `RunServer(task_queue=...)`
   and `RunClient` methods expose bounded submit/list/inspect/claim/complete/fail
   operations under separate `task:*` scopes. Existing queue ownership and

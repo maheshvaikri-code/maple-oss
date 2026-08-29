@@ -188,6 +188,7 @@ def test_remote_task_queue_requires_auth_and_scopes_agent_targets():
         submitted = client.submit_task("research", {}, requirements=["search"])
         task_id = submitted.unwrap()["task_id"]
         denied_agent = client.claim_task(task_id, "worker-b")
+        denied_next = client.claim_next_task("worker-a", capabilities=["write"])
         claimed = client.claim_task(task_id, "worker-a")
         denied_failure = client.fail_task(task_id, "worker-a", "not now")
         denied_listing = RunClient(base_url).list_tasks()
@@ -199,11 +200,59 @@ def test_remote_task_queue_requires_auth_and_scopes_agent_targets():
     assert submitted.is_ok()
     assert denied_agent.is_err()
     assert denied_agent.unwrap_err()["errorType"] == "FORBIDDEN"
+    assert denied_next.is_err()
+    assert denied_next.unwrap_err()["errorType"] == "FORBIDDEN"
     assert claimed.is_ok()
     assert denied_failure.is_err()
     assert denied_failure.unwrap_err()["errorType"] == "FORBIDDEN"
     assert denied_listing.is_err()
     assert denied_listing.unwrap_err()["errorType"] == "UNAUTHORIZED"
+
+
+def test_remote_task_claim_next_matches_capabilities_and_priority():
+    server = RunServer(
+        WorkflowRegistry(),
+        auth_token="task-token",
+        task_queue=TaskQueue(max_queue_size=4),
+    )
+    base_url = server.start()
+
+    try:
+        client = RunClient(base_url, auth_token="task-token")
+        low = client.submit_task(
+            "low-search",
+            {},
+            priority=TaskPriority.LOW,
+            requirements=["search"],
+        )
+        blocked = client.submit_task(
+            "write",
+            {},
+            priority=TaskPriority.HIGH,
+            requirements=["write"],
+        )
+        critical = client.submit_task(
+            "critical-search",
+            {},
+            priority=TaskPriority.CRITICAL,
+            requirements=["search"],
+        )
+        first = client.claim_next_task("worker-a", capabilities=["search"])
+        second = client.claim_next_task("worker-a", capabilities=["search"])
+        none = client.claim_next_task("worker-a", capabilities=["search"])
+        remaining = client.list_tasks(status=TaskStatus.QUEUED)
+    finally:
+        server.close()
+
+    assert low.is_ok() and blocked.is_ok() and critical.is_ok()
+    assert first.is_ok()
+    assert first.unwrap()["task"]["task_type"] == "critical-search"
+    assert second.is_ok()
+    assert second.unwrap()["task"]["task_type"] == "low-search"
+    assert none.is_ok()
+    assert none.unwrap()["task"] is None
+    assert remaining.is_ok()
+    assert [task["task_type"] for task in remaining.unwrap()["tasks"]] == ["write"]
 
 
 def test_remote_task_queue_rejects_malformed_queries_and_payloads():

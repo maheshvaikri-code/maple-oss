@@ -253,6 +253,8 @@ def _required_scope(method: str, path: Tuple[str, ...]) -> Optional[str]:
     if path[0:2] == ("v1", "tasks"):
         if method == "POST" and path == ("v1", "tasks"):
             return "task:submit"
+        if method == "POST" and path == ("v1", "tasks", "claim-next"):
+            return "task:claim"
         if method == "GET":
             return "task:read"
         if method == "POST" and len(path) == 4:
@@ -1888,6 +1890,9 @@ class _RequestHandler(BaseHTTPRequestHandler):
             if method == "GET" and path == ("v1", "tasks"):
                 self._list_tasks()
                 return
+            if method == "POST" and path == ("v1", "tasks", "claim-next"):
+                self._claim_next_task()
+                return
             if method == "GET" and len(path) == 3 and path[0:2] == ("v1", "tasks"):
                 self._inspect_task(path[2])
                 return
@@ -2092,6 +2097,105 @@ class _RequestHandler(BaseHTTPRequestHandler):
             )
             return
         self._write_json(200, payload)
+
+    def _claim_next_task(self) -> None:
+        """Claim the first compatible task without blocking the HTTP worker."""
+        queue = self._task_queue()
+        if queue is None:
+            return
+        body = self._read_body()
+        if set(body) - {"assigned_agent", "capabilities"}:
+            self._write_error(
+                400,
+                _error(
+                    "TASK_INPUT_INVALID",
+                    "claim-next accepts assigned_agent and capabilities.",
+                ),
+            )
+            return
+        assigned_agent = cast(Optional[str], body.get("assigned_agent"))
+        agent_error = _validate_agent_identifier(assigned_agent, "assigned_agent")
+        if agent_error is not None:
+            self._write_error(400, agent_error)
+            return
+        assigned_agent = cast(str, assigned_agent)
+        capabilities_result = _normalize_agent_capabilities(
+            body.get("capabilities", [])
+        )
+        if capabilities_result.is_err():
+            self._write_error(400, capabilities_result.unwrap_err())
+            return
+        capabilities = capabilities_result.unwrap()
+        principal = self._request_principal
+        if principal is not None and not principal.allows_agent(assigned_agent):
+            self._write_error(
+                403,
+                _error(
+                    "FORBIDDEN",
+                    "The authenticated principal cannot act for this agent.",
+                    principal_id=principal.principal_id,
+                    policy="allowed_agent_ids",
+                    agent_id=assigned_agent,
+                ),
+            )
+            return
+        if principal is not None and any(
+            not principal.allows_capability(capability) for capability in capabilities
+        ):
+            self._write_error(
+                403,
+                _error(
+                    "FORBIDDEN",
+                    "The authenticated principal cannot request one capability.",
+                    principal_id=principal.principal_id,
+                    policy="allowed_capabilities",
+                ),
+            )
+            return
+        try:
+            candidates = queue.list_tasks(
+                status=TaskStatus.QUEUED,
+                limit=_MAX_REMOTE_TASK_LIMIT,
+            )
+        except Exception:
+            self._write_error(
+                503,
+                _error(
+                    "TASK_QUEUE_UNAVAILABLE", "Task queue is temporarily unavailable."
+                ),
+            )
+            return
+        ordered = sorted(
+            candidates,
+            key=lambda task: (task.priority.value, task.created_at, task.task_id),
+        )
+        for task in ordered:
+            if any(
+                requirement not in capabilities for requirement in task.requirements
+            ):
+                continue
+            try:
+                result = queue.assign_task(task.task_id, assigned_agent)
+            except Exception:
+                self._write_error(
+                    503,
+                    _error(
+                        "TASK_QUEUE_UNAVAILABLE",
+                        "Task queue is temporarily unavailable.",
+                    ),
+                )
+                return
+            if result.is_ok():
+                self._write_json(200, {"task": _task_to_dict(result.unwrap())})
+                return
+            status, error = _task_operation_error(result.unwrap_err())
+            if status == 409 and error["errorType"] == "TASK_CONFLICT":
+                continue
+            if status == 404:
+                continue
+            self._write_error(status, error)
+            return
+        self._write_json(200, {"task": None})
 
     def _inspect_task(self, task_id: str) -> None:
         queue = self._task_queue()
@@ -4502,6 +4606,33 @@ class RunClient:
             "POST",
             ("v1", "tasks", task_id, "claim"),
             {"assigned_agent": assigned_agent},
+        )
+
+    def claim_next_task(
+        self,
+        assigned_agent: str,
+        *,
+        capabilities: Optional[Sequence[str]] = None,
+    ) -> Result[Dict[str, Any], Error]:
+        """Claim the first compatible queued task without blocking remotely."""
+        agent_error = _validate_agent_identifier(assigned_agent, "assigned_agent")
+        if agent_error is not None:
+            return Result.err(agent_error)
+        normalized_capabilities: Any = capabilities
+        if isinstance(capabilities, tuple):
+            normalized_capabilities = list(capabilities)
+        capabilities_result = _normalize_agent_capabilities(
+            [] if normalized_capabilities is None else normalized_capabilities
+        )
+        if capabilities_result.is_err():
+            return Result.err(capabilities_result.unwrap_err())
+        return self._request(
+            "POST",
+            ("v1", "tasks", "claim-next"),
+            {
+                "assigned_agent": assigned_agent,
+                "capabilities": list(capabilities_result.unwrap()),
+            },
         )
 
     def complete_task(
