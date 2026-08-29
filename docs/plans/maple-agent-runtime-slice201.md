@@ -8,9 +8,9 @@
 
 | # | Slice | Role | Files touched | Proven by (tests) | Status |
 |---|---|---|---|---|---|
-| 1 | Shared bounded history/fork contract and in-memory store | Backend / Interop | `maple/autonomy/sessions.py`, session tests, public exports | create/mutate history, newest-limit ordering, detached copies, fork/source immutability, conflicts and bounds | pending |
-| 2 | File envelope persistence and legacy compatibility | Backend / Security | `maple/autonomy/sessions.py`, session tests | restart history/fork, legacy direct snapshot load, atomic failure/no partial write, malformed history rejection | pending |
-| 3 | Public surface and release evidence | Tech Writer / Code Reviewer / QA / Security / Release | README, API reference, parity ledger, changelog, review/QA/release artifacts | runnable API examples, full regression, static checks, package smoke, scoped security review | pending |
+| 1 | Shared bounded history/fork contract and in-memory store | Backend / Interop | `maple/autonomy/sessions.py`, session tests, public exports | create/mutate history, newest-limit ordering, detached copies, fork/source immutability, conflicts and bounds | complete @ `b2f3809` |
+| 2 | File envelope persistence and legacy compatibility | Backend / Security | `maple/autonomy/sessions.py`, session tests | restart history/fork, legacy direct snapshot load, atomic failure/no partial write, malformed history rejection | complete @ `b2f3809` |
+| 3 | Public surface and release evidence | Tech Writer / Code Reviewer / QA / Security / Release | README, API reference, parity ledger, changelog, review/QA/release artifacts | runnable API examples, full regression, static checks, package smoke, scoped security review | complete for slice @ `b2f3809`; package smoke in G6 |
 
 ## Threat sketch
 
@@ -43,7 +43,6 @@ risks.
 
 ## Status snapshot
 
-G0/G1/G2 design is complete for the local contract. Next: implement the shared
-and in-memory slice, then file persistence and public/release evidence.
-Blocked on: none for local work; hosted tenancy, distributed coordination,
-encryption, and remote APIs remain separate human-gated scope.
+G0/G1/G2 design, implementation, review, and QA are complete for the local
+contract. G6 package smoke remains for this slice. Hosted tenancy, distributed
+coordination, encryption, and remote APIs remain separate human-gated scope.
