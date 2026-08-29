@@ -171,6 +171,41 @@ def test_outbox_rejects_new_records_at_bound_but_accepts_duplicate(
     assert len(outbox.list_pending().unwrap()) == 1
 
 
+def test_outbox_enforces_record_and_queue_byte_bounds(tmp_path: Any) -> None:
+    notification = ApprovalNotification.from_request(
+        _approval_request("bounded"), "created"
+    )
+    too_small_record = FileApprovalNotificationOutbox(
+        tmp_path / "record", target=RecordingTarget(), max_record_bytes=64
+    )
+    oversized = too_small_record.notify(notification)
+
+    assert oversized.is_err()
+    assert oversized.unwrap_err()["errorType"] == "NOTIFICATION_OUTBOX_RECORD_TOO_LARGE"
+
+    too_small_queue = FileApprovalNotificationOutbox(
+        tmp_path / "queue", target=RecordingTarget(), max_queue_bytes=1
+    )
+    full = too_small_queue.notify(notification)
+
+    assert full.is_err()
+    assert full.unwrap_err()["errorType"] == "NOTIFICATION_OUTBOX_FULL"
+    assert list((tmp_path / "queue").glob("*.json")) == []
+
+
+def test_outbox_limits_are_typed_and_bounded(tmp_path: Any) -> None:
+    outbox = FileApprovalNotificationOutbox(tmp_path, target=RecordingTarget())
+
+    assert (
+        outbox.list_pending(limit=0).unwrap_err()["errorType"]
+        == "NOTIFICATION_OUTBOX_LIMIT_INVALID"
+    )
+    assert (
+        outbox.drain(max_items=1_001).unwrap_err()["errorType"]
+        == "NOTIFICATION_OUTBOX_DRAIN_LIMIT_INVALID"
+    )
+
+
 def test_malformed_record_fails_closed_without_repair(tmp_path: Any) -> None:
     target = RecordingTarget()
     directory = tmp_path / "malformed"
