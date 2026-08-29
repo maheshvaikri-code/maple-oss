@@ -173,6 +173,8 @@ from .replay import (
 from .retrieval import (
     ChunkingPolicy,
     ConnectorIngestReport,
+    DEFAULT_MAX_RETRIEVAL_TOOL_OUTPUT_BYTES,
+    DEFAULT_MAX_RETRIEVAL_TOOL_RESULTS,
     Document,
     DocumentBatch,
     DocumentChunk,
@@ -196,6 +198,7 @@ from .retrieval import (
     SourceRef,
     TextChunker,
     VectorRetrievalHit,
+    create_retrieval_tool,
     ingest_documents,
     rerank_hits,
 )
@@ -300,6 +303,8 @@ __all__ = [
     "TrustedLocalExecutor",
     "ChunkingPolicy",
     "ConnectorIngestReport",
+    "DEFAULT_MAX_RETRIEVAL_TOOL_OUTPUT_BYTES",
+    "DEFAULT_MAX_RETRIEVAL_TOOL_RESULTS",
     "Document",
     "DocumentBatch",
     "DocumentChunk",
@@ -323,6 +328,7 @@ __all__ = [
     "SourceRef",
     "TextChunker",
     "VectorRetrievalHit",
+    "create_retrieval_tool",
     "ingest_documents",
     "rerank_hits",
     "DEFAULT_MAX_RUN_BYTES",

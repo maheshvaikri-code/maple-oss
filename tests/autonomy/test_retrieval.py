@@ -7,6 +7,8 @@ import pytest
 
 from maple.autonomy.retrieval import (
     ChunkingPolicy,
+    DEFAULT_MAX_RETRIEVAL_TOOL_OUTPUT_BYTES,
+    DEFAULT_MAX_RETRIEVAL_TOOL_RESULTS,
     Document,
     DocumentBatch,
     DocumentCursorCheckpoint,
@@ -20,6 +22,7 @@ from maple.autonomy.retrieval import (
     RetrievalHit,
     SourceRef,
     TextChunker,
+    create_retrieval_tool,
     ingest_documents,
     rerank_hits,
 )
@@ -414,6 +417,135 @@ def test_retriever_returns_ranked_hits_with_citations():
     assert hits[0].chunk.source.uri == "memory://doc-1"
     assert set(hits[0].matched_terms) == {"agent", "resources"}
     assert hits[0].score > 0
+
+
+def test_retrieval_tool_returns_bounded_source_citations_without_metadata():
+    retriever = InMemoryLexicalRetriever()
+    retriever.add_document(
+        Document(
+            document_id="tool-doc",
+            text="MAPLE provides resource-aware orchestration.",
+            source=SourceRef(
+                uri="https://example.invalid/maple",
+                title="MAPLE Guide",
+                metadata={"private": "omit"},
+            ),
+            metadata={"private": "omit"},
+        )
+    )
+
+    tool = create_retrieval_tool(retriever, max_top_k=3)
+    result = tool.execute(query="resource orchestration", top_k=1)
+
+    assert result.is_ok()
+    assert tool.requires_approval is False
+    assert tool.tags == ["retrieval", "read-only"]
+    hit = result.unwrap()["hits"][0]
+    assert hit["document_id"] == "tool-doc"
+    assert hit["source"] == {
+        "uri": "https://example.invalid/maple",
+        "title": "MAPLE Guide",
+    }
+    assert "metadata" not in hit
+    assert hit["text"] == "MAPLE provides resource-aware orchestration."
+    assert hit["matched_terms"] == ["orchestration", "resource"]
+
+
+def test_retrieval_tool_configuration_is_bounded():
+    retriever = InMemoryLexicalRetriever()
+
+    assert DEFAULT_MAX_RETRIEVAL_TOOL_RESULTS == 5
+    assert DEFAULT_MAX_RETRIEVAL_TOOL_OUTPUT_BYTES == 256 * 1024
+    with pytest.raises(TypeError, match="retriever"):
+        create_retrieval_tool(object())
+    with pytest.raises(ValueError, match="name"):
+        create_retrieval_tool(retriever, name="bad\nname")
+    with pytest.raises(ValueError, match="description"):
+        create_retrieval_tool(retriever, description="")
+    with pytest.raises(ValueError, match="max_top_k"):
+        create_retrieval_tool(retriever, max_top_k=101)
+    with pytest.raises(ValueError, match="max_output_bytes"):
+        create_retrieval_tool(retriever, max_output_bytes=1023)
+    with pytest.raises(ValueError, match="requires_approval"):
+        create_retrieval_tool(retriever, requires_approval=1)
+
+
+def test_retrieval_tool_rejects_invalid_queries_and_top_k():
+    tool = create_retrieval_tool(InMemoryLexicalRetriever(), max_top_k=2)
+
+    empty = tool.execute(query="   ")
+    control = tool.execute(query="bad\nquery")
+    invalid_top_k = tool.execute(query="maple", top_k=3)
+    boolean_top_k = tool.execute(query="maple", top_k=True)
+
+    assert empty.unwrap_err()["errorType"] == "RETRIEVAL_TOOL_QUERY_INVALID"
+    assert control.unwrap_err()["errorType"] == "RETRIEVAL_TOOL_QUERY_INVALID"
+    assert invalid_top_k.unwrap_err()["errorType"] == "TOOL_INPUT_INVALID"
+    assert boolean_top_k.unwrap_err()["errorType"] == "TOOL_INPUT_INVALID"
+
+
+def test_retrieval_tool_rejects_malformed_hits_and_duplicate_chunks():
+    chunk = TextChunker().chunk(make_document("tool-boundary")).unwrap()[0]
+
+    class Backend:
+        def __init__(self, hits):
+            self.hits = hits
+
+        def search(self, query, *, top_k=5):
+            return Result.ok(self.hits)
+
+    invalid_score = create_retrieval_tool(
+        Backend([RetrievalHit(chunk, float("nan"), ())])
+    ).execute(query="maple")
+    huge_score = create_retrieval_tool(
+        Backend([RetrievalHit(chunk, 10**10_000, ())])
+    ).execute(query="maple")
+    duplicate = create_retrieval_tool(
+        Backend([RetrievalHit(chunk, 1.0, ()), RetrievalHit(chunk, 1.0, ())])
+    ).execute(query="maple", top_k=2)
+    too_many = create_retrieval_tool(
+        Backend([RetrievalHit(chunk, 1.0, ()), RetrievalHit(chunk, 0.5, ())])
+    ).execute(query="maple", top_k=1)
+
+    assert invalid_score.unwrap_err()["errorType"] == ("RETRIEVAL_TOOL_RESULT_INVALID")
+    assert huge_score.unwrap_err()["errorType"] == "RETRIEVAL_TOOL_RESULT_INVALID"
+    assert duplicate.unwrap_err()["errorType"] == "RETRIEVAL_TOOL_RESULT_INVALID"
+    assert too_many.unwrap_err()["errorType"] == "RETRIEVAL_TOOL_RESULT_INVALID"
+
+
+def test_retrieval_tool_rejects_oversized_output_without_partial_hits():
+    retriever = InMemoryLexicalRetriever(
+        chunker=TextChunker(ChunkingPolicy(max_chars=2_048, overlap_chars=100))
+    )
+    retriever.add_document(make_document("large-tool", " ".join(["maple"] * 300)))
+    tool = create_retrieval_tool(retriever, max_output_bytes=1_024)
+
+    result = tool.execute(query="maple", top_k=1)
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "RETRIEVAL_TOOL_OUTPUT_TOO_LARGE"
+    assert "hits" not in result.unwrap_err()
+
+
+@pytest.mark.parametrize("mode", ["raises", "non_result", "error_result"])
+def test_retrieval_tool_redacts_backend_failures(mode):
+    class Backend:
+        def search(self, query, *, top_k=5):
+            if mode == "raises":
+                raise RuntimeError("private-path-secret")
+            if mode == "non_result":
+                return {"private": "payload"}
+            return Result.err(
+                {"errorType": "PRIVATE_BACKEND_ERROR", "message": "secret"}
+            )
+
+    result = create_retrieval_tool(Backend()).execute(query="maple")
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "RETRIEVAL_TOOL_BACKEND_ERROR"
+    assert "private-path-secret" not in str(result.unwrap_err())
+    assert "secret" not in str(result.unwrap_err())
+    assert "payload" not in str(result.unwrap_err())
 
 
 def test_reranker_reorders_lexical_hits_and_preserves_original_scores():

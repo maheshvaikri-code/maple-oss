@@ -24,12 +24,16 @@ from typing import (
     Sequence,
     Set,
     Tuple,
+    TYPE_CHECKING,
     Union,
     cast,
 )
 
 from ..core.result import Result
 from .durable_leases import DurableRecordLease
+
+if TYPE_CHECKING:
+    from .tools import Tool
 
 Error = Dict[str, Any]
 _TOKEN_PATTERN = re.compile(r"\w+", re.UNICODE)
@@ -49,6 +53,14 @@ _MAX_FILE_VECTOR_DOCUMENTS = 100_000
 _MAX_FILE_VECTOR_COUNT = 1_000_000
 _MAX_FILE_VECTOR_DIMENSIONS = 16_384
 _MAX_FILE_VECTOR_RESULTS = 100_000
+DEFAULT_MAX_RETRIEVAL_TOOL_RESULTS = 5
+DEFAULT_MAX_RETRIEVAL_TOOL_OUTPUT_BYTES = 256 * 1024
+_MAX_RETRIEVAL_TOOL_RESULTS = 100
+_MAX_RETRIEVAL_TOOL_OUTPUT_BYTES = 4 * 1024 * 1024
+_MAX_RETRIEVAL_TOOL_QUERY_BYTES = 16 * 1024
+_MAX_RETRIEVAL_TOOL_NAME_LENGTH = 256
+_MAX_RETRIEVAL_TOOL_DESCRIPTION_LENGTH = 2_048
+_MAX_RETRIEVAL_TOOL_TERMS = 10_000
 
 
 def _error(error_type: str, message: str, **details: Any) -> Error:
@@ -1338,6 +1350,399 @@ def rerank_hits(
         )
     ranked.sort(key=lambda hit: (-hit.score, hit.chunk.chunk_id))
     return Result.ok(ranked[:top_k])
+
+
+def create_retrieval_tool(
+    retriever: RetrievalBackend,
+    *,
+    name: str = "search_documents",
+    description: str = (
+        "Search the local document index and return bounded source citations."
+    ),
+    max_top_k: int = DEFAULT_MAX_RETRIEVAL_TOOL_RESULTS,
+    max_output_bytes: int = DEFAULT_MAX_RETRIEVAL_TOOL_OUTPUT_BYTES,
+    requires_approval: bool = False,
+) -> "Tool":
+    """Adapt a lexical retriever into a bounded read-only agent tool.
+
+    The returned tool exposes source URI/title and chunk text, but deliberately
+    omits source and chunk metadata. Retrieved text is returned as data only;
+    this helper never interprets or executes it.
+    """
+    if not callable(getattr(retriever, "search", None)):
+        raise TypeError("retriever must expose search(query, top_k=...)")
+    if (
+        not isinstance(name, str)
+        or not name
+        or len(name) > _MAX_RETRIEVAL_TOOL_NAME_LENGTH
+        or any(ord(character) < 32 for character in name)
+    ):
+        raise ValueError("name must be bounded text")
+    if (
+        not isinstance(description, str)
+        or not description
+        or len(description) > _MAX_RETRIEVAL_TOOL_DESCRIPTION_LENGTH
+        or any(ord(character) < 32 for character in description)
+    ):
+        raise ValueError("description must be bounded text")
+    if (
+        not isinstance(max_top_k, int)
+        or isinstance(max_top_k, bool)
+        or not 1 <= max_top_k <= _MAX_RETRIEVAL_TOOL_RESULTS
+    ):
+        raise ValueError("max_top_k must be between 1 and 100")
+    if (
+        not isinstance(max_output_bytes, int)
+        or isinstance(max_output_bytes, bool)
+        or not 1_024 <= max_output_bytes <= _MAX_RETRIEVAL_TOOL_OUTPUT_BYTES
+    ):
+        raise ValueError("max_output_bytes must be between 1024 and 4194304")
+    if not isinstance(requires_approval, bool):
+        raise ValueError("requires_approval must be boolean")
+
+    def encode_payload(value: Dict[str, Any]) -> Result[bytes, Error]:
+        try:
+            return Result.ok(
+                json.dumps(
+                    value,
+                    ensure_ascii=False,
+                    allow_nan=False,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            )
+        except (TypeError, ValueError, OverflowError, UnicodeEncodeError):
+            return Result.err(
+                _error(
+                    "RETRIEVAL_TOOL_RESULT_INVALID",
+                    "retriever returned a non-JSON-safe result.",
+                )
+            )
+
+    def serialize_hit(hit: Any, index: int) -> Result[Dict[str, Any], Error]:
+        if not isinstance(hit, RetrievalHit) or not isinstance(
+            hit.chunk, DocumentChunk
+        ):
+            return Result.err(
+                _error(
+                    "RETRIEVAL_TOOL_RESULT_INVALID",
+                    "retriever returned an invalid hit.",
+                    index=index,
+                )
+            )
+        chunk = hit.chunk
+        if (
+            _validate_identifier(chunk.chunk_id, "chunk_id") is not None
+            or _validate_identifier(chunk.document_id, "document_id") is not None
+            or not isinstance(chunk.text, str)
+        ):
+            return Result.err(
+                _error(
+                    "RETRIEVAL_TOOL_RESULT_INVALID",
+                    "retriever returned an invalid chunk.",
+                    index=index,
+                )
+            )
+        try:
+            if len(chunk.text.encode("utf-8")) > max_output_bytes:
+                return Result.err(
+                    _error(
+                        "RETRIEVAL_TOOL_OUTPUT_TOO_LARGE",
+                        "retrieval result exceeds the output byte limit.",
+                        index=index,
+                    )
+                )
+        except UnicodeEncodeError:
+            return Result.err(
+                _error(
+                    "RETRIEVAL_TOOL_RESULT_INVALID",
+                    "retriever returned invalid UTF-8 text.",
+                    index=index,
+                )
+            )
+        if isinstance(hit.score, bool) or not isinstance(hit.score, (int, float)):
+            return Result.err(
+                _error(
+                    "RETRIEVAL_TOOL_RESULT_INVALID",
+                    "retriever returned a non-finite score.",
+                    index=index,
+                )
+            )
+        try:
+            score = float(hit.score)
+        except (OverflowError, TypeError, ValueError):
+            return Result.err(
+                _error(
+                    "RETRIEVAL_TOOL_RESULT_INVALID",
+                    "retriever returned an invalid score.",
+                    index=index,
+                )
+            )
+        if not math.isfinite(score):
+            return Result.err(
+                _error(
+                    "RETRIEVAL_TOOL_RESULT_INVALID",
+                    "retriever returned a non-finite score.",
+                    index=index,
+                )
+            )
+        source = chunk.source
+        source_error: Optional[Error]
+        try:
+            source_error = (
+                source.validate()
+                if isinstance(source, SourceRef)
+                else _error(
+                    "RETRIEVAL_TOOL_RESULT_INVALID",
+                    "retriever returned an invalid source reference.",
+                )
+            )
+        except Exception:
+            source_error = _error(
+                "RETRIEVAL_TOOL_RESULT_INVALID",
+                "retriever returned an invalid source reference.",
+            )
+        if source_error is not None:
+            return Result.err(
+                _error(
+                    "RETRIEVAL_TOOL_RESULT_INVALID",
+                    "retriever returned an invalid source reference.",
+                    index=index,
+                )
+            )
+        matched_terms = hit.matched_terms
+        if isinstance(matched_terms, (str, bytes)) or not isinstance(
+            matched_terms, Sequence
+        ):
+            return Result.err(
+                _error(
+                    "RETRIEVAL_TOOL_RESULT_INVALID",
+                    "retriever returned invalid matched terms.",
+                    index=index,
+                )
+            )
+        if len(matched_terms) > _MAX_RETRIEVAL_TOOL_TERMS:
+            return Result.err(
+                _error(
+                    "RETRIEVAL_TOOL_RESULT_INVALID",
+                    "retriever returned too many matched terms.",
+                    index=index,
+                )
+            )
+        normalized_terms: List[str] = []
+        for term in matched_terms:
+            if _validate_identifier(term, "matched_term") is not None:
+                return Result.err(
+                    _error(
+                        "RETRIEVAL_TOOL_RESULT_INVALID",
+                        "retriever returned invalid matched terms.",
+                        index=index,
+                    )
+                )
+            normalized_terms.append(term)
+        serialized_source: Dict[str, Any] = {"uri": source.uri}
+        if source.title is not None:
+            serialized_source["title"] = source.title
+        return Result.ok(
+            {
+                "chunk_id": chunk.chunk_id,
+                "document_id": chunk.document_id,
+                "text": chunk.text,
+                "score": score,
+                "matched_terms": normalized_terms,
+                "source": serialized_source,
+            }
+        )
+
+    def search_handler(
+        query: str, top_k: Optional[int] = None
+    ) -> Result[Dict[str, Any], Error]:
+        if (
+            not isinstance(query, str)
+            or not query.strip()
+            or any(ord(character) < 32 for character in query)
+        ):
+            return Result.err(
+                _error(
+                    "RETRIEVAL_TOOL_QUERY_INVALID",
+                    "query must be non-empty bounded text.",
+                )
+            )
+        try:
+            query_bytes = query.encode("utf-8")
+        except UnicodeEncodeError:
+            return Result.err(
+                _error(
+                    "RETRIEVAL_TOOL_QUERY_INVALID",
+                    "query must be non-empty bounded text.",
+                )
+            )
+        if len(query_bytes) > _MAX_RETRIEVAL_TOOL_QUERY_BYTES:
+            return Result.err(
+                _error(
+                    "RETRIEVAL_TOOL_QUERY_TOO_LARGE",
+                    "query exceeds the byte limit.",
+                )
+            )
+        if top_k is None:
+            top_k = max_top_k
+        if (
+            not isinstance(top_k, int)
+            or isinstance(top_k, bool)
+            or not 1 <= top_k <= max_top_k
+        ):
+            return Result.err(
+                _error(
+                    "RETRIEVAL_TOOL_TOP_K_INVALID",
+                    "top_k is outside the configured range.",
+                )
+            )
+        try:
+            result = retriever.search(query, top_k=top_k)
+        except Exception:
+            return Result.err(
+                _error(
+                    "RETRIEVAL_TOOL_BACKEND_ERROR",
+                    "retriever search failed.",
+                )
+            )
+        if not isinstance(result, Result) or result.is_err():
+            return Result.err(
+                _error(
+                    "RETRIEVAL_TOOL_BACKEND_ERROR",
+                    "retriever search returned an error.",
+                )
+            )
+        hits = result.unwrap()
+        if isinstance(hits, (str, bytes)) or not isinstance(hits, Sequence):
+            return Result.err(
+                _error(
+                    "RETRIEVAL_TOOL_RESULT_INVALID",
+                    "retriever returned an invalid hit list.",
+                )
+            )
+        if len(hits) > top_k:
+            return Result.err(
+                _error(
+                    "RETRIEVAL_TOOL_RESULT_INVALID",
+                    "retriever returned more hits than requested.",
+                )
+            )
+        serialized_hits: List[Dict[str, Any]] = []
+        seen_chunk_ids: Set[str] = set()
+        for index, hit in enumerate(hits):
+            serialized = serialize_hit(hit, index)
+            if serialized.is_err():
+                return Result.err(serialized.unwrap_err())
+            value = serialized.unwrap()
+            chunk_id = value["chunk_id"]
+            if chunk_id in seen_chunk_ids:
+                return Result.err(
+                    _error(
+                        "RETRIEVAL_TOOL_RESULT_INVALID",
+                        "retriever returned duplicate chunks.",
+                        index=index,
+                    )
+                )
+            seen_chunk_ids.add(chunk_id)
+            serialized_hits.append(value)
+            candidate_encoded = encode_payload({"hits": serialized_hits})
+            if candidate_encoded.is_err():
+                return Result.err(candidate_encoded.unwrap_err())
+            if len(candidate_encoded.unwrap()) > max_output_bytes:
+                return Result.err(
+                    _error(
+                        "RETRIEVAL_TOOL_OUTPUT_TOO_LARGE",
+                        "retrieval result exceeds the output byte limit.",
+                    )
+                )
+        payload = {"hits": serialized_hits}
+        encoded_result = encode_payload(payload)
+        if encoded_result.is_err():
+            return Result.err(encoded_result.unwrap_err())
+        encoded = encoded_result.unwrap()
+        if len(encoded) > max_output_bytes:
+            return Result.err(
+                _error(
+                    "RETRIEVAL_TOOL_OUTPUT_TOO_LARGE",
+                    "retrieval result exceeds the output byte limit.",
+                )
+            )
+        return Result.ok(payload)
+
+    from .tools import Tool
+
+    return Tool(
+        name=name,
+        description=description,
+        parameters={
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": _MAX_RETRIEVAL_TOOL_QUERY_BYTES,
+                    "description": "The bounded lexical search query.",
+                },
+                "top_k": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": max_top_k,
+                    "description": "Maximum number of source-bearing hits.",
+                },
+            },
+            "required": ["query"],
+            "additionalProperties": False,
+        },
+        handler=search_handler,
+        requires_approval=requires_approval,
+        result_schema={
+            "type": "object",
+            "properties": {
+                "hits": {
+                    "type": "array",
+                    "maxItems": max_top_k,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "chunk_id": {"type": "string", "maxLength": 256},
+                            "document_id": {"type": "string", "maxLength": 256},
+                            "text": {
+                                "type": "string",
+                                "maxLength": max_output_bytes,
+                            },
+                            "score": {"type": "number"},
+                            "matched_terms": {
+                                "type": "array",
+                                "maxItems": 10_000,
+                                "items": {"type": "string", "maxLength": 256},
+                            },
+                            "source": {
+                                "type": "object",
+                                "properties": {
+                                    "uri": {"type": "string", "maxLength": 2_048},
+                                    "title": {"type": "string", "maxLength": 512},
+                                },
+                                "required": ["uri"],
+                                "additionalProperties": False,
+                            },
+                        },
+                        "required": [
+                            "chunk_id",
+                            "document_id",
+                            "text",
+                            "score",
+                            "matched_terms",
+                            "source",
+                        ],
+                        "additionalProperties": False,
+                    },
+                }
+            },
+            "required": ["hits"],
+            "additionalProperties": False,
+        },
+        tags=["retrieval", "read-only"],
+    )
 
 
 class InMemoryLexicalRetriever:
