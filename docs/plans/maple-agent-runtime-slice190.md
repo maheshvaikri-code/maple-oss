@@ -1,6 +1,6 @@
 # Slice 190 plan - authenticated remote task queue statistics
 
-**Status:** proposed
+**Status:** complete
 **Date:** 2026-08-29
 
 ## Design
@@ -12,18 +12,18 @@
 
 ## Implementation
 
-- [ ] Add bounded queue-statistics serialization and validation.
-- [ ] Add the authenticated server route and client method.
-- [ ] Add scope, response, malformed-value, and compatibility regressions.
+- [x] Add bounded queue-statistics serialization and validation.
+- [x] Add the authenticated server route and client method.
+- [x] Add scope, response, malformed-value, and compatibility regressions.
 
 ## Verification and release evidence
 
-- [ ] Run focused server and task-management regressions.
-- [ ] Run changed-boundary formatting, lint, type, compile, and security
+- [x] Run focused server and task-management regressions.
+- [x] Run changed-boundary formatting, lint, type, compile, and security
   checks.
-- [ ] Run the full workspace regression.
-- [ ] Update API/README/parity/changelog and review/QA evidence.
-- [ ] Build and package-smoke-test the current source tree.
-- [ ] Rebuild a clean source archive and package-smoke-test it at the
+- [x] Run the full workspace regression.
+- [x] Update API/README/parity/changelog and review/QA evidence.
+- [x] Build and package-smoke-test the current source tree.
+- [x] Rebuild a clean source archive and package-smoke-test it at the
   implementation commit.
 - [x] Keep publication, cloud, and website actions out of scope.
