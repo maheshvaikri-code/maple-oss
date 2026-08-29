@@ -8,7 +8,7 @@
 |---|-------|------|---------------|-------------------|--------|
 | 1 | Add exact-filter retained-window search | Backend / Observability | maple/autonomy/events.py | Filter validation, order, bounds, cursor expiry, redacted trace matching | complete: implementation checkpoint |
 | 2 | Add authenticated server/client transport | Backend / Interop / Security | maple/autonomy/server.py | `event:read`, typed query errors, remote response shape | complete: focused event/server tests |
-| 3 | Review, public records, and package evidence | QA / Tech Writer / Release | API/parity/changelog/review/release artifacts | Full/static/clean archive/package checks | in progress |
+| 3 | Review, public records, and package evidence | QA / Tech Writer / Release | API/parity/changelog/review/release artifacts | Full/static/clean archive/package checks | complete: `d041a0b`; clean 1611 passed, 1 skipped; wheel 107; sdist 770 |
 
 ## Threat sketch
 
@@ -25,4 +25,4 @@ cursor errors, and existing `event:read` authorization.
 
 Done (with evidence): design brief and ADR, retained-window search, and
 authenticated transport with focused regressions. Next: full/static review,
-public records, and clean package evidence. Blocked on: none.
+public records, and clean package evidence at `d041a0b`. Blocked on: none.
