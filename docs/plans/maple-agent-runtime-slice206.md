@@ -1,7 +1,7 @@
 # Slice 206 implementation plan - durable local vector retrieval
 
 **Class:** L
-**Status:** In progress
+**Status:** Complete locally; release-gated
 **Brief:** `docs/briefs/maple-agent-runtime-slice206.md`
 **ADR:** `docs/adr/150-file-vector-retriever.md`
 
