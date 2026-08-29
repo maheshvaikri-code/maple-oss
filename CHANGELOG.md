@@ -10,6 +10,12 @@
 
 ### Release hardening
 
+- **Trusted local task worker**: `TrustedTaskWorker` now connects registered
+  host-owned handlers to bounded in-memory and file-backed task lifecycle
+  transitions, with task-type/capability filtering, execution bounds, and
+  explicit trusted-only/non-sandbox semantics. Existing queue polling remains
+  compatible when no task-type filter is supplied.
+
 - **Core distribution scope guard**: release workflow tests now assert that
   `VERSION` and the included test package match the imported package version,
   and that the core manifest excludes the separately versioned demo and n8n

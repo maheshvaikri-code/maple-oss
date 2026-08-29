@@ -67,6 +67,14 @@ authority for ownership and lifecycle conflicts. This is a process-boundary
 control plane only: heartbeat expiry, distributed leases, automatic retry,
 handler execution, queue federation, and exactly-once effects remain separate.
 
+`TrustedTaskWorker` now supplies the missing local handler bridge: it filters
+for registered task types and capabilities, claims and starts one task, runs a
+host-supplied trusted handler through `TrustedLocalExecutor`, and records a
+bounded completed, failed, or cooperatively cancelled state in either queue
+implementation. This is an in-process one-shot worker contract; it does not
+add sandboxing, background scheduling, remote workers, automatic retry, or
+exactly-once external effects.
+
 Slice 188 adds owner-safe remote task cancellation under `task:cancel`. The
 queue performs the owner check and cancellation transition atomically: queued
 work can be cancelled by the authorized actor, while assigned or running work

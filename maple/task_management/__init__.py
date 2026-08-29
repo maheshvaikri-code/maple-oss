@@ -23,6 +23,7 @@ from .performance_optimizer import PerformanceOptimizer
 from .result_collector import ResultCollector
 from .scheduler import TaskScheduler
 from .task_queue import QueueStats, Task, TaskPriority, TaskQueue, TaskStatus
+from .worker import TaskHandler, TrustedTaskWorker
 
 __all__ = [
     "TaskQueue",
@@ -36,4 +37,6 @@ __all__ = [
     "FaultTolerantExecutor",
     "ResultCollector",
     "PerformanceOptimizer",
+    "TaskHandler",
+    "TrustedTaskWorker",
 ]

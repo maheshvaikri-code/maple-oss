@@ -20,7 +20,7 @@ import time
 import uuid
 from pathlib import Path
 from queue import PriorityQueue
-from typing import Any, Callable, Dict, List, Mapping, Optional, Union
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Union, cast
 
 from ..core.result import Result
 from ..resources.lease import FileLeaseManager, Lease
@@ -659,6 +659,7 @@ class FileTaskQueue(TaskQueue):
         self,
         agent_capabilities: Optional[List[str]] = None,
         timeout_seconds: Optional[float] = None,
+        task_types: Optional[Sequence[str]] = None,
     ) -> Result[Optional[Task], str]:
         """Claim a task, polling between fenced durable queue operations."""
         if timeout_seconds is not None and (
@@ -676,7 +677,10 @@ class FileTaskQueue(TaskQueue):
         while True:
             result = self._run_durable(
                 lambda: TaskQueue.get_next_task(
-                    self, agent_capabilities=agent_capabilities, timeout_seconds=0
+                    self,
+                    agent_capabilities=agent_capabilities,
+                    timeout_seconds=0,
+                    task_types=task_types,
                 )
             )
             if result.is_err() or result.unwrap() is not None:
@@ -809,7 +813,7 @@ class FileTaskQueue(TaskQueue):
         )
         if result.is_err():
             raise RuntimeError(result.unwrap_err())
-        return result.unwrap()
+        return cast(QueueStats, result.unwrap())
 
     def list_tasks(
         self,
@@ -822,7 +826,7 @@ class FileTaskQueue(TaskQueue):
         )
         if result.is_err():
             raise RuntimeError(result.unwrap_err())
-        return result.unwrap()
+        return cast(List[Task], result.unwrap())
 
     def add_task_callback(
         self, task_id: str, callback: Callable[[Task], None]

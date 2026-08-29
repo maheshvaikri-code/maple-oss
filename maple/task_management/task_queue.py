@@ -22,12 +22,13 @@ import uuid
 from dataclasses import dataclass, field
 from enum import Enum
 from queue import Empty, PriorityQueue
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Sequence, Set
 
 from ..core.result import Result
 
 _MAX_TASK_QUEUE_SIZE = 100_000
 _MAX_TASK_ERROR_BYTES = 8_192
+_MAX_TASK_TYPE_FILTER = 256
 
 
 class TaskStatus(Enum):
@@ -223,10 +224,42 @@ class TaskQueue:
         self,
         agent_capabilities: Optional[List[str]] = None,
         timeout_seconds: Optional[float] = None,
+        task_types: Optional[Sequence[str]] = None,
     ) -> Result[Optional[Task], str]:
-        """Get the next available task that matches agent capabilities."""
+        """Get the next available task matching capabilities and task types."""
 
         agent_capabilities = agent_capabilities or []
+        task_type_filter: Optional[Set[str]] = None
+        if task_types is not None:
+            if isinstance(task_types, str):
+                return Result.err("task_types must be an iterable of task names")
+            try:
+                normalized_task_types = []
+                for index, task_type in enumerate(task_types):
+                    if index >= _MAX_TASK_TYPE_FILTER:
+                        return Result.err(
+                            "task_types must contain at most "
+                            f"{_MAX_TASK_TYPE_FILTER} names"
+                        )
+                    normalized_task_types.append(task_type)
+            except TypeError:
+                return Result.err("task_types must be an iterable of task names")
+            for task_type in normalized_task_types:
+                if not isinstance(task_type, str) or not task_type:
+                    return Result.err(
+                        "task_types must contain non-empty names of at most 256 bytes"
+                    )
+                try:
+                    task_type_bytes = len(task_type.encode("utf-8"))
+                except UnicodeEncodeError:
+                    return Result.err(
+                        "task_types must contain non-empty names of at most 256 bytes"
+                    )
+                if task_type_bytes > 256:
+                    return Result.err(
+                        "task_types must contain non-empty names of at most 256 bytes"
+                    )
+            task_type_filter = set(normalized_task_types)
 
         with self._condition:
             end_time = (
@@ -237,37 +270,47 @@ class TaskQueue:
                 # Try to get a task from priority queues (highest priority first)
                 for priority in TaskPriority:
                     queue = self.priority_queues[priority]
+                    deferred = []
 
-                    try:
-                        # Non-blocking get
-                        _, _, task = queue.get_nowait()
-                        self._queued_count -= 1
+                    while True:
+                        try:
+                            # Non-blocking get
+                            _, _, task = queue.get_nowait()
+                            self._queued_count -= 1
+                        except Empty:
+                            break
 
                         # Status changes can leave a stale tuple in the
                         # priority queue; never hand such a task to an agent.
                         if task.status != TaskStatus.QUEUED:
                             continue
 
-                        # Check if agent can handle this task
-                        if self._can_agent_handle_task(task, agent_capabilities):
-                            task.status = TaskStatus.ASSIGNED
+                        if (
+                            task_type_filter is not None
+                            and task.task_type not in task_type_filter
+                        ) or not self._can_agent_handle_task(task, agent_capabilities):
+                            deferred.append((priority.value, task.created_at, task))
+                            continue
 
-                            # Track wait time
-                            wait_time = time.time() - task.created_at
-                            with self._stats_lock:
-                                self._wait_times.append(wait_time)
-                                # Keep only recent wait times
-                                if len(self._wait_times) > 1000:
-                                    self._wait_times = self._wait_times[-500:]
-
-                            return Result.ok(task)
-                        else:
-                            # Put task back in queue
-                            queue.put((priority.value, task.created_at, task))
+                        for item in deferred:
+                            queue.put(item)
                             self._queued_count += 1
 
-                    except Empty:
-                        continue
+                        task.status = TaskStatus.ASSIGNED
+
+                        # Track wait time
+                        wait_time = time.time() - task.created_at
+                        with self._stats_lock:
+                            self._wait_times.append(wait_time)
+                            # Keep only recent wait times
+                            if len(self._wait_times) > 1000:
+                                self._wait_times = self._wait_times[-500:]
+
+                        return Result.ok(task)
+
+                    for item in deferred:
+                        queue.put(item)
+                        self._queued_count += 1
 
                 # No suitable task found, wait for new tasks
                 if timeout_seconds is None:

@@ -581,6 +581,47 @@ terminal records are retained until the host removes or replaces the state
 file. The implementation is local-only and does not provide distributed
 worker leases, hosted scheduling, automatic retry, or exactly-once effects.
 
+`TrustedTaskWorker` is the explicit local bridge from a queue to host-supplied
+trusted Python handlers. It accepts a bounded worker ID, a mapping from task
+types to callables, optional capability labels, and the existing
+`ExecutionPolicy`. `run_once()` performs a bounded poll for registered task
+types, claims and starts at most one task, passes the handler a detached
+top-level payload mapping, and records the handler result through the queue's
+owner-checked completion transition. Handler exceptions, `Result.err` values,
+invalid task timeouts, execution bounds, and cooperative cancellation become
+terminal task states rather than unbounded exceptions. `ok(None)` means no
+matching task was available; queue or lifecycle-transition failures are
+returned as `Result.err` values. The handler mapping is a trust boundary:
+handlers run in-process and this class is not a sandbox or force-termination
+mechanism.
+
+```python
+from maple.task_management import TaskQueue, TrustedTaskWorker
+
+queue = TaskQueue(max_queue_size=10)
+queue.start()
+try:
+    task_id = queue.submit_task("add", {"left": 2, "right": 3}).unwrap()
+    worker = TrustedTaskWorker(
+        queue,
+        "local-worker",
+        {"add": lambda payload: payload["left"] + payload["right"]},
+    )
+    finished = worker.run_once().unwrap()
+    assert finished is not None
+    assert finished.task_id == task_id
+    assert finished.result == 5
+finally:
+    queue.stop()
+```
+
+The optional `TaskQueue.get_next_task(..., task_types=...)` filter preserves
+the legacy no-filter behavior while allowing multiple local workers to leave
+unhandled task types queued for another worker. Polling is caller-owned and
+bounded to at most 60 seconds per call; automatic retries, scheduler binding,
+remote workers, process/container isolation, and exactly-once effects remain
+outside this contract.
+
 `TaskQueue.assign_task(task_id, assigned_agent)` is the scheduler-facing
 atomic claim. It accepts a `QUEUED` task or a task just removed by
 `get_next_task()` with `ASSIGNED` status but no owner; a second owner, terminal
