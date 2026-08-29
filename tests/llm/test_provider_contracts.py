@@ -307,3 +307,33 @@ def test_provider_rejects_unencodable_completion_before_accounting():
     assert result.is_err()
     assert result.unwrap_err()["errorType"] == "LLM_PROVIDER_RESPONSE_INVALID"
     assert provider.get_usage_stats()["total_prompt_tokens"] == 0
+
+
+@pytest.mark.parametrize(
+    ("prompt_tokens", "completion_tokens", "valid"),
+    [(0, 0, True), (100_000_000, 0, True), (100_000_001, 0, False)],
+)
+def test_provider_enforces_completion_usage_boundary(
+    prompt_tokens, completion_tokens, valid
+):
+    response = _openai_response(
+        usage=SimpleNamespace(
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=prompt_tokens + completion_tokens,
+        )
+    )
+    client = SyncResponseClient(response)
+    provider = _provider_without_constructor(
+        OpenAIProvider, LLMConfig(provider="openai", model="gpt-fixture")
+    )
+    provider.client = SimpleNamespace(chat=SimpleNamespace(completions=client))
+
+    result = provider.complete([])
+
+    assert result.is_ok() is valid
+    if valid:
+        assert provider.get_usage_stats()["total_prompt_tokens"] == prompt_tokens
+    else:
+        assert result.unwrap_err()["errorType"] == "LLM_PROVIDER_RESPONSE_INVALID"
+        assert provider.get_usage_stats()["total_prompt_tokens"] == 0
