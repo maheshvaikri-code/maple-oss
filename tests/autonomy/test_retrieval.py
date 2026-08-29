@@ -726,6 +726,11 @@ def test_file_vector_retriever_persists_and_reloads_embeddings(tmp_path):
     assert persisted["version"] == 1
     assert persisted["documents"][0]["embeddings"] == [[1.0, 0.0]]
 
+    persisted["documents"][0]["embeddings"] = [["not-a-number", 0.0]]
+    second.path.write_text(json.dumps(persisted), encoding="utf-8")
+    with pytest.raises(ValueError, match="state"):
+        FileVectorRetriever(tmp_path)
+
 
 def test_file_vector_retriever_rejects_vector_dimension_mismatch_without_mutation(
     tmp_path,
@@ -738,6 +743,7 @@ def test_file_vector_retriever_rejects_vector_dimension_mismatch_without_mutatio
     dimension_mismatch = retriever.add_document(
         make_document("dimension"), [(1.0, 0.0, 0.0)]
     )
+    duplicate = retriever.add_document(make_document("stable"), [(1.0, 0.0)])
 
     assert count_mismatch.is_err()
     assert count_mismatch.unwrap_err()["errorType"] == "RETRIEVAL_VECTOR_COUNT_MISMATCH"
@@ -746,6 +752,8 @@ def test_file_vector_retriever_rejects_vector_dimension_mismatch_without_mutatio
         dimension_mismatch.unwrap_err()["errorType"]
         == "RETRIEVAL_VECTOR_DIMENSION_MISMATCH"
     )
+    assert duplicate.is_err()
+    assert duplicate.unwrap_err()["errorType"] == "RETRIEVAL_DUPLICATE_DOCUMENT"
     assert retriever.path.read_bytes() == before
     assert retriever.stats() == {"documents": 1, "vectors": 1, "dimensions": 2}
 
