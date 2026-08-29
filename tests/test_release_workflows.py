@@ -3,6 +3,8 @@
 import re
 from pathlib import Path
 
+import maple
+
 REPO = Path(__file__).resolve().parent.parent
 
 
@@ -75,3 +77,16 @@ def test_next_release_checklist_is_explicitly_conditional():
         "No tag, registry write, external publication, cloud action, or website update"
         in checklist
     )
+
+
+def test_core_distribution_manifest_scope_and_version_are_explicit():
+    manifest = (REPO / "MANIFEST.in").read_text(encoding="utf-8")
+    version = (REPO / "VERSION").read_text(encoding="utf-8").strip()
+
+    assert version == maple.__version__
+    assert "recursive-include maple *.py" in manifest
+    assert "recursive-include docs" in manifest
+    assert "recursive-include examples" in manifest
+    assert "recursive-include tests" in manifest
+    assert "demo_package" not in manifest
+    assert "n8n-integration" not in manifest
