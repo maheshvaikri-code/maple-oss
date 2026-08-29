@@ -519,6 +519,142 @@ async def test_async_document_connector_rejects_over_limit_page_without_sink_mut
 
 
 @pytest.mark.asyncio
+async def test_async_document_connector_does_not_checkpoint_incomplete_page():
+    saved = []
+    sink_calls = []
+
+    class Connector:
+        async def fetch(self, cursor, *, limit):
+            return Result.ok(
+                DocumentBatch(
+                    (
+                        make_document("async-failure-a"),
+                        make_document("async-failure-b"),
+                    ),
+                    "next",
+                )
+            )
+
+    class Sink:
+        def add_document(self, document):
+            sink_calls.append(document.document_id)
+            if document.document_id == "async-failure-b":
+                return Result.err({"errorType": "PRIVATE_SINK", "message": "secret"})
+            return Result.ok([])
+
+    class Checkpoint:
+        def load(self):
+            return Result.ok(DocumentCursorCheckpoint())
+
+        def save(self, checkpoint):
+            saved.append(checkpoint)
+            return Result.ok(checkpoint)
+
+    result = await ingest_documents_async(
+        Connector(), Sink(), checkpoint_store=Checkpoint()
+    )
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "RETRIEVAL_SINK_ERROR"
+    assert "secret" not in str(result.unwrap_err())
+    assert sink_calls == ["async-failure-a", "async-failure-b"]
+    assert saved == []
+
+
+@pytest.mark.asyncio
+async def test_async_document_connector_rejects_stalled_cursor_before_sink_write():
+    sink_calls = []
+
+    class Connector:
+        async def fetch(self, cursor, *, limit):
+            return Result.ok(DocumentBatch((make_document("async-stalled"),), cursor))
+
+    class Sink:
+        def add_document(self, document):
+            sink_calls.append(document.document_id)
+            return Result.ok([])
+
+    result = await ingest_documents_async(Connector(), Sink(), cursor="cursor-1")
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "RETRIEVAL_CONNECTOR_CURSOR_STALLED"
+    assert sink_calls == []
+
+
+@pytest.mark.asyncio
+async def test_async_document_connector_rejects_duplicate_across_pages():
+    document = make_document("async-duplicate")
+    sink_calls = []
+
+    class Connector:
+        async def fetch(self, cursor, *, limit):
+            next_cursor = "next" if cursor is None else None
+            return Result.ok(DocumentBatch((document,), next_cursor))
+
+    class Sink:
+        def add_document(self, document):
+            sink_calls.append(document.document_id)
+            return Result.ok([])
+
+    result = await ingest_documents_async(Connector(), Sink())
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "RETRIEVAL_CONNECTOR_DUPLICATE_DOCUMENT"
+    assert sink_calls == ["async-duplicate"]
+
+
+@pytest.mark.asyncio
+async def test_async_document_connector_rate_limit_stops_before_next_fetch():
+    fetch_calls = []
+
+    class Connector:
+        async def fetch(self, cursor, *, limit):
+            fetch_calls.append(cursor)
+            return Result.ok(
+                DocumentBatch((make_document("async-rate-limited"),), "next")
+            )
+
+    result = await ingest_documents_async(
+        Connector(),
+        InMemoryLexicalRetriever(),
+        max_batches=2,
+        rate_limiter=InMemoryDocumentConnectorRateLimiter(
+            max_calls=1, window_seconds=60.0
+        ),
+    )
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "RETRIEVAL_CONNECTOR_RATE_LIMITED"
+    assert fetch_calls == [None]
+
+
+@pytest.mark.asyncio
+async def test_async_document_connector_reports_checkpoint_save_failure():
+    saved = []
+
+    class Connector:
+        async def fetch(self, cursor, *, limit):
+            return Result.ok(DocumentBatch((make_document("async-checkpoint"),), None))
+
+    class Checkpoint:
+        def load(self):
+            return Result.ok(DocumentCursorCheckpoint())
+
+        def save(self, checkpoint):
+            saved.append(checkpoint)
+            return Result.err({"errorType": "PRIVATE_CHECKPOINT", "message": "secret"})
+
+    result = await ingest_documents_async(
+        Connector(), InMemoryLexicalRetriever(), checkpoint_store=Checkpoint()
+    )
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "RETRIEVAL_CHECKPOINT_SAVE_ERROR"
+    assert "secret" not in str(result.unwrap_err())
+    assert len(saved) == 1
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("mode", ["raises", "non_result", "error_result"])
 async def test_async_document_connector_redacts_connector_failures(mode):
     class Connector:
