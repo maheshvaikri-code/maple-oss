@@ -8,8 +8,8 @@
 The authenticated task control plane can claim, complete, fail, cancel, and
 explicitly retry work. A claim records `ASSIGNED`, but remote workers have no
 explicit way to record that execution has begun. This leaves the existing
-`RUNNING` state and running-task statistics inaccessible through the remote
-worker boundary.
+`RUNNING` state and its start timestamp inaccessible through the remote worker
+boundary.
 
 ## Decision
 
@@ -26,7 +26,7 @@ queue remains authoritative for existence, ownership, and lifecycle conflicts.
 ## Consequences
 
 - remote workers can report an explicit running state;
-- statistics can distinguish assigned from running work;
+- existing queue statistics accounting remains consistent with the new state;
 - ownership and lifecycle checks remain in the selected queue implementation;
 - repeated, wrong-owner, missing, queued, and terminal transitions fail
   without mutation;

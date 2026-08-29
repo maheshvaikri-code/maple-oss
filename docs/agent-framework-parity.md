@@ -89,8 +89,9 @@ dashboarding, or a globally consistent snapshot.
 
 Slice 191 adds an owner-safe authenticated task start operation under
 `task:start`. A recorded owner can transition an `ASSIGNED` task to `RUNNING`,
-which records `started_at` and contributes to running-task statistics. The
-transition remains an explicit local lifecycle acknowledgement; worker
+which records `started_at` while preserving the queue's existing statistics
+accounting. The transition remains an explicit local lifecycle
+acknowledgement; worker
 heartbeats, leases, timeout monitoring, scheduling, and distributed ownership
 remain separate.
 

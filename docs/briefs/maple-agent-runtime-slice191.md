@@ -30,7 +30,8 @@ owner of an assigned task to explicitly transition it to `RUNNING`.
 1. Only the recorded owner of an `ASSIGNED` task can start it.
 2. Repeated starts, missing tasks, terminal tasks, and malformed requests fail
    closed without mutation.
-3. The transition records `started_at` and is visible in queue statistics.
+3. The transition records `started_at` and preserves queue statistics
+   accounting.
 4. In-memory and durable queues expose the same owner/state contract.
 5. Existing task lifecycle and full repository gates remain green.
 6. Clean archive/package evidence is recorded without publication.

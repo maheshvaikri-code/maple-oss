@@ -11,7 +11,7 @@
 | Authentication and scope | PASS | `POST /v1/tasks/{task_id}/start` requires `task:start`; a principal without that scope is rejected |
 | Owner enforcement | PASS | Only the recorded assigned agent can start the task; mismatched owners fail with `TASK_CONFLICT` |
 | State transition | PASS | Only `ASSIGNED` tasks transition to `RUNNING`; queued, repeated, and terminal starts fail without mutation |
-| Timestamp and statistics | PASS | Accepted starts record `started_at` and increase `running_tasks` |
+| Timestamp and statistics | PASS | Accepted starts record `started_at` and preserve the queue's existing `running_tasks` accounting |
 | Input validation | PASS | Invalid task IDs, actor IDs, and request fields are rejected before queue mutation |
 | Durable queue parity | PASS | `FileTaskQueue` persists the running state and applies existing restart recovery to interrupted work |
 | Existing lifecycle compatibility | PASS | Autonomy/task-management and full workspace suites remain green |

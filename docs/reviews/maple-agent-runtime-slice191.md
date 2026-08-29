@@ -23,7 +23,8 @@ worker lifecycle acknowledgement, not a worker lease or liveness protocol.
 `TaskQueue.start_task()` validates the actor, task existence, recorded owner,
 and exact `ASSIGNED` state while holding the queue lock. It delegates the
 accepted transition to the existing status accounting, which records
-`started_at`, updates running statistics, and notifies existing callbacks.
+`started_at`, preserves the queue's existing statistics accounting, and
+notifies existing callbacks.
 `FileTaskQueue` executes the same operation under its atomic fenced durable
 read/modify/write wrapper; interrupted running work retains the existing
 restart normalization to `QUEUED`.
