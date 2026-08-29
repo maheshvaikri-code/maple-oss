@@ -10,6 +10,13 @@
 
 ### Release hardening
 
+- **Bounded retrieval citation tool**: `create_retrieval_tool()` adapts an
+  existing lexical backend into a read-only model tool with bounded UTF-8
+  queries, deterministic source URI/title citations, metadata-minimal results,
+  whole-output byte limits, and generic fail-closed backend errors. Retrieved
+  text remains data only; vector query embedding, corpus authorization,
+  managed stores, and network retrieval remain host-owned.
+
 - **Durable local lexical retrieval**: `FileLexicalRetriever` persists
   validated source documents in a bounded versioned JSON file, rebuilds the
   deterministic lexical index after restart, refreshes across instances, and

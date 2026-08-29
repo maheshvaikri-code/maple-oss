@@ -1412,6 +1412,38 @@ oversized, unsupported-version, policy-mismatched, duplicate, dimension-
 mismatched, or unrebuildable state fails closed. Storage errors are returned
 without host exception text or paths.
 
+### Retrieval as an agent tool
+
+`create_retrieval_tool()` adapts an existing lexical retriever to the normal
+MAPLE `Tool` contract. The model supplies a bounded query and optional `top_k`
+within the host-configured limit. Each result includes the chunk/document IDs,
+bounded text, score, matched terms, and source URI/title needed for a citation;
+source and chunk metadata are omitted by default. The complete JSON result is
+checked against a finite UTF-8 byte bound, so the helper rejects oversized
+results instead of truncating text or provenance:
+
+```python
+from maple import InMemoryLexicalRetriever, create_retrieval_tool
+
+retriever = InMemoryLexicalRetriever()
+# Add validated Document values before exposing the tool to an agent.
+search_tool = create_retrieval_tool(retriever, max_top_k=5)
+agent.tool_registry.register(search_tool)
+
+result = search_tool.execute(query="resource-aware orchestration", top_k=3)
+if result.is_ok():
+    for hit in result.unwrap()["hits"]:
+        print(hit["source"]["uri"], hit["text"])
+```
+
+The factory is read-only and approval-disabled by default; pass
+`requires_approval=True` when host policy requires an approval boundary. It
+does not generate vector query embeddings, authorize corpus access, fetch
+network sources, filter prompt injection, evaluate citation faithfulness, or
+execute retrieved text. Backend exceptions, malformed hits, duplicate chunks,
+non-finite scores, and non-JSON-safe results fail closed with generic typed
+errors and without raw backend details.
+
 The reference backend is intentionally local; it is not a hosted vector
 database or embedding service. A vector index accepts one finite, bounded
 embedding per generated chunk and uses cosine similarity with deterministic
