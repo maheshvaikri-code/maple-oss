@@ -31,7 +31,7 @@ python -m compileall -q maple tests
 compileall: ok
 
 python -m pytest tests -q --no-cov
-1806 passed, 1 skipped in 385.80s (0:06:25)
+1806 passed, 1 skipped in 373.33s (0:06:13)
 ```
 
 ## Findings
