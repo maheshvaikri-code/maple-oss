@@ -1,15 +1,18 @@
 """
-Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
+Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy
+(Mahesh Vaikri)
 
 This file is part of MAPLE - Multi Agent Protocol Language Engine.
 
-MAPLE - Multi Agent Protocol Language Engine is free software: you can redistribute it and/or
-modify it under the terms of the GNU Affero General Public License as published by the Free Software
-Foundation, either version 3 of the License, or (at your option) any later version.
-MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
-PARTICULAR PURPOSE. See the GNU Affero General Public License for more details. You should have
-received a copy of the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
+MAPLE - Multi Agent Protocol Language Engine is free software: you can
+redistribute it and/or modify it under the terms of the GNU Affero General
+Public License as published by the Free Software Foundation, either version 3
+of the License, or (at your option) any later version.
+MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that
+it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero
+General Public License for more details. You should have received a copy of
+the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
 Language Engine. If not, see <https://www.gnu.org/licenses/>.
 """
 
@@ -59,7 +62,8 @@ class CircuitBreaker(Generic[T, E]):
 
         Args:
             failure_threshold: Number of failures before opening the circuit.
-            reset_timeout: Time in seconds before testing if the circuit can be closed again.
+        reset_timeout: Time in seconds before testing if the circuit can be
+            closed again.
             half_open_max_calls: Maximum number of calls allowed in half-open state.
         """
         self.failure_threshold = failure_threshold
@@ -93,7 +97,9 @@ class CircuitBreaker(Generic[T, E]):
                     self.half_open_calls = 0
                 else:
                     logger.debug(
-                        f"Circuit open, blocking request (reset in {self.reset_timeout - (time.time() - self.last_failure_time):.1f}s)"
+                        "Circuit open, blocking request (reset in {:.1f}s)".format(
+                            self.reset_timeout - (time.time() - self.last_failure_time)
+                        )
                     )
                     return Result.err(
                         cast(
@@ -121,7 +127,9 @@ class CircuitBreaker(Generic[T, E]):
                         E,
                         {
                             "errorType": "CIRCUIT_HALF_OPEN",
-                            "message": "Circuit breaker is half-open and call limit reached",
+                            "message": (
+                                "Circuit breaker is half-open and call limit reached"
+                            ),
                             "details": {"maxCalls": self.half_open_max_calls},
                         },
                     )
@@ -155,7 +163,8 @@ class CircuitBreaker(Generic[T, E]):
                     and self.failure_count >= self.failure_threshold
                 ):
                     logger.warning(
-                        f"Failure threshold reached ({self.failure_count}), opening circuit"
+                        f"Failure threshold reached ({self.failure_count}), "
+                        "opening circuit"
                     )
                     self.state = CircuitState.OPEN
 

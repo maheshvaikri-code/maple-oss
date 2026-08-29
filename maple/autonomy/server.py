@@ -1,3 +1,18 @@
+# Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy
+# (Mahesh Vaikri)
+#
+# This file is part of MAPLE - Multi Agent Protocol Language Engine.
+#
+# MAPLE - Multi Agent Protocol Language Engine is free software: you can
+# redistribute it and/or modify it under the terms of the GNU Affero General
+# Public License as published by the Free Software Foundation, either version 3
+# of the License, or (at your option) any later version.
+# MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that
+# it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+# of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero
+# General Public License for more details. You should have received a copy of
+# the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
+# Language Engine. If not, see <https://www.gnu.org/licenses/>.
 """Dependency-free loopback HTTP access to registered MAPLE workflows."""
 
 from __future__ import annotations
@@ -2778,7 +2793,10 @@ class _RequestHandler(BaseHTTPRequestHandler):
                     501,
                     _error(
                         "HUMAN_INPUT_MULTI_ROUND_UNSUPPORTED",
-                        "The configured human input store does not support multi-round input.",
+                        (
+                            "The configured human input store does not support "
+                            "multi-round input."
+                        ),
                     ),
                 )
                 return
@@ -3475,7 +3493,10 @@ class _RequestHandler(BaseHTTPRequestHandler):
                             "index": index,
                             "error": _error(
                                 "EVENT_SOURCE_SEQUENCE_INVALID",
-                                "sequence must be a positive integer when deduplication is enabled.",
+                                (
+                                    "sequence must be a positive integer when "
+                                    "deduplication is enabled."
+                                ),
                             ),
                         }
                     )
@@ -4491,7 +4512,10 @@ class RunServer:
                 for name in dedup_required_methods
             ):
                 raise TypeError(
-                    "event_deduplication_store must implement claim, complete, and abort"
+                    (
+                        "event_deduplication_store must implement claim, complete, "
+                        "and abort"
+                    )
                 )
         if task_queue is not None:
             if not isinstance(task_queue, TaskQueue):
@@ -5193,7 +5217,10 @@ class RunClient:
                     return Result.err(
                         _error(
                             "EVENT_SOURCE_SEQUENCE_INVALID",
-                            "sequence must be a positive integer when source_id is provided.",
+                            (
+                                "sequence must be a positive integer when source_id "
+                                "is provided."
+                            ),
                             index=index,
                         )
                     )
@@ -5516,7 +5543,10 @@ class RunClient:
             return Result.err(
                 _error(
                     "APPROVAL_NOTIFICATION_RESPONSE_INVALID",
-                    "Remote approval notification response did not acknowledge the requested notification.",
+                    (
+                        "Remote approval notification response did not "
+                        "acknowledge the requested notification."
+                    ),
                 )
             )
         return Result.ok(acknowledged)
@@ -5708,7 +5738,10 @@ class RunClient:
             return Result.err(
                 _error(
                     "HUMAN_INPUT_NOTIFICATION_RESPONSE_INVALID",
-                    "Remote notification response did not acknowledge the requested notification.",
+                    (
+                        "Remote notification response did not acknowledge "
+                        "the requested notification."
+                    ),
                 )
             )
         return Result.ok(acknowledged)
@@ -6022,7 +6055,10 @@ class RemoteHandoffTarget:
                 return Result.err(
                     _error(
                         "REMOTE_HANDOFF_INPUT_INVALID",
-                        "handoff_id is required when remote idempotency binding is enabled.",
+                        (
+                            "handoff_id is required when remote idempotency binding "
+                            "is enabled."
+                        ),
                     )
                 )
             key_result = normalize_agent_idempotency_key(handoff_id)

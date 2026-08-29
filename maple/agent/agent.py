@@ -1,15 +1,18 @@
 """
-Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
+Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy
+(Mahesh Vaikri)
 
 This file is part of MAPLE - Multi Agent Protocol Language Engine.
 
-MAPLE - Multi Agent Protocol Language Engine is free software: you can redistribute it and/or
-modify it under the terms of the GNU Affero General Public License as published by the Free Software
-Foundation, either version 3 of the License, or (at your option) any later version.
-MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
-PARTICULAR PURPOSE. See the GNU Affero General Public License for more details. You should have
-received a copy of the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
+MAPLE - Multi Agent Protocol Language Engine is free software: you can
+redistribute it and/or modify it under the terms of the GNU Affero General
+Public License as published by the Free Software Foundation, either version 3
+of the License, or (at your option) any later version.
+MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that
+it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero
+General Public License for more details. You should have received a copy of
+the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
 Language Engine. If not, see <https://www.gnu.org/licenses/>.
 """
 
@@ -251,7 +254,9 @@ class Agent:
         except queue.Empty:
             error = {
                 "errorType": "TIMEOUT",
-                "message": f"Timed out waiting for response to message {message.message_id}",
+                "message": (
+                    "Timed out waiting for response to message " f"{message.message_id}"
+                ),
                 "details": {
                     "messageType": message.message_type,
                     "receiver": message.receiver,
@@ -387,7 +392,9 @@ class Agent:
                 return Result.err(
                     {
                         "errorType": "NO_SECURITY_CONFIG",
-                        "message": "Security configuration required for link establishment",
+                        "message": (
+                            "Security configuration required for link establishment"
+                        ),
                     }
                 )
 
@@ -469,7 +476,8 @@ class Agent:
 
             if establish_result.is_err():
                 logger.error(
-                    f"Failed to receive link established: {establish_result.unwrap_err()}"
+                    "Failed to receive link established: "
+                    f"{establish_result.unwrap_err()}"
                 )
                 return Result.err(
                     {
@@ -552,7 +560,7 @@ class Agent:
         return self._crypto_manager
 
     def _verify_nonce(self, encrypted_nonce: str, original_nonce: str) -> bool:
-        """Verify that encrypted nonce matches original using real crypto when available."""
+        """Verify encrypted nonce with real crypto when available."""
         crypto = self._get_crypto_manager()
         if crypto is not None:
             try:

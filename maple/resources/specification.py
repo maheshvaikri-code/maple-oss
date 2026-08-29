@@ -1,15 +1,18 @@
 """
-Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
+Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy
+(Mahesh Vaikri)
 
 This file is part of MAPLE - Multi Agent Protocol Language Engine.
 
-MAPLE - Multi Agent Protocol Language Engine is free software: you can redistribute it and/or
-modify it under the terms of the GNU Affero General Public License as published by the Free Software
-Foundation, either version 3 of the License, or (at your option) any later version.
-MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
-PARTICULAR PURPOSE. See the GNU Affero General Public License for more details. You should have
-received a copy of the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
+MAPLE - Multi Agent Protocol Language Engine is free software: you can
+redistribute it and/or modify it under the terms of the GNU Affero General
+Public License as published by the Free Software Foundation, either version 3
+of the License, or (at your option) any later version.
+MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that
+it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero
+General Public License for more details. You should have received a copy of
+the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
 Language Engine. If not, see <https://www.gnu.org/licenses/>.
 """
 
@@ -83,9 +86,11 @@ class ResourceRequest:
     priority: str = "MEDIUM"
     # Arbitrary named NUMERIC resources beyond the built-in fields, so an agent can
     # negotiate dimensions MAPLE does not hard-code (e.g. 'gpu', 'disk', 'money',
-    # 'api_calls', 'energy'). Each value is a ResourceRange of plain numbers; the manager
-    # treats a custom resource's lifecycle (renewable vs consumable) per DEFAULT_LIFECYCLES
-    # or the register_resource(..., lifecycle=...) override. For byte sizes prefer `memory`.
+    # 'api_calls', 'energy'). Each value is a ResourceRange of plain numbers;
+    # the manager treats a custom resource's lifecycle (renewable vs consumable)
+    # per DEFAULT_LIFECYCLES
+    # or the register_resource(..., lifecycle=...) override. For byte sizes
+    # prefer `memory`.
     custom: Optional[Dict[str, ResourceRange]] = None
 
     def to_dict(self) -> Dict[str, Any]:

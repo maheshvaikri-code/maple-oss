@@ -1,15 +1,18 @@
 """
-Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
+Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy
+(Mahesh Vaikri)
 
 This file is part of MAPLE - Multi Agent Protocol Language Engine.
 
-MAPLE - Multi Agent Protocol Language Engine is free software: you can redistribute it and/or
-modify it under the terms of the GNU Affero General Public License as published by the Free Software
-Foundation, either version 3 of the License, or (at your option) any later version.
-MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
-PARTICULAR PURPOSE. See the GNU Affero General Public License for more details. You should have
-received a copy of the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
+MAPLE - Multi Agent Protocol Language Engine is free software: you can
+redistribute it and/or modify it under the terms of the GNU Affero General
+Public License as published by the Free Software Foundation, either version 3
+of the License, or (at your option) any later version.
+MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that
+it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero
+General Public License for more details. You should have received a copy of
+the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
 Language Engine. If not, see <https://www.gnu.org/licenses/>.
 """
 
@@ -137,7 +140,8 @@ class StateStore:
             self._init_database()
 
         logger.info(
-            f"StateStore initialized with {backend.value} backend, {consistency.value} consistency"
+            f"StateStore initialized with {backend.value} backend, "
+            f"{consistency.value} consistency"
         )
 
     # ------------------------------------------------------------------
@@ -266,7 +270,10 @@ class StateStore:
                 return Result.err(
                     {
                         "errorType": "NOT_IMPLEMENTED",
-                        "message": f"list_keys not implemented for {self.backend.value} backend",
+                        "message": (
+                            "list_keys not implemented for "
+                            f"{self.backend.value} backend"
+                        ),
                     }
                 )
         except Exception as e:
@@ -352,7 +359,10 @@ class StateStore:
                     return Result.err(
                         {
                             "errorType": "VERSION_MISMATCH",
-                            "message": f"Expected version {expected_version}, found {existing.version}",
+                            "message": (
+                                f"Expected version {expected_version}, found "
+                                f"{existing.version}"
+                            ),
                             "details": {
                                 "key": entry.key,
                                 "expected_version": expected_version,
@@ -374,7 +384,10 @@ class StateStore:
                 return Result.err(
                     {
                         "errorType": "VERSION_MISMATCH",
-                        "message": f"Expected version {expected_version}, found {entry.version}",
+                        "message": (
+                            f"Expected version {expected_version}, found "
+                            f"{entry.version}"
+                        ),
                         "details": {
                             "key": key,
                             "expected_version": expected_version,
@@ -437,7 +450,10 @@ class StateStore:
                     return Result.err(
                         {
                             "errorType": "VERSION_MISMATCH",
-                            "message": f"Expected version {expected_version}, found {existing['version']}",
+                            "message": (
+                                f"Expected version {expected_version}, found "
+                                f"{existing['version']}"
+                            ),
                             "details": {
                                 "key": entry.key,
                                 "expected_version": expected_version,
@@ -467,7 +483,9 @@ class StateStore:
             return Result.err(
                 {
                     "errorType": "FILE_WRITE_ERROR",
-                    "message": f"Failed to write state file for key {entry.key}: {str(e)}",
+                    "message": (
+                        f"Failed to write state file for key {entry.key}: " f"{str(e)}"
+                    ),
                 }
             )
 
@@ -486,7 +504,10 @@ class StateStore:
                     return Result.err(
                         {
                             "errorType": "VERSION_MISMATCH",
-                            "message": f"Expected version {expected_version}, found {existing['version']}",
+                            "message": (
+                                f"Expected version {expected_version}, found "
+                                f"{existing['version']}"
+                            ),
                             "details": {
                                 "key": key,
                                 "expected_version": expected_version,
@@ -541,7 +562,10 @@ class StateStore:
         return Result.err(
             {
                 "errorType": "NOT_IMPLEMENTED",
-                "message": "Redis backend requires the redis library. Install with: pip install redis",
+                "message": (
+                    "Redis backend requires the redis library. Install with: "
+                    "pip install redis"
+                ),
             }
         )
 
@@ -551,7 +575,10 @@ class StateStore:
         return Result.err(
             {
                 "errorType": "NOT_IMPLEMENTED",
-                "message": "Redis backend requires the redis library. Install with: pip install redis",
+                "message": (
+                    "Redis backend requires the redis library. Install with: "
+                    "pip install redis"
+                ),
             }
         )
 
@@ -561,7 +588,10 @@ class StateStore:
         return Result.err(
             {
                 "errorType": "NOT_IMPLEMENTED",
-                "message": "Redis backend requires the redis library. Install with: pip install redis",
+                "message": (
+                    "Redis backend requires the redis library. Install with: "
+                    "pip install redis"
+                ),
             }
         )
 
@@ -592,7 +622,10 @@ class StateStore:
             try:
                 conn = sqlite3.connect(cast(str, self._db_path))
                 cursor = conn.execute(
-                    "SELECT value, version, metadata, updated_at FROM state_entries WHERE key = ?",
+                    (
+                        "SELECT value, version, metadata, updated_at FROM "
+                        "state_entries WHERE key = ?"
+                    ),
                     (key,),
                 )
                 row = cursor.fetchone()
@@ -626,7 +659,10 @@ class StateStore:
                         return Result.err(
                             {
                                 "errorType": "VERSION_MISMATCH",
-                                "message": f"Expected version {expected_version}, found {row[0]}",
+                                "message": (
+                                    f"Expected version {expected_version}, found "
+                                    f"{row[0]}"
+                                ),
                                 "details": {
                                     "key": entry.key,
                                     "expected_version": expected_version,
@@ -639,8 +675,11 @@ class StateStore:
                 metadata_json = json.dumps(entry.metadata, default=str)
 
                 conn.execute(
-                    """INSERT OR REPLACE INTO state_entries (key, value, version, metadata, updated_at)
-                       VALUES (?, ?, ?, ?, ?)""",
+                    (
+                        "INSERT OR REPLACE INTO state_entries "
+                        "(key, value, version, metadata, updated_at) "
+                        "VALUES (?, ?, ?, ?, ?)"
+                    ),
                     (
                         entry.key,
                         value_json,
@@ -656,7 +695,9 @@ class StateStore:
                 return Result.err(
                     {
                         "errorType": "DATABASE_WRITE_ERROR",
-                        "message": f"Failed to write key {entry.key} to database: {str(e)}",
+                        "message": (
+                            f"Failed to write key {entry.key} to database: " f"{str(e)}"
+                        ),
                     }
                 )
 
@@ -680,7 +721,10 @@ class StateStore:
                         return Result.err(
                             {
                                 "errorType": "VERSION_MISMATCH",
-                                "message": f"Expected version {expected_version}, found {row[0]}",
+                                "message": (
+                                    f"Expected version {expected_version}, found "
+                                    f"{row[0]}"
+                                ),
                                 "details": {
                                     "key": key,
                                     "expected_version": expected_version,
@@ -698,7 +742,9 @@ class StateStore:
                 return Result.err(
                     {
                         "errorType": "DATABASE_DELETE_ERROR",
-                        "message": f"Failed to delete key {key} from database: {str(e)}",
+                        "message": (
+                            f"Failed to delete key {key} from database: " f"{str(e)}"
+                        ),
                     }
                 )
 

@@ -1,31 +1,36 @@
 """
-Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
+Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy
+(Mahesh Vaikri)
 
 This file is part of MAPLE - Multi Agent Protocol Language Engine.
 
-MAPLE - Multi Agent Protocol Language Engine is free software: you can redistribute it and/or
-modify it under the terms of the GNU Affero General Public License as published by the Free Software
-Foundation, either version 3 of the License, or (at your option) any later version.
-MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
-PARTICULAR PURPOSE. See the GNU Affero General Public License for more details. You should have
-received a copy of the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
+MAPLE - Multi Agent Protocol Language Engine is free software: you can
+redistribute it and/or modify it under the terms of the GNU Affero General
+Public License as published by the Free Software Foundation, either version 3
+of the License, or (at your option) any later version.
+MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that
+it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero
+General Public License for more details. You should have received a copy of
+the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
 Language Engine. If not, see <https://www.gnu.org/licenses/>.
 """
 
 # maple/resources/lease.py
 # Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
 #
-# Exclusive resource leases -- the "one holder at a time" negotiation semantic that the
-# renewable-pool ResourceManager cannot express: a named lock, a physical device (camera,
-# robot arm, serial port), a floating license seat, or a singleton "leader"/"writer" role.
+# Exclusive resource leases -- the "one holder at a time" negotiation semantic
+# that the renewable-pool ResourceManager cannot express: a named lock, a
+# physical device (camera, robot arm, serial port), a floating license seat, or
+# a singleton "leader"/"writer" role.
 #
-# A lease is time-boxed (TTL) so a crashed or slow holder cannot deadlock the resource --
-# expiry IS the preemption mechanism, no explicit revoke needed. Each grant carries a
-# monotonically increasing per-resource FENCING TOKEN: the holder presents it to the guarded
-# resource, so a stale holder that resumes after its lease expired and was re-granted to
-# someone else is detectably out of date (is_valid() -> False) and will not act on a
-# resource another agent now owns. This is the standard fencing-token pattern.
+# A lease is time-boxed (TTL) so a crashed or slow holder cannot deadlock the
+# resource -- expiry IS the preemption mechanism, no explicit revoke needed.
+# Each grant carries a monotonically increasing per-resource FENCING TOKEN: the
+# holder presents it to the guarded resource, so a stale holder that resumes
+# after its lease expired and was re-granted to someone else is detectably out
+# of date (is_valid() -> False) and will not act on a resource another agent now
+# owns. This is the standard fencing-token pattern.
 
 import hashlib
 import json
@@ -50,9 +55,10 @@ class Lease:
     Attributes:
         resource: The leased resource name.
         holder: The agent id holding it.
-        token: Per-resource, monotonically increasing fencing token. The holder passes it
-            to the guarded resource; a delayed/stale holder (whose lease has since expired
-            and been re-granted) presents an older token and is rejected.
+        token: Per-resource, monotonically increasing fencing token. The holder
+            passes it to the guarded resource; a delayed/stale holder (whose
+            lease has since expired and been re-granted) presents an older token
+            and is rejected.
         expires_at: Absolute deadline on the owning LeaseManager's monotonic clock.
     """
 
@@ -68,19 +74,22 @@ class Lease:
 class LeaseManager:
     """Grants exclusive, time-boxed leases on named resources.
 
-    Thread-safe. A lease held by a crashed/slow holder becomes acquirable by another holder
-    once its TTL elapses (implicit preemption) -- there is deliberately no force-revoke.
+    Thread-safe. A lease held by a crashed/slow holder becomes acquirable by
+    another holder once its TTL elapses (implicit preemption) -- there is
+    deliberately no force-revoke.
     """
 
     def __init__(self, clock: Callable[[], float] = time.monotonic):
-        # clock is injectable so tests are deterministic (advance a fake clock, no sleeping).
+        # clock is injectable so tests are deterministic (advance a fake clock, no
+        # sleeping).
         self._clock = clock
         self._leases: Dict[str, Lease] = {}
         self._counters: Dict[str, int] = {}
         self._lock = threading.RLock()
 
     def _active(self, resource: str, now: float) -> Optional[Lease]:
-        """Return the current non-expired lease for `resource`, pruning it if expired."""
+        """Return the current non-expired lease for `resource`, pruning it if
+        expired."""
         lease = self._leases.get(resource)
         if lease is None:
             return None
@@ -96,8 +105,8 @@ class LeaseManager:
     def acquire(self, resource: str, holder: str, ttl_seconds: float) -> Result:
         """Acquire (or, for the same holder, renew) an exclusive lease on `resource`.
 
-        Returns Result.ok(Lease) if granted, or Result.err with the current holder and the
-        time remaining if another agent holds a live lease.
+        Returns Result.ok(Lease) if granted, or Result.err with the current
+        holder and the time remaining if another agent holds a live lease.
         """
         if ttl_seconds <= 0:
             return Result.err(
@@ -114,7 +123,9 @@ class LeaseManager:
                 return Result.err(
                     {
                         "errorType": "RESOURCE_HELD",
-                        "message": f"Resource '{resource}' is held by '{current.holder}'",
+                        "message": (
+                            f"Resource '{resource}' is held by '{current.holder}'"
+                        ),
                         "details": {
                             "holder": current.holder,
                             "expires_in": max(0.0, current.expires_at - now),
@@ -133,7 +144,8 @@ class LeaseManager:
             return Result.ok(lease)
 
     def renew(self, lease: Lease, ttl_seconds: float) -> Result:
-        """Extend a lease the caller still holds. Fails if it was lost (expired/preempted)."""
+        """Extend a lease the caller still holds. Fails if it was lost
+        (expired/preempted)."""
         if ttl_seconds <= 0:
             return Result.err(
                 {
@@ -166,9 +178,10 @@ class LeaseManager:
     def release(self, lease: Lease) -> Result:
         """Release a lease.
 
-        Returns Result.ok(True) if the caller was the current holder, or Result.ok(False)
-        if the lease had already expired or been preempted (an idempotent no-op -- a stale
-        holder cannot release a resource another agent now holds).
+        Returns Result.ok(True) if the caller was the current holder, or
+        Result.ok(False) if the lease had already expired or been preempted (an
+        idempotent no-op -- a stale holder cannot release a resource another
+        agent now holds).
         """
         with self._lock:
             now = self._clock()
@@ -179,9 +192,11 @@ class LeaseManager:
             return Result.ok(False)
 
     def is_valid(self, lease: Lease) -> bool:
-        """True iff this exact lease (by fencing token) is still the active, unexpired hold.
+        """True iff this exact lease (by fencing token) is still the active,
+        unexpired hold.
 
-        A holder calls this immediately before acting on the guarded resource -- the fence.
+        A holder calls this immediately before acting on the guarded resource --
+        the fence.
         """
         with self._lock:
             current = self._active(lease.resource, self._clock())
@@ -552,7 +567,8 @@ class FileLeaseManager:
             return False
 
     def holder_of(self, resource: str) -> Optional[str]:
-        """Return the current holder, or None for free, expired, or unavailable state."""
+        """Return the current holder, or None for free, expired, or unavailable
+        state."""
         if not _valid_file_lease_name(resource):
             return None
         try:

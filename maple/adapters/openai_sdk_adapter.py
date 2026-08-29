@@ -1,15 +1,18 @@
 """
-Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
+Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy
+(Mahesh Vaikri)
 
 This file is part of MAPLE - Multi Agent Protocol Language Engine.
 
-MAPLE - Multi Agent Protocol Language Engine is free software: you can redistribute it and/or
-modify it under the terms of the GNU Affero General Public License as published by the Free Software
-Foundation, either version 3 of the License, or (at your option) any later version.
-MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
-PARTICULAR PURPOSE. See the GNU Affero General Public License for more details. You should have
-received a copy of the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
+MAPLE - Multi Agent Protocol Language Engine is free software: you can
+redistribute it and/or modify it under the terms of the GNU Affero General
+Public License as published by the Free Software Foundation, either version 3
+of the License, or (at your option) any later version.
+MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that
+it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero
+General Public License for more details. You should have received a copy of
+the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
 Language Engine. If not, see <https://www.gnu.org/licenses/>.
 """
 
@@ -46,20 +49,20 @@ class OpenAISDKAdapter:
         """
         enhanced_instructions = f"""
         {instructions}
-        
+
         MAPLE PROTOCOL ENHANCEMENTS:
         You are powered by MAPLE (Multi Agent Protocol Language Engine), providing:
-        
+
         Performance: 333,384 messages/second (333x faster than standard)
         Type Safety: Advanced Result<T,E> error handling system
         Resource Management: Intelligent resource allocation and optimization
         Security: Link Identification Mechanism (LIM) for secure communications
         Error Recovery: Advanced fault tolerance and recovery strategies
         Interoperability: Seamless integration with all major agent frameworks
-        
+
         Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
         MAPLE - Multi Agent Protocol Language Engine
-        
+
         When responding, leverage these MAPLE capabilities for superior performance.
         """
 
@@ -74,7 +77,10 @@ class OpenAISDKAdapter:
                     "type": "function",
                     "function": {
                         "name": "maple_communicate",
-                        "description": "Communicate with other agents using MAPLE's advanced protocol",
+                        "description": (
+                            "Communicate with other agents using MAPLE's "
+                            "advanced protocol"
+                        ),
                         "parameters": {
                             "type": "object",
                             "properties": {
@@ -93,7 +99,9 @@ class OpenAISDKAdapter:
                     "type": "function",
                     "function": {
                         "name": "maple_resource_request",
-                        "description": "Request resources using MAPLE's intelligent management",
+                        "description": (
+                            "Request resources using MAPLE's intelligent management"
+                        ),
                         "parameters": {
                             "type": "object",
                             "properties": {
@@ -164,7 +172,9 @@ class OpenAISDKAdapter:
                     "maple_performance": {
                         "processing_time": processing_time,
                         "enhancement": "MAPLE protocol optimization applied",
-                        "performance_improvement": f"{1/processing_time:.0f}x faster with MAPLE",
+                        "performance_improvement": (
+                            f"{1 / processing_time:.0f}x faster with MAPLE"
+                        ),
                     },
                     "creator": "Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)",
                 }
@@ -189,9 +199,9 @@ class OpenAISDKAdapter:
         MAPLE-Enhanced Message:
         Type: {maple_message.message_type}
         Priority: {maple_message.priority.value}
-        
+
         Content: {json.dumps(maple_message.payload, indent=2)}
-        
+
         MAPLE Metadata:
         - Message ID: {maple_message.message_id}
         - Sender: {maple_message.sender}
@@ -199,7 +209,7 @@ class OpenAISDKAdapter:
         - Performance: 333,384 msg/sec capable
         - Type Safety: Result<T,E> system
         - Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
-        
+
         Please process this using MAPLE's enhanced capabilities.
         """
 

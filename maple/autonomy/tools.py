@@ -1,15 +1,18 @@
 """
-Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
+Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy
+(Mahesh Vaikri)
 
 This file is part of MAPLE - Multi Agent Protocol Language Engine.
 
-MAPLE - Multi Agent Protocol Language Engine is free software: you can redistribute it and/or
-modify it under the terms of the GNU Affero General Public License as published by the Free Software
-Foundation, either version 3 of the License, or (at your option) any later version.
-MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
-PARTICULAR PURPOSE. See the GNU Affero General Public License for more details. You should have
-received a copy of the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
+MAPLE - Multi Agent Protocol Language Engine is free software: you can
+redistribute it and/or modify it under the terms of the GNU Affero General
+Public License as published by the Free Software Foundation, either version 3
+of the License, or (at your option) any later version.
+MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that
+it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero
+General Public License for more details. You should have received a copy of
+the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
 Language Engine. If not, see <https://www.gnu.org/licenses/>.
 """
 
@@ -352,7 +355,9 @@ class Tool:
                 return Result.err(
                     {
                         "errorType": "TOOL_INPUT_INVALID",
-                        "message": f'Tool "{self.name}" model could not produce arguments',
+                        "message": (
+                            f'Tool "{self.name}" model could not produce arguments'
+                        ),
                         "details": {"exception": type(exc).__name__},
                     }
                 )
@@ -464,7 +469,9 @@ class Tool:
                 return Result.err(
                     {
                         "errorType": "TOOL_INPUT_INVALID",
-                        "message": f'Tool "{self.name}" model could not produce arguments',
+                        "message": (
+                            f'Tool "{self.name}" model could not produce arguments'
+                        ),
                         "details": {"exception": type(exc).__name__},
                     }
                 )
@@ -633,7 +640,10 @@ class ToolRegistry:
             return Result.err(
                 {
                     "errorType": "TOOL_NOT_FOUND",
-                    "message": f'Tool "{name}" not found. Available: {list(self._tools.keys())}',
+                    "message": (
+                        f'Tool "{name}" not found. Available: '
+                        f"{list(self._tools.keys())}"
+                    ),
                 }
             )
         return Result.ok(self._tools[name])
@@ -835,7 +845,9 @@ def _start_persisted_handoff(
                     return Result.err(
                         {
                             "errorType": "HANDOFF_RESULT_INVALID",
-                            "message": "Stored handoff result cannot be replayed safely.",
+                            "message": (
+                                "Stored handoff result cannot be replayed safely."
+                            ),
                             "details": {"handoff_id": chosen_handoff_id},
                         }
                     )
@@ -847,7 +859,10 @@ def _start_persisted_handoff(
             return Result.err(
                 {
                     "errorType": "HANDOFF_REPLAY_UNAVAILABLE",
-                    "message": "The handoff is already completed without a replayable result.",
+                    "message": (
+                        "The handoff is already completed without a "
+                        "replayable result."
+                    ),
                     "details": {"handoff_id": chosen_handoff_id},
                 }
             )
@@ -1139,7 +1154,9 @@ def create_agent_tool(
             return Result.err(
                 {
                     "errorType": "AGENT_TOOL_CONTEXT_KEY_DENIED",
-                    "message": "Agent-tool context contains a key outside the allowlist.",
+                    "message": (
+                        "Agent-tool context contains a key outside the allowlist."
+                    ),
                     "details": {"keys": denied_keys},
                 }
             )
@@ -1168,7 +1185,10 @@ def create_agent_tool(
                     return Result.err(
                         {
                             "errorType": "AGENT_TOOL_CONTEXT_UNSUPPORTED",
-                            "message": "Nested agent does not declare context-aware execution.",
+                            "message": (
+                                "Nested agent does not declare context-aware "
+                                "execution."
+                            ),
                             "details": {"agent_id": target_id},
                         }
                     )
@@ -1213,7 +1233,10 @@ def create_agent_tool(
     if persist_child_run and callable(pursue_goal_async):
         if not _callable_accepts_keyword(pursue_goal_async, "run_id"):
             raise ValueError(
-                "persist_child_run requires an async target pursue_goal run_id parameter"
+                (
+                    "persist_child_run requires an async target pursue_goal run_id "
+                    "parameter"
+                )
             )
         if not callable(resume_run_async):
             raise ValueError(
@@ -1254,7 +1277,10 @@ def create_agent_tool(
                         return Result.err(
                             {
                                 "errorType": "AGENT_TOOL_CONTEXT_UNSUPPORTED",
-                                "message": "Nested agent does not declare async context-aware execution.",
+                                "message": (
+                                    "Nested agent does not declare async context-aware "
+                                    "execution."
+                                ),
                                 "details": {"agent_id": target_id},
                             }
                         )
@@ -1502,7 +1528,10 @@ def create_handoff_tool(
                         target_result = Result.err(
                             {
                                 "errorType": "HANDOFF_CONTEXT_UNSUPPORTED",
-                                "message": "Target agent does not declare context-aware handoff.",
+                                "message": (
+                                    "Target agent does not declare context-aware "
+                                    "handoff."
+                                ),
                                 "details": {"agent_id": target_id},
                             }
                         )
@@ -1575,7 +1604,9 @@ def create_handoff_tool(
                 return Result.err(
                     {
                         "errorType": "HANDOFF_CONTEXT_KEY_DENIED",
-                        "message": "Handoff context contains a key outside the allowlist.",
+                        "message": (
+                            "Handoff context contains a key outside the allowlist."
+                        ),
                         "details": {"keys": denied_keys},
                     }
                 )
@@ -1619,7 +1650,10 @@ def create_handoff_tool(
                             target_result = Result.err(
                                 {
                                     "errorType": "HANDOFF_CONTEXT_UNSUPPORTED",
-                                    "message": "Target agent does not declare async context-aware handoff.",
+                                    "message": (
+                                        "Target agent does not declare async "
+                                        "context-aware handoff."
+                                    ),
                                     "details": {"agent_id": target_id},
                                 }
                             )
@@ -1777,7 +1811,9 @@ def create_builtin_tools(agent: "AutonomousAgent") -> List[Tool]:
     tools.append(
         Tool(
             name="query_agents",
-            description="Query available agents and their capabilities in the MAPLE network",
+            description=(
+                "Query available agents and their capabilities in the MAPLE network"
+            ),
             parameters={
                 "type": "object",
                 "properties": {
@@ -1882,7 +1918,10 @@ def create_builtin_tools(agent: "AutonomousAgent") -> List[Tool]:
                         "type": "integer",
                         "minimum": 1,
                         "maximum": 8,
-                        "description": "Maximum number of host response rounds for this interaction.",
+                        "description": (
+                            "Maximum number of host response rounds for this "
+                            "interaction."
+                        ),
                     },
                 },
                 "required": ["prompt"],

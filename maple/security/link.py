@@ -1,15 +1,18 @@
 """
-Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
+Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy
+(Mahesh Vaikri)
 
 This file is part of MAPLE - Multi Agent Protocol Language Engine.
 
-MAPLE - Multi Agent Protocol Language Engine is free software: you can redistribute it and/or
-modify it under the terms of the GNU Affero General Public License as published by the Free Software
-Foundation, either version 3 of the License, or (at your option) any later version.
-MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
-PARTICULAR PURPOSE. See the GNU Affero General Public License for more details. You should have
-received a copy of the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
+MAPLE - Multi Agent Protocol Language Engine is free software: you can
+redistribute it and/or modify it under the terms of the GNU Affero General
+Public License as published by the Free Software Foundation, either version 3
+of the License, or (at your option) any later version.
+MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that
+it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero
+General Public License for more details. You should have received a copy of
+the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
 Language Engine. If not, see <https://www.gnu.org/licenses/>.
 """
 
@@ -175,7 +178,8 @@ class LinkManager:
                     logger.info(f"ECDH key exchange completed for link {link_id}")
                 else:
                     logger.warning(
-                        f"Key derivation failed for link {link_id}: {secret_result.unwrap_err()}"
+                        "Key derivation failed for link "
+                        f"{link_id}: {secret_result.unwrap_err()}"
                     )
 
         link.establish(lifetime_seconds)
@@ -204,7 +208,9 @@ class LinkManager:
             return Result.err(
                 {
                     "errorType": "LINK_NOT_ESTABLISHED",
-                    "message": f"Link {link_id} is in state {link.state}, not ESTABLISHED",
+                    "message": (
+                        f"Link {link_id} is in state {link.state}, not " "ESTABLISHED"
+                    ),
                 }
             )
 
@@ -225,7 +231,10 @@ class LinkManager:
             return Result.err(
                 {
                     "errorType": "UNAUTHORIZED_LINK_USAGE",
-                    "message": f"Agents {sender} and {receiver} are not authorized to use link {link_id}",
+                    "message": (
+                        f"Agents {sender} and {receiver} are not authorized to "
+                        f"use link {link_id}"
+                    ),
                 }
             )
 

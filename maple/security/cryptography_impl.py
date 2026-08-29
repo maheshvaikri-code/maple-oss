@@ -1,15 +1,18 @@
 """
-Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
+Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy
+(Mahesh Vaikri)
 
 This file is part of MAPLE - Multi Agent Protocol Language Engine.
 
-MAPLE - Multi Agent Protocol Language Engine is free software: you can redistribute it and/or
-modify it under the terms of the GNU Affero General Public License as published by the Free Software
-Foundation, either version 3 of the License, or (at your option) any later version.
-MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
-PARTICULAR PURPOSE. See the GNU Affero General Public License for more details. You should have
-received a copy of the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
+MAPLE - Multi Agent Protocol Language Engine is free software: you can
+redistribute it and/or modify it under the terms of the GNU Affero General
+Public License as published by the Free Software Foundation, either version 3
+of the License, or (at your option) any later version.
+MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that
+it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero
+General Public License for more details. You should have received a copy of
+the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
 Language Engine. If not, see <https://www.gnu.org/licenses/>.
 """
 
@@ -119,7 +122,8 @@ class CryptographyManager:
     def __init__(self, crypto_suite: CryptoSuite = CryptoSuite.AES256_GCM_RSA4096):
         if not CRYPTO_AVAILABLE:
             raise ImportError(
-                "Cryptography library not available. Install with: pip install cryptography"
+                "Cryptography library not available. Install with: "
+                "pip install cryptography"
             )
 
         self.crypto_suite = crypto_suite
@@ -135,7 +139,8 @@ class CryptographyManager:
         Generate a cryptographic key pair.
 
         Args:
-            key_type: Type of key to generate ("RSA2048", "RSA4096", "ECDSA_P256", "ECDSA_P384")
+            key_type: Type of key to generate ("RSA2048", "RSA4096",
+                "ECDSA_P256", "ECDSA_P384")
 
         Returns:
             Result containing KeyPair or error
@@ -241,7 +246,10 @@ class CryptographyManager:
                 return Result.err(
                     {
                         "errorType": "UNSUPPORTED_CRYPTO_SUITE",
-                        "message": f"Crypto suite not implemented: {self.crypto_suite.value}",
+                        "message": (
+                            "Crypto suite not implemented: "
+                            f"{self.crypto_suite.value}"
+                        ),
                     }
                 )
 
@@ -430,7 +438,8 @@ class CryptographyManager:
             builder = builder.public_key(key_pair.public_key)
             builder = builder.serial_number(secrets.randbits(64))
 
-            # Set validity period. datetime.utcnow() is deprecated (Python 3.12+); this is
+            # Set validity period. datetime.utcnow() is deprecated (Python
+            # 3.12+); this is
             # the non-deprecated equivalent, kept naive-UTC to match the x509 builder's
             # existing expectation (owner may move to timezone-aware separately).
             import datetime

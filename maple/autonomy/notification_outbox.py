@@ -1,3 +1,18 @@
+# Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy
+# (Mahesh Vaikri)
+#
+# This file is part of MAPLE - Multi Agent Protocol Language Engine.
+#
+# MAPLE - Multi Agent Protocol Language Engine is free software: you can
+# redistribute it and/or modify it under the terms of the GNU Affero General
+# Public License as published by the Free Software Foundation, either version 3
+# of the License, or (at your option) any later version.
+# MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that
+# it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+# of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero
+# General Public License for more details. You should have received a copy of
+# the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
+# Language Engine. If not, see <https://www.gnu.org/licenses/>.
 """Bounded local durability for host-owned notification delivery."""
 
 from __future__ import annotations
@@ -137,7 +152,8 @@ class FileNotificationOutbox(Generic[NotificationT]):
             <= _MAX_NOTIFICATION_OUTBOX_DRAIN_LEASE_TTL_SECONDS
         ):
             raise ValueError(
-                "lease_ttl_seconds must be finite, positive, and no more than 604800 seconds"
+                "lease_ttl_seconds must be finite, positive, and no more than "
+                "604800 seconds"
             )
         for value, name, maximum in (
             (
@@ -221,7 +237,10 @@ class FileNotificationOutbox(Generic[NotificationT]):
                         return Result.err(
                             _error(
                                 "NOTIFICATION_OUTBOX_RECORD_TOO_LARGE",
-                                "notification outbox record exceeds the configured byte limit.",
+                                (
+                                    "notification outbox record exceeds the "
+                                    "configured byte limit."
+                                ),
                                 max_bytes=self.max_record_bytes,
                             )
                         )
@@ -458,7 +477,10 @@ class FileNotificationOutbox(Generic[NotificationT]):
                 return Result.err(
                     _error(
                         "NOTIFICATION_OUTBOX_DRAIN_UNAVAILABLE",
-                        "another notification outbox drainer owns the configured lease.",
+                        (
+                            "another notification outbox drainer owns the "
+                            "configured lease."
+                        ),
                     )
                 )
             return Result.err(
@@ -490,7 +512,10 @@ class FileNotificationOutbox(Generic[NotificationT]):
         if not isinstance(released, Result):
             return _error(
                 "NOTIFICATION_OUTBOX_DRAIN_LEASE_RELEASE_ERROR",
-                "notification outbox drain ownership returned an invalid release result.",
+                (
+                    "notification outbox drain ownership returned an "
+                    "invalid release result."
+                ),
             )
         if released.is_err() or released.unwrap() is not True:
             return _error(

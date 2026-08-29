@@ -1,15 +1,18 @@
 """
-Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
+Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy
+(Mahesh Vaikri)
 
 This file is part of MAPLE - Multi Agent Protocol Language Engine.
 
-MAPLE - Multi Agent Protocol Language Engine is free software: you can redistribute it and/or
-modify it under the terms of the GNU Affero General Public License as published by the Free Software
-Foundation, either version 3 of the License, or (at your option) any later version.
-MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
-PARTICULAR PURPOSE. See the GNU Affero General Public License for more details. You should have
-received a copy of the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
+MAPLE - Multi Agent Protocol Language Engine is free software: you can
+redistribute it and/or modify it under the terms of the GNU Affero General
+Public License as published by the Free Software Foundation, either version 3
+of the License, or (at your option) any later version.
+MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that
+it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero
+General Public License for more details. You should have received a copy of
+the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
 Language Engine. If not, see <https://www.gnu.org/licenses/>.
 """
 
@@ -375,7 +378,10 @@ class TaskMonitor:
                 metrics.agent_id,
                 "resource_limit",
                 "high",
-                f"Memory usage ({metrics.memory_usage:.1f}MB) exceeds limit ({self.memory_limit_mb}MB)",
+                (
+                    f"Memory usage ({metrics.memory_usage:.1f}MB) exceeds limit "
+                    f"({self.memory_limit_mb}MB)"
+                ),
             )
 
         # CPU limit check
@@ -385,7 +391,10 @@ class TaskMonitor:
                 metrics.agent_id,
                 "resource_limit",
                 "medium",
-                f"CPU usage ({metrics.cpu_usage:.1f}%) exceeds limit ({self.cpu_limit_percentage}%)",
+                (
+                    f"CPU usage ({metrics.cpu_usage:.1f}%) exceeds limit "
+                    f"({self.cpu_limit_percentage}%)"
+                ),
             )
 
         # Error threshold check
@@ -395,7 +404,10 @@ class TaskMonitor:
                 metrics.agent_id,
                 "error_threshold",
                 "high",
-                f"Error count ({metrics.errors_encountered}) exceeds threshold ({self.error_threshold})",
+                (
+                    f"Error count ({metrics.errors_encountered}) exceeds "
+                    f"threshold ({self.error_threshold})"
+                ),
             )
 
     def _generate_alert(
@@ -444,7 +456,8 @@ class TaskMonitor:
                             metrics.agent_id,
                             "stalled",
                             "medium",
-                            f"Task stalled: no progress for {time_since_update:.0f} seconds",
+                            f"Task stalled: no progress for "
+                            f"{time_since_update:.0f} seconds",
                         )
 
                     # Check for timeout warnings
@@ -470,7 +483,8 @@ class TaskMonitor:
                                     metrics.agent_id,
                                     "timeout",
                                     "medium",
-                                    f"Task approaching timeout: {time_remaining:.0f} seconds remaining",
+                                    f"Task approaching timeout: "
+                                    f"{time_remaining:.0f} seconds remaining",
                                 )
 
                 time.sleep(30)  # Check every 30 seconds

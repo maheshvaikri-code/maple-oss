@@ -1,4 +1,5 @@
-# Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
+# Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy
+# (Mahesh Vaikri)
 #
 # This file is part of MAPLE - Multi Agent Protocol Language Engine.
 #
@@ -12,7 +13,6 @@
 # General Public License for more details. You should have received a copy of
 # the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
 # Language Engine. If not, see <https://www.gnu.org/licenses/>.
-
 """Anthropic Claude LLM provider."""
 
 import logging
@@ -115,7 +115,9 @@ class AnthropicProvider(LLMProvider):
             return Result.err(
                 {
                     "errorType": "LLM_PROVIDER_RESPONSE_INVALID",
-                    "message": "Anthropic provider returned an invalid completion response.",
+                    "message": (
+                        "Anthropic provider returned an invalid completion " "response."
+                    ),
                 }
             )
         except Exception as e:
@@ -175,7 +177,9 @@ class AnthropicProvider(LLMProvider):
             return Result.err(
                 {
                     "errorType": "LLM_PROVIDER_RESPONSE_INVALID",
-                    "message": "Anthropic provider returned an invalid completion response.",
+                    "message": (
+                        "Anthropic provider returned an invalid completion " "response."
+                    ),
                 }
             )
         except Exception as exc:

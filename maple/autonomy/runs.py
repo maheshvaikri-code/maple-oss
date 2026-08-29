@@ -1,3 +1,18 @@
+# Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy
+# (Mahesh Vaikri)
+#
+# This file is part of MAPLE - Multi Agent Protocol Language Engine.
+#
+# MAPLE - Multi Agent Protocol Language Engine is free software: you can
+# redistribute it and/or modify it under the terms of the GNU Affero General
+# Public License as published by the Free Software Foundation, either version 3
+# of the License, or (at your option) any later version.
+# MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that
+# it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+# of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero
+# General Public License for more details. You should have received a copy of
+# the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
+# Language Engine. If not, see <https://www.gnu.org/licenses/>.
 """Bounded durable checkpoints for autonomous agent runs."""
 
 from __future__ import annotations
@@ -726,7 +741,10 @@ class FileAgentRunStore:
                     return Result.err(
                         _error(
                             "RUN_HISTORY_LOAD_ERROR",
-                            "Run checkpoint history exists without its current checkpoint.",
+                            (
+                                "Run checkpoint history exists without its "
+                                "current checkpoint."
+                            ),
                         )
                     )
                 if existing is not None and history:
@@ -735,7 +753,10 @@ class FileAgentRunStore:
                         return Result.err(
                             _error(
                                 "RUN_HISTORY_LOAD_ERROR",
-                                "Run checkpoint history is ahead of its current checkpoint.",
+                                (
+                                    "Run checkpoint history is ahead of its "
+                                    "current checkpoint."
+                                ),
                             )
                         )
                     if latest_history.version == existing.version and (
@@ -744,7 +765,10 @@ class FileAgentRunStore:
                         return Result.err(
                             _error(
                                 "RUN_HISTORY_LOAD_ERROR",
-                                "Run checkpoint history disagrees with its current checkpoint.",
+                                (
+                                    "Run checkpoint history disagrees with its "
+                                    "current checkpoint."
+                                ),
                             )
                         )
                     if latest_history.version < existing.version:

@@ -1,3 +1,18 @@
+# Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy
+# (Mahesh Vaikri)
+#
+# This file is part of MAPLE - Multi Agent Protocol Language Engine.
+#
+# MAPLE - Multi Agent Protocol Language Engine is free software: you can
+# redistribute it and/or modify it under the terms of the GNU Affero General
+# Public License as published by the Free Software Foundation, either version 3
+# of the License, or (at your option) any later version.
+# MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that
+# it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+# of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero
+# General Public License for more details. You should have received a copy of
+# the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
+# Language Engine. If not, see <https://www.gnu.org/licenses/>.
 """Deterministic local evaluation contracts for MAPLE agents."""
 
 from __future__ import annotations
@@ -744,7 +759,9 @@ class EvalCalibrationCase:
             if not is_number or not finite or not 0.0 <= self.expected_score <= 1.0:
                 return {
                     "errorType": "EVAL_CALIBRATION_CASE_INVALID",
-                    "message": "expected_score must be a finite number between 0 and 1.",
+                    "message": (
+                        "expected_score must be a finite number between 0 and 1."
+                    ),
                 }
         return None
 
@@ -982,7 +999,9 @@ class EvaluationHarness:
                         return Result.err(
                             {
                                 "errorType": "TRACE_PARENT_NOT_FOUND",
-                                "message": "native trace span parent is not in the sequence.",
+                                "message": (
+                                    "native trace span parent is not in the sequence."
+                                ),
                             }
                         )
                     parent_index = native_span_indexes[candidate.parent_span_id]
@@ -1398,7 +1417,9 @@ class EvaluationHarness:
                             errors.append(
                                 {
                                     "errorType": "EVAL_OBSERVATION_INVALID",
-                                    "message": "observed tool names are invalid or unbounded.",
+                                    "message": (
+                                        "observed tool names are invalid or unbounded."
+                                    ),
                                 }
                             )
                             observation_valid = False
@@ -1407,7 +1428,9 @@ class EvaluationHarness:
                             errors.append(
                                 {
                                     "errorType": "EVAL_OBSERVATION_INVALID",
-                                    "message": "observed trajectory is invalid or unbounded.",
+                                    "message": (
+                                        "observed trajectory is invalid or unbounded."
+                                    ),
                                 }
                             )
                             observation_valid = False
@@ -1417,7 +1440,12 @@ class EvaluationHarness:
                                 errors.append(
                                     {
                                         "errorType": "EVAL_OBSERVATION_INVALID",
-                                        "message": "observed trajectory exceeds the report bound.",
+                                        "message": (
+                                            (
+                                                "observed trajectory exceeds the "
+                                                "report bound."
+                                            )
+                                        ),
                                     }
                                 )
                                 observation_valid = False
@@ -1431,7 +1459,12 @@ class EvaluationHarness:
                                     errors.append(
                                         {
                                             "errorType": "EVAL_OBSERVATION_INVALID",
-                                            "message": "tool_names must match trajectory tool names.",
+                                            "message": (
+                                                (
+                                                    "tool_names must match trajectory "
+                                                    "tool names."
+                                                )
+                                            ),
                                         }
                                     )
                                     observation_valid = False
@@ -1494,7 +1527,12 @@ class EvaluationHarness:
                             errors.append(
                                 {
                                     "errorType": "EVAL_TRAJECTORY_MISMATCH",
-                                    "message": "structured tool trajectory did not match expected steps.",
+                                    "message": (
+                                        (
+                                            "structured tool trajectory did not "
+                                            "match expected steps."
+                                        )
+                                    ),
                                 }
                             )
                     if judge is not None and observation_valid:
@@ -1533,9 +1571,12 @@ class EvaluationHarness:
                                     else:
                                         errors.append(
                                             {
-                                                "errorType": "EVAL_JUDGE_RESULT_INVALID",
+                                                "errorType": (
+                                                    "EVAL_JUDGE_RESULT_" "INVALID"
+                                                ),
                                                 "message": (
-                                                    "judge must return an EvalJudgeResult."
+                                                    "judge must return an "
+                                                    "EvalJudgeResult."
                                                 ),
                                             }
                                         )
@@ -1565,7 +1606,9 @@ class EvaluationHarness:
                                         errors.append(
                                             {
                                                 "errorType": "EVAL_JUDGE_FAILED",
-                                                "message": "judge marked case as failed.",
+                                                "message": (
+                                                    "judge marked case as failed."
+                                                ),
                                             }
                                         )
                         except Exception as exc:
@@ -1827,7 +1870,12 @@ class EvaluationHarness:
                                 errors.append(
                                     {
                                         "errorType": "TRACE_REPORT_SIZE",
-                                        "message": "trace observation exceeds the value byte limit.",
+                                        "message": (
+                                            (
+                                                "trace observation exceeds the value "
+                                                "byte limit."
+                                            )
+                                        ),
                                     }
                                 )
                             else:
@@ -1844,7 +1892,9 @@ class EvaluationHarness:
                                     errors.append(
                                         {
                                             "errorType": "TRACE_SCORE_LOW",
-                                            "message": "trace score was below the threshold.",
+                                            "message": (
+                                                "trace score was below the threshold."
+                                            ),
                                         }
                                     )
             except Exception as exc:
@@ -1975,7 +2025,9 @@ class EvaluationHarness:
                             errors.append(
                                 {
                                     "errorType": "GROUNDING_ANSWER_INVALID",
-                                    "message": "grounding answer must be non-empty text.",
+                                    "message": (
+                                        "grounding answer must be non-empty text."
+                                    ),
                                 }
                             )
                         elif (
@@ -1985,7 +2037,9 @@ class EvaluationHarness:
                             errors.append(
                                 {
                                     "errorType": "GROUNDING_ANSWER_SIZE",
-                                    "message": "grounding answer exceeds the value byte limit.",
+                                    "message": (
+                                        "grounding answer exceeds the value byte limit."
+                                    ),
                                 }
                             )
                         else:
@@ -1994,14 +2048,18 @@ class EvaluationHarness:
                                 errors.append(
                                     {
                                         "errorType": "GROUNDING_CLAIM_INVALID",
-                                        "message": "grounding answer contains no claims.",
+                                        "message": (
+                                            "grounding answer contains no claims."
+                                        ),
                                     }
                                 )
                             elif len(claims) > _GROUNDING_MAX_CLAIMS:
                                 errors.append(
                                     {
                                         "errorType": "GROUNDING_CLAIM_LIMIT",
-                                        "message": "grounding claim count exceeds the limit.",
+                                        "message": (
+                                            "grounding claim count exceeds the limit."
+                                        ),
                                     }
                                 )
                             else:
@@ -2017,7 +2075,12 @@ class EvaluationHarness:
                                         errors.append(
                                             {
                                                 "errorType": "GROUNDING_CLAIM_INVALID",
-                                                "message": "grounding claim has no comparable terms.",
+                                                "message": (
+                                                    (
+                                                        "grounding claim has no "
+                                                        "comparable terms."
+                                                    )
+                                                ),
                                             }
                                         )
                                         break

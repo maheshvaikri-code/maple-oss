@@ -1,15 +1,18 @@
 """
-Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
+Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy
+(Mahesh Vaikri)
 
 This file is part of MAPLE - Multi Agent Protocol Language Engine.
 
-MAPLE - Multi Agent Protocol Language Engine is free software: you can redistribute it and/or
-modify it under the terms of the GNU Affero General Public License as published by the Free Software
-Foundation, either version 3 of the License, or (at your option) any later version.
-MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
-PARTICULAR PURPOSE. See the GNU Affero General Public License for more details. You should have
-received a copy of the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
+MAPLE - Multi Agent Protocol Language Engine is free software: you can
+redistribute it and/or modify it under the terms of the GNU Affero General
+Public License as published by the Free Software Foundation, either version 3
+of the License, or (at your option) any later version.
+MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that
+it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero
+General Public License for more details. You should have received a copy of
+the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
 Language Engine. If not, see <https://www.gnu.org/licenses/>.
 """
 
@@ -31,19 +34,23 @@ logger = logging.getLogger(__name__)
 class ResourceLifecycle:
     """How a resource behaves over its life -- decides whether release() refunds it.
 
-    RENEWABLE  -- a reusable pool: an allocation is carved off and RETURNED to the pool on
+    RENEWABLE  -- a reusable pool: an allocation is carved off and RETURNED to
+    the pool on
                   release (compute, memory, bandwidth, tokens, gpu, disk).
-    CONSUMABLE -- a depletable budget: an allocation is SPENT and never returned on release
+    CONSUMABLE -- a depletable budget: an allocation is SPENT and never returned
+    on release
                   (money/cost, api_calls, energy). Expressing this is the whole point --
                   the previous release() hard-coded a renewable-only refund list, so a
-                  consumable budget modelled as an allocation could silently refund itself.
+                  consumable budget modelled as an allocation could silently
+                  refund itself.
     """
 
     RENEWABLE = "renewable"
     CONSUMABLE = "consumable"
 
 
-# Default lifecycle for well-known resource types. Unknown types default to RENEWABLE (the
+# Default lifecycle for well-known resource types. Unknown types default to
+# RENEWABLE (the
 # historical behaviour for the built-in pools). Override per-manager with
 # register_resource(resource_type, amount, lifecycle=...).
 DEFAULT_LIFECYCLES: Dict[str, str] = {
@@ -206,7 +213,8 @@ class ResourceManager:
             if allocation.allocation_id in self.allocations:
                 # Return each RENEWABLE resource to the pool. CONSUMABLE budgets (money,
                 # api_calls, energy) are spent and stay spent -- they are NOT refunded.
-                # (Previously this was a hard-coded compute/memory/bandwidth/tokens list,
+                # (Previously this was a hard-coded compute/memory/bandwidth/
+                # tokens list,
                 # which could not model a consumable budget and could not extend to new
                 # renewable dimensions like gpu/disk.)
                 for resource_type, amount in self.allocations[
@@ -352,7 +360,8 @@ class ResourceManager:
             self.available_resources["tokens"] -= amount
             resources["tokens"] = amount
 
-        # Allocate custom / arbitrary named numeric resources. _can_satisfy() has already
+        # Allocate custom / arbitrary named numeric resources. _can_satisfy() has
+        # already
         # guaranteed min <= available for every registered custom dimension, so the
         # carved amount stays within [min, available] (never drives the pool negative).
         if request.custom:

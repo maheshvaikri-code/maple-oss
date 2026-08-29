@@ -1,15 +1,18 @@
 """
-Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
+Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy
+(Mahesh Vaikri)
 
 This file is part of MAPLE - Multi Agent Protocol Language Engine.
 
-MAPLE - Multi Agent Protocol Language Engine is free software: you can redistribute it and/or
-modify it under the terms of the GNU Affero General Public License as published by the Free Software
-Foundation, either version 3 of the License, or (at your option) any later version.
-MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
-PARTICULAR PURPOSE. See the GNU Affero General Public License for more details. You should have
-received a copy of the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
+MAPLE - Multi Agent Protocol Language Engine is free software: you can
+redistribute it and/or modify it under the terms of the GNU Affero General
+Public License as published by the Free Software Foundation, either version 3
+of the License, or (at your option) any later version.
+MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that
+it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero
+General Public License for more details. You should have received a copy of
+the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
 Language Engine. If not, see <https://www.gnu.org/licenses/>.
 """
 
@@ -58,7 +61,7 @@ class CrewAIAdapter:
         """
         enhanced_backstory = f"""
         {backstory}
-        
+
         MAPLE ENHANCEMENTS:
         - Powered by MAPLE protocol with 333,384 msg/sec performance
         - Advanced type safety with Result<T,E> error handling
@@ -89,12 +92,16 @@ class CrewAIAdapter:
         return [
             {
                 "name": "maple_communicate",
-                "description": "Communicate with other agents using MAPLE's advanced protocol",
+                "description": (
+                    "Communicate with other agents using MAPLE's advanced protocol"
+                ),
                 "function": self._maple_communicate_tool,
             },
             {
                 "name": "maple_resource_request",
-                "description": "Request resources using MAPLE's intelligent resource management",
+                "description": (
+                    "Request resources using MAPLE's intelligent resource management"
+                ),
                 "function": self._maple_resource_tool,
             },
             {

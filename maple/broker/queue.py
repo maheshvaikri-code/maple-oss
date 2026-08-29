@@ -1,15 +1,18 @@
 """
-Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
+Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy
+(Mahesh Vaikri)
 
 This file is part of MAPLE - Multi Agent Protocol Language Engine.
 
-MAPLE - Multi Agent Protocol Language Engine is free software: you can redistribute it and/or
-modify it under the terms of the GNU Affero General Public License as published by the Free Software
-Foundation, either version 3 of the License, or (at your option) any later version.
-MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
-PARTICULAR PURPOSE. See the GNU Affero General Public License for more details. You should have
-received a copy of the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
+MAPLE - Multi Agent Protocol Language Engine is free software: you can
+redistribute it and/or modify it under the terms of the GNU Affero General
+Public License as published by the Free Software Foundation, either version 3
+of the License, or (at your option) any later version.
+MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that
+it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero
+General Public License for more details. You should have received a copy of
+the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
 Language Engine. If not, see <https://www.gnu.org/licenses/>.
 """
 
@@ -153,7 +156,9 @@ class MessageQueue:
                     return Result.err(
                         {
                             "errorType": "QUEUE_FULL",
-                            "message": f"Queue is full (size: {len(self._priority_queue)})",
+                            "message": (
+                                f"Queue is full (size: {len(self._priority_queue)})"
+                            ),
                             "details": {"max_size": self.max_size},
                         }
                     )
@@ -234,7 +239,10 @@ class MessageQueue:
                             return Result.err(
                                 {
                                     "errorType": "QUEUE_TIMEOUT",
-                                    "message": f"Timed out waiting for message after {timeout}s",
+                                    "message": (
+                                        f"Timed out waiting for message after "
+                                        f"{timeout}s"
+                                    ),
                                 }
                             )
 
@@ -259,7 +267,8 @@ class MessageQueue:
                     ) / count
 
                 logger.debug(
-                    f"Message dequeued: {queued_msg.message.message_id} after {wait_time:.3f}s"
+                    f"Message dequeued: {queued_msg.message.message_id} after "
+                    f"{wait_time:.3f}s"
                 )
                 return Result.ok(queued_msg.message)
 

@@ -1,15 +1,18 @@
 """
-Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
+Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy
+(Mahesh Vaikri)
 
 This file is part of MAPLE - Multi Agent Protocol Language Engine.
 
-MAPLE - Multi Agent Protocol Language Engine is free software: you can redistribute it and/or
-modify it under the terms of the GNU Affero General Public License as published by the Free Software
-Foundation, either version 3 of the License, or (at your option) any later version.
-MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
-PARTICULAR PURPOSE. See the GNU Affero General Public License for more details. You should have
-received a copy of the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
+MAPLE - Multi Agent Protocol Language Engine is free software: you can
+redistribute it and/or modify it under the terms of the GNU Affero General
+Public License as published by the Free Software Foundation, either version 3
+of the License, or (at your option) any later version.
+MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that
+it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero
+General Public License for more details. You should have received a copy of
+the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
 Language Engine. If not, see <https://www.gnu.org/licenses/>.
 """
 
@@ -87,7 +90,10 @@ class ProductionBrokerManager:
                     return Result.err(
                         {
                             "errorType": "BROKER_DEPENDENCY_MISSING",
-                            "message": "NATS broker requires nats-py. Install with: pip install nats-py",
+                            "message": (
+                                "NATS broker requires nats-py. Install with: "
+                                "pip install nats-py"
+                            ),
                         }
                     )
             elif preferred_type == BrokerType.S2:
@@ -109,7 +115,10 @@ class ProductionBrokerManager:
                     return Result.err(
                         {
                             "errorType": "BROKER_DEPENDENCY_MISSING",
-                            "message": "S2 broker requires streamstore. Install with: pip install maple-oss[s2]",
+                            "message": (
+                                "S2 broker requires streamstore. Install with: "
+                                "pip install maple-oss[s2]"
+                            ),
                         }
                     )
             else:

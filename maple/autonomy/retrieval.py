@@ -1,3 +1,18 @@
+# Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy
+# (Mahesh Vaikri)
+#
+# This file is part of MAPLE - Multi Agent Protocol Language Engine.
+#
+# MAPLE - Multi Agent Protocol Language Engine is free software: you can
+# redistribute it and/or modify it under the terms of the GNU Affero General
+# Public License as published by the Free Software Foundation, either version 3
+# of the License, or (at your option) any later version.
+# MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that
+# it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+# of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero
+# General Public License for more details. You should have received a copy of
+# the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
+# Language Engine. If not, see <https://www.gnu.org/licenses/>.
 """Bounded document, chunk, and retrieval primitives for MAPLE agents."""
 
 from __future__ import annotations
@@ -622,9 +637,13 @@ class FileDocumentCursorCheckpointStore:
                 operation,
                 callback,
                 acquire_error_type="RETRIEVAL_CHECKPOINT_LEASE_ERROR",
-                acquire_error_message="retrieval checkpoint lease could not be acquired.",
+                acquire_error_message=(
+                    "retrieval checkpoint lease could not be acquired."
+                ),
                 release_error_type="RETRIEVAL_CHECKPOINT_LEASE_RELEASE_ERROR",
-                release_error_message="retrieval checkpoint lease could not be released.",
+                release_error_message=(
+                    "retrieval checkpoint lease could not be released."
+                ),
             )
         except Exception as exc:
             return Result.err(
