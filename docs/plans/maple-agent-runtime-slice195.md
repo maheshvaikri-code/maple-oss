@@ -8,9 +8,9 @@
 
 | # | Slice | Role | Files touched | Proven by (tests) | Status |
 |---|---|---|---|---|---|
-| 1 | CodeBlock digest and materialization helper | Backend / Security | `maple/autonomy/artifacts.py`, artifact tests | Exact bytes/hash/name, invalid block/store, oversized code, no execution | todo |
-| 2 | Public surface and documentation | Interop / Tech Writer | exports, README, API reference, parity, changelog | Public import and runnable documentation example | todo |
-| 3 | Review, QA, and package evidence | Code Reviewer / QA / Release | review/QA/release plan | Focused/full regression, static checks, clean/current package smoke | todo |
+| 1 | CodeBlock digest and materialization helper | Backend / Security | `maple/autonomy/artifacts.py`, artifact tests | Exact bytes/hash/name, invalid block/store, oversized code, no execution | complete in `3382595` |
+| 2 | Public surface and documentation | Interop / Tech Writer | exports, README, API reference, parity, changelog | Public import and runnable documentation example | complete in `3382595` |
+| 3 | Review, QA, and package evidence | Code Reviewer / QA / Release | review/QA/release plan | Focused/full regression, static checks, clean/current package smoke | complete; review/QA filed |
 
 ## Threat sketch
 
@@ -41,6 +41,7 @@ fail-closed errors contain the boundary.
 
 ## Status snapshot
 
-Design is ready for implementation. Next: implement the bounded helper and
-failure-path tests. Blocked on: nothing for this local data-only slice;
-execution, sandboxing, and remote distribution remain outside scope.
+Complete for the local data-only scope. Implementation commit `3382595`,
+review and QA evidence filed, and exact clean package smoke passed. Blocked on:
+nothing within this slice; execution, sandboxing, and remote distribution remain
+outside scope.

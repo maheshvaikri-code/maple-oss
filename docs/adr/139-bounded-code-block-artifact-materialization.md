@@ -1,7 +1,7 @@
 # ADR-139: Bounded code-block artifact materialization
 
 **Date:** 2026-08-29
-**Status:** proposed
+**Status:** accepted
 **Deciders:** Chief Architect
 
 ## Context

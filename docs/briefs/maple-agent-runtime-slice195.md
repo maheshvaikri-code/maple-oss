@@ -3,7 +3,7 @@
 **Date:** 2026-08-29
 **Class:** L
 **Role:** Chief Architect / Backend / Security / QA / Release
-**Status:** proposed
+**Status:** complete
 
 ## Objective
 
@@ -43,3 +43,12 @@ artifact store and receive a content-addressed identity.
 5. The helper is publicly exported and documented with one runnable example;
    documentation explicitly keeps execution and sandboxing outside the
    contract.
+
+## Completion evidence
+
+Implementation commit: `3382595`. The focused suite passed `25 passed`; the
+dirty-worktree full suite passed `1765 passed, 1 skipped`; and the exact clean
+archive passed `1648 passed, 1 skipped`. Review is filed at
+`docs/reviews/maple-agent-runtime-slice195.md`; QA and security evidence is
+filed at `docs/qa/maple-agent-runtime-slice195.md`. Publication, cloud, and
+website work remain out of scope.
