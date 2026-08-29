@@ -34,7 +34,7 @@ is closed.
 Focused command:
 
 ```text
-python -m pytest tests/llm/test_provider_contracts.py tests/llm/test_provider.py tests/llm/test_provider_native_streaming.py tests/llm/test_provider_streaming.py -q
+python -m pytest tests/llm/test_provider_contracts.py tests/llm/test_provider.py tests/llm/test_provider_native_streaming.py tests/llm/test_provider_streaming.py -q --no-cov
 ============================= 39 passed in 0.40s ==============================
 ```
 
