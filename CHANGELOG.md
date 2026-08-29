@@ -17,6 +17,14 @@
 
 ### Additions
 
+- **Bounded provider-neutral judge calibration**: `EvalCalibrationCase`,
+  `EvalCalibrationResult`, `EvalCalibrationReport`, and synchronous/asynchronous
+  `EvaluationHarness.calibrate(...)` methods compare host-supplied judge
+  decisions with bounded caller-supplied human labels, reporting deterministic
+  agreement and optional score mean absolute error. Observations and rationales
+  remain redacted and bounded; provider orchestration, judge training, threshold
+  tuning, hosted persistence, and semantic/statistical claims remain separate.
+
 - **Offline provider completion contracts**: deterministic OpenAI-compatible
   and Anthropic sync/async fixtures now cover payload mapping, multimodal
   inputs, tool calls, stop reasons, and usage normalization. Completion

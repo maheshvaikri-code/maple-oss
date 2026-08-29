@@ -1810,7 +1810,7 @@ report = EvaluationHarness().run(
 ```
 
 Judge errors, exceptions, malformed results, and invalid bounds fail the
-individual case with typed errors. MAPLE does not invoke or retry a model
+individual case with typed errors. `run` does not invoke or retry a model
 provider, calibrate scores, or claim semantic faithfulness; provider choice,
 rubric, privacy, and repeatability remain host-owned.
 
@@ -1820,8 +1820,7 @@ order, and each runner result passes through the same deterministic checks,
 redaction, and size bounds before the judge sees it. The judge receives the
 redacted `EvalObservation`, including bounded tool names and trajectory, and
 its pass/fail result contributes one additional check. No provider selection,
-retry, calibration, raw-observation persistence, or hosted evaluation is
-implied.
+retry, raw-observation persistence, or hosted evaluation is implied.
 
 ```python
 import asyncio
@@ -1852,6 +1851,50 @@ async def evaluate():
 
 report = asyncio.run(evaluate())
 ```
+
+To measure whether a host-owned judge agrees with caller-supplied human labels,
+use bounded calibration cases. Each fixture includes an existing `EvalCase`, a
+precomputed `EvalObservation`, a binary `expected_passed` label, and optionally
+an `expected_score`. Calibration validates every fixture before invoking the
+judge, preserves order, and returns per-case errors for judge failures without
+including raw observations in the report.
+
+```python
+from maple import (
+    EvalCalibrationCase,
+    EvalCase,
+    EvalJudgeResult,
+    EvalObservation,
+    EvaluationHarness,
+)
+
+calibration = EvaluationHarness().calibrate(
+    [
+        EvalCalibrationCase(
+            case_id="human-lookup-v1",
+            fixture=EvalCase("lookup-v1", {"query": "MAPLE"}, expected_output="ready"),
+            observation=EvalObservation({"answer": "ready", "api_key": "secret"}),
+            expected_passed=True,
+            expected_score=0.8,
+        )
+    ],
+    judge=lambda fixture, observation: EvalJudgeResult(
+        score=0.9,
+        passed=True,
+        rationale="answer matches the fixture",
+    ),
+)
+assert calibration.unwrap().agreement_rate == 1.0
+assert calibration.unwrap().mean_absolute_score_error == 0.1
+```
+
+`EvalCalibrationReport` exposes `total`, `agreement_count`,
+`agreement_rate`, `scored_cases`, `mean_absolute_score_error`, and ordered
+per-case results. `calibrate_async(...)` accepts synchronous or awaitable
+judges and preserves the same sequential behavior. These are descriptive
+local metrics only: MAPLE does not select a provider, call a model, train or
+tune a judge, compute confidence intervals, persist hosted calibration data, or
+claim semantic or statistical validity.
 
 Retrieval quality can be evaluated separately from answer generation with
 bounded golden source URIs. `run_retrieval` accepts lexical
