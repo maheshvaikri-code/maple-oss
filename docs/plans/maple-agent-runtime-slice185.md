@@ -1,6 +1,6 @@
 # Slice 185 plan — bounded durable local task queue
 
-**Status:** implementation complete; clean archive gate pending
+**Status:** complete
 **Date:** 2026-08-28
 
 ## Design
@@ -24,6 +24,6 @@
 - [x] Run the full workspace regression.
 - [x] Update API/README/parity/changelog and review/QA evidence.
 - [x] Build and package-smoke-test the current source tree.
-- [ ] Rebuild a clean source archive and package smoke-test it after the
+- [x] Rebuild a clean source archive and package smoke-test it after the
   implementation/evidence commit.
 - [x] Keep publication, cloud, and website actions out of scope.

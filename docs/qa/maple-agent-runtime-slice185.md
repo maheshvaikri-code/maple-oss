@@ -38,8 +38,8 @@ class outside the repository working directory:
 
 ```text
 python -m pip wheel . --no-deps --no-build-isolation --wheel-dir <artifact-dir>
-Created wheel for maple-oss: filename=maple_oss-1.1.3-py3-none-any.whl size=500076
-sha256=d40e35721102cd4ef30590aa529926f676087789e16a4e20321fc3997e526f4c
+Created wheel for maple-oss: filename=maple_oss-1.1.3-py3-none-any.whl size=500158
+sha256=52503329ab49feb103b444c8330dc270583fce98e0b41753d5ce738a7cb5c9e0
 
 python -m twine check <wheel>
 PASSED
@@ -47,17 +47,47 @@ PASSED
 python -m pip install --no-deps --target <isolated-target> <wheel>
 Successfully installed maple-oss-1.1.3
 
-python -c "import maple; from maple.task_management import FileTaskQueue"
+python -c "import maple; from maple import AgentRegistry, RunServer; from maple.task_management import FileTaskQueue"
 version=1.1.3
+registry=AgentRegistry
+server=RunServer
 FileTaskQueue=FileTaskQueue
 ```
 
-Clean Git archive/package evidence is intentionally pending the evidence
-commit. The repository is not publish-ready: user-owned dirty/untracked files
+The repository is not publish-ready: user-owned dirty/untracked files
 remain, package metadata is still `1.1.3` pending the eventual release, the
 environment-wide pip-audit reports 385 vulnerabilities in 78 packages, and
 Bandit/Gitleaks/fresh independent verifier sessions are unavailable here. No
 external state was changed.
 
-**Slice 185 QA status:** PASS for the local implementation and current-source
-package smoke; clean archive and final human release gates remain open.
+## Exact clean archive package gate
+
+The clean Git archive of `2f59090` was tested independently of the dirty
+workspace. It contains the durable queue source and regression, and its
+artifacts passed metadata, install, import, and local-only doctor checks:
+
+```text
+source_archive_entries=866
+python -m pytest -q --no-cov
+1626 passed, 1 skipped in 253.50s (0:04:13)
+build_exit=0
+wheel_entries=108
+sdist_entries=780
+twine check <wheel>, <sdist>
+PASSED, PASSED
+install_exit=0
+version=1.1.3
+FileTaskQueue=FileTaskQueue
+doctor_exit=0
+```
+
+The exact doctor JSON was:
+
+```json
+{"checks": {"core": true, "evaluation": true, "events": true, "execution": true, "interop": true, "retrieval": true, "server": true, "sessions": true}, "network": false, "ready": true, "status": "SUCCESS", "version": "1.1.3"}
+```
+
+**Slice 185 QA status:** PASS for the implementation and exact clean archive
+package gate. Overall release status remains conditional pending the existing
+security/verifier gates, final version promotion, clean release tree, and
+human publication authorization.

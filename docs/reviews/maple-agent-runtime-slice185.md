@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-28
 **Reviewer role:** Code Reviewer / Chief Architect local pass
-**Implementation commit:** pending evidence commit
+**Implementation commit:** `2f59090`
 
 ## Scope
 
@@ -61,6 +61,23 @@ python tools/doctrine_lint.py
 doctrine_lint: corpus clean
 ```
 
+The exact clean archive package gate for `2f59090` also passed:
+
+```text
+source_archive_entries=866
+python -m pytest -q --no-cov
+1626 passed, 1 skipped in 253.50s (0:04:13)
+build_exit=0
+wheel_entries=108
+sdist_entries=780
+twine check <wheel>, <sdist>
+PASSED, PASSED
+install_exit=0
+version=1.1.3
+FileTaskQueue=FileTaskQueue
+doctor_exit=0
+```
+
 The changed module adds no mypy finding; the targeted command still reports
 three pre-existing findings in `maple/autonomy/invocations.py` and
 `maple/autonomy/server.py`. The repository-wide isort check still reports
@@ -71,6 +88,8 @@ a release veto with 385 known vulnerabilities in 78 packages.
 
 ## Decision
 
-**PASS for the bounded local durable queue boundary.** Clean-archive package
-evidence is a separate release gate. No publication, deployment, cloud action,
-registry write, or website update was performed.
+**PASS for the bounded local durable queue boundary and exact clean archive
+package gate.** Overall release status remains conditional because the
+repository still contains preserved user-owned changes and the documented
+security/verifier gates. No publication, deployment, cloud action, registry
+write, or website update was performed.
