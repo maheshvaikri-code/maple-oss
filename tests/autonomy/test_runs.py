@@ -346,6 +346,44 @@ def make_agent(responses, *, stream_model_events=False):
     return agent
 
 
+def test_sync_agent_rejects_explicit_empty_run_id_before_provider_or_checkpoint():
+    store = InMemoryAgentRunStore()
+    response = LLMResponse(content="must not execute", finish_reason="stop")
+    agent = make_agent([response])
+    agent.set_run_store(store)
+
+    invalid = agent.pursue_goal("Reject an empty run ID", run_id="")
+
+    assert invalid.is_err()
+    assert invalid.unwrap_err() == {
+        "errorType": "RUN_STORE_ERROR",
+        "message": "Agent run checkpoint operation failed.",
+        "details": {"operation": "load", "cause": "RUN_IDENTIFIER_INVALID"},
+    }
+    assert agent.llm.responses == [response]
+    assert store.load("after-empty").unwrap() is None
+
+
+def test_async_agent_rejects_explicit_empty_run_id_before_provider_or_checkpoint():
+    store = InMemoryAgentRunStore()
+    response = LLMResponse(content="must not execute", finish_reason="stop")
+    agent = make_agent([response])
+    agent.set_run_store(store)
+
+    invalid = asyncio.run(
+        agent.pursue_goal_async("Reject an empty async run ID", run_id="")
+    )
+
+    assert invalid.is_err()
+    assert invalid.unwrap_err() == {
+        "errorType": "RUN_STORE_ERROR",
+        "message": "Agent run checkpoint operation failed.",
+        "details": {"operation": "load", "cause": "RUN_IDENTIFIER_INVALID"},
+    }
+    assert agent.llm.responses == [response]
+    assert store.load("after-empty").unwrap() is None
+
+
 def test_sync_cancellation_persists_terminal_checkpoint_and_emits_event():
     token = CancellationToken()
     store = InMemoryAgentRunStore()

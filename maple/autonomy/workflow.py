@@ -1223,7 +1223,7 @@ class Workflow:
         )
         if state_result.is_err():
             return Result.err(state_result.unwrap_err())
-        resolved_run_id = run_id or str(uuid.uuid4())
+        resolved_run_id = str(uuid.uuid4()) if run_id is None else run_id
         run_error = _valid_identifier(resolved_run_id, "run_id")
         if run_error:
             return Result.err(run_error)

@@ -17,6 +17,11 @@
 
 ### Fixes
 
+- **Explicit native run-ID validation**: workflow and durable-agent starts now
+  distinguish an omitted `run_id` (`None`) from an explicitly empty or invalid
+  value, preserving generated IDs only for omitted input and rejecting invalid
+  input before checkpoint or model work.
+
 - **Synchronous judge awaitable cleanup**: synchronous evaluation and
   calibration reject awaitable judge results with an actionable async-entry
   point and close disposable coroutine-like results before returning the

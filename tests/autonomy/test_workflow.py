@@ -136,6 +136,19 @@ def test_duplicate_run_id_is_rejected():
     assert duplicate.unwrap_err()["errorType"] == "RUN_ID_EXISTS"
 
 
+def test_explicit_empty_run_id_is_rejected_without_creating_a_checkpoint():
+    store = InMemoryCheckpointStore()
+    workflow = Workflow("explicit_id", checkpoint_store=store)
+    assert workflow.add_node("only", lambda context: {"ok": True}).is_ok()
+    assert workflow.set_entry_point("only").is_ok()
+
+    invalid = workflow.run({}, run_id="")
+
+    assert invalid.is_err()
+    assert invalid.unwrap_err()["errorType"] == "INVALID_IDENTIFIER"
+    assert workflow.run({}, run_id="after-empty").is_ok()
+
+
 def test_node_result_error_is_checkpointed_as_failed():
     store = InMemoryCheckpointStore()
     workflow = Workflow("failure", checkpoint_store=store)

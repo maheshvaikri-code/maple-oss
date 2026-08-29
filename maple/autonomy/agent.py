@@ -853,7 +853,7 @@ class AutonomousAgent(Agent):
                     }
                 )
             return Result.ok(None)
-        chosen_id = run_id or f"run-{uuid.uuid4().hex}"
+        chosen_id = f"run-{uuid.uuid4().hex}" if run_id is None else run_id
         try:
             loaded = self._run_store.load(chosen_id)
         except Exception as exc:

@@ -2174,6 +2174,10 @@ if run.is_ok() and run.unwrap().status == "interrupted":
     run = workflow.resume("example-1", resume_value=True)
 ```
 
+Omit `run_id` (or pass `None`) to let the workflow generate a local ID.
+Explicit invalid values, including `""`, return `INVALID_IDENTIFIER` rather
+than being treated as omitted.
+
 ### Composable sub-workflows
 
 Register another `Workflow` as one bounded parent node with
@@ -2841,6 +2845,11 @@ started = agent.pursue_goal("Review this request", run_id="review-1")
 # A new agent instance configured with the same store can recover the run.
 recovered = restarted_agent.resume_run("review-1")
 ```
+
+Omit `run_id` (or pass `None`) to use generated-ID behavior. An explicitly
+invalid value is rejected at the durable store boundary before provider,
+session, checkpoint, or tool work; the agent preserves its stable
+`RUN_STORE_ERROR` envelope with the validator error as its cause.
 
 The async entry point uses the same checkpoint contract and keeps file-backed
 store I/O off the event loop:
