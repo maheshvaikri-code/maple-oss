@@ -24,9 +24,9 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Dict, List, Optional, Tuple, TypeVar
 
-from .execution import CancellationToken
 from ..core.result import Result
 from ..discovery.registry import AgentRegistry
+from .execution import CancellationToken
 
 logger = logging.getLogger(__name__)
 T = TypeVar("T")
