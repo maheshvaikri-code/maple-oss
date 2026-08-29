@@ -25,6 +25,7 @@ from .notification_outbox import (
     DEFAULT_MAX_NOTIFICATION_OUTBOX_BYTES,
     DEFAULT_MAX_NOTIFICATION_OUTBOX_RECORD_BYTES,
     DEFAULT_MAX_NOTIFICATION_OUTBOX_RECORDS,
+    DEFAULT_NOTIFICATION_OUTBOX_DRAIN_LEASE_TTL_SECONDS,
     FileNotificationOutbox,
 )
 
@@ -764,6 +765,8 @@ class FileHumanInputNotificationOutbox(FileNotificationOutbox[HumanInputNotifica
         max_record_bytes: int = DEFAULT_MAX_NOTIFICATION_OUTBOX_RECORD_BYTES,
         max_records: int = DEFAULT_MAX_NOTIFICATION_OUTBOX_RECORDS,
         max_queue_bytes: int = DEFAULT_MAX_NOTIFICATION_OUTBOX_BYTES,
+        lease_manager: Optional[FileLeaseManager] = None,
+        lease_ttl_seconds: float = DEFAULT_NOTIFICATION_OUTBOX_DRAIN_LEASE_TTL_SECONDS,
     ) -> None:
         super().__init__(
             directory,
@@ -774,6 +777,8 @@ class FileHumanInputNotificationOutbox(FileNotificationOutbox[HumanInputNotifica
             max_record_bytes=max_record_bytes,
             max_records=max_records,
             max_queue_bytes=max_queue_bytes,
+            lease_manager=lease_manager,
+            lease_ttl_seconds=lease_ttl_seconds,
         )
 
 

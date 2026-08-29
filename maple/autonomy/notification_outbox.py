@@ -10,6 +10,7 @@ import re
 import tempfile
 import threading
 import time
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import (
@@ -28,6 +29,7 @@ from typing import (
 )
 
 from ..core.result import Result
+from ..resources.lease import FileLeaseManager
 
 Error = Dict[str, Any]
 NotificationT = TypeVar("NotificationT")
@@ -37,6 +39,8 @@ DEFAULT_MAX_NOTIFICATION_OUTBOX_RECORD_BYTES = 262_144
 DEFAULT_MAX_NOTIFICATION_OUTBOX_RECORDS = 10_000
 DEFAULT_MAX_NOTIFICATION_OUTBOX_BYTES = 64 * 1024 * 1024
 DEFAULT_MAX_NOTIFICATION_OUTBOX_DRAIN = 1_000
+DEFAULT_NOTIFICATION_OUTBOX_DRAIN_LEASE_TTL_SECONDS = 30.0
+_MAX_NOTIFICATION_OUTBOX_DRAIN_LEASE_TTL_SECONDS = 7 * 24 * 60 * 60
 _SCHEMA_VERSION = 1
 _NOTIFICATION_ID = re.compile(r"^[0-9a-f]{64}$")
 
@@ -110,6 +114,8 @@ class FileNotificationOutbox(Generic[NotificationT]):
         max_record_bytes: int = DEFAULT_MAX_NOTIFICATION_OUTBOX_RECORD_BYTES,
         max_records: int = DEFAULT_MAX_NOTIFICATION_OUTBOX_RECORDS,
         max_queue_bytes: int = DEFAULT_MAX_NOTIFICATION_OUTBOX_BYTES,
+        lease_manager: Optional[FileLeaseManager] = None,
+        lease_ttl_seconds: float = DEFAULT_NOTIFICATION_OUTBOX_DRAIN_LEASE_TTL_SECONDS,
     ) -> None:
         if not callable(getattr(target, "notify", None)):
             raise TypeError("notification outbox target must implement notify")
@@ -117,6 +123,22 @@ class FileNotificationOutbox(Generic[NotificationT]):
             raise TypeError("notification_type must be a type")
         if not callable(encoder) or not callable(decoder):
             raise TypeError("notification encoder and decoder must be callable")
+        if lease_manager is not None and any(
+            not callable(getattr(lease_manager, method_name, None))
+            for method_name in ("acquire", "release")
+        ):
+            raise TypeError("lease_manager must implement acquire and release")
+        if (
+            not isinstance(lease_ttl_seconds, (int, float))
+            or isinstance(lease_ttl_seconds, bool)
+            or not math.isfinite(float(lease_ttl_seconds))
+            or not 0
+            < float(lease_ttl_seconds)
+            <= _MAX_NOTIFICATION_OUTBOX_DRAIN_LEASE_TTL_SECONDS
+        ):
+            raise ValueError(
+                "lease_ttl_seconds must be finite, positive, and no more than 604800 seconds"
+            )
         for value, name, maximum in (
             (
                 max_record_bytes,
@@ -147,6 +169,13 @@ class FileNotificationOutbox(Generic[NotificationT]):
         self.max_queue_bytes = max_queue_bytes
         self._lock = threading.RLock()
         self._drain_lock = threading.Lock()
+        self._lease_manager = lease_manager
+        self._lease_ttl_seconds = float(lease_ttl_seconds)
+        self._lease_resource = (
+            "notification-outbox:"
+            + hashlib.sha256(str(self.directory).encode("utf-8")).hexdigest()
+        )
+        self._lease_holder = f"notification-outbox-{os.getpid()}-{uuid.uuid4().hex}"
 
     def notify(self, notification: NotificationT) -> Result[None, Error]:
         """Atomically enqueue one notification, deduplicating its payload."""
@@ -258,6 +287,46 @@ class FileNotificationOutbox(Generic[NotificationT]):
         )
         if limit_error:
             return Result.err(limit_error)
+        lease_result = self._acquire_drain_lease()
+        if lease_result.is_err():
+            return Result.err(lease_result.unwrap_err())
+        lease = lease_result.unwrap()
+        try:
+            result = self._drain_without_lease(max_items)
+        except Exception as exc:
+            release_error = self._release_drain_lease(lease)
+            if release_error is not None:
+                raise RuntimeError(
+                    "notification outbox drain ownership could not be released safely."
+                ) from exc
+            raise
+        release_error = self._release_drain_lease(lease)
+        if release_error is not None:
+            if result.is_err():
+                existing = dict(result.unwrap_err())
+                details = existing.get("details")
+                merged_details = dict(details) if isinstance(details, dict) else {}
+                merged_details["lease_release_error"] = release_error["errorType"]
+                existing["details"] = merged_details
+                return Result.err(existing)
+            return Result.err(
+                _error(
+                    release_error["errorType"],
+                    release_error["message"],
+                    drain_report=result.unwrap().to_dict(),
+                )
+            )
+        return result
+
+    def _drain_without_lease(
+        self, max_items: int
+    ) -> Result[NotificationOutboxReport, Error]:
+        """Drain while the caller owns any configured outbox-wide lease."""
+        limit_error = self._validate_limit(
+            max_items, "NOTIFICATION_OUTBOX_DRAIN_LIMIT_INVALID"
+        )
+        if limit_error:
+            return Result.err(limit_error)
         with self._drain_lock:
             try:
                 with self._lock:
@@ -356,6 +425,79 @@ class FileNotificationOutbox(Generic[NotificationT]):
                     failure_details=tuple(failures),
                 )
             )
+
+    def _acquire_drain_lease(self) -> Result[Optional[Any], Error]:
+        if self._lease_manager is None:
+            return Result.ok(None)
+        try:
+            acquired = self._lease_manager.acquire(
+                self._lease_resource,
+                self._lease_holder,
+                self._lease_ttl_seconds,
+            )
+        except Exception:
+            return Result.err(
+                _error(
+                    "NOTIFICATION_OUTBOX_DRAIN_LEASE_ERROR",
+                    "notification outbox drain ownership could not be acquired.",
+                )
+            )
+        if not isinstance(acquired, Result):
+            return Result.err(
+                _error(
+                    "NOTIFICATION_OUTBOX_DRAIN_LEASE_ERROR",
+                    "notification outbox drain ownership returned an invalid result.",
+                )
+            )
+        if acquired.is_err():
+            lease_error = acquired.unwrap_err()
+            if (
+                isinstance(lease_error, dict)
+                and lease_error.get("errorType") == "RESOURCE_HELD"
+            ):
+                return Result.err(
+                    _error(
+                        "NOTIFICATION_OUTBOX_DRAIN_UNAVAILABLE",
+                        "another notification outbox drainer owns the configured lease.",
+                    )
+                )
+            return Result.err(
+                _error(
+                    "NOTIFICATION_OUTBOX_DRAIN_LEASE_ERROR",
+                    "notification outbox drain ownership could not be acquired safely.",
+                )
+            )
+        lease = acquired.unwrap()
+        if lease is None:
+            return Result.err(
+                _error(
+                    "NOTIFICATION_OUTBOX_DRAIN_LEASE_ERROR",
+                    "notification outbox drain lease was invalid.",
+                )
+            )
+        return Result.ok(lease)
+
+    def _release_drain_lease(self, lease: Optional[Any]) -> Optional[Error]:
+        if self._lease_manager is None or lease is None:
+            return None
+        try:
+            released = self._lease_manager.release(lease)
+        except Exception:
+            return _error(
+                "NOTIFICATION_OUTBOX_DRAIN_LEASE_RELEASE_ERROR",
+                "notification outbox drain ownership could not be released safely.",
+            )
+        if not isinstance(released, Result):
+            return _error(
+                "NOTIFICATION_OUTBOX_DRAIN_LEASE_RELEASE_ERROR",
+                "notification outbox drain ownership returned an invalid release result.",
+            )
+        if released.is_err() or released.unwrap() is not True:
+            return _error(
+                "NOTIFICATION_OUTBOX_DRAIN_LEASE_RELEASE_ERROR",
+                "notification outbox drain ownership was not released safely.",
+            )
+        return None
 
     def _validate_limit(self, value: int, error_type: str) -> Optional[Error]:
         if (
@@ -619,6 +761,7 @@ __all__ = [
     "DEFAULT_MAX_NOTIFICATION_OUTBOX_DRAIN",
     "DEFAULT_MAX_NOTIFICATION_OUTBOX_RECORD_BYTES",
     "DEFAULT_MAX_NOTIFICATION_OUTBOX_RECORDS",
+    "DEFAULT_NOTIFICATION_OUTBOX_DRAIN_LEASE_TTL_SECONDS",
     "FileNotificationOutbox",
     "NotificationOutboxReport",
     "NotificationOutboxTarget",

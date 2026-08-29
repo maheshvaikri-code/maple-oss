@@ -4,6 +4,8 @@ import json
 import threading
 from typing import Any, Dict, List
 
+import pytest
+
 from maple.autonomy import (
     ApprovalNotification,
     ApprovalRequest,
@@ -17,6 +19,7 @@ from maple.autonomy import (
     InMemoryHumanInputStore,
 )
 from maple.core.result import Result
+from maple.resources.lease import FileLeaseManager
 
 
 class RecordingTarget:
@@ -287,3 +290,163 @@ def test_built_in_store_notifier_compatibility_remains_local(tmp_path: Any) -> N
     human_store = FileHumanInputStore(tmp_path / "human-store", notifier=human_outbox)
     assert human_store.create(_human_request("file-input")).is_ok()
     assert isinstance(human_outbox.list_pending().unwrap()[0], HumanInputNotification)
+
+
+def test_optional_file_lease_fences_competing_outbox_drainers(tmp_path: Any) -> None:
+    lease_root = tmp_path / "leases"
+    outbox_directory = tmp_path / "outbox"
+    first_manager = FileLeaseManager(lease_root)
+    second_manager = FileLeaseManager(lease_root)
+    first_started = threading.Event()
+    release_target = threading.Event()
+
+    class HoldingTarget:
+        def __init__(self) -> None:
+            self.notifications: List[Any] = []
+
+        def notify(self, notification: Any) -> Result[None, Dict[str, Any]]:
+            self.notifications.append(notification)
+            first_started.set()
+            assert release_target.wait(timeout=2)
+            return Result.ok(None)
+
+    first_target = HoldingTarget()
+    second_target = RecordingTarget()
+    first_outbox = FileApprovalNotificationOutbox(
+        outbox_directory,
+        target=first_target,
+        lease_manager=first_manager,
+        lease_ttl_seconds=10,
+    )
+    second_outbox = FileApprovalNotificationOutbox(
+        outbox_directory,
+        target=second_target,
+        lease_manager=second_manager,
+        lease_ttl_seconds=10,
+    )
+    notification = ApprovalNotification.from_request(_approval_request(), "created")
+    assert first_outbox.notify(notification).is_ok()
+
+    first_result: List[Result[Any, Dict[str, Any]]] = []
+    drain_thread = threading.Thread(
+        target=lambda: first_result.append(first_outbox.drain())
+    )
+    drain_thread.start()
+    assert first_started.wait(timeout=2)
+
+    denied = second_outbox.drain()
+
+    assert denied.is_err()
+    assert denied.unwrap_err()["errorType"] == "NOTIFICATION_OUTBOX_DRAIN_UNAVAILABLE"
+    assert second_target.notifications == []
+    release_target.set()
+    drain_thread.join(timeout=2)
+    assert not drain_thread.is_alive()
+    assert first_result[0].is_ok()
+    assert first_result[0].unwrap().delivered == 1
+
+
+def test_outbox_drain_release_failure_preserves_committed_report(
+    tmp_path: Any,
+) -> None:
+    class ReleaseFailureManager:
+        def acquire(
+            self, resource: str, holder: str, ttl_seconds: float
+        ) -> Result[Any, Any]:
+            return Result.ok(object())
+
+        def release(self, lease: Any) -> Result[bool, Any]:
+            return Result.ok(False)
+
+    target = RecordingTarget()
+    outbox = FileApprovalNotificationOutbox(
+        tmp_path / "release-failure",
+        target=target,
+        lease_manager=ReleaseFailureManager(),  # type: ignore[arg-type]
+    )
+    assert outbox.notify(
+        ApprovalNotification.from_request(_approval_request("release"), "created")
+    ).is_ok()
+
+    result = outbox.drain()
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == (
+        "NOTIFICATION_OUTBOX_DRAIN_LEASE_RELEASE_ERROR"
+    )
+    assert result.unwrap_err()["details"]["drain_report"]["delivered"] == 1
+    assert target.notifications
+    assert outbox.list_pending().unwrap() == []
+
+
+def test_outbox_release_failure_is_attached_to_typed_drain_error(
+    tmp_path: Any,
+) -> None:
+    class ReleaseFailureManager:
+        def acquire(
+            self, resource: str, holder: str, ttl_seconds: float
+        ) -> Result[Any, Any]:
+            return Result.ok(object())
+
+        def release(self, lease: Any) -> Result[bool, Any]:
+            return Result.ok(False)
+
+    directory = tmp_path / "invalid-release"
+    directory.mkdir()
+    invalid_record = directory / "invalid.json"
+    invalid_record.write_text("{}", encoding="utf-8")
+    outbox = FileApprovalNotificationOutbox(
+        directory,
+        target=RecordingTarget(),
+        lease_manager=ReleaseFailureManager(),  # type: ignore[arg-type]
+    )
+
+    result = outbox.drain()
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "NOTIFICATION_OUTBOX_RECORD_INVALID"
+    assert result.unwrap_err()["details"]["lease_release_error"] == (
+        "NOTIFICATION_OUTBOX_DRAIN_LEASE_RELEASE_ERROR"
+    )
+
+
+def test_outbox_drain_lease_ttl_is_finite_and_bounded(tmp_path: Any) -> None:
+    with pytest.raises(ValueError):
+        FileApprovalNotificationOutbox(
+            tmp_path / "zero", target=RecordingTarget(), lease_ttl_seconds=0
+        )
+    with pytest.raises(ValueError):
+        FileApprovalNotificationOutbox(
+            tmp_path / "too-large",
+            target=RecordingTarget(),
+            lease_ttl_seconds=604_800.1,
+        )
+
+
+def test_outbox_drain_lease_storage_failure_is_typed_and_does_not_target(
+    tmp_path: Any,
+) -> None:
+    class AcquisitionFailureManager:
+        def acquire(
+            self, resource: str, holder: str, ttl_seconds: float
+        ) -> Result[Any, Any]:
+            return Result.err({"errorType": "LEASE_STORAGE_ERROR"})
+
+        def release(self, lease: Any) -> Result[bool, Any]:
+            return Result.ok(True)
+
+    target = RecordingTarget()
+    outbox = FileApprovalNotificationOutbox(
+        tmp_path / "acquisition-failure",
+        target=target,
+        lease_manager=AcquisitionFailureManager(),  # type: ignore[arg-type]
+    )
+    assert outbox.notify(
+        ApprovalNotification.from_request(_approval_request("acquire"), "created")
+    ).is_ok()
+
+    result = outbox.drain()
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "NOTIFICATION_OUTBOX_DRAIN_LEASE_ERROR"
+    assert target.notifications == []
