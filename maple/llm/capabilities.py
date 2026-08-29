@@ -145,8 +145,14 @@ class FallbackLLMProvider(LLMProvider):
 
     def _success(self, result: Result[Any, Any]) -> Result[Any, Any]:
         response = result.unwrap()
-        if isinstance(response, LLMResponse):
-            self._track_usage(response)
+        if not isinstance(response, LLMResponse):
+            return Result.err(
+                {
+                    "errorType": "LLM_PROVIDER_RESULT_INVALID",
+                    "message": "provider completion returned an invalid response.",
+                }
+            )
+        self._track_usage(response)
         return result
 
     def complete(
@@ -483,6 +489,8 @@ class ProviderRouter:
             except Exception:
                 continue
             if failover:
+                if not isinstance(provider, LLMProvider):
+                    continue
                 providers.append(provider)
             else:
                 return Result.ok(provider)

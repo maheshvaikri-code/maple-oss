@@ -237,6 +237,28 @@ def test_fallback_provider_rejects_malformed_provider_result_without_failover():
     assert backup.calls == 0
 
 
+def test_fallback_provider_rejects_malformed_success_without_failover():
+    backup = ScriptedProvider(
+        LLMConfig(provider="backup", model="backup-model"),
+        [Result.ok(LLMResponse(content="unused"))],
+    )
+    fallback = FallbackLLMProvider(
+        [
+            ScriptedProvider(
+                LLMConfig(provider="primary", model="primary-model"),
+                [Result.ok("not an LLM response")],
+            ),
+            backup,
+        ]
+    )
+
+    result = fallback.complete([])
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "LLM_PROVIDER_RESULT_INVALID"
+    assert backup.calls == 0
+
+
 async def test_fallback_provider_retries_transient_async_error_in_order():
     response = LLMResponse(content="async backup", model="backup-model")
     primary = AsyncScriptedProvider(
@@ -347,3 +369,19 @@ def test_router_fails_closed_when_failover_provider_bound_is_exceeded():
 
     assert result.is_err()
     assert result.unwrap_err()["errorType"] == "PROVIDER_FAILOVER_LIMIT_EXCEEDED"
+
+
+def test_router_fails_closed_when_failover_factory_returns_invalid_provider():
+    class InvalidFactory:
+        def __init__(self, config):
+            self.config = config
+
+    router = ProviderRouter()
+    router.register("invalid", InvalidFactory, ProviderCapabilities())
+
+    result = router.create(
+        {"invalid": LLMConfig(provider="invalid", model="model")}, failover=True
+    )
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "PROVIDER_SELECTION_FAILED"
