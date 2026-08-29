@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import math
 import os
@@ -14,6 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import (
     Any,
+    Awaitable,
     Callable,
     Deque,
     Dict,
@@ -761,6 +763,13 @@ class EmbeddingProvider(Protocol):
         """Return one bounded embedding vector for text."""
 
 
+class AsyncEmbeddingProvider(Protocol):
+    """Async host seam for producing vectors outside the MAPLE core."""
+
+    async def embed(self, text: str) -> Result[Sequence[float], Error]:
+        """Await and return one bounded embedding vector for text."""
+
+
 @dataclass(frozen=True)
 class ChunkingPolicy:
     """Bounds for deterministic character-based text chunking."""
@@ -878,6 +887,53 @@ class _StringQueryRetriever(Protocol):
         self, query: str, *, top_k: int = DEFAULT_MAX_RETRIEVAL_TOOL_RESULTS
     ) -> Result[List[RetrievalHit], Error]:
         """Return bounded source-bearing hits for a string query."""
+
+
+def _validate_retrieval_tool_query(
+    query: Any, top_k: Any, max_top_k: int
+) -> Result[int, Error]:
+    """Validate a model query before any retrieval provider is invoked."""
+    if (
+        not isinstance(query, str)
+        or not query.strip()
+        or any(ord(character) < 32 for character in query)
+    ):
+        return Result.err(
+            _error(
+                "RETRIEVAL_TOOL_QUERY_INVALID",
+                "query must be non-empty bounded text.",
+            )
+        )
+    try:
+        query_bytes = query.encode("utf-8")
+    except UnicodeEncodeError:
+        return Result.err(
+            _error(
+                "RETRIEVAL_TOOL_QUERY_INVALID",
+                "query must be non-empty bounded text.",
+            )
+        )
+    if len(query_bytes) > _MAX_RETRIEVAL_TOOL_QUERY_BYTES:
+        return Result.err(
+            _error(
+                "RETRIEVAL_TOOL_QUERY_TOO_LARGE",
+                "query exceeds the byte limit.",
+            )
+        )
+    if top_k is None:
+        top_k = max_top_k
+    if (
+        not isinstance(top_k, int)
+        or isinstance(top_k, bool)
+        or not 1 <= top_k <= max_top_k
+    ):
+        return Result.err(
+            _error(
+                "RETRIEVAL_TOOL_TOP_K_INVALID",
+                "top_k is outside the configured range.",
+            )
+        )
+    return Result.ok(top_k)
 
 
 def _tokens(value: str) -> List[str]:
@@ -1372,6 +1428,9 @@ def _create_retrieval_tool(
     max_output_bytes: int = DEFAULT_MAX_RETRIEVAL_TOOL_OUTPUT_BYTES,
     requires_approval: bool = False,
     query_description: str = "The bounded retrieval search query.",
+    async_handler: Optional[
+        Callable[..., Awaitable[Result[Dict[str, Any], Error]]]
+    ] = None,
 ) -> "Tool":
     """Build a bounded read-only retrieval tool over a string-query backend.
 
@@ -1583,46 +1642,10 @@ def _create_retrieval_tool(
     def search_handler(
         query: str, top_k: Optional[int] = None
     ) -> Result[Dict[str, Any], Error]:
-        if (
-            not isinstance(query, str)
-            or not query.strip()
-            or any(ord(character) < 32 for character in query)
-        ):
-            return Result.err(
-                _error(
-                    "RETRIEVAL_TOOL_QUERY_INVALID",
-                    "query must be non-empty bounded text.",
-                )
-            )
-        try:
-            query_bytes = query.encode("utf-8")
-        except UnicodeEncodeError:
-            return Result.err(
-                _error(
-                    "RETRIEVAL_TOOL_QUERY_INVALID",
-                    "query must be non-empty bounded text.",
-                )
-            )
-        if len(query_bytes) > _MAX_RETRIEVAL_TOOL_QUERY_BYTES:
-            return Result.err(
-                _error(
-                    "RETRIEVAL_TOOL_QUERY_TOO_LARGE",
-                    "query exceeds the byte limit.",
-                )
-            )
-        if top_k is None:
-            top_k = max_top_k
-        if (
-            not isinstance(top_k, int)
-            or isinstance(top_k, bool)
-            or not 1 <= top_k <= max_top_k
-        ):
-            return Result.err(
-                _error(
-                    "RETRIEVAL_TOOL_TOP_K_INVALID",
-                    "top_k is outside the configured range.",
-                )
-            )
+        query_validation = _validate_retrieval_tool_query(query, top_k, max_top_k)
+        if query_validation.is_err():
+            return Result.err(query_validation.unwrap_err())
+        top_k = query_validation.unwrap()
         try:
             result = retriever.search(query, top_k=top_k)
         except Exception:
@@ -1721,6 +1744,7 @@ def _create_retrieval_tool(
             "additionalProperties": False,
         },
         handler=search_handler,
+        async_handler=async_handler,
         requires_approval=requires_approval,
         result_schema={
             "type": "object",
@@ -1800,6 +1824,68 @@ def create_retrieval_tool(
     )
 
 
+def _normalize_vector_result(
+    vector_result: Any, top_k: int
+) -> Result[List[RetrievalHit], Error]:
+    """Normalize a vector backend result without exposing backend payloads."""
+    if not isinstance(vector_result, Result) or vector_result.is_err():
+        return Result.err(
+            _error(
+                "RETRIEVAL_TOOL_BACKEND_ERROR",
+                "vector retriever search returned an error.",
+            )
+        )
+    vector_hits = vector_result.unwrap()
+    if isinstance(vector_hits, (str, bytes)) or not isinstance(vector_hits, Sequence):
+        return Result.err(
+            _error(
+                "RETRIEVAL_TOOL_RESULT_INVALID",
+                "vector retriever returned an invalid hit list.",
+            )
+        )
+    if len(vector_hits) > top_k:
+        return Result.err(
+            _error(
+                "RETRIEVAL_TOOL_RESULT_INVALID",
+                "vector retriever returned more hits than requested.",
+            )
+        )
+    hits: List[RetrievalHit] = []
+    for hit in vector_hits:
+        if not isinstance(hit, VectorRetrievalHit):
+            return Result.err(
+                _error(
+                    "RETRIEVAL_TOOL_RESULT_INVALID",
+                    "vector retriever returned an invalid hit.",
+                )
+            )
+        hits.append(
+            RetrievalHit(
+                chunk=hit.chunk,
+                score=hit.score,
+                matched_terms=(),
+            )
+        )
+    return Result.ok(hits)
+
+
+def _validate_provider_vector(query_vector: Any) -> Result[Tuple[float, ...], Error]:
+    """Apply the same finite, bounded vector policy at the tool boundary."""
+    validation = _validate_vector(
+        query_vector,
+        max_dimensions=_MAX_FILE_VECTOR_DIMENSIONS,
+        field_name="query_vector",
+    )
+    if validation.is_err():
+        return Result.err(
+            _error(
+                "RETRIEVAL_TOOL_BACKEND_ERROR",
+                "retrieval provider returned an invalid vector.",
+            )
+        )
+    return Result.ok(validation.unwrap())
+
+
 class _VectorQueryRetrievalAdapter:
     """Turn one host-owned text embedder and vector backend into retrieval."""
 
@@ -1820,62 +1906,13 @@ class _VectorQueryRetrievalAdapter:
                     )
                 )
             query_vector = embedded.unwrap()
-            vector_validation = _validate_vector(
-                query_vector,
-                max_dimensions=_MAX_FILE_VECTOR_DIMENSIONS,
-                field_name="query_vector",
-            )
+            vector_validation = _validate_provider_vector(query_vector)
             if vector_validation.is_err():
-                return Result.err(
-                    _error(
-                        "RETRIEVAL_TOOL_BACKEND_ERROR",
-                        "retrieval provider returned an invalid vector.",
-                    )
-                )
+                return Result.err(vector_validation.unwrap_err())
             vector_result = self._vector_retriever.search(
                 vector_validation.unwrap(), top_k=top_k
             )
-            if not isinstance(vector_result, Result) or vector_result.is_err():
-                return Result.err(
-                    _error(
-                        "RETRIEVAL_TOOL_BACKEND_ERROR",
-                        "vector retriever search returned an error.",
-                    )
-                )
-            vector_hits = vector_result.unwrap()
-            if isinstance(vector_hits, (str, bytes)) or not isinstance(
-                vector_hits, Sequence
-            ):
-                return Result.err(
-                    _error(
-                        "RETRIEVAL_TOOL_RESULT_INVALID",
-                        "vector retriever returned an invalid hit list.",
-                    )
-                )
-            if len(vector_hits) > top_k:
-                return Result.err(
-                    _error(
-                        "RETRIEVAL_TOOL_RESULT_INVALID",
-                        "vector retriever returned more hits than requested.",
-                    )
-                )
-            hits: List[RetrievalHit] = []
-            for hit in vector_hits:
-                if not isinstance(hit, VectorRetrievalHit):
-                    return Result.err(
-                        _error(
-                            "RETRIEVAL_TOOL_RESULT_INVALID",
-                            "vector retriever returned an invalid hit.",
-                        )
-                    )
-                hits.append(
-                    RetrievalHit(
-                        chunk=hit.chunk,
-                        score=hit.score,
-                        matched_terms=(),
-                    )
-                )
-            return Result.ok(hits)
+            return _normalize_vector_result(vector_result, top_k)
         except Exception:
             return Result.err(
                 _error(
@@ -1916,6 +1953,113 @@ def create_vector_retrieval_tool(
         requires_approval=requires_approval,
         query_description="The bounded vector search query.",
     )
+
+
+class _StaticStringQueryRetriever:
+    """Private one-call backend used to reuse the citation serializer."""
+
+    def __init__(self, hits: Sequence[RetrievalHit]) -> None:
+        self._hits = tuple(hits)
+
+    def search(
+        self, query: str, *, top_k: int = DEFAULT_MAX_RETRIEVAL_TOOL_RESULTS
+    ) -> Result[List[RetrievalHit], Error]:
+        return Result.ok(list(self._hits))
+
+
+def create_async_vector_retrieval_tool(
+    vector_retriever: Any,
+    embedding_provider: AsyncEmbeddingProvider,
+    *,
+    name: str = "search_vector_documents",
+    description: str = (
+        "Search the local vector index using host-provided async embeddings "
+        "and return bounded source citations."
+    ),
+    max_top_k: int = DEFAULT_MAX_RETRIEVAL_TOOL_RESULTS,
+    max_output_bytes: int = DEFAULT_MAX_RETRIEVAL_TOOL_OUTPUT_BYTES,
+    requires_approval: bool = False,
+) -> "Tool":
+    """Adapt async host-owned embeddings into an async-only read-only tool.
+
+    The returned tool supports ``execute_async()``. Synchronous ``execute()``
+    returns a typed error without invoking either host callback.
+    """
+    if not callable(getattr(vector_retriever, "search", None)):
+        raise TypeError("vector_retriever must expose search(query_vector, top_k=...)")
+    if not callable(getattr(embedding_provider, "embed", None)):
+        raise TypeError("embedding_provider must expose async embed(text)")
+
+    async def async_search_handler(
+        query: str, top_k: Optional[int] = None
+    ) -> Result[Dict[str, Any], Error]:
+        query_validation = _validate_retrieval_tool_query(query, top_k, max_top_k)
+        if query_validation.is_err():
+            return Result.err(query_validation.unwrap_err())
+        bounded_top_k = query_validation.unwrap()
+        try:
+            embedded = await embedding_provider.embed(query)
+            if not isinstance(embedded, Result) or embedded.is_err():
+                return Result.err(
+                    _error(
+                        "RETRIEVAL_TOOL_BACKEND_ERROR",
+                        "retrieval provider returned an error.",
+                    )
+                )
+            vector_validation = _validate_provider_vector(embedded.unwrap())
+            if vector_validation.is_err():
+                return Result.err(vector_validation.unwrap_err())
+            loop = asyncio.get_running_loop()
+            vector_result = await loop.run_in_executor(
+                None,
+                lambda: vector_retriever.search(
+                    vector_validation.unwrap(), top_k=bounded_top_k
+                ),
+            )
+            normalized = _normalize_vector_result(vector_result, bounded_top_k)
+            if normalized.is_err():
+                return Result.err(normalized.unwrap_err())
+            serializer = _create_retrieval_tool(
+                _StaticStringQueryRetriever(normalized.unwrap()),
+                name=name,
+                description=description,
+                max_top_k=max_top_k,
+                max_output_bytes=max_output_bytes,
+                requires_approval=requires_approval,
+                query_description="The bounded async vector search query.",
+            )
+            return serializer.execute(query=query, top_k=bounded_top_k)
+        except Exception:
+            return Result.err(
+                _error(
+                    "RETRIEVAL_TOOL_BACKEND_ERROR",
+                    "async vector retrieval failed.",
+                )
+            )
+
+    tool = _create_retrieval_tool(
+        _StaticStringQueryRetriever(()),
+        name=name,
+        description=description,
+        max_top_k=max_top_k,
+        max_output_bytes=max_output_bytes,
+        requires_approval=requires_approval,
+        query_description="The bounded async vector search query.",
+        async_handler=async_search_handler,
+    )
+
+    def sync_required_handler(
+        query: str, top_k: Optional[int] = None
+    ) -> Result[Dict[str, Any], Error]:
+        return Result.err(
+            _error(
+                "RETRIEVAL_TOOL_ASYNC_REQUIRED",
+                "use execute_async() for this retrieval tool.",
+            )
+        )
+
+    tool.handler = sync_required_handler
+    return tool
 
 
 class InMemoryLexicalRetriever:

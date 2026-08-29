@@ -181,6 +181,7 @@ from .autonomy.replay import (
     InMemoryExecutionJournal,
 )
 from .autonomy.retrieval import (
+    AsyncEmbeddingProvider,
     ChunkingPolicy,
     ConnectorIngestReport,
     DEFAULT_MAX_RETRIEVAL_TOOL_OUTPUT_BYTES,
@@ -208,6 +209,7 @@ from .autonomy.retrieval import (
     SourceRef,
     TextChunker,
     VectorRetrievalHit,
+    create_async_vector_retrieval_tool,
     create_retrieval_tool,
     create_vector_retrieval_tool,
     ingest_documents,
@@ -410,6 +412,7 @@ __all__ = [
     "ExecutionExecutor",
     "ExecutionPolicy",
     "TrustedLocalExecutor",
+    "AsyncEmbeddingProvider",
     "ChunkingPolicy",
     "ConnectorIngestReport",
     "DEFAULT_MAX_RETRIEVAL_TOOL_OUTPUT_BYTES",
@@ -437,6 +440,7 @@ __all__ = [
     "SourceRef",
     "TextChunker",
     "VectorRetrievalHit",
+    "create_async_vector_retrieval_tool",
     "create_retrieval_tool",
     "create_vector_retrieval_tool",
     "ingest_documents",

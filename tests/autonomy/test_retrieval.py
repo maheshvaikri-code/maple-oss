@@ -1,11 +1,14 @@
 """Tests for bounded retrieval and source-bearing data contracts."""
 
+import asyncio
 import json
+import threading
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
 from maple.autonomy.retrieval import (
+    AsyncEmbeddingProvider,
     ChunkingPolicy,
     DEFAULT_MAX_RETRIEVAL_TOOL_OUTPUT_BYTES,
     DEFAULT_MAX_RETRIEVAL_TOOL_RESULTS,
@@ -23,6 +26,7 @@ from maple.autonomy.retrieval import (
     SourceRef,
     TextChunker,
     VectorRetrievalHit,
+    create_async_vector_retrieval_tool,
     create_retrieval_tool,
     create_vector_retrieval_tool,
     ingest_documents,
@@ -753,6 +757,170 @@ def test_vector_retrieval_tool_rejects_oversized_output_without_partial_hits():
     assert result.is_err()
     assert result.unwrap_err()["errorType"] == "RETRIEVAL_TOOL_OUTPUT_TOO_LARGE"
     assert "hits" not in result.unwrap_err()
+
+
+@pytest.mark.asyncio
+async def test_async_vector_retrieval_tool_delegates_without_blocking_event_loop():
+    retriever = InMemoryVectorRetriever()
+    retriever.add_document(
+        make_document(
+            "async-vector-tool",
+            "MAPLE async vector retrieval returns source citations.",
+        ),
+        [(1.0, 0.0)],
+    )
+
+    class Provider:
+        def __init__(self):
+            self.queries = []
+
+        async def embed(self, text):
+            self.queries.append(text)
+            await asyncio.sleep(0)
+            return Result.ok((1.0, 0.0))
+
+    class Backend:
+        def __init__(self, delegate):
+            self.delegate = delegate
+            self.thread_id = None
+
+        def search(self, query_vector, *, top_k=5):
+            self.thread_id = threading.get_ident()
+            return self.delegate.search(query_vector, top_k=top_k)
+
+    provider = Provider()
+    backend = Backend(retriever)
+    tool = create_async_vector_retrieval_tool(backend, provider, max_top_k=2)
+    event_loop_thread = threading.get_ident()
+
+    result = await tool.execute_async(query="source citations", top_k=1)
+
+    assert result.is_ok()
+    assert provider.queries == ["source citations"]
+    assert backend.thread_id is not None
+    assert backend.thread_id != event_loop_thread
+    hit = result.unwrap()["hits"][0]
+    assert hit["document_id"] == "async-vector-tool"
+    assert hit["matched_terms"] == []
+    assert "embedding" not in hit
+    from maple import AsyncEmbeddingProvider as public_provider_protocol
+
+    assert public_provider_protocol is AsyncEmbeddingProvider
+
+
+@pytest.mark.asyncio
+async def test_async_vector_retrieval_tool_is_async_only_and_validates_before_provider():
+    calls = []
+
+    class Provider:
+        async def embed(self, text):
+            calls.append(text)
+            return Result.ok((1.0, 0.0))
+
+    tool = create_async_vector_retrieval_tool(
+        InMemoryVectorRetriever(), Provider(), max_top_k=2
+    )
+    sync_result = tool.execute(query="maple")
+    invalid_query = await tool.execute_async(query="bad\nquery")
+    invalid_top_k = await tool.execute_async(query="maple", top_k=3)
+
+    assert sync_result.unwrap_err()["errorType"] == "RETRIEVAL_TOOL_ASYNC_REQUIRED"
+    assert invalid_query.unwrap_err()["errorType"] == "RETRIEVAL_TOOL_QUERY_INVALID"
+    assert invalid_top_k.unwrap_err()["errorType"] == "TOOL_INPUT_INVALID"
+    assert calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["raises", "non_result", "error_result"])
+async def test_async_vector_retrieval_tool_redacts_provider_failures(mode):
+    class Provider:
+        async def embed(self, text):
+            if mode == "raises":
+                raise RuntimeError("async-provider-secret")
+            if mode == "non_result":
+                return {"private": "async-vector-payload"}
+            return Result.err(
+                {"errorType": "PRIVATE_ASYNC_PROVIDER", "message": "secret"}
+            )
+
+    result = await create_async_vector_retrieval_tool(
+        InMemoryVectorRetriever(), Provider()
+    ).execute_async(query="maple")
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "RETRIEVAL_TOOL_BACKEND_ERROR"
+    assert "async-provider-secret" not in str(result.unwrap_err())
+    assert "secret" not in str(result.unwrap_err())
+    assert "async-vector-payload" not in str(result.unwrap_err())
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["raises", "non_result", "error_result"])
+async def test_async_vector_retrieval_tool_redacts_backend_failures(mode):
+    class Provider:
+        async def embed(self, text):
+            return Result.ok((1.0, 0.0))
+
+    class Backend:
+        def search(self, query_vector, *, top_k=5):
+            if mode == "raises":
+                raise RuntimeError("async-backend-private")
+            if mode == "non_result":
+                return {"private": "async-backend-payload"}
+            return Result.err(
+                {"errorType": "PRIVATE_ASYNC_BACKEND", "message": "secret"}
+            )
+
+    result = await create_async_vector_retrieval_tool(
+        Backend(), Provider()
+    ).execute_async(query="maple")
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "RETRIEVAL_TOOL_BACKEND_ERROR"
+    assert "async-backend-private" not in str(result.unwrap_err())
+    assert "secret" not in str(result.unwrap_err())
+    assert "async-backend-payload" not in str(result.unwrap_err())
+
+
+@pytest.mark.asyncio
+async def test_async_vector_retrieval_tool_rejects_invalid_vectors_and_oversized_output():
+    calls = []
+
+    class Provider:
+        async def embed(self, text):
+            return Result.ok((float("nan"), 0.0))
+
+    class Backend:
+        def search(self, query_vector, *, top_k=5):
+            calls.append(query_vector)
+            return Result.ok([])
+
+    invalid = await create_async_vector_retrieval_tool(
+        Backend(), Provider()
+    ).execute_async(query="maple")
+    assert invalid.unwrap_err()["errorType"] == "RETRIEVAL_TOOL_BACKEND_ERROR"
+    assert calls == []
+
+    retriever = InMemoryVectorRetriever(
+        chunker=TextChunker(ChunkingPolicy(max_chars=2_048, overlap_chars=100))
+    )
+    retriever.add_document(
+        make_document("large-async-vector-tool", " ".join(["maple"] * 300)),
+        [(1.0, 0.0)],
+    )
+
+    class ValidProvider:
+        async def embed(self, text):
+            return Result.ok((1.0, 0.0))
+
+    oversized = await create_async_vector_retrieval_tool(
+        retriever,
+        ValidProvider(),
+        max_output_bytes=1_024,
+    ).execute_async(query="maple", top_k=1)
+
+    assert oversized.unwrap_err()["errorType"] == "RETRIEVAL_TOOL_OUTPUT_TOO_LARGE"
+    assert "hits" not in oversized.unwrap_err()
 
 
 def test_reranker_reorders_lexical_hits_and_preserves_original_scores():
