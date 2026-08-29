@@ -1,7 +1,7 @@
 # Slice 207 implementation plan - bounded retrieval and citation tool
 
 **Class:** L
-**Status:** Design accepted; implementation in progress
+**Status:** Complete locally; release-gated
 **Brief:** `docs/briefs/maple-agent-runtime-slice207.md`
 **ADR:** `docs/adr/151-bounded-retrieval-tool.md`
 
