@@ -519,6 +519,40 @@ async def test_async_document_connector_rejects_over_limit_page_without_sink_mut
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("options", "error_type"),
+    [
+        ({"batch_size": 0}, "RETRIEVAL_CONNECTOR_LIMIT"),
+        ({"batch_size": 101}, "RETRIEVAL_CONNECTOR_LIMIT"),
+        ({"max_documents": 0}, "RETRIEVAL_CONNECTOR_LIMIT"),
+        ({"max_documents": 10_001}, "RETRIEVAL_CONNECTOR_LIMIT"),
+        ({"max_batches": 0}, "RETRIEVAL_CONNECTOR_LIMIT"),
+        ({"max_batches": 101}, "RETRIEVAL_CONNECTOR_LIMIT"),
+        ({"cursor": "bad\ncursor"}, "RETRIEVAL_CONNECTOR_INVALID"),
+    ],
+)
+async def test_async_document_connector_rejects_invalid_options(options, error_type):
+    result = await ingest_documents_async(
+        object(), InMemoryLexicalRetriever(), **options
+    )
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == error_type
+
+
+@pytest.mark.asyncio
+async def test_async_document_connector_rejects_empty_advancing_page():
+    class Connector:
+        async def fetch(self, cursor, *, limit):
+            return Result.ok(DocumentBatch((), "next"))
+
+    result = await ingest_documents_async(Connector(), InMemoryLexicalRetriever())
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "RETRIEVAL_CONNECTOR_INVALID"
+
+
+@pytest.mark.asyncio
 async def test_async_document_connector_does_not_checkpoint_incomplete_page():
     saved = []
     sink_calls = []
