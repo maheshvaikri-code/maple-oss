@@ -8,6 +8,16 @@
 
 ## Unreleased
 
+## 2.0.0 - 2026-08-29
+
+### CI and release hardening
+
+- Promoted the MAPLE package metadata and public documentation to `2.0.0`.
+- Resolved all strict CI line-length findings and added the existing MAPLE
+  author notice to every `maple/**/*.py` module without weakening the checks.
+- Reformatted Protocol stubs and bounded source literals so the exact CI
+  Flake8 command passes without blanket suppressions.
+
 ### Release hardening
 
 - **Strict structured-output JSON parsing**: structured and typed output now

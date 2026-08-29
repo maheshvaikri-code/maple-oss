@@ -5,7 +5,7 @@
 **Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)**
 
 <p>
-<a href="https://github.com/maheshvaikri-code/maple-oss"><img src="https://img.shields.io/badge/version-1.1.3-brightgreen" alt="Version"></a>
+<a href="https://github.com/maheshvaikri-code/maple-oss"><img src="https://img.shields.io/badge/version-2.0.0-brightgreen" alt="Version"></a>
 <a href="https://github.com/maheshvaikri-code/maple-oss"><img src="https://img.shields.io/badge/Python-3.8%20|%203.9%20|%203.10%20|%203.11%20|%203.12%20|%203.13-brightgreen" alt="Python"></a>
 <a href="https://github.com/maheshvaikri-code/maple-oss"><img src="https://img.shields.io/badge/Focused%20tests-240%20passed-brightgreen" alt="Focused tests"></a>
 <a href="https://github.com/maheshvaikri-code/maple-oss/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-AGPL%203.0-blue.svg" alt="License"></a>
@@ -32,7 +32,7 @@ Most agent frameworks give you either **infrastructure** (messaging, security, f
 
 ## Key Features
 
-### Autonomous Agentic AI (v1.1.3)
+### Autonomous Agentic AI (v2.0.0)
 
 - **Native Async Provider Completion (preview)** - Async agent loops can await native OpenAI-compatible and Anthropic completion clients when the optional SDK exposes them. Providers without an async client retain the explicit base-provider fallback; `ProviderRequirements(async_completion=True)` can require a declared native async provider; no hidden retry, provider selection, or concurrency claim is made.
 - **Bounded Working Memory Admission (preview)** - Working-memory budgets are bounded to 1..1,000,000 estimated tokens and 4,096 entries; UTF-8 text, keys, and relevance metadata are validated before admission, and entries too large to fit fail without mutating the existing context.
@@ -190,7 +190,7 @@ Primitives for running a governed multi-agent workforce (builders + fresh-contex
 - **Routability Check** — `broker.is_routable(agent_id)` and `agent.send(msg, require_routable=True)` distinguish "enqueued" from "deliverable" — a send to a nonexistent agent returns `Result.err(UNROUTABLE)` instead of a misleading `Ok`.
 - **Exactly-Once Delivery** — Direct messages fire the receiver's handler exactly once; handler keys are normalized so a handler registered `"work.package"` receives an incoming `WORK.PACKAGE`.
 
-### Resource & Reliability Primitives (v1.1.3)
+### Resource & Reliability Primitives (v2.0.0)
 
 Extensibility and hardening surfaced by integrating MAPLE into a governed downstream host:
 
@@ -815,7 +815,7 @@ maple-oss/
 ├── n8n-integration/         Visual workflow nodes for n8n
 ├── pyproject.toml           Package configuration
 ├── setup.py                 Legacy setup script
-└── VERSION                  Current version (1.1.3)
+└── VERSION                  Current version (2.0.0)
 ```
 
 ---

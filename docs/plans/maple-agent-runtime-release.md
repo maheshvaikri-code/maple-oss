@@ -1491,6 +1491,15 @@ passed, 1 skipped in 260.03s`, source archive `889`, wheel `108`, sdist `803`,
 build/Twine/install/import/doctor exit 0, and network-free doctor readiness.
 No publication, registry write, cloud action, or website update was performed.
 
+2026-08-29 CI quality-gate and 2.0.0 promotion closure: human approval selected
+the source-normalization option from ADR-144. The exact strict Flake8 command
+now reports `0` findings, all `103` `maple/**/*.py` modules contain the required
+author notice, Black and isort pass, and Protocol stubs are multiline so the
+full Flake8 command is clean. MAPLE package metadata, README current-version
+markers, tests metadata, and the changelog are promoted to `2.0.0`. A new
+release checklist is filed at `docs/releases/v2.0.0.md`. External publication,
+registry writes, cloud actions, and website deployment remain separately gated.
+
 2026-08-29 authenticated remote task-start closure: ADR-136 adds
 `TaskQueue.start_task(...)`, `FileTaskQueue` persistence, and
 `POST /v1/tasks/{task_id}/start` / `RunClient.start_task(...)` under
