@@ -73,6 +73,30 @@ maple_oss-2.0.0-py3-none-any.whl  B7FF615A7CCDCCA21138CA83B45D9CD87DAD0AEEFFFD91
 maple_oss-2.0.0.tar.gz            57F6D6EF04C25152BA8EE12BC405E785ACA192750C32EF37E6CF8C841628B83E
 ```
 
+The release evidence documents were then committed in `5c22057`. A final
+clean-archive rebuild of that commit also passed:
+
+```text
+archive_head=5c2205783fddccae349394f3d3f1b32ca52578c
+Successfully built maple_oss-2.0.0-py3-none-any.whl and maple_oss-2.0.0.tar.gz
+wheel: PASSED
+sdist: PASSED
+import_version=2.0.0
+{"checks": {"core": true, "evaluation": true, "events": true, "execution": true, "interop": true, "retrieval": true, "server": true, "sessions": true}, "network": false, "ready": true, "status": "SUCCESS", "version": "2.0.0"}
+wheel_entries=110
+sdist_entries=917
+wheel_excluded_demo=0
+sdist_excluded_demo=0
+sdist_has_release=True
+```
+
+Final archive SHA-256 values:
+
+```text
+maple_oss-2.0.0-py3-none-any.whl  94A5382D5F23C53B37FD35C2F1A18CDD87F313FD312311E61C37B4F52283153B
+maple_oss-2.0.0.tar.gz            8EB1D2499C173EBBC8F5737A59613444DA3B7E901945B74A2047BCF6D61F17DC
+```
+
 ## Limitations and handoff
 
 - `gitleaks` is not installed in this environment; no secret-scan result is
