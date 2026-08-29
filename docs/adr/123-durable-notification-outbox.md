@@ -1,6 +1,6 @@
 # ADR-123: Bounded durable notification outbox
 
-**Date:** 2026-08-28 · **Status:** proposed
+**Date:** 2026-08-28 · **Status:** accepted
 **Deciders:** Chief Architect (additive, local-first contract)
 
 ## Context

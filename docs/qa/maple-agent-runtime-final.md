@@ -1081,3 +1081,27 @@ external state was changed.
 
 **Slice 178 QA status: PASS for the bounded local outbox; overall release
 status remains CONDITIONAL / NOT PUBLISH-READY.**
+
+Clean archive/package verification was run from exact committed `c064b80`:
+
+```text
+clean git archive HEAD: source_archive_entries=841
+python -m pytest -q --no-cov
+1598 passed, 1 skipped in 255.85s (0:04:15)
+build_exit=0
+wheel_entries=107
+sdist_entries=755
+twine_exit=0
+install_exit=0
+isolated_import=passed
+version=1.1.3
+import_exit=0
+{"checks": {"core": true, "evaluation": true, "events": true, "execution": true, "interop": true, "retrieval": true, "server": true, "sessions": true}, "network": false, "ready": true, "status": "SUCCESS", "version": "1.1.3"}
+doctor_exit=0
+```
+
+The first Windows PowerShell binary-pipe attempt was discarded after the tar
+tool reported a damaged archive; the successful rerun used Git's direct
+`--output` archive mode in a fresh temp directory. No repository data was
+changed by either attempt. No publication, deployment, cloud action, registry
+write, or website update was performed.
