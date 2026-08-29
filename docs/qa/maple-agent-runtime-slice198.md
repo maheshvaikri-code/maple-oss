@@ -1,7 +1,8 @@
 # QA + Security Report — MAPLE agent runtime Slice 198
 
 **QA Engineer** · **Security Reviewer** · **Date:** 2026-08-29  
-**Build under test:** clean committed candidate `a3d6e8a`; dirty workspace
+**Build under test:** follow-up commit `bfe8b43`; earlier clean committed candidate
+`a3d6e8a`; dirty workspace
 verification includes preserved user-owned changes and untracked Doctrine tests.
 
 ## Acceptance criteria verification
@@ -105,3 +106,45 @@ items and are not waived here.
 **QA verdict:** pass for Slice 198 local criteria. Publication remains blocked
 by the existing release gates; no publication, cloud action, or website update
 was performed.
+
+## Follow-up QA/security verification — `bfe8b43`
+
+The synchronous `run` and `calibrate` judge boundaries were exercised with
+disposable awaitables. Both APIs close the value when possible, return a
+bounded per-case `EVAL_JUDGE_RESULT_INVALID` error, preserve a missing judge
+score, and direct callers to the corresponding async API. The regression
+tests also prove the callback result is not accidentally executed.
+
+```text
+python -m pytest tests/autonomy/test_evaluation.py -q --no-cov
+37 passed in 0.31s
+python -m ruff check maple/autonomy/evaluation.py tests/autonomy/test_evaluation.py
+All checks passed!
+python -m mypy --follow-imports=skip maple/autonomy/evaluation.py
+Success: no issues found in 1 source file
+python -m compileall -q maple/autonomy/evaluation.py tests/autonomy/test_evaluation.py
+compileall: ok
+python -m pytest -q --no-cov
+1797 passed, 1 skipped in 357.31s (0:05:57)
+```
+
+Exact clean-archive package smoke for `bfe8b43`:
+
+```text
+source_archive_entries=873
+wheel_entries=108
+sdist_entries=849
+wheel_sha256=10ff1b4790f465066a590031c5ab1a7901d416ce1cfe4b36c18115e4ecd5ee90
+sdist_sha256=35d99b05368f4ff0b640cad6bdcbc8a9ff950710a31f15011dc63a734f113ec5
+build_exit=0
+twine_exit=0
+install_exit=0
+import_ok 1.1.3 EvaluationHarness
+doctor_network=false
+doctor_ready=true
+```
+
+No dependency, network, subprocess, dynamic execution, authentication, or
+external side effect was added. The package smoke and full-suite evidence
+below remain the governing release evidence; publication is still not
+authorized.

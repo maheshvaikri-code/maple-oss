@@ -11,6 +11,7 @@
 | 1 | Calibration data/report contracts | Backend / ML | `maple/autonomy/evaluation.py`, autonomy/root exports, evaluation tests | validation, empty set, agreement, optional MAE, bounded JSON report | complete: `35b446e`; focused evaluation suite `35 passed` |
 | 2 | Sync/async calibration execution | ML / Interop | `maple/autonomy/evaluation.py`, evaluation tests, API docs | sequential sync/async callbacks, redaction, disagreement, judge error isolation | complete: `35b446e`, `904f48a`; focused evaluation suite `35 passed` |
 | 3 | Review, QA, security, package, and parity closure | Code Reviewer / QA / Security / Release | review/QA/release/parity docs, README, changelog | focused/full tests, adversarial bounds, no-network package smoke | complete: review `a3d6e8a`; QA/security `docs/qa/maple-agent-runtime-slice198.md`; clean candidate `1678 passed, 1 skipped`, wheel `108`, sdist `842`, Twine/install/import/doctor pass |
+| 4 | Synchronous judge awaitable boundary follow-up | ML / Backend | `maple/autonomy/evaluation.py`, evaluation tests, changelog | disposable awaitable cleanup and typed async-entry-point errors in sync `run`/`calibrate` | complete: `bfe8b43`; focused `37 passed`; full dirty suite `1797 passed, 1 skipped`; clean package smoke, scoped Ruff, mypy, and compileall pass |
 
 ## Threat sketch
 
@@ -37,11 +38,15 @@ normalization, and sequential bounded processing.
 
 ## Deviation log (append-only)
 
-- None.
+- `bfe8b43` extends the fail-closed boundary to synchronous `run(..., judge=...)`
+  as well as `calibrate(...)` after review identified the same unawaited
+  coroutine risk in both public entry points. The behavior is additive for
+  invalid callback outputs and preserves valid callback compatibility.
 
 ## Status snapshot
 
 G0/G1/G2 accepted; G3 implementation and G4/G5/G6 review, QA, security,
-package, and parity closure are complete for the bounded local contract.
+package, and parity closure are complete for the bounded local contract,
+including the `bfe8b43` boundary follow-up.
 Blocked on: none for this local slice; provider-owned and hosted calibration
 remain separate human-gated work.
