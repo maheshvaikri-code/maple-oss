@@ -3132,7 +3132,7 @@ and payload limits before retention, subscriber delivery, or exporter delivery.
 Missing fields, malformed payloads, oversized bodies, and invalid event values
 return typed `400` errors; an absent stream returns `503`. This is a bounded
 authenticated ingestion seam for a host-owned stream, not durable remote
-replay, fleet aggregation, or remote trace search.
+replay, fleet aggregation, or hosted trace search.
 
 For transport-efficient ingestion, `RunClient.publish_events(...)` and
 `POST /v1/events/batch` accept 1–100 event envelopes. Events are submitted in
@@ -3193,9 +3193,22 @@ are already redacted and include the receiver-assigned sequence/timestamp. A
 cursor before the retained ring returns `EVENT_CURSOR_EXPIRED` with HTTP `409`
 rather than silently skipping events; malformed, duplicate, unknown, negative,
 or over-bound query values return typed `400` errors. The route reads the
-host-owned in-memory bounded ring only. The route itself does not provide
-durable replay, remote search, or fleet aggregation; use the local journal plus
-`EventForwarder` for explicit bounded remote replay and aggregation.
+host-owned in-memory bounded ring only. Use the exact-filter search route when
+you need one run or trace without downloading unrelated retained events:
+
+```python
+page = client.search_events(trace_id="trace-42", limit=25)
+if page.is_ok():
+    events = page.unwrap()["batch"]["events"]
+```
+
+This calls `GET /v1/events/search` with one or more exact `trace_id`, `run_id`,
+or `event_type` filters plus optional `after` and `limit` values. At least one
+filter is required; the result is sequence-ordered and uses the same bounded
+`EventBatch` envelope and `EVENT_CURSOR_EXPIRED` behavior. Trace matching reads
+only the top-level `trace_id` in an already-redacted payload. The route remains
+a retained-window diagnostic seam, not durable replay, arbitrary payload
+querying, fleet aggregation, or hosted search.
 
 ### Handoff HTTP transport
 

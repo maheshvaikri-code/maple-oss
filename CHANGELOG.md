@@ -10,6 +10,12 @@
 
 ### Additions
 
+- **Bounded remote event/trace search**: authenticated event readers can query
+  the retained redacted window by exact `trace_id`, `run_id`, or `event_type`
+  with bounded results, sequence cursors, typed filter errors, and explicit
+  cursor expiry. Arbitrary payload queries, fleet-wide indexes, hosted
+  aggregation, and distributed search remain outside the local contract.
+
 - **Bounded route-policy validation**: direct `AgentRegistry.route(...)`
   callers now receive typed `AGENT_ALLOWLIST_INVALID` errors for malformed,
   duplicate, oversized, or unhashable `allowed_agent_ids` values before
