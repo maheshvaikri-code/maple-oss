@@ -343,6 +343,58 @@ def _normalize_agent_capabilities(
     return Result.ok(tuple(sorted(normalized)))
 
 
+def _normalize_allowed_agent_ids(
+    allowed_agent_ids: Optional[Iterable[str]],
+) -> Result[Optional[Tuple[str, ...]], Error]:
+    """Validate one optional exact agent-target allowlist."""
+    if allowed_agent_ids is None:
+        return Result.ok(None)
+    if isinstance(allowed_agent_ids, (str, bytes)):
+        return Result.err(
+            _error(
+                "AGENT_ALLOWLIST_INVALID",
+                "allowed_agent_ids must be an iterable of agent IDs, not text.",
+            )
+        )
+    normalized: List[str] = []
+    seen = set()
+    try:
+        for index, agent_id in enumerate(allowed_agent_ids):
+            if index >= _MAX_AGENTS:
+                return Result.err(
+                    _error(
+                        "AGENT_ALLOWLIST_INVALID",
+                        "allowed_agent_ids exceeds the configured limit.",
+                        max_agents=_MAX_AGENTS,
+                    )
+                )
+            identifier_error = _validate_agent_identifier(agent_id, "allowed_agent_id")
+            if identifier_error is not None:
+                return Result.err(
+                    _error(
+                        "AGENT_ALLOWLIST_INVALID",
+                        "allowed_agent_ids contains an invalid agent ID.",
+                    )
+                )
+            if agent_id in seen:
+                return Result.err(
+                    _error(
+                        "AGENT_ALLOWLIST_INVALID",
+                        "allowed_agent_ids must contain unique agent IDs.",
+                    )
+                )
+            seen.add(agent_id)
+            normalized.append(agent_id)
+    except (TypeError, ValueError):
+        return Result.err(
+            _error(
+                "AGENT_ALLOWLIST_INVALID",
+                "allowed_agent_ids must be an iterable of agent IDs.",
+            )
+        )
+    return Result.ok(tuple(normalized))
+
+
 def _copy_bounded_json(
     value: Any,
     *,
@@ -810,7 +862,15 @@ class AgentRegistry:
         if capability_result.is_err():
             return Result.err(capability_result.unwrap_err())
         selected_capability = capability_result.unwrap()[0]
-        allowed_agents = None if allowed_agent_ids is None else set(allowed_agent_ids)
+        allowed_agents_result = _normalize_allowed_agent_ids(allowed_agent_ids)
+        if allowed_agents_result.is_err():
+            return Result.err(allowed_agents_result.unwrap_err())
+        normalized_allowed_agents = allowed_agents_result.unwrap()
+        allowed_agents = (
+            None
+            if normalized_allowed_agents is None
+            else set(normalized_allowed_agents)
+        )
         with self._lock:
             candidates = [
                 agent_id

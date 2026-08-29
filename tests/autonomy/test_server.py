@@ -392,6 +392,50 @@ def test_agent_target_policy_filters_discovery_and_blocks_denied_routes():
     )
 
 
+def test_agent_registry_route_validates_allowed_agent_ids():
+    calls = []
+
+    def handler(task, context, *, session_id, run_id):
+        calls.append(task)
+        return Result.ok(AgentRun("alpha", run_id, "completed", {"task": task}))
+
+    agents = AgentRegistry()
+    assert agents.register("alpha", handler, capabilities=["research"]).is_ok()
+
+    unrestricted = agents.route("research", "unrestricted")
+    valid_list = agents.route(
+        "research",
+        "valid-list",
+        allowed_agent_ids=["alpha"],
+    )
+    empty_allowlist = agents.route("research", "empty", allowed_agent_ids=())
+    invalid_policies = (
+        "alpha",
+        b"alpha",
+        ("",),
+        ("alpha", "alpha"),
+        tuple(f"agent-{index}" for index in range(65)),
+        (["secret"],),
+        object(),
+    )
+    invalid_results = [
+        agents.route("research", "invalid", allowed_agent_ids=policy)
+        for policy in invalid_policies
+    ]
+
+    assert unrestricted.is_ok()
+    assert valid_list.is_ok()
+    assert empty_allowlist.is_err()
+    assert empty_allowlist.unwrap_err()["errorType"] == "AGENT_ROUTE_NOT_FOUND"
+    assert all(result.is_err() for result in invalid_results)
+    assert all(
+        result.unwrap_err()["errorType"] == "AGENT_ALLOWLIST_INVALID"
+        for result in invalid_results
+    )
+    assert all("secret" not in str(result.unwrap_err()) for result in invalid_results)
+    assert calls == ["unrestricted", "valid-list"]
+
+
 def test_run_server_resolves_distinct_principals_before_agent_routes():
     calls = []
     resolver_calls = []
