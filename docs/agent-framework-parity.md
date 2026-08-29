@@ -314,7 +314,9 @@ backend. Percentile histograms and remote aggregation remain deferred.
 `HttpEventExporter` is an optional synchronous, dependency-free best-effort
 HTTP sink for already-redacted events. It bounds event/response bytes, applies
 finite timeouts, requires HTTPS for non-loopback endpoints, and performs no
-retry or persistence. A host can configure `RunServer(event_stream=...)` and
+retry or persistence. Its stdlib opener permits only HTTP(S), rejects
+cross-origin and HTTPS-downgrade redirects, and never follows URL credentials.
+A host can configure `RunServer(event_stream=...)` and
 use `RunClient.publish_event(...)` or `publish_events(...)`, or point the
 exporter at `POST /v1/events`;
 the receiver assigns local sequence/timestamp values and re-applies the stream

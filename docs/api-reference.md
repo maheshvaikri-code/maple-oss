@@ -1763,8 +1763,10 @@ for event in events.snapshot().unwrap():
 `HttpEventExporter` is synchronous and performs one POST per event. It requires
 a finite timeout, bounds event/response bytes, sends optional bearer auth only
 in a header, requires HTTPS for non-loopback endpoints, and performs no retry
-or persistence. `HttpEventBatchSender` performs one bounded POST to an existing
-batch endpoint and parses a complete indexed acknowledgement. Use a host-owned
+or persistence. Requests use only explicit HTTP(S) handlers; redirects must
+remain on the original origin, cannot introduce URL credentials, and cannot
+downgrade an HTTPS endpoint. `HttpEventBatchSender` performs one bounded POST to
+an existing batch endpoint and parses a complete indexed acknowledgement. Use a host-owned
 queue or an explicit `EventForwarder` when the collector may block:
 
 ```python

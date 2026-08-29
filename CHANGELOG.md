@@ -46,6 +46,12 @@
   providers, network adapters, retries, and exactly-once effects remain
   host-owned or outside this contract.
 
+- **Restricted host-owned HTTP transport**: event, approval, human-input, and
+  workflow clients now open requests through an HTTP(S)-only stdlib opener
+  that rejects file/custom schemes, cross-origin redirects, credentialed
+  redirect targets, and HTTPS downgrade redirects while preserving bounded
+  timeouts and existing typed failure handling.
+
 - **Durable local lexical retrieval**: `FileLexicalRetriever` persists
   validated source documents in a bounded versioned JSON file, rebuilds the
   deterministic lexical index after restart, refreshes across instances, and
