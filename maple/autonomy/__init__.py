@@ -171,11 +171,12 @@ from .replay import (
     InMemoryExecutionJournal,
 )
 from .retrieval import (
+    DEFAULT_MAX_RETRIEVAL_TOOL_OUTPUT_BYTES,
+    DEFAULT_MAX_RETRIEVAL_TOOL_RESULTS,
+    AsyncDocumentConnector,
     AsyncEmbeddingProvider,
     ChunkingPolicy,
     ConnectorIngestReport,
-    DEFAULT_MAX_RETRIEVAL_TOOL_OUTPUT_BYTES,
-    DEFAULT_MAX_RETRIEVAL_TOOL_RESULTS,
     Document,
     DocumentBatch,
     DocumentChunk,
@@ -203,6 +204,7 @@ from .retrieval import (
     create_retrieval_tool,
     create_vector_retrieval_tool,
     ingest_documents,
+    ingest_documents_async,
     rerank_hits,
 )
 from .runs import (
@@ -304,6 +306,7 @@ __all__ = [
     "ExecutionExecutor",
     "ExecutionPolicy",
     "TrustedLocalExecutor",
+    "AsyncDocumentConnector",
     "AsyncEmbeddingProvider",
     "ChunkingPolicy",
     "ConnectorIngestReport",
@@ -335,6 +338,7 @@ __all__ = [
     "create_async_vector_retrieval_tool",
     "create_retrieval_tool",
     "create_vector_retrieval_tool",
+    "ingest_documents_async",
     "ingest_documents",
     "rerank_hits",
     "DEFAULT_MAX_RUN_BYTES",

@@ -14,6 +14,7 @@ from collections import Counter, defaultdict, deque
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import (
+    TYPE_CHECKING,
     Any,
     Awaitable,
     Callable,
@@ -26,7 +27,6 @@ from typing import (
     Sequence,
     Set,
     Tuple,
-    TYPE_CHECKING,
     Union,
     cast,
 )
@@ -236,6 +236,15 @@ class DocumentConnector(Protocol):
         self, cursor: Optional[str], *, limit: int
     ) -> Result[DocumentBatch, Error]:
         """Return one page and an optional opaque continuation cursor."""
+
+
+class AsyncDocumentConnector(Protocol):
+    """Async host-owned cursor source for bounded document pages."""
+
+    async def fetch(
+        self, cursor: Optional[str], *, limit: int
+    ) -> Result[DocumentBatch, Error]:
+        """Await one page and return an optional opaque continuation cursor."""
 
 
 class DocumentIngestor(Protocol):
@@ -940,6 +949,12 @@ def _tokens(value: str) -> List[str]:
     return [token.casefold() for token in _TOKEN_PATTERN.findall(value)]
 
 
+async def _run_in_default_executor(callback: Callable[..., Any], *args: Any) -> Any:
+    """Run one synchronous host callback without blocking the event loop."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, lambda: callback(*args))
+
+
 def ingest_documents(
     connector: DocumentConnector,
     sink: DocumentIngestor,
@@ -1253,6 +1268,348 @@ def ingest_documents(
             documents_ingested += 1
         batches_fetched += 1
         checkpoint_error = persist_checkpoint(batch.next_cursor)
+        if checkpoint_error is not None:
+            return Result.err(checkpoint_error)
+        if batch.next_cursor is None:
+            return Result.ok(
+                ConnectorIngestReport(
+                    documents_ingested=documents_ingested,
+                    batches_fetched=batches_fetched,
+                    next_cursor=None,
+                    complete=True,
+                )
+            )
+        current_cursor = batch.next_cursor
+
+    return Result.ok(
+        ConnectorIngestReport(
+            documents_ingested=documents_ingested,
+            batches_fetched=batches_fetched,
+            next_cursor=current_cursor,
+            complete=False,
+        )
+    )
+
+
+async def ingest_documents_async(
+    connector: AsyncDocumentConnector,
+    sink: DocumentIngestor,
+    *,
+    cursor: Optional[str] = None,
+    batch_size: int = _MAX_CONNECTOR_BATCH_SIZE,
+    max_documents: int = 1_000,
+    max_batches: int = _MAX_CONNECTOR_BATCHES,
+    checkpoint_store: Optional[DocumentCursorCheckpointStore] = None,
+    rate_limiter: Optional[DocumentConnectorRateLimiter] = None,
+) -> Result[ConnectorIngestReport, Error]:
+    """Ingest bounded async connector pages into an explicit host-owned sink.
+
+    Connector fetches are awaited one page at a time. Existing synchronous
+    sink, checkpoint, and rate-limiter callbacks run in the default executor
+    so they do not block the event loop. Page checkpoints are saved only after
+    every document in that page is accepted. Cancellation propagates at async
+    boundaries; a synchronous host effect already started in the executor may
+    finish after cancellation, so hosts retain at-least-once responsibility.
+    """
+    if (
+        not isinstance(batch_size, int)
+        or isinstance(batch_size, bool)
+        or not 0 < batch_size <= _MAX_CONNECTOR_BATCH_SIZE
+    ):
+        return Result.err(
+            _error(
+                "RETRIEVAL_CONNECTOR_LIMIT",
+                "batch_size must be between 1 and 100.",
+            )
+        )
+    if (
+        not isinstance(max_documents, int)
+        or isinstance(max_documents, bool)
+        or not 0 < max_documents <= _MAX_CONNECTOR_DOCUMENTS
+    ):
+        return Result.err(
+            _error(
+                "RETRIEVAL_CONNECTOR_LIMIT",
+                "max_documents must be between 1 and 10000.",
+            )
+        )
+    if (
+        not isinstance(max_batches, int)
+        or isinstance(max_batches, bool)
+        or not 0 < max_batches <= _MAX_CONNECTOR_BATCHES
+    ):
+        return Result.err(
+            _error(
+                "RETRIEVAL_CONNECTOR_LIMIT",
+                "max_batches must be between 1 and 100.",
+            )
+        )
+    if cursor is not None and _validate_identifier(cursor, "cursor") is not None:
+        return Result.err(
+            _error("RETRIEVAL_CONNECTOR_INVALID", "cursor must be a bounded string.")
+        )
+    if checkpoint_store is not None and cursor is not None:
+        return Result.err(
+            _error(
+                "RETRIEVAL_CHECKPOINT_INPUT_INVALID",
+                "cursor cannot be combined with checkpoint_store.",
+            )
+        )
+    fetch = getattr(connector, "fetch", None)
+    add_document = getattr(sink, "add_document", None)
+    if not callable(fetch):
+        return Result.err(
+            _error("RETRIEVAL_CONNECTOR_INVALID", "connector must expose fetch(...).")
+        )
+    if not callable(add_document):
+        return Result.err(
+            _error("RETRIEVAL_SINK_INVALID", "sink must expose add_document(...).")
+        )
+    allow_rate = None
+    if rate_limiter is not None:
+        allow_rate = getattr(rate_limiter, "allow", None)
+        if not callable(allow_rate):
+            return Result.err(
+                _error(
+                    "RETRIEVAL_CONNECTOR_RATE_LIMITER_INVALID",
+                    "rate_limiter must expose allow(...).",
+                )
+            )
+    allow_rate_method = cast(Callable[[], Any], allow_rate)
+
+    checkpoint_revision = 0
+    if checkpoint_store is not None:
+        load_checkpoint = getattr(checkpoint_store, "load", None)
+        save_checkpoint = getattr(checkpoint_store, "save", None)
+        if not callable(load_checkpoint) or not callable(save_checkpoint):
+            return Result.err(
+                _error(
+                    "RETRIEVAL_CHECKPOINT_INVALID",
+                    "checkpoint_store must expose load(...) and save(...).",
+                )
+            )
+        load_checkpoint_method = cast(Callable[[], Any], load_checkpoint)
+        save_checkpoint_method = cast(Callable[..., Any], save_checkpoint)
+        try:
+            loaded_result = await _run_in_default_executor(load_checkpoint_method)
+        except Exception:
+            return Result.err(
+                _error(
+                    "RETRIEVAL_CHECKPOINT_LOAD_ERROR",
+                    "retrieval checkpoint could not be loaded.",
+                )
+            )
+        if not isinstance(loaded_result, Result) or loaded_result.is_err():
+            return Result.err(
+                _error(
+                    "RETRIEVAL_CHECKPOINT_LOAD_ERROR",
+                    "retrieval checkpoint could not be loaded.",
+                )
+            )
+        loaded_checkpoint = loaded_result.unwrap()
+        if not isinstance(loaded_checkpoint, DocumentCursorCheckpoint):
+            return Result.err(
+                _error(
+                    "RETRIEVAL_CHECKPOINT_LOAD_ERROR",
+                    "retrieval checkpoint record is invalid.",
+                )
+            )
+        checkpoint_error = loaded_checkpoint.validate()
+        if checkpoint_error is not None:
+            return Result.err(
+                _error(
+                    "RETRIEVAL_CHECKPOINT_LOAD_ERROR",
+                    "retrieval checkpoint record is invalid.",
+                )
+            )
+        if loaded_checkpoint.complete:
+            return Result.ok(
+                ConnectorIngestReport(
+                    documents_ingested=0,
+                    batches_fetched=0,
+                    next_cursor=None,
+                    complete=True,
+                )
+            )
+        current_cursor = loaded_checkpoint.cursor
+        checkpoint_revision = loaded_checkpoint.revision
+    else:
+        current_cursor = cursor
+
+    async def persist_checkpoint(next_cursor: Optional[str]) -> Optional[Error]:
+        nonlocal checkpoint_revision
+        if checkpoint_store is None:
+            return None
+        checkpoint = DocumentCursorCheckpoint(
+            cursor=next_cursor,
+            complete=next_cursor is None,
+            revision=checkpoint_revision + 1,
+        )
+        try:
+            saved_result = await _run_in_default_executor(
+                save_checkpoint_method, checkpoint
+            )
+        except Exception:
+            return _error(
+                "RETRIEVAL_CHECKPOINT_SAVE_ERROR",
+                "retrieval checkpoint could not be saved.",
+            )
+        if (
+            not isinstance(saved_result, Result)
+            or saved_result.is_err()
+            or saved_result.unwrap() != checkpoint
+        ):
+            return _error(
+                "RETRIEVAL_CHECKPOINT_SAVE_ERROR",
+                "retrieval checkpoint could not be saved.",
+            )
+        checkpoint_revision += 1
+        return None
+
+    documents_ingested = 0
+    batches_fetched = 0
+    seen_document_ids: Set[str] = set()
+    while documents_ingested < max_documents and batches_fetched < max_batches:
+        requested_limit = min(batch_size, max_documents - documents_ingested)
+        if rate_limiter is not None:
+            try:
+                rate_result = await _run_in_default_executor(allow_rate_method)
+            except Exception:
+                return Result.err(
+                    _error(
+                        "RETRIEVAL_CONNECTOR_RATE_LIMITER_ERROR",
+                        "connector rate limiter failed.",
+                        batch_index=batches_fetched,
+                    )
+                )
+            if not isinstance(rate_result, Result):
+                return Result.err(
+                    _error(
+                        "RETRIEVAL_CONNECTOR_RATE_LIMITER_ERROR",
+                        "connector rate limiter returned an invalid result.",
+                        batch_index=batches_fetched,
+                    )
+                )
+            if rate_result.is_err():
+                rate_error = rate_result.unwrap_err()
+                if (
+                    isinstance(rate_error, dict)
+                    and rate_error.get("errorType")
+                    == "RETRIEVAL_CONNECTOR_RATE_LIMITED"
+                ):
+                    retry_after = None
+                    details = rate_error.get("details")
+                    if isinstance(details, dict):
+                        candidate = details.get("retry_after_seconds")
+                        if (
+                            isinstance(candidate, (int, float))
+                            and not isinstance(candidate, bool)
+                            and math.isfinite(float(candidate))
+                            and 0.0 <= float(candidate) <= 86_400.0
+                        ):
+                            retry_after = float(candidate)
+                    return Result.err(
+                        _error(
+                            "RETRIEVAL_CONNECTOR_RATE_LIMITED",
+                            "connector rate limit exceeded.",
+                            batch_index=batches_fetched,
+                            **(
+                                {"retry_after_seconds": retry_after}
+                                if retry_after is not None
+                                else {}
+                            ),
+                        )
+                    )
+                return Result.err(
+                    _error(
+                        "RETRIEVAL_CONNECTOR_RATE_LIMITER_ERROR",
+                        "connector rate limiter returned an error.",
+                        batch_index=batches_fetched,
+                    )
+                )
+            if rate_result.unwrap() is not None:
+                return Result.err(
+                    _error(
+                        "RETRIEVAL_CONNECTOR_RATE_LIMITER_ERROR",
+                        "connector rate limiter returned an invalid value.",
+                        batch_index=batches_fetched,
+                    )
+                )
+        try:
+            batch_result = await fetch(current_cursor, limit=requested_limit)
+        except Exception:
+            return Result.err(
+                _error(
+                    "RETRIEVAL_CONNECTOR_ERROR",
+                    "connector fetch failed.",
+                    batch_index=batches_fetched,
+                )
+            )
+        if not isinstance(batch_result, Result) or batch_result.is_err():
+            return Result.err(
+                _error(
+                    "RETRIEVAL_CONNECTOR_ERROR",
+                    "connector fetch returned an error.",
+                    batch_index=batches_fetched,
+                )
+            )
+        batch = batch_result.unwrap()
+        if not isinstance(batch, DocumentBatch):
+            return Result.err(
+                _error(
+                    "RETRIEVAL_CONNECTOR_INVALID",
+                    "connector must return a DocumentBatch.",
+                    batch_index=batches_fetched,
+                )
+            )
+        batch_error = batch.validate(max_documents=requested_limit)
+        if batch_error is not None:
+            return Result.err(batch_error)
+        if batch.next_cursor is not None and batch.next_cursor == current_cursor:
+            return Result.err(
+                _error(
+                    "RETRIEVAL_CONNECTOR_CURSOR_STALLED",
+                    "connector cursor did not advance.",
+                    batch_index=batches_fetched,
+                )
+            )
+        for index, document in enumerate(batch.documents):
+            if document.document_id in seen_document_ids:
+                return Result.err(
+                    _error(
+                        "RETRIEVAL_CONNECTOR_DUPLICATE_DOCUMENT",
+                        "connector repeated a document ID.",
+                        batch_index=batches_fetched,
+                        document_index=index,
+                    )
+                )
+        for index, document in enumerate(batch.documents):
+            try:
+                sink_result = await _run_in_default_executor(add_document, document)
+            except Exception:
+                return Result.err(
+                    _error(
+                        "RETRIEVAL_SINK_ERROR",
+                        "document sink failed.",
+                        batch_index=batches_fetched,
+                        document_index=index,
+                        documents_ingested=documents_ingested,
+                    )
+                )
+            if not isinstance(sink_result, Result) or sink_result.is_err():
+                return Result.err(
+                    _error(
+                        "RETRIEVAL_SINK_ERROR",
+                        "document sink returned an error.",
+                        batch_index=batches_fetched,
+                        document_index=index,
+                        documents_ingested=documents_ingested,
+                    )
+                )
+            seen_document_ids.add(document.document_id)
+            documents_ingested += 1
+        batches_fetched += 1
+        checkpoint_error = await persist_checkpoint(batch.next_cursor)
         if checkpoint_error is not None:
             return Result.err(checkpoint_error)
         if batch.next_cursor is None:

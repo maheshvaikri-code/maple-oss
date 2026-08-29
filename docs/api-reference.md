@@ -1597,8 +1597,9 @@ default candidate bound is `100`; callback errors, invalid candidate values,
 and non-finite scores fail closed with typed errors.
 
 Hosts can load documents from a file, API, or managed store through the
-provider-neutral connector seam. A connector returns bounded cursor pages, and
-`ingest_documents(...)` sends each validated page to an explicit sink:
+provider-neutral connector seam. A synchronous connector returns bounded cursor
+pages, and `ingest_documents(...)` sends each validated page to an explicit
+sink:
 
 ```python
 from maple import (
@@ -1657,6 +1658,54 @@ fetches in a trailing time window and returns a typed rate-limit error when
 the budget is exhausted. It never sleeps or retries; hosts own backoff and
 remote/provider-specific limits. Custom `DocumentConnectorRateLimiter`
 implementations must return `Result.ok(None)` to admit a fetch.
+
+### Async document ingestion
+
+For an async source, implement `AsyncDocumentConnector` and call
+`ingest_documents_async()`. It awaits one connector page at a time and reuses
+the same bounds, document validation, cursor progression, duplicate-ID checks,
+redacted errors, checkpoint semantics, and optional rate limiter as the
+synchronous helper:
+
+```python
+from maple import (
+    AsyncDocumentConnector,
+    Document,
+    DocumentBatch,
+    InMemoryLexicalRetriever,
+    SourceRef,
+    ingest_documents_async,
+)
+from maple.core.result import Result
+
+
+class AsyncConnector:
+    async def fetch(self, cursor, *, limit):
+        document = Document(
+            "async-doc-1",
+            "document loaded by an async host connector",
+            SourceRef(uri="memory://async-doc-1"),
+        )
+        return Result.ok(DocumentBatch((document,), None))
+
+
+async def load_documents():
+    sink = InMemoryLexicalRetriever()
+    report = await ingest_documents_async(AsyncConnector(), sink)
+    return report
+```
+
+`AsyncDocumentConnector.fetch()` must return an awaitable producing
+`Result[DocumentBatch, Error]`. Connector pages are processed sequentially;
+there is no prefetch or retry. The sink, checkpoint store, and rate limiter
+remain their existing synchronous host-owned protocols, and MAPLE dispatches
+those callbacks through the event loop's default executor. A checkpoint is
+saved only after all documents in a page are accepted, so restart delivery is
+explicitly at-least-once. Normal `asyncio` task cancellation propagates; a
+synchronous host effect already started in the executor may finish after
+cancellation. Async sink/checkpoint/rate-limiter protocols, managed connectors,
+network access, transactions, rollback, and exactly-once effects are outside
+this contract.
 
 ## Event Streaming and Redaction (preview)
 

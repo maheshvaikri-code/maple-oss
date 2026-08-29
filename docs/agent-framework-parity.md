@@ -487,6 +487,16 @@ fencing boundary. This closes local vector restart persistence only; embedding
 generation, managed vector stores, remote ingestion transactions, and
 distributed index coordination remain separate contracts.
 
+The local retrieval parity surface also includes `AsyncDocumentConnector` and
+`ingest_documents_async()`. Async connector fetches are awaited sequentially;
+existing synchronous sink, checkpoint, and rate-limiter callbacks are
+dispatched through the default executor. Validation happens before sink
+mutation and checkpoints are saved only after a complete page, so the boundary
+remains explicitly at-least-once. Task cancellation propagates at async
+boundaries; hosts own idempotency for any synchronous effect already running
+in the executor. Async sinks, managed connectors, retries, distributed
+coordination, and exactly-once effects remain separate contracts.
+
 ## Official reference documentation
 
 These links were consulted on 2026-08-25 and should be rechecked before a

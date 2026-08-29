@@ -8,16 +8,17 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 
 from maple.autonomy.retrieval import (
-    AsyncEmbeddingProvider,
-    ChunkingPolicy,
     DEFAULT_MAX_RETRIEVAL_TOOL_OUTPUT_BYTES,
     DEFAULT_MAX_RETRIEVAL_TOOL_RESULTS,
+    AsyncDocumentConnector,
+    AsyncEmbeddingProvider,
+    ChunkingPolicy,
     Document,
     DocumentBatch,
     DocumentCursorCheckpoint,
+    FileDocumentCursorCheckpointStore,
     FileLexicalRetriever,
     FileVectorRetriever,
-    FileDocumentCursorCheckpointStore,
     InMemoryDocumentConnectorRateLimiter,
     InMemoryDocumentCursorCheckpointStore,
     InMemoryLexicalRetriever,
@@ -30,6 +31,7 @@ from maple.autonomy.retrieval import (
     create_retrieval_tool,
     create_vector_retrieval_tool,
     ingest_documents,
+    ingest_documents_async,
     rerank_hits,
 )
 from maple.core.result import Result
@@ -402,6 +404,191 @@ def test_document_connector_rejects_repeated_ids_before_second_sink_write():
     assert first.unwrap_err()["errorType"] == "RETRIEVAL_CONNECTOR_DUPLICATE_DOCUMENT"
     assert calls == [None, "next"]
     assert sink.stats()["documents"] == 1
+
+
+@pytest.mark.asyncio
+async def test_async_document_connector_ingests_cursor_pages_without_blocking_sink():
+    pages = {
+        None: DocumentBatch((make_document("async-doc-a"),), "cursor-1"),
+        "cursor-1": DocumentBatch((make_document("async-doc-b"),), None),
+    }
+    calls = []
+    sink_calls = []
+    event_loop_thread = threading.get_ident()
+
+    class Connector:
+        async def fetch(self, cursor, *, limit):
+            calls.append((cursor, limit))
+            await asyncio.sleep(0)
+            return Result.ok(pages[cursor])
+
+    class Sink:
+        def add_document(self, document):
+            sink_calls.append((document.document_id, threading.get_ident()))
+            return Result.ok([])
+
+    result = await ingest_documents_async(
+        Connector(), Sink(), batch_size=1, max_documents=10
+    )
+
+    assert result.is_ok()
+    assert result.unwrap().to_dict() == {
+        "documents_ingested": 2,
+        "batches_fetched": 2,
+        "next_cursor": None,
+        "complete": True,
+    }
+    assert calls == [(None, 1), ("cursor-1", 1)]
+    assert [document_id for document_id, _ in sink_calls] == [
+        "async-doc-a",
+        "async-doc-b",
+    ]
+    assert all(thread_id != event_loop_thread for _, thread_id in sink_calls)
+
+
+@pytest.mark.asyncio
+async def test_async_document_connector_runs_sync_callbacks_in_default_executor():
+    event_loop_thread = threading.get_ident()
+    callback_threads = []
+    saved = []
+
+    class Connector:
+        async def fetch(self, cursor, *, limit):
+            document_id = "async-callback-a" if cursor is None else "async-callback-b"
+            next_cursor = "next" if cursor is None else None
+            return Result.ok(DocumentBatch((make_document(document_id),), next_cursor))
+
+    class Sink:
+        def add_document(self, document):
+            callback_threads.append(threading.get_ident())
+            return Result.ok([])
+
+    class Checkpoint:
+        def load(self):
+            callback_threads.append(threading.get_ident())
+            return Result.ok(DocumentCursorCheckpoint())
+
+        def save(self, checkpoint):
+            callback_threads.append(threading.get_ident())
+            saved.append(checkpoint)
+            return Result.ok(checkpoint)
+
+    class Limiter:
+        def allow(self):
+            callback_threads.append(threading.get_ident())
+            return Result.ok(None)
+
+    result = await ingest_documents_async(
+        Connector(),
+        Sink(),
+        checkpoint_store=Checkpoint(),
+        rate_limiter=Limiter(),
+    )
+
+    assert result.is_ok()
+    assert result.unwrap().complete is True
+    assert [checkpoint.revision for checkpoint in saved] == [1, 2]
+    assert [checkpoint.cursor for checkpoint in saved] == ["next", None]
+    assert callback_threads
+    assert all(thread_id != event_loop_thread for thread_id in callback_threads)
+
+
+@pytest.mark.asyncio
+async def test_async_document_connector_rejects_over_limit_page_without_sink_mutation():
+    page = DocumentBatch(
+        (make_document("async-doc-a"), make_document("async-doc-b")), "next"
+    )
+    sink_calls = []
+
+    class Connector:
+        async def fetch(self, cursor, *, limit):
+            assert cursor is None
+            assert limit == 1
+            return Result.ok(page)
+
+    class Sink:
+        def add_document(self, document):
+            sink_calls.append(document.document_id)
+            return Result.ok([])
+
+    result = await ingest_documents_async(Connector(), Sink(), max_documents=1)
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "RETRIEVAL_CONNECTOR_LIMIT"
+    assert sink_calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["raises", "non_result", "error_result"])
+async def test_async_document_connector_redacts_connector_failures(mode):
+    class Connector:
+        async def fetch(self, cursor, *, limit):
+            if mode == "raises":
+                raise RuntimeError("private async connector path")
+            if mode == "non_result":
+                return {"private": "async payload"}
+            return Result.err(
+                {"errorType": "PRIVATE_ASYNC_CONNECTOR", "message": "secret"}
+            )
+
+    result = await ingest_documents_async(Connector(), InMemoryLexicalRetriever())
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "RETRIEVAL_CONNECTOR_ERROR"
+    assert "private async connector path" not in str(result.unwrap_err())
+    assert "async payload" not in str(result.unwrap_err())
+    assert "secret" not in str(result.unwrap_err())
+
+
+@pytest.mark.asyncio
+async def test_async_document_connector_redacts_sink_failure():
+    class Connector:
+        async def fetch(self, cursor, *, limit):
+            return Result.ok(DocumentBatch((make_document("async-sink"),), None))
+
+    class Sink:
+        def add_document(self, document):
+            raise RuntimeError("private async sink path")
+
+    result = await ingest_documents_async(Connector(), Sink())
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "RETRIEVAL_SINK_ERROR"
+    assert "private async sink path" not in str(result.unwrap_err())
+
+
+@pytest.mark.asyncio
+async def test_async_document_connector_preserves_task_cancellation():
+    started = asyncio.Event()
+    release = asyncio.Event()
+    sink_calls = []
+
+    class Connector:
+        async def fetch(self, cursor, *, limit):
+            started.set()
+            await release.wait()
+            return Result.ok(DocumentBatch((make_document("cancelled"),), None))
+
+    class Sink:
+        def add_document(self, document):
+            sink_calls.append(document.document_id)
+            return Result.ok([])
+
+    task = asyncio.create_task(ingest_documents_async(Connector(), Sink()))
+    await asyncio.wait_for(started.wait(), timeout=1.0)
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert sink_calls == []
+
+
+def test_async_document_connector_is_publicly_exported():
+    from maple import AsyncDocumentConnector as public_connector
+    from maple import ingest_documents_async as public_ingest
+
+    assert public_connector is AsyncDocumentConnector
+    assert public_ingest is ingest_documents_async
 
 
 def test_retriever_returns_ranked_hits_with_citations():

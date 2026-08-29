@@ -1,7 +1,7 @@
 # Slice 211 implementation plan - asynchronous document ingestion
 
 **Class:** L
-**Status:** G0/G1 approved; implementation in progress
+**Status:** G0/G1/G2/G3 implementation and documentation complete; G4/G5/G6 in progress
 **Brief:** `docs/briefs/maple-agent-runtime-slice211.md`
 **ADR:** `docs/adr/155-async-document-ingestion.md`
 
@@ -11,8 +11,8 @@
 | --- | --- | --- |
 | G0 | Define the async retrieval parity problem, bounded acceptance criteria, non-goals, and contract questions. | Slice brief; human confirmed 2026-08-29. |
 | G1 | Decide public protocol shape, executor ownership, cancellation, checkpoint, and at-least-once semantics. | ADR-155 accepted; human approved 2026-08-29. |
-| G2 | Implement the approved design; preserve synchronous ingestion and add focused async regressions. | Planned code/tests in `maple/autonomy/retrieval.py` and `tests/autonomy/test_retrieval.py`. |
-| G3 | Export and document the additive contract; do not add providers, network clients, or hosted behavior. | Planned `maple.autonomy`, `maple`, API/README/parity/changelog updates. |
+| G2 | Implement the approved design; preserve synchronous ingestion and add focused async regressions. | `maple/autonomy/retrieval.py`; `tests/autonomy/test_retrieval.py`; focused suite `82 passed in 11.38s`. |
+| G3 | Export and document the additive contract; do not add providers, network clients, or hosted behavior. | `maple.autonomy`, `maple`, API/README/parity/changelog updates committed with the implementation. |
 | G4 | Review event-loop blocking, cancellation, duplicate delivery, bounds, error disclosure, and unrelated diff scope. | Planned review report. |
 | G5 | Run focused/full tests, static checks, project audit, and clean archive smoke. | Planned QA/security report. |
 | G6 | Reconcile release readiness only; no version bump, tag, publication, cloud, or website action. | Planned release-plan evidence. |
@@ -66,8 +66,9 @@ within the stated non-goals.
 ## Status snapshot
 
 Done (with evidence): Slice 210 locally closed; Slice 211 brief and ADR
-approved, implementation plan reconciled. Next: implement and test the async
-ingestion helper. Blocked on: none within the approved Slice 211 scope.
+approved; the async ingestion helper, focused regressions, exports, and public
+documentation are complete. Next: review, full QA/security, and release
+reconciliation. Blocked on: none within the approved Slice 211 scope.
 
 ## Pre-implementation package revalidation
 

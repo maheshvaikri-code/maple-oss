@@ -36,6 +36,16 @@
   explicitly async-only; provider/model selection, retries, corpus
   authorization, managed stores, and network retrieval remain host-owned.
 
+- **Async bounded document ingestion**: `AsyncDocumentConnector` and
+  `ingest_documents_async()` provide one-page-at-a-time async connector
+  ingestion while reusing bounded document/cursor validation, duplicate-ID and
+  stalled-cursor checks, checkpointing, rate limits, sink errors, and
+  redaction. Existing synchronous sink, checkpoint, and rate-limiter callbacks
+  run in the default executor; page checkpoints remain explicitly
+  at-least-once, normal task cancellation propagates, and async sinks,
+  providers, network adapters, retries, and exactly-once effects remain
+  host-owned or outside this contract.
+
 - **Durable local lexical retrieval**: `FileLexicalRetriever` persists
   validated source documents in a bounded versioned JSON file, rebuilds the
   deterministic lexical index after restart, refreshes across instances, and
