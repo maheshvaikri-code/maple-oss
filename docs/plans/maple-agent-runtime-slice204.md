@@ -45,7 +45,7 @@ provide an isolation boundary.
 
 Done: G0/G1/G2 brief, ADR, implementation, docs, tests, local review, and QA
 evidence filed.
-Next: package smoke and release-audit closure.
+Next: human release-gate decisions and eventual v1.1.4 version promotion.
 Blocked on: no blocker for this local trusted slice; Slice 199 isolation,
 Slice 193 hosted coordination, Slice 200 CI policy, and publication remain
 separate human-gated work.
