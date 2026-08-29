@@ -1,6 +1,6 @@
 # Slice 186 plan — authenticated remote task-queue control plane
 
-**Status:** in progress
+**Status:** complete
 **Date:** 2026-08-28
 
 ## Design
@@ -18,10 +18,10 @@
 
 ## Verification and release evidence
 
-- [ ] Run focused autonomy/server and task-management regressions.
-- [ ] Run changed-boundary formatting, lint, type, compile, and security checks.
-- [ ] Run the full workspace regression.
-- [ ] Update API/README/parity/changelog and fresh review/QA evidence.
-- [ ] Build and package-smoke-test the current source tree.
-- [ ] Rebuild a clean source archive and package-smoke-test it after the implementation/evidence commit.
+- [x] Run focused autonomy/server and task-management regressions.
+- [x] Run changed-boundary formatting, lint, type, compile, and security checks.
+- [x] Run the full workspace regression.
+- [x] Update API/README/parity/changelog and fresh review/QA evidence.
+- [x] Build and package-smoke-test the current source tree.
+- [x] Rebuild a clean source archive and package-smoke-test it after the implementation/evidence commit.
 - [x] Keep publication, cloud, and website actions out of scope.
