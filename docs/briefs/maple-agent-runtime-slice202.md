@@ -62,6 +62,15 @@ surfaces.
    and clean package smoke are green without a new dependency or external
    publication.
 
+## Direct-library correction completed
+
+The non-transport portion of criterion 7 is complete at `325d04e`. Both
+built-in stores now distinguish an omitted target (`None`, which generates a
+bounded ID) from an explicitly empty target (`""`, which returns
+`INVALID_IDENTIFIER`). The regression proves that the invalid call does not
+consume the configured session capacity or create a branch. The authenticated
+HTTP routes, scopes, and session-content responses remain human-gated.
+
 ## Constraints
 
 - Preserve the existing loopback-only `RunServer` boundary and dependency-free

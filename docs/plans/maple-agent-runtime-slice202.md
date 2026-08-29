@@ -8,7 +8,7 @@
 
 | # | Slice | Role | Files touched | Proven by (tests) | Status |
 |---|---|---|---|---|---|
-| 1 | Contract and direct-library boundary | Chief Architect / Backend / Interop | `maple/autonomy/sessions.py`, session regressions, ADR/brief | empty-target rejection, typed IDs/versions, no mutation | gated |
+| 1 | Contract and direct-library boundary | Chief Architect / Backend / Interop | `maple/autonomy/sessions.py`, session regressions, ADR/brief | empty-target rejection, typed IDs/versions, no mutation | complete for direct-library correction (`325d04e`); transport remains gated |
 | 2 | Authenticated server/client transport | Backend / Interop / Security | `maple/autonomy/server.py`, server regressions, exports | authenticated tip/history/fork routes, scope isolation, bounded JSON, 501/503 mapping | gated |
 | 3 | Public docs and release evidence | Tech Writer / Code Reviewer / QA / Security / Release | README/API/parity/changelog, review/QA/release artifacts | runnable examples, full suite, static/security checks, package smoke | gated |
 
@@ -41,6 +41,9 @@ and fail-closed typed errors contain the local blast radius.
 
 ## Status snapshot
 
-G0 brief and proposed G1/G2 design are written. Implementation is paused at the
-Doctrine §5 public-API escalation pending human approval. No code, dependency,
-publication, cloud, or website action has been taken for Slice 202.
+G0 brief and proposed G1/G2 design are written. The direct-library contract
+correction is complete at `325d04e`: an explicit empty target is rejected in
+both built-in stores before mutation, with focused regression coverage. The
+authenticated transport remains paused at the Doctrine §5 public-API
+escalation pending human approval. No dependency, publication, cloud, or
+website action has been taken for Slice 202.
