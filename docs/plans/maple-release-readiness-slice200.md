@@ -20,6 +20,26 @@ notices. Failure modes include green local checks with a red CI job, an
 undocumented blanket lint suppression, unreviewed copyright text, and a
 release claim based on a workflow that was never executed successfully.
 
+## Current package smoke
+
+Clean committed candidate `76de1f7` rebuilt and installed without the dirty
+workspace files:
+
+```text
+source_archive_entries=935
+wheel_entries=108
+sdist_entries=849
+build_exit=0
+twine_exit=0
+install_exit=0
+import_ok
+doctor_exit=0
+doctor_network=false
+doctor_ready=true
+wheel_sha256=c1ef5e00c4ff14a00fa4651dddf83be6c89ad4ed287a3d2e3d06667220cc1385
+sdist_sha256=56197ed1329eca1caa8277621f6d3d5d9cd0208a1afc23aab147a1fcee9c7b4d
+```
+
 ## Rollback
 
 The safe rollback is to revert only the follow-up workflow/source policy
