@@ -1,7 +1,7 @@
 # ADR-133: Owner-safe remote task cancellation
 
 **Status:** Proposed
-**Date:** 2026-08-28
+**Date:** 2026-08-29
 **Decision owners:** Chief Architect / Backend / Security / QA
 
 ## Context
