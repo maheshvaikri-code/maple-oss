@@ -8,7 +8,7 @@
 |---|-------|------|---------------|-------------------|--------|
 | 1 | Normalize route allowlist inputs | Backend / Security | maple/autonomy/server.py | Typed invalid-policy errors; valid/None compatibility | complete: implementation checkpoint |
 | 2 | Add malformed-policy and no-handler regressions | QA / Security | tests/autonomy/test_server.py | Strings, duplicates, overflow, unhashable values, empty allowlist | complete: 55 focused; 1725 full passed, 1 skipped |
-| 3 | Review, public records, and package evidence | Tech Writer / Release | QA/review/release artifacts | Full/static/clean archive/package checks | in progress: implementation review and public docs |
+| 3 | Review, public records, and package evidence | Tech Writer / Release | QA/review/release artifacts | Full/static/clean archive/package checks | complete: `0644d9f`; clean 1608 passed, 1 skipped; wheel 107; sdist 767 |
 
 ## Threat sketch
 
@@ -23,6 +23,6 @@ None, valid tuples, and empty tuples.
 
 ## Status snapshot
 
-Done (with evidence): design brief and ADR, route-policy normalization, and
-malformed-input regressions. Next: public records and clean package evidence.
-Blocked on: none.
+Done (with evidence): design brief and ADR, route-policy normalization,
+malformed-input regressions, public records, review, and clean package gate at
+`0644d9f`. Blocked on: none.
