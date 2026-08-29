@@ -13,7 +13,7 @@ publication.
 | Shared-instance fencing | Two retrievers mutate one directory concurrently | Pass |
 | External refresh and query bounds | Fresh search/stats reload the durable source; query limits remain typed | Pass |
 | Input and storage redaction | Non-JSON metadata and raised storage failure tests | Pass |
-| Focused retrieval regression | `python -m pytest -q tests/autonomy/test_retrieval.py` | `35 passed in 4.92s` |
+| Focused retrieval regression | `python -m pytest -q tests/autonomy/test_retrieval.py` | `35 passed in 4.50s` |
 | Repository regression | `python -m pytest -q --no-cov` | `1838 passed, 1 skipped in 372.71s` |
 | Static quality | Black, Ruff, mypy, compileall | All pass |
 | Dependency audit | `python -m pip_audit --strict .` | No known vulnerabilities found |

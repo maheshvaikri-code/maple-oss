@@ -47,7 +47,8 @@ network or executable deserialization.
 
 G0 brief and G1 ADR are filed. Implementation, public surface, review, QA, and
 package evidence are complete locally. The implementation commits are
-`b9843d7` and bounded-read hardening `5135877`;
+`b9843d7` and bounded-read hardening `5135877`; evidence is filed in
+`1a817f2`;
 the clean archive smoke reports `1838 passed, 1 skipped`, source archive `960`,
 wheel `109`, sdist `874`, build/Twine/install/import/doctor exit `0`, and
 network-free doctor readiness. This slice is intentionally local-only and does
