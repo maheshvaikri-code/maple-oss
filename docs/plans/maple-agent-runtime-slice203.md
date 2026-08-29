@@ -6,9 +6,9 @@
 
 | Slice | Role | Scope | Status |
 |---|---|---|---|
-| 1 | Backend | Change native run-ID fallback from truthiness to `None` omission semantics in workflow and durable-agent start paths | complete in working tree; commit/evidence pending |
-| 2 | QA / Code Reviewer / Security | Run focused and full regression, static/type/compile/security checks, and review the bounded diff | pending |
-| 3 | Release | Run clean tracked-archive package smoke and update the release ledger without publishing | pending |
+| 1 | Backend | Change native run-ID fallback from truthiness to `None` omission semantics in workflow and durable-agent start paths | complete: `742661a` |
+| 2 | QA / Code Reviewer / Security | Run focused and full regression, static/type/compile/security checks, and review the bounded diff | complete: `docs/reviews/maple-agent-runtime-slice203.md`, `docs/qa/maple-agent-runtime-slice203.md` |
+| 3 | Release | Run clean tracked-archive package smoke and update the release ledger without publishing | complete locally: `d7834d1`; package remains unpublished |
 
 ## Invariants
 

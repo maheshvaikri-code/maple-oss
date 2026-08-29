@@ -36,4 +36,4 @@ surface. It requires no human escalation under the Doctrine §5 public-API gate.
 The authenticated session routes in Slice 202 remain separately gated because
 they add routes, scopes, and session-content exposure.
 
-**Status:** implementation in progress; evidence is filed after verification.
+**Status:** verified and closed locally; publication and website actions remain deferred.
