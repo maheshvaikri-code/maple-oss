@@ -1,8 +1,8 @@
 # ADR-155: Asynchronous document ingestion boundary
 
-**Status:** Proposed - awaiting human approval for a new public contract
+**Status:** Accepted for Slice 211 implementation
 **Date:** 2026-08-29
-**Deciders:** Chief Architect / Backend / Security / QA / Release; human approval required
+**Deciders:** Chief Architect / Backend / Security / QA / Release; human approved 2026-08-29
 
 ## Context
 
@@ -14,7 +14,7 @@ an async agent loop while adapting a source. The design must preserve the
 existing page-level at-least-once semantics and must not imply network,
 managed-store, authorization, or exactly-once behavior.
 
-## Proposed decision
+## Decision
 
 We propose adding an `AsyncDocumentConnector` protocol with
 `async fetch(cursor, *, limit) -> Result[DocumentBatch, Error]` and an
@@ -29,14 +29,15 @@ already started in a host sink would remain subject to the host's idempotency
 policy. No provider, network, managed store, authorization, retry, or
 exactly-once contract would be selected by MAPLE.
 
-This proposal is not accepted for implementation until the human confirms the
-new public surface and the executor/cancellation tradeoff.
+The human approved the new public surface and the executor/cancellation
+tradeoff on 2026-08-29. New async sink, checkpoint, and rate-limiter
+counterparts remain outside this slice.
 
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not |
 | --- | --- | --- | --- |
-| Async connector plus executor-backed existing host callbacks (proposed) | Smallest additive surface; reuses proven validation/checkpoint behavior; keeps the event loop responsive | A cancelled executor call cannot undo an already-started host effect; at-least-once/idempotency remains explicit | Recommended only if the human accepts the effect boundary |
+| Async connector plus executor-backed existing host callbacks (chosen) | Smallest additive surface; reuses proven validation/checkpoint behavior; keeps the event loop responsive | A cancelled executor call cannot undo an already-started host effect; at-least-once/idempotency remains explicit | Human approved the effect boundary on 2026-08-29 |
 | Require new async sink, checkpoint, and rate-limiter protocols | Strongest event-loop contract and cancellation visibility | Triples the public surface; duplicates host adapters; requires async implementations for existing local stores | Too broad for the first async ingestion slice |
 | Run synchronous callbacks inline | Simplest implementation and no background effect after cancellation | A large document or file-backed sink can block the event loop | Violates the async runtime responsiveness requirement |
 | Keep async ingestion outside MAPLE | No API or compatibility risk | Every host duplicates cursor safety, redaction, and checkpoint logic; parity gap remains | Does not solve the stated runtime problem |

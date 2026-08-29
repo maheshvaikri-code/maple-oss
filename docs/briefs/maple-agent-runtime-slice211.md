@@ -83,13 +83,14 @@ ledger and is independent of any particular provider or managed store.
 - Page-level checkpointing remains compatible with `ingest_documents()` and
   deliberately preserves its at-least-once recovery semantics.
 
-## Open questions (blocking - answered before G1)
+## Resolved approval decisions
 
-1. Approve the new public `AsyncDocumentConnector` and
-   `ingest_documents_async()` contract for implementation?
-2. Confirm the recommended executor boundary for existing synchronous sink,
-   checkpoint, and rate-limiter callbacks, accepting that cancellation cannot
-   undo a host effect that has already started; alternatively, require new
-   async counterparts before this slice proceeds.
+1. Approved: add the public `AsyncDocumentConnector` and
+   `ingest_documents_async()` contract.
+2. Approved: run existing synchronous sink, checkpoint, and rate-limiter
+   callbacks through the default executor, accepting that cancellation cannot
+   undo a host effect that has already started. New async callback
+   counterparts remain deferred.
 
-**Human confirmed:** no - explicit approval is required under Doctrine §5.
+**Human confirmed:** yes - 2026-08-29; explicit approval recorded in the
+conversation for both decisions above.
