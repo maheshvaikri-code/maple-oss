@@ -871,6 +871,15 @@ class RetrievalBackend(Protocol):
         """Return ranked source-bearing hits."""
 
 
+class _StringQueryRetriever(Protocol):
+    """Minimal private seam shared by lexical and vector tool adapters."""
+
+    def search(
+        self, query: str, *, top_k: int = DEFAULT_MAX_RETRIEVAL_TOOL_RESULTS
+    ) -> Result[List[RetrievalHit], Error]:
+        """Return bounded source-bearing hits for a string query."""
+
+
 def _tokens(value: str) -> List[str]:
     return [token.casefold() for token in _TOKEN_PATTERN.findall(value)]
 
@@ -1352,8 +1361,8 @@ def rerank_hits(
     return Result.ok(ranked[:top_k])
 
 
-def create_retrieval_tool(
-    retriever: RetrievalBackend,
+def _create_retrieval_tool(
+    retriever: _StringQueryRetriever,
     *,
     name: str = "search_documents",
     description: str = (
@@ -1362,8 +1371,9 @@ def create_retrieval_tool(
     max_top_k: int = DEFAULT_MAX_RETRIEVAL_TOOL_RESULTS,
     max_output_bytes: int = DEFAULT_MAX_RETRIEVAL_TOOL_OUTPUT_BYTES,
     requires_approval: bool = False,
+    query_description: str = "The bounded retrieval search query.",
 ) -> "Tool":
-    """Adapt a lexical retriever into a bounded read-only agent tool.
+    """Build a bounded read-only retrieval tool over a string-query backend.
 
     The returned tool exposes source URI/title and chunk text, but deliberately
     omits source and chunk metadata. Retrieved text is returned as data only;
@@ -1399,6 +1409,13 @@ def create_retrieval_tool(
         raise ValueError("max_output_bytes must be between 1024 and 4194304")
     if not isinstance(requires_approval, bool):
         raise ValueError("requires_approval must be boolean")
+    if (
+        not isinstance(query_description, str)
+        or not query_description
+        or len(query_description) > _MAX_RETRIEVAL_TOOL_DESCRIPTION_LENGTH
+        or any(ord(character) < 32 for character in query_description)
+    ):
+        raise ValueError("query_description must be bounded text")
 
     def encode_payload(value: Dict[str, Any]) -> Result[bytes, Error]:
         try:
@@ -1691,7 +1708,7 @@ def create_retrieval_tool(
                     "type": "string",
                     "minLength": 1,
                     "maxLength": _MAX_RETRIEVAL_TOOL_QUERY_BYTES,
-                    "description": "The bounded lexical search query.",
+                    "description": query_description,
                 },
                 "top_k": {
                     "type": "integer",
@@ -1752,6 +1769,152 @@ def create_retrieval_tool(
             "additionalProperties": False,
         },
         tags=["retrieval", "read-only"],
+    )
+
+
+def create_retrieval_tool(
+    retriever: RetrievalBackend,
+    *,
+    name: str = "search_documents",
+    description: str = (
+        "Search the local document index and return bounded source citations."
+    ),
+    max_top_k: int = DEFAULT_MAX_RETRIEVAL_TOOL_RESULTS,
+    max_output_bytes: int = DEFAULT_MAX_RETRIEVAL_TOOL_OUTPUT_BYTES,
+    requires_approval: bool = False,
+) -> "Tool":
+    """Adapt a lexical retriever into a bounded read-only agent tool.
+
+    The returned tool exposes source URI/title and chunk text, but deliberately
+    omits source and chunk metadata. Retrieved text is returned as data only;
+    this helper never interprets or executes it.
+    """
+    return _create_retrieval_tool(
+        retriever,
+        name=name,
+        description=description,
+        max_top_k=max_top_k,
+        max_output_bytes=max_output_bytes,
+        requires_approval=requires_approval,
+        query_description="The bounded lexical search query.",
+    )
+
+
+class _VectorQueryRetrievalAdapter:
+    """Turn one host-owned text embedder and vector backend into retrieval."""
+
+    def __init__(self, vector_retriever: Any, embedding_provider: Any) -> None:
+        self._vector_retriever = vector_retriever
+        self._embedding_provider = embedding_provider
+
+    def search(
+        self, query: str, *, top_k: int = DEFAULT_MAX_RETRIEVAL_TOOL_RESULTS
+    ) -> Result[List[RetrievalHit], Error]:
+        try:
+            embedded = self._embedding_provider.embed(query)
+            if not isinstance(embedded, Result) or embedded.is_err():
+                return Result.err(
+                    _error(
+                        "RETRIEVAL_TOOL_BACKEND_ERROR",
+                        "retrieval provider returned an error.",
+                    )
+                )
+            query_vector = embedded.unwrap()
+            vector_validation = _validate_vector(
+                query_vector,
+                max_dimensions=_MAX_FILE_VECTOR_DIMENSIONS,
+                field_name="query_vector",
+            )
+            if vector_validation.is_err():
+                return Result.err(
+                    _error(
+                        "RETRIEVAL_TOOL_BACKEND_ERROR",
+                        "retrieval provider returned an invalid vector.",
+                    )
+                )
+            vector_result = self._vector_retriever.search(
+                vector_validation.unwrap(), top_k=top_k
+            )
+            if not isinstance(vector_result, Result) or vector_result.is_err():
+                return Result.err(
+                    _error(
+                        "RETRIEVAL_TOOL_BACKEND_ERROR",
+                        "vector retriever search returned an error.",
+                    )
+                )
+            vector_hits = vector_result.unwrap()
+            if isinstance(vector_hits, (str, bytes)) or not isinstance(
+                vector_hits, Sequence
+            ):
+                return Result.err(
+                    _error(
+                        "RETRIEVAL_TOOL_RESULT_INVALID",
+                        "vector retriever returned an invalid hit list.",
+                    )
+                )
+            if len(vector_hits) > top_k:
+                return Result.err(
+                    _error(
+                        "RETRIEVAL_TOOL_RESULT_INVALID",
+                        "vector retriever returned more hits than requested.",
+                    )
+                )
+            hits: List[RetrievalHit] = []
+            for hit in vector_hits:
+                if not isinstance(hit, VectorRetrievalHit):
+                    return Result.err(
+                        _error(
+                            "RETRIEVAL_TOOL_RESULT_INVALID",
+                            "vector retriever returned an invalid hit.",
+                        )
+                    )
+                hits.append(
+                    RetrievalHit(
+                        chunk=hit.chunk,
+                        score=hit.score,
+                        matched_terms=(),
+                    )
+                )
+            return Result.ok(hits)
+        except Exception:
+            return Result.err(
+                _error(
+                    "RETRIEVAL_TOOL_BACKEND_ERROR",
+                    "vector retrieval failed.",
+                )
+            )
+
+
+def create_vector_retrieval_tool(
+    vector_retriever: Any,
+    embedding_provider: EmbeddingProvider,
+    *,
+    name: str = "search_vector_documents",
+    description: str = (
+        "Search the local vector index using host-provided embeddings and "
+        "return bounded source citations."
+    ),
+    max_top_k: int = DEFAULT_MAX_RETRIEVAL_TOOL_RESULTS,
+    max_output_bytes: int = DEFAULT_MAX_RETRIEVAL_TOOL_OUTPUT_BYTES,
+    requires_approval: bool = False,
+) -> "Tool":
+    """Adapt host-owned embeddings and a vector index into a read-only tool.
+
+    MAPLE invokes the provider once per call but does not select a model, make
+    a network request, retry embedding, or expose the resulting vector.
+    """
+    if not callable(getattr(vector_retriever, "search", None)):
+        raise TypeError("vector_retriever must expose search(query_vector, top_k=...)")
+    if not callable(getattr(embedding_provider, "embed", None)):
+        raise TypeError("embedding_provider must expose embed(text)")
+    return _create_retrieval_tool(
+        _VectorQueryRetrievalAdapter(vector_retriever, embedding_provider),
+        name=name,
+        description=description,
+        max_top_k=max_top_k,
+        max_output_bytes=max_output_bytes,
+        requires_approval=requires_approval,
+        query_description="The bounded vector search query.",
     )
 
 

@@ -22,7 +22,9 @@ from maple.autonomy.retrieval import (
     RetrievalHit,
     SourceRef,
     TextChunker,
+    VectorRetrievalHit,
     create_retrieval_tool,
+    create_vector_retrieval_tool,
     ingest_documents,
     rerank_hits,
 )
@@ -546,6 +548,211 @@ def test_retrieval_tool_redacts_backend_failures(mode):
     assert "private-path-secret" not in str(result.unwrap_err())
     assert "secret" not in str(result.unwrap_err())
     assert "payload" not in str(result.unwrap_err())
+
+
+def test_vector_retrieval_tool_delegates_host_embedding_and_returns_citations():
+    retriever = InMemoryVectorRetriever()
+    retriever.add_document(
+        Document(
+            document_id="vector-tool-doc",
+            text="MAPLE vector retrieval returns grounded source citations.",
+            source=SourceRef(
+                uri="https://example.invalid/vector",
+                title="Vector Guide",
+                metadata={"private": "omit"},
+            ),
+            metadata={"private": "omit"},
+        ),
+        [(1.0, 0.0)],
+    )
+
+    class Provider:
+        def __init__(self):
+            self.queries = []
+
+        def embed(self, text):
+            self.queries.append(text)
+            return Result.ok((1.0, 0.0))
+
+    provider = Provider()
+    tool = create_vector_retrieval_tool(
+        retriever,
+        provider,
+        max_top_k=2,
+        requires_approval=True,
+    )
+    result = tool.execute(query="source citations", top_k=1)
+
+    assert result.is_ok()
+    assert provider.queries == ["source citations"]
+    assert tool.requires_approval is True
+    assert tool.tags == ["retrieval", "read-only"]
+    assert (
+        tool.parameters["properties"]["query"]["description"]
+        == "The bounded vector search query."
+    )
+    hit = result.unwrap()["hits"][0]
+    assert hit["document_id"] == "vector-tool-doc"
+    assert hit["source"] == {
+        "uri": "https://example.invalid/vector",
+        "title": "Vector Guide",
+    }
+    assert hit["matched_terms"] == []
+    assert "metadata" not in hit
+    assert "embedding" not in hit
+
+    from maple import create_vector_retrieval_tool as public_factory
+
+    assert public_factory is create_vector_retrieval_tool
+
+
+def test_vector_retrieval_tool_configuration_is_bounded():
+    retriever = InMemoryVectorRetriever()
+
+    class Provider:
+        def embed(self, text):
+            return Result.ok((1.0, 0.0))
+
+    provider = Provider()
+    with pytest.raises(TypeError, match="vector_retriever"):
+        create_vector_retrieval_tool(object(), provider)
+    with pytest.raises(TypeError, match="embedding_provider"):
+        create_vector_retrieval_tool(retriever, object())
+    with pytest.raises(ValueError, match="name"):
+        create_vector_retrieval_tool(retriever, provider, name="bad\nname")
+    with pytest.raises(ValueError, match="max_top_k"):
+        create_vector_retrieval_tool(retriever, provider, max_top_k=101)
+    with pytest.raises(ValueError, match="max_output_bytes"):
+        create_vector_retrieval_tool(retriever, provider, max_output_bytes=1023)
+    with pytest.raises(ValueError, match="requires_approval"):
+        create_vector_retrieval_tool(retriever, provider, requires_approval=1)
+
+
+@pytest.mark.parametrize("mode", ["raises", "non_result", "error_result"])
+def test_vector_retrieval_tool_redacts_provider_failures(mode):
+    class Provider:
+        def embed(self, text):
+            if mode == "raises":
+                raise RuntimeError("provider-secret-path")
+            if mode == "non_result":
+                return {"private": "vector-payload"}
+            return Result.err(
+                {"errorType": "PRIVATE_PROVIDER_ERROR", "message": "secret"}
+            )
+
+    result = create_vector_retrieval_tool(
+        InMemoryVectorRetriever(), Provider()
+    ).execute(query="maple")
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "RETRIEVAL_TOOL_BACKEND_ERROR"
+    assert "provider-secret-path" not in str(result.unwrap_err())
+    assert "secret" not in str(result.unwrap_err())
+    assert "vector-payload" not in str(result.unwrap_err())
+
+
+@pytest.mark.parametrize("vector", [(), (float("nan"), 0.0), object()])
+def test_vector_retrieval_tool_rejects_invalid_provider_vectors(vector):
+    class Provider:
+        def embed(self, text):
+            return Result.ok(vector)
+
+    class Backend:
+        def __init__(self):
+            self.calls = 0
+
+        def search(self, query_vector, *, top_k=5):
+            self.calls += 1
+            return Result.ok([])
+
+    backend = Backend()
+    result = create_vector_retrieval_tool(backend, Provider()).execute(query="maple")
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "RETRIEVAL_TOOL_BACKEND_ERROR"
+    assert backend.calls == 0
+
+
+@pytest.mark.parametrize("mode", ["raises", "non_result", "error_result"])
+def test_vector_retrieval_tool_redacts_vector_backend_failures(mode):
+    class Provider:
+        def embed(self, text):
+            return Result.ok((1.0, 0.0))
+
+    class Backend:
+        def search(self, query_vector, *, top_k=5):
+            if mode == "raises":
+                raise RuntimeError("backend-private-path")
+            if mode == "non_result":
+                return {"private": "backend-payload"}
+            return Result.err(
+                {"errorType": "PRIVATE_VECTOR_ERROR", "message": "secret"}
+            )
+
+    result = create_vector_retrieval_tool(Backend(), Provider()).execute(query="maple")
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "RETRIEVAL_TOOL_BACKEND_ERROR"
+    assert "backend-private-path" not in str(result.unwrap_err())
+    assert "secret" not in str(result.unwrap_err())
+    assert "backend-payload" not in str(result.unwrap_err())
+
+
+def test_vector_retrieval_tool_reuses_bounded_result_validation():
+    chunk = TextChunker().chunk(make_document("vector-tool-boundary")).unwrap()[0]
+
+    class Provider:
+        def embed(self, text):
+            return Result.ok((1.0, 0.0))
+
+    class Backend:
+        def __init__(self, hits):
+            self.hits = hits
+
+        def search(self, query_vector, *, top_k=5):
+            return Result.ok(self.hits)
+
+    invalid_score = create_vector_retrieval_tool(
+        Backend([VectorRetrievalHit(chunk, float("nan"))]), Provider()
+    ).execute(query="maple")
+    duplicate = create_vector_retrieval_tool(
+        Backend(
+            [
+                VectorRetrievalHit(chunk, 1.0),
+                VectorRetrievalHit(chunk, 0.5),
+            ]
+        ),
+        Provider(),
+    ).execute(query="maple", top_k=2)
+    invalid_hit = create_vector_retrieval_tool(Backend([object()]), Provider()).execute(
+        query="maple"
+    )
+
+    assert invalid_score.unwrap_err()["errorType"] == "RETRIEVAL_TOOL_RESULT_INVALID"
+    assert duplicate.unwrap_err()["errorType"] == "RETRIEVAL_TOOL_RESULT_INVALID"
+    assert invalid_hit.unwrap_err()["errorType"] == "RETRIEVAL_TOOL_BACKEND_ERROR"
+
+
+def test_vector_retrieval_tool_rejects_oversized_output_without_partial_hits():
+    retriever = InMemoryVectorRetriever(
+        chunker=TextChunker(ChunkingPolicy(max_chars=2_048, overlap_chars=100))
+    )
+    retriever.add_document(
+        make_document("large-vector-tool", " ".join(["maple"] * 300)),
+        [(1.0, 0.0)],
+    )
+
+    class Provider:
+        def embed(self, text):
+            return Result.ok((1.0, 0.0))
+
+    result = create_vector_retrieval_tool(
+        retriever, Provider(), max_output_bytes=1_024
+    ).execute(query="maple", top_k=1)
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "RETRIEVAL_TOOL_OUTPUT_TOO_LARGE"
+    assert "hits" not in result.unwrap_err()
 
 
 def test_reranker_reorders_lexical_hits_and_preserves_original_scores():

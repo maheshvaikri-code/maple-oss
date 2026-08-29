@@ -199,6 +199,7 @@ from .retrieval import (
     TextChunker,
     VectorRetrievalHit,
     create_retrieval_tool,
+    create_vector_retrieval_tool,
     ingest_documents,
     rerank_hits,
 )
@@ -329,6 +330,7 @@ __all__ = [
     "TextChunker",
     "VectorRetrievalHit",
     "create_retrieval_tool",
+    "create_vector_retrieval_tool",
     "ingest_documents",
     "rerank_hits",
     "DEFAULT_MAX_RUN_BYTES",

@@ -17,6 +17,13 @@
   text remains data only; vector query embedding, corpus authorization,
   managed stores, and network retrieval remain host-owned.
 
+- **Bounded vector retrieval tool**: `create_vector_retrieval_tool()` composes
+  one caller-owned synchronous `EmbeddingProvider` call with one local vector
+  search and reuses the bounded citation envelope, output limits, and generic
+  fail-closed error boundary. Provider/model selection, async embedding,
+  corpus authorization, managed stores, and network retrieval remain
+  host-owned; embedding vectors are never exposed to the model.
+
 - **Durable local lexical retrieval**: `FileLexicalRetriever` persists
   validated source documents in a bounded versioned JSON file, rebuilds the
   deterministic lexical index after restart, refreshes across instances, and

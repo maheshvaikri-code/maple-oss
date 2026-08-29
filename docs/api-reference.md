@@ -1444,6 +1444,56 @@ execute retrieved text. Backend exceptions, malformed hits, duplicate chunks,
 non-finite scores, and non-JSON-safe results fail closed with generic typed
 errors and without raw backend details.
 
+For vector RAG, `create_vector_retrieval_tool()` composes a host-owned
+synchronous `EmbeddingProvider` with an existing vector retriever. MAPLE calls
+the provider once for the model's bounded text query, passes the resulting
+vector to the local backend, and normalizes `VectorRetrievalHit` values into
+the same citation envelope. Vector scores are returned as bounded finite
+numbers, `matched_terms` is an empty array, and the embedding vector is never
+returned to the model:
+
+```python
+from maple import (
+    Document,
+    InMemoryVectorRetriever,
+    SourceRef,
+    create_vector_retrieval_tool,
+)
+from maple.core.result import Result
+
+
+class HostEmbeddings:
+    def embed(self, text):
+        # The host selects the model, credentials, and network policy.
+        return Result.ok((0.8, 0.2, 0.1))
+
+
+vector_retriever = InMemoryVectorRetriever()
+vector_retriever.add_document(
+    Document(
+        document_id="guide-1",
+        text="MAPLE uses resource-aware agent orchestration.",
+        source=SourceRef(uri="https://example.invalid/guide"),
+    ),
+    [(0.8, 0.2, 0.1)],
+)
+vector_tool = create_vector_retrieval_tool(
+    vector_retriever,
+    HostEmbeddings(),
+    max_top_k=5,
+)
+result = vector_tool.execute(query="resource-aware orchestration", top_k=3)
+```
+
+The vector factory is read-only and approval-disabled by default, with the
+same optional `requires_approval=True` boundary and output-byte limit as the
+lexical factory. It does not select an embedding model, retry provider work,
+support an async provider protocol, authorize corpus access, fetch network
+sources, filter prompt injection, evaluate citation faithfulness, or execute
+retrieved text. Provider/backend exceptions, malformed vectors or hits,
+duplicate chunks, non-finite scores, and non-JSON-safe results fail closed
+without raw provider/backend details.
+
 The reference backend is intentionally local; it is not a hosted vector
 database or embedding service. A vector index accepts one finite, bounded
 embedding per generated chunk and uses cosine similarity with deterministic
