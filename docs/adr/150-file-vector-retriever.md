@@ -1,7 +1,7 @@
 # ADR-150: Durable local vector retrieval
 
-**Status:** Accepted for Slice 206 implementation  
-**Date:** 2026-08-29  
+**Status:** Accepted for Slice 206 implementation
+**Date:** 2026-08-29
 **Decision owners:** Chief Architect / Backend / Security / QA / Release
 
 ## Context
@@ -97,4 +97,3 @@ and an explicit migration decision.
 The slice brief maps each acceptance criterion to focused regression tests.
 The release gate also requires the full suite, Black, Ruff, mypy,
 `compileall`, project-scoped `pip-audit`, and a clean archived package smoke.
-

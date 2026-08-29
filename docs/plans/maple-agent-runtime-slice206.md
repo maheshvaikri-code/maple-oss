@@ -1,8 +1,8 @@
 # Slice 206 implementation plan - durable local vector retrieval
 
-**Class:** L  
-**Status:** In progress  
-**Brief:** `docs/briefs/maple-agent-runtime-slice206.md`  
+**Class:** L
+**Status:** In progress
+**Brief:** `docs/briefs/maple-agent-runtime-slice206.md`
 **ADR:** `docs/adr/150-file-vector-retriever.md`
 
 ## Gate plan
@@ -42,4 +42,3 @@
   human approval before implementation.
 - If a write fails, preserve the prior file and candidate state; tests must
   prove this property.
-

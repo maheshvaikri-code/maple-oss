@@ -1,7 +1,7 @@
 # Slice 206 brief - durable local vector retrieval
 
-**Date:** 2026-08-29  
-**Class:** L (new public retrieval backend, durable schema, and storage/security boundary)  
+**Date:** 2026-08-29
+**Class:** L (new public retrieval backend, durable schema, and storage/security boundary)
 **Roles:** Product Owner / Chief Architect / Backend / Security / QA / Release
 
 ## Problem
@@ -95,4 +95,3 @@ derived state. It is not an embedding provider, distributed index,
 transaction with connector ingestion, managed vector database, or guarantee
 of semantic relevance. Existing execution-isolation, hosted-coordination,
 CI-policy, dependency, and publication gates remain independent.
-
