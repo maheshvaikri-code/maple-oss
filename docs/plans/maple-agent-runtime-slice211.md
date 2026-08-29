@@ -69,3 +69,24 @@ Done (with evidence): Slice 210 locally closed; Slice 211 brief, ADR, and
 implementation plan prepared. Next: human decision on the two open contract
 questions. Blocked on: explicit approval for a new public API and its
 executor/cancellation semantics.
+
+## Pre-implementation package revalidation
+
+The current committed planning head `5aa067e20f953af0a1e0981e98304405ef72ffaf`
+was smoke-tested without changing the implementation surface:
+
+```text
+source_archive_entries=990
+wheel_entries=109
+sdist_entries=904
+build_exit=0
+twine_exit=0
+install_exit=0
+import_exit=0
+import_output=1.1.3
+doctor_exit=0
+doctor_output={"checks": {"core": true, "evaluation": true, "events": true, "execution": true, "interop": true, "retrieval": true, "server": true, "sessions": true}, "network": false, "ready": true, "status": "SUCCESS", "version": "1.1.3"}
+```
+
+This is package-health evidence only; it does not constitute approval or
+implementation evidence for Slice 211.
