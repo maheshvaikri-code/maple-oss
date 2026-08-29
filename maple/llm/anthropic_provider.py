@@ -19,7 +19,11 @@ import logging
 from typing import Any, AsyncIterator, Dict, List, Optional, Tuple, cast
 
 from ..core.result import Result
-from .provider import LLMProvider, classify_provider_exception
+from .provider import (
+    LLMProvider,
+    ProviderResponseError,
+    classify_provider_exception,
+)
 from .types import (
     ChatContent,
     ChatMessage,
@@ -28,7 +32,6 @@ from .types import (
     LLMChunk,
     LLMConfig,
     LLMResponse,
-    TokenUsage,
     ToolCall,
     ToolDefinition,
 )
@@ -103,9 +106,18 @@ class AnthropicProvider(LLMProvider):
                 kwargs["tools"] = [self._format_tool(t) for t in tools]
 
             response = self.client.messages.create(**kwargs)
-            llm_response = self._parse_response(response)
+            llm_response = self._validate_completion_response(
+                self._parse_response(response)
+            )
             self._track_usage(llm_response)
             return Result.ok(llm_response)
+        except ProviderResponseError:
+            return Result.err(
+                {
+                    "errorType": "LLM_PROVIDER_RESPONSE_INVALID",
+                    "message": "Anthropic provider returned an invalid completion response.",
+                }
+            )
         except Exception as e:
             return Result.err(
                 {
@@ -154,9 +166,18 @@ class AnthropicProvider(LLMProvider):
             if tools:
                 kwargs["tools"] = [self._format_tool(tool) for tool in tools]
             response = await cast(Any, self.async_client).messages.create(**kwargs)
-            llm_response = self._parse_response(response)
+            llm_response = self._validate_completion_response(
+                self._parse_response(response)
+            )
             self._track_usage(llm_response)
             return Result.ok(llm_response)
+        except ProviderResponseError:
+            return Result.err(
+                {
+                    "errorType": "LLM_PROVIDER_RESPONSE_INVALID",
+                    "message": "Anthropic provider returned an invalid completion response.",
+                }
+            )
         except Exception as exc:
             return Result.err(
                 {
@@ -406,21 +427,19 @@ class AnthropicProvider(LLMProvider):
             if block.type == "text":
                 content_text += block.text
             elif block.type == "tool_use":
+                if not isinstance(block.input, dict):
+                    raise ProviderResponseError(
+                        "provider tool arguments must be an object"
+                    )
                 tool_calls.append(
                     ToolCall(
                         id=block.id,
                         name=block.name,
-                        arguments=block.input if isinstance(block.input, dict) else {},
+                        arguments=block.input,
                     )
                 )
 
-        usage = None
-        if response.usage:
-            usage = TokenUsage(
-                prompt_tokens=response.usage.input_tokens,
-                completion_tokens=response.usage.output_tokens,
-                total_tokens=response.usage.input_tokens + response.usage.output_tokens,
-            )
+        usage = self._parse_completion_usage(getattr(response, "usage", None))
 
         finish_reason = self._normalize_finish_reason(response.stop_reason or "")
 

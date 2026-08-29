@@ -15,8 +15,8 @@
 
 """Abstract LLM provider base class."""
 
-from abc import ABC, abstractmethod
 import json
+from abc import ABC, abstractmethod
 from typing import (
     Any,
     AsyncIterator,
@@ -35,8 +35,8 @@ from .types import (
     LLMChunk,
     LLMConfig,
     LLMResponse,
-    ToolCall,
     TokenUsage,
+    ToolCall,
     ToolDefinition,
 )
 
@@ -45,6 +45,12 @@ _MAX_STREAM_CHUNK_BYTES = 65_536
 _MAX_STREAM_TOOL_CALLS = 64
 _MAX_STREAM_ARGUMENT_BYTES = 262_144
 _MAX_STREAM_FINISH_REASON_LENGTH = 128
+_MAX_PROVIDER_USAGE_TOKENS = 100_000_000
+_MAX_PROVIDER_MODEL_LENGTH = 256
+
+
+class ProviderResponseError(ValueError):
+    """Raised internally when an SDK response violates MAPLE's contract."""
 
 
 def classify_provider_exception(exc: BaseException, *, fallback: str) -> str:
@@ -518,7 +524,134 @@ class LLMProvider(ABC):
             if field is not None
         ):
             return None
+        if any(
+            field is not None and field > _MAX_PROVIDER_USAGE_TOKENS for field in fields
+        ):
+            return None
         return prompt_tokens, completion_tokens, total_tokens
+
+    @classmethod
+    def _parse_completion_usage(cls, value: Any) -> Optional[TokenUsage]:
+        """Parse complete-response usage, rejecting partial or invalid fields."""
+        if value is None:
+            return None
+        parts = cls._stream_usage_parts(value)
+        if parts is None or parts[0] is None or parts[1] is None:
+            raise ProviderResponseError("provider usage metadata is invalid")
+        total_tokens = parts[2]
+        if total_tokens is None:
+            total_tokens = parts[0] + parts[1]
+        return TokenUsage(
+            prompt_tokens=parts[0],
+            completion_tokens=parts[1],
+            total_tokens=total_tokens,
+        )
+
+    @staticmethod
+    def _validate_completion_response(response: Any) -> LLMResponse:
+        """Validate normalized provider output before it reaches callers."""
+        if not isinstance(response, LLMResponse):
+            raise ProviderResponseError("provider response is not an LLMResponse")
+        if response.content is not None:
+            if not isinstance(response.content, str):
+                raise ProviderResponseError("provider response content is invalid")
+            try:
+                content_bytes = len(response.content.encode("utf-8"))
+            except UnicodeError as exc:
+                raise ProviderResponseError(
+                    "provider response content is not valid UTF-8"
+                ) from exc
+            if content_bytes > _MAX_STREAM_CONTENT_BYTES:
+                raise ProviderResponseError("provider response content is too large")
+        if (
+            not isinstance(response.model, str)
+            or len(response.model) > _MAX_PROVIDER_MODEL_LENGTH
+        ):
+            raise ProviderResponseError("provider response model is invalid")
+        if response.finish_reason is not None:
+            if (
+                not isinstance(response.finish_reason, str)
+                or len(response.finish_reason) > _MAX_STREAM_FINISH_REASON_LENGTH
+                or any(
+                    ord(char) < 32 or ord(char) == 127
+                    for char in response.finish_reason
+                )
+            ):
+                raise ProviderResponseError(
+                    "provider response finish reason is invalid"
+                )
+        if response.request_id is not None:
+            if (
+                not isinstance(response.request_id, str)
+                or len(response.request_id) > 256
+                or any(
+                    ord(char) < 32 or ord(char) == 127 for char in response.request_id
+                )
+            ):
+                raise ProviderResponseError("provider response request ID is invalid")
+        if (
+            not isinstance(response.tool_calls, list)
+            or len(response.tool_calls) > _MAX_STREAM_TOOL_CALLS
+        ):
+            raise ProviderResponseError("provider response tool calls are invalid")
+        for tool_call in response.tool_calls:
+            if not isinstance(tool_call, ToolCall):
+                raise ProviderResponseError("provider response tool call is invalid")
+            if (
+                not isinstance(tool_call.id, str)
+                or not tool_call.id
+                or len(tool_call.id) > 256
+                or any(ord(char) < 32 or ord(char) == 127 for char in tool_call.id)
+            ):
+                raise ProviderResponseError("provider response tool call ID is invalid")
+            if (
+                not isinstance(tool_call.name, str)
+                or not tool_call.name
+                or len(tool_call.name) > 256
+                or any(ord(char) < 32 or ord(char) == 127 for char in tool_call.name)
+            ):
+                raise ProviderResponseError("provider response tool name is invalid")
+            if not isinstance(tool_call.arguments, dict):
+                raise ProviderResponseError("provider tool arguments must be an object")
+            try:
+                encoded_arguments = json.dumps(
+                    tool_call.arguments,
+                    ensure_ascii=False,
+                    allow_nan=False,
+                    separators=(",", ":"),
+                )
+                normalized_arguments = json.loads(encoded_arguments)
+                if normalized_arguments != tool_call.arguments:
+                    raise ValueError("provider tool arguments are not JSON-native")
+                argument_bytes = len(encoded_arguments.encode("utf-8"))
+            except (
+                TypeError,
+                ValueError,
+                OverflowError,
+                RecursionError,
+                UnicodeError,
+            ) as exc:
+                raise ProviderResponseError(
+                    "provider tool arguments are not JSON"
+                ) from exc
+            if argument_bytes > _MAX_STREAM_ARGUMENT_BYTES:
+                raise ProviderResponseError("provider tool arguments are too large")
+        if response.usage is not None:
+            if not isinstance(response.usage, TokenUsage):
+                raise ProviderResponseError("provider response usage is invalid")
+            usage_fields = (
+                response.usage.prompt_tokens,
+                response.usage.completion_tokens,
+                response.usage.total_tokens,
+            )
+            if any(
+                not isinstance(field, int)
+                or isinstance(field, bool)
+                or not 0 <= field <= _MAX_PROVIDER_USAGE_TOKENS
+                for field in usage_fields
+            ):
+                raise ProviderResponseError("provider response usage is invalid")
+        return response
 
     @classmethod
     def _merge_stream_usage(

@@ -20,7 +20,11 @@ import logging
 from typing import Any, AsyncIterator, Dict, List, Optional, cast
 
 from ..core.result import Result
-from .provider import LLMProvider, classify_provider_exception
+from .provider import (
+    LLMProvider,
+    ProviderResponseError,
+    classify_provider_exception,
+)
 from .types import (
     ChatContent,
     ChatMessage,
@@ -28,7 +32,6 @@ from .types import (
     LLMChunk,
     LLMConfig,
     LLMResponse,
-    TokenUsage,
     ToolCall,
     ToolDefinition,
 )
@@ -102,9 +105,18 @@ class OpenAIProvider(LLMProvider):
                 kwargs["tool_choice"] = "auto"
 
             response = cast(Any, self.client).chat.completions.create(**kwargs)
-            llm_response = self._parse_response(response)
+            llm_response = self._validate_completion_response(
+                self._parse_response(response)
+            )
             self._track_usage(llm_response)
             return Result.ok(llm_response)
+        except ProviderResponseError:
+            return Result.err(
+                {
+                    "errorType": "LLM_PROVIDER_RESPONSE_INVALID",
+                    "message": "OpenAI provider returned an invalid completion response.",
+                }
+            )
         except Exception as e:
             return Result.err(
                 {
@@ -153,9 +165,18 @@ class OpenAIProvider(LLMProvider):
             response = await cast(Any, self.async_client).chat.completions.create(
                 **kwargs
             )
-            llm_response = self._parse_response(response)
+            llm_response = self._validate_completion_response(
+                self._parse_response(response)
+            )
             self._track_usage(llm_response)
             return Result.ok(llm_response)
+        except ProviderResponseError:
+            return Result.err(
+                {
+                    "errorType": "LLM_PROVIDER_RESPONSE_INVALID",
+                    "message": "OpenAI provider returned an invalid completion response.",
+                }
+            )
         except Exception as exc:
             return Result.err(
                 {
@@ -341,7 +362,13 @@ class OpenAIProvider(LLMProvider):
                 try:
                     args = json.loads(tc.function.arguments)
                 except (json.JSONDecodeError, TypeError):
-                    args = {}
+                    raise ProviderResponseError(
+                        "provider tool arguments must be valid JSON"
+                    )
+                if not isinstance(args, dict):
+                    raise ProviderResponseError(
+                        "provider tool arguments must be an object"
+                    )
                 tool_calls.append(
                     ToolCall(
                         id=tc.id,
@@ -349,13 +376,9 @@ class OpenAIProvider(LLMProvider):
                         arguments=args,
                     )
                 )
-        usage = None
-        if response.usage:
-            usage = TokenUsage(
-                prompt_tokens=response.usage.prompt_tokens,
-                completion_tokens=response.usage.completion_tokens,
-                total_tokens=response.usage.total_tokens,
-            )
+        usage = self._parse_completion_usage(getattr(response, "usage", None))
+        if msg.content is not None and not isinstance(msg.content, str):
+            raise ProviderResponseError("provider response content is invalid")
         return LLMResponse(
             content=msg.content,
             tool_calls=tool_calls,
