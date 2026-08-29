@@ -492,14 +492,28 @@ class TaskQueue:
 
             return self.update_task_status(task_id, TaskStatus.CANCELLED)
 
-    def requeue_task(self, task_id: str) -> Result[None, str]:
-        """Requeue a failed task for retry."""
+    def requeue_task(
+        self, task_id: str, assigned_agent: Optional[str] = None
+    ) -> Result[None, str]:
+        """Requeue a failed task, optionally enforcing its recorded owner."""
 
         with self._lock:
             if task_id not in self.tasks:
                 return Result.err(f"Task {task_id} not found")
 
             task = self.tasks[task_id]
+            if assigned_agent is not None:
+                if not isinstance(assigned_agent, str) or not assigned_agent:
+                    return Result.err("Assigned agent cannot be empty")
+                if task.status != TaskStatus.FAILED:
+                    return Result.err(
+                        f"Task {task_id} cannot be retried from status "
+                        f"{task.status.value}"
+                    )
+                if task.assigned_agent != assigned_agent:
+                    return Result.err(
+                        f"Task {task_id} is not assigned to {assigned_agent}"
+                    )
 
             # Check retry limit
             if task.retry_count >= task.max_retries:

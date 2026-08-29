@@ -2984,20 +2984,21 @@ with RunServer(
 
 The routes are `POST /v1/tasks`, `GET /v1/tasks`,
 `GET /v1/tasks/{task_id}`, `POST /v1/tasks/claim-next`, and
-`POST /v1/tasks/{task_id}/{action}` where `action` is `claim`, `complete`, or
-`fail`, or `cancel`. The corresponding client methods are `submit_task`,
-`list_tasks`, `inspect_task`, `claim_next_task`, `claim_task`, `cancel_task`,
-`complete_task`, and `fail_task`. Task submission accepts a bounded task type,
+`POST /v1/tasks/{task_id}/{action}` where `action` is `claim`, `complete`,
+`fail`, `cancel`, or `retry`. The corresponding client methods are
+`submit_task`, `list_tasks`, `inspect_task`, `claim_next_task`, `claim_task`,
+`cancel_task`, `retry_task`, `complete_task`, and `fail_task`. Task submission
+accepts a bounded task type,
 JSON object payload/metadata, priority, capability requirements, timeout, and
 retry count. Completion results and failure text are bounded as well. Listing
 supports exact status/task-type filters and a limit of 1 through 100.
 
 The scopes are `task:submit`, `task:read`, `task:claim`, `task:complete`,
-`task:fail`, and `task:cancel`. Principal `allowed_capabilities` is applied to
-submission requirements and `allowed_agent_ids` is applied to
-claim/complete/fail/cancel actor IDs. Queue ownership and lifecycle conflicts
-remain authoritative in the selected implementation, and queue internals are
-not returned in errors.
+`task:fail`, `task:cancel`, and `task:retry`. Principal `allowed_capabilities`
+is applied to submission requirements and `allowed_agent_ids` is applied to
+claim/complete/fail/cancel/retry actor IDs. Queue ownership and lifecycle
+conflicts remain authoritative in the selected implementation, and queue
+internals are not returned in errors.
 
 This is a bounded control plane, not a distributed scheduler. It does not
 provide worker heartbeats, leases, automatic retry, atomic submit-and-claim,
@@ -3011,7 +3012,11 @@ lifecycle, polling cadence, TLS, tenancy, and execution policy. The
 check: a queued task may be cancelled by the authorized actor, while assigned
 or running work requires the recorded owner. It does not interrupt a handler,
 revoke a lease, delete a record, or retry work. A server without a configured
-queue returns `503`.
+queue returns `503`. The `retry_task(task_id, assigned_agent)` method is an
+explicit caller-driven operation for a failed task owned by that agent; it
+respects the task retry count and queue capacity, clears ownership, and
+returns the requeued task. It does not automatically retry work or accept
+queued, assigned, running, completed, cancelled, or timed-out tasks.
 
 ### Agent run HTTP transport
 

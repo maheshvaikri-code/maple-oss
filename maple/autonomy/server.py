@@ -263,6 +263,7 @@ def _required_scope(method: str, path: Tuple[str, ...]) -> Optional[str]:
                 "complete": "task:complete",
                 "fail": "task:fail",
                 "cancel": "task:cancel",
+                "retry": "task:retry",
             }.get(path[3])
         return None
     if path[0:2] == ("v1", "workflows"):
@@ -1515,6 +1516,7 @@ def _task_operation_error(raw_error: Any) -> Tuple[int, Error]:
         "already assigned" in lowered
         or "not assigned" in lowered
         or "cannot be" in lowered
+        or "exceeded max retries" in lowered
     ):
         return 409, _error(
             "TASK_CONFLICT", "Task state does not permit this operation."
@@ -1901,7 +1903,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 method == "POST"
                 and len(path) == 4
                 and path[0:2] == ("v1", "tasks")
-                and path[3] in {"claim", "complete", "fail", "cancel"}
+                and path[3] in {"claim", "complete", "fail", "cancel", "retry"}
             ):
                 self._mutate_task(path[2], path[3])
                 return
@@ -2317,6 +2319,20 @@ class _RequestHandler(BaseHTTPRequestHandler):
 
             def operation() -> Result[Task, str]:
                 return queue.cancel_task(task_id, assigned_agent)
+
+        elif action == "retry":
+            if set(body) != {"assigned_agent"}:
+                self._write_error(
+                    400,
+                    _error("TASK_INPUT_INVALID", "retry accepts only assigned_agent."),
+                )
+                return
+
+            def operation() -> Result[Task, str]:
+                requeued = queue.requeue_task(task_id, assigned_agent)
+                if requeued.is_err():
+                    return Result.err(requeued.unwrap_err())
+                return queue.get_task(task_id)
 
         else:
             if set(body) != {"assigned_agent", "error"}:
@@ -4660,6 +4676,22 @@ class RunClient:
         return self._request(
             "POST",
             ("v1", "tasks", task_id, "cancel"),
+            {"assigned_agent": assigned_agent},
+        )
+
+    def retry_task(
+        self, task_id: str, assigned_agent: str
+    ) -> Result[Dict[str, Any], Error]:
+        """Explicitly requeue one failed remote task with an owner check."""
+        identifier_error = _validate_task_identifier(task_id, "task_id")
+        if identifier_error is not None:
+            return Result.err(identifier_error)
+        agent_error = _validate_agent_identifier(assigned_agent, "assigned_agent")
+        if agent_error is not None:
+            return Result.err(agent_error)
+        return self._request(
+            "POST",
+            ("v1", "tasks", task_id, "retry"),
             {"assigned_agent": assigned_agent},
         )
 

@@ -10,6 +10,13 @@
 
 ### Additions
 
+- **Owner-safe remote task retry**: authenticated workers can call
+  `RunClient.retry_task(...)` through `POST /v1/tasks/{task_id}/retry` under
+  `task:retry`. Only failed work owned by the assigned agent is requeued, with
+  existing retry-count and queue-capacity bounds preserved. Automatic retry,
+  scheduling, lease control, and distributed coordination remain outside the
+  contract.
+
 - **Owner-safe remote task cancellation**: authenticated workers can call
   `RunClient.cancel_task(...)` through `POST /v1/tasks/{task_id}/cancel` under
   `task:cancel`. Queue-side ownership checks allow queued work or the recorded

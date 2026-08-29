@@ -189,6 +189,7 @@ def test_remote_task_queue_requires_auth_and_scopes_agent_targets():
         task_id = submitted.unwrap()["task_id"]
         denied_agent = client.claim_task(task_id, "worker-b")
         denied_next = client.claim_next_task("worker-a", capabilities=["write"])
+        denied_retry = client.retry_task(task_id, "worker-a")
         claimed = client.claim_task(task_id, "worker-a")
         denied_cancel = client.cancel_task(task_id, "worker-a")
         denied_failure = client.fail_task(task_id, "worker-a", "not now")
@@ -203,6 +204,8 @@ def test_remote_task_queue_requires_auth_and_scopes_agent_targets():
     assert denied_agent.unwrap_err()["errorType"] == "FORBIDDEN"
     assert denied_next.is_err()
     assert denied_next.unwrap_err()["errorType"] == "FORBIDDEN"
+    assert denied_retry.is_err()
+    assert denied_retry.unwrap_err()["errorType"] == "FORBIDDEN"
     assert claimed.is_ok()
     assert denied_cancel.is_err()
     assert denied_cancel.unwrap_err()["errorType"] == "FORBIDDEN"
@@ -311,6 +314,65 @@ def test_remote_task_cancellation_enforces_owner_and_terminal_state():
     assert queued_state.unwrap()["task"]["status"] == "cancelled"
     assert owned_state.is_ok()
     assert owned_state.unwrap()["task"]["status"] == "cancelled"
+
+
+def test_remote_task_retry_enforces_owner_failed_state_and_bounds():
+    queue = TaskQueue(max_queue_size=4)
+    server = RunServer(
+        WorkflowRegistry(),
+        auth_token="task-token",
+        task_queue=queue,
+    )
+    base_url = server.start()
+
+    try:
+        client = RunClient(base_url, auth_token="task-token")
+        submitted = client.submit_task("retryable", {}, max_retries=1)
+        assert submitted.is_ok()
+        task_id = submitted.unwrap()["task_id"]
+        queued_retry = client.retry_task(task_id, "worker-a")
+        assert queued_retry.is_err()
+        assert queued_retry.unwrap_err()["errorType"] == "TASK_CONFLICT"
+
+        assert client.claim_task(task_id, "worker-a").is_ok()
+        assert client.fail_task(task_id, "worker-a", "temporary").is_ok()
+        wrong_owner = client.retry_task(task_id, "worker-b")
+        retried = client.retry_task(task_id, "worker-a")
+        retried_state = client.inspect_task(task_id)
+
+        assert client.claim_task(task_id, "worker-a").is_ok()
+        assert client.fail_task(task_id, "worker-a", "still temporary").is_ok()
+        exhausted = client.retry_task(task_id, "worker-a")
+
+        terminal = client.submit_task("terminal", {})
+        assert terminal.is_ok()
+        terminal_id = terminal.unwrap()["task_id"]
+        assert client.claim_task(terminal_id, "worker-a").is_ok()
+        assert client.complete_task(terminal_id, "worker-a").is_ok()
+        terminal_retry = client.retry_task(terminal_id, "worker-a")
+
+        malformed_status, malformed = _request(
+            f"{base_url}/v1/tasks/{task_id}/retry",
+            method="POST",
+            payload={"assigned_agent": "worker-a", "unexpected": True},
+            headers={"Authorization": "Bearer task-token"},
+        )
+    finally:
+        server.close()
+
+    assert wrong_owner.is_err()
+    assert wrong_owner.unwrap_err()["errorType"] == "TASK_CONFLICT"
+    assert retried.is_ok()
+    assert retried.unwrap()["task"]["status"] == "queued"
+    assert retried.unwrap()["task"]["retry_count"] == 1
+    assert retried_state.is_ok()
+    assert retried_state.unwrap()["task"]["assigned_agent"] is None
+    assert exhausted.is_err()
+    assert exhausted.unwrap_err()["errorType"] == "TASK_CONFLICT"
+    assert terminal_retry.is_err()
+    assert terminal_retry.unwrap_err()["errorType"] == "TASK_CONFLICT"
+    assert malformed_status == 400
+    assert malformed["error"]["errorType"] == "TASK_INPUT_INVALID"
 
 
 def test_remote_task_queue_rejects_malformed_queries_and_payloads():

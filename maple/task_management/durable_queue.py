@@ -777,8 +777,12 @@ class FileTaskQueue(TaskQueue):
             lambda: TaskQueue.cancel_task(self, task_id, assigned_agent)
         )
 
-    def requeue_task(self, task_id: str) -> Result[None, str]:
-        return self._run_durable(lambda: TaskQueue.requeue_task(self, task_id))
+    def requeue_task(
+        self, task_id: str, assigned_agent: Optional[str] = None
+    ) -> Result[None, str]:
+        return self._run_durable(
+            lambda: TaskQueue.requeue_task(self, task_id, assigned_agent)
+        )
 
     def get_queue_stats(self) -> QueueStats:
         result: Result[QueueStats, str] = self._run_durable(

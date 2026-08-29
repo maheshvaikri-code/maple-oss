@@ -250,3 +250,30 @@ def test_file_task_queue_owner_safe_cancellation(tmp_path):
     assert restored.get_task(task_id).unwrap().status == TaskStatus.CANCELLED
     assert restored.get_task(terminal_id).unwrap().status == TaskStatus.COMPLETED
     restored.stop()
+
+
+def test_file_task_queue_owner_safe_retry(tmp_path):
+    path = _queue_path(tmp_path)
+    queue = FileTaskQueue(path)
+    queue.start()
+    task_id = queue.submit_task("retryable", {}, max_retries=1).unwrap()
+    assert queue.assign_task(task_id, "worker-a").is_ok()
+    assert queue.fail_task(task_id, "worker-a", "temporary").is_ok()
+
+    assert queue.requeue_task(task_id, "worker-b").is_err()
+    retried = queue.requeue_task(task_id, "worker-a")
+    assert retried.is_ok()
+    updated = queue.get_task(task_id).unwrap()
+    assert updated.status == TaskStatus.QUEUED
+    assert updated.retry_count == 1
+    assert updated.assigned_agent is None
+    assert queue.requeue_task(task_id, "worker-a").is_err()
+
+    assert queue.assign_task(task_id, "worker-a").is_ok()
+    assert queue.fail_task(task_id, "worker-a", "still temporary").is_ok()
+    assert queue.requeue_task(task_id, "worker-a").is_err()
+    queue.stop()
+
+    restored = FileTaskQueue(path)
+    assert restored.get_task(task_id).unwrap().status == TaskStatus.FAILED
+    restored.stop()
