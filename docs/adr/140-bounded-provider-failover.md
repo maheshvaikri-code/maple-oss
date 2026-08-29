@@ -1,7 +1,7 @@
 # ADR-140: Bounded provider failover
 
 **Date:** 2026-08-29
-**Status:** proposed
+**Status:** accepted for the scoped local preview contract
 **Deciders:** Chief Architect
 
 ## Context

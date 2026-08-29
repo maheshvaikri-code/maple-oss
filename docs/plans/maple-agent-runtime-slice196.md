@@ -8,9 +8,9 @@
 
 | # | Slice | Role | Files touched | Proven by (tests) | Status |
 |---|---|---|---|---|---|
-| 1 | Failover wrapper and router option | Backend / ML / Security | `maple/llm/capabilities.py`, provider tests, exports | deterministic order, sync/async transient failover, fail-fast, bounds, typed exceptions | todo |
-| 2 | Public API and parity documentation | Interop / Tech Writer | `maple/llm/__init__.py`, root exports, README/API/parity/changelog | public import and runnable example | todo |
-| 3 | Review, QA, and package evidence | Code Reviewer / QA / Release | review/QA/release plan | focused/full regression, static checks, clean/current package smoke | todo |
+| 1 | Failover wrapper and router option | Backend / ML / Security | `maple/llm/capabilities.py`, provider tests, exports | deterministic order, sync/async transient failover, fail-fast, bounds, typed exceptions | done: implementation `823c5ba`; malformed-result hardening `69c5fb6`; focused `31 passed` |
+| 2 | Public API and parity documentation | Interop / Tech Writer | `maple/llm/__init__.py`, root exports, README/API/parity/changelog | public import and runnable example | done: public API smoke `PASS`; docs/changelog/parity updated in `823c5ba` |
+| 3 | Review, QA, and package evidence | Code Reviewer / QA / Release | review/QA/release plan | focused/full regression, static checks, clean/current package smoke | done: review filed; QA/security evidence filed; full dirty suite `1775 passed, 1 skipped` |
 
 ## Threat sketch
 
@@ -41,5 +41,7 @@ boundary.
 
 ## Status snapshot
 
-G1/G2 design is ready for implementation. Next: add the bounded wrapper and
-router integration, then prove sync/async and fail-closed boundaries.
+ G1/G2/G3/G4/G5 implementation and evidence are complete for the scoped local
+ contract. G6 package evidence is recorded in the release plan. Hosted identity,
+ distributed scheduling/liveness, and side-effect semantics remain gated by the
+ separate contract decision from Slice 193.

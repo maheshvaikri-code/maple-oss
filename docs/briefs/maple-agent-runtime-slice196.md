@@ -3,7 +3,7 @@
 **Date:** 2026-08-29
 **Class:** L
 **Role:** Chief Architect / ML / Backend / Security / Interop / QA / Release
-**Status:** proposed
+**Status:** implemented; QA/security passed for the scoped local change
 
 ## Objective
 
