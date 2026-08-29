@@ -1451,7 +1451,7 @@ def create_retrieval_tool(
                         index=index,
                     )
                 )
-        except UnicodeEncodeError:
+        except Exception:
             return Result.err(
                 _error(
                     "RETRIEVAL_TOOL_RESULT_INVALID",
@@ -1520,7 +1520,17 @@ def create_retrieval_tool(
                     index=index,
                 )
             )
-        if len(matched_terms) > _MAX_RETRIEVAL_TOOL_TERMS:
+        try:
+            term_count = len(matched_terms)
+        except Exception:
+            return Result.err(
+                _error(
+                    "RETRIEVAL_TOOL_RESULT_INVALID",
+                    "retriever returned invalid matched terms.",
+                    index=index,
+                )
+            )
+        if term_count > _MAX_RETRIEVAL_TOOL_TERMS:
             return Result.err(
                 _error(
                     "RETRIEVAL_TOOL_RESULT_INVALID",
