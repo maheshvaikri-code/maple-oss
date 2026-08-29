@@ -32,6 +32,8 @@ from maple.autonomy import (
     WorkflowRegistry,
 )
 from maple.core.result import Result
+from maple.task_management import TaskQueue
+from maple.task_management.task_queue import TaskPriority, TaskStatus
 
 
 def _workflow(name="echo"):
@@ -111,6 +113,130 @@ def test_run_server_health_run_and_inspect_routes():
     assert run_payload["run"]["state"]["echo"] == "MAPLE"
     assert inspect_status == 200
     assert inspect_payload["run"]["run_id"] == "server-run"
+
+
+def test_authenticated_remote_task_queue_round_trip_and_ownership():
+    queue = TaskQueue(max_queue_size=4)
+    server = RunServer(
+        WorkflowRegistry(),
+        auth_token="task-token",
+        task_queue=queue,
+    )
+    base_url = server.start()
+
+    try:
+        client = RunClient(base_url, auth_token="task-token")
+        submitted = client.submit_task(
+            "research",
+            {"query": "MAPLE"},
+            priority=TaskPriority.HIGH,
+            requirements=["search"],
+            metadata={"source": "test"},
+        )
+        assert submitted.is_ok()
+        task_id = submitted.unwrap()["task_id"]
+        listed = client.list_tasks(status=TaskStatus.QUEUED, task_type="research")
+        inspected = client.inspect_task(task_id)
+        claimed = client.claim_task(task_id, "worker-a")
+        wrong_owner = client.complete_task(task_id, "worker-b", {"answer": "no"})
+        completed = client.complete_task(task_id, "worker-a", {"answer": "yes"})
+        final = client.inspect_task(task_id)
+    finally:
+        server.close()
+
+    assert listed.is_ok()
+    assert [item["task_id"] for item in listed.unwrap()["tasks"]] == [task_id]
+    assert inspected.is_ok()
+    assert inspected.unwrap()["task"]["status"] == "queued"
+    assert claimed.is_ok()
+    assert claimed.unwrap()["task"]["assigned_agent"] == "worker-a"
+    assert wrong_owner.is_err()
+    assert wrong_owner.unwrap_err()["errorType"] == "TASK_CONFLICT"
+    assert completed.is_ok()
+    assert completed.unwrap()["task"]["status"] == "completed"
+    assert final.is_ok()
+    assert final.unwrap()["task"]["result"] == {"answer": "yes"}
+
+
+def test_remote_task_queue_requires_auth_and_scopes_agent_targets():
+    queue = TaskQueue()
+    with pytest.raises(ValueError):
+        RunServer(WorkflowRegistry(), task_queue=queue)
+
+    principal = Principal(
+        "worker-principal",
+        (
+            "task:submit",
+            "task:read",
+            "task:claim",
+            "task:complete",
+        ),
+        allowed_agent_ids=("worker-a",),
+        allowed_capabilities=("search",),
+    )
+    server = RunServer(
+        WorkflowRegistry(),
+        auth_token="scoped-task-token",
+        auth_principal=principal,
+        task_queue=queue,
+    )
+    base_url = server.start()
+
+    try:
+        client = RunClient(base_url, auth_token="scoped-task-token")
+        denied_capability = client.submit_task("research", {}, requirements=["write"])
+        submitted = client.submit_task("research", {}, requirements=["search"])
+        task_id = submitted.unwrap()["task_id"]
+        denied_agent = client.claim_task(task_id, "worker-b")
+        claimed = client.claim_task(task_id, "worker-a")
+        denied_failure = client.fail_task(task_id, "worker-a", "not now")
+        denied_listing = RunClient(base_url).list_tasks()
+    finally:
+        server.close()
+
+    assert denied_capability.is_err()
+    assert denied_capability.unwrap_err()["errorType"] == "FORBIDDEN"
+    assert submitted.is_ok()
+    assert denied_agent.is_err()
+    assert denied_agent.unwrap_err()["errorType"] == "FORBIDDEN"
+    assert claimed.is_ok()
+    assert denied_failure.is_err()
+    assert denied_failure.unwrap_err()["errorType"] == "FORBIDDEN"
+    assert denied_listing.is_err()
+    assert denied_listing.unwrap_err()["errorType"] == "UNAUTHORIZED"
+
+
+def test_remote_task_queue_rejects_malformed_queries_and_payloads():
+    server = RunServer(
+        WorkflowRegistry(),
+        auth_token="task-token",
+        task_queue=TaskQueue(),
+    )
+    base_url = server.start()
+
+    try:
+        unknown_field_status, unknown_field = _request(
+            f"{base_url}/v1/tasks",
+            method="POST",
+            payload={"task_type": "research", "unexpected": True},
+            headers={"Authorization": "Bearer task-token"},
+        )
+        duplicate_query_status, duplicate_query = _request(
+            f"{base_url}/v1/tasks?limit=1&limit=2",
+            headers={"Authorization": "Bearer task-token"},
+        )
+        invalid_result = RunClient(base_url, auth_token="task-token").complete_task(
+            "task", "worker", {"bad": object()}
+        )
+    finally:
+        server.close()
+
+    assert unknown_field_status == 400
+    assert unknown_field["error"]["errorType"] == "TASK_INPUT_INVALID"
+    assert duplicate_query_status == 400
+    assert duplicate_query["error"]["errorType"] == "TASK_QUERY_INVALID"
+    assert invalid_result.is_err()
+    assert invalid_result.unwrap_err()["errorType"] == "TASK_RESULT_INVALID"
 
 
 def test_run_server_resumes_interrupted_workflow():

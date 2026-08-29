@@ -31,6 +31,7 @@ from urllib.parse import parse_qsl, quote, unquote, urlencode, urlsplit, urlunsp
 from urllib.request import Request, urlopen
 
 from ..core.result import Result
+from ..task_management.task_queue import Task, TaskPriority, TaskQueue, TaskStatus
 from .approval import (
     ApprovalNotification,
     ApprovalNotifier,
@@ -85,6 +86,12 @@ _MAX_AGENT_CONTEXT_STRING_LENGTH = 8_192
 _MAX_AGENT_CONTEXT_BYTES = 32 * 1024
 _MAX_AGENT_CAPABILITIES = 16
 _MAX_AGENT_CAPABILITY_BYTES = 128
+_MAX_REMOTE_TASK_TYPE_BYTES = 256
+_MAX_REMOTE_TASK_REQUIREMENTS = 64
+_MAX_REMOTE_TASK_TIMEOUT_SECONDS = 7 * 24 * 60 * 60
+_MAX_REMOTE_TASK_RETRIES = 1_000
+_MAX_REMOTE_TASK_BYTES = 256 * 1_024
+_MAX_REMOTE_TASK_LIMIT = 100
 _AGENT_RUN_STATUSES = frozenset({"cancelled", "completed", "paused", "failed"})
 _PRINCIPAL_ID_PATTERN = r"^[A-Za-z0-9_.:-]{1,128}$"
 _SCOPE_PATTERN = r"^(?:\*|[a-z][a-z0-9_.-]{0,63}:(?:[a-z][a-z0-9_.-]{0,63}|\*))$"
@@ -243,6 +250,18 @@ def _required_scope(method: str, path: Tuple[str, ...]) -> Optional[str]:
         if method == "POST" and path == ("v1", "approvals", "notifications"):
             return "approval:notify"
         return "approval:read" if method == "GET" else "approval:decide"
+    if path[0:2] == ("v1", "tasks"):
+        if method == "POST" and path == ("v1", "tasks"):
+            return "task:submit"
+        if method == "GET":
+            return "task:read"
+        if method == "POST" and len(path) == 4:
+            return {
+                "claim": "task:claim",
+                "complete": "task:complete",
+                "fail": "task:fail",
+            }.get(path[3])
+        return None
     if path[0:2] == ("v1", "workflows"):
         if method == "GET":
             return "workflow:read"
@@ -1296,6 +1315,219 @@ def _run_to_dict(run: WorkflowRun) -> Dict[str, Any]:
     }
 
 
+def _validate_task_identifier(value: Any, field: str) -> Optional[Error]:
+    if (
+        not isinstance(value, str)
+        or not value.strip()
+        or len(value.encode("utf-8")) > _MAX_AGENT_IDENTIFIER_BYTES
+        or any(ord(character) < 0x20 or ord(character) == 0x7F for character in value)
+    ):
+        return _error(
+            "TASK_IDENTIFIER_INVALID",
+            f"{field} must be bounded, non-empty text without control characters.",
+        )
+    return None
+
+
+def _validate_task_type(value: Any) -> Optional[Error]:
+    if (
+        not isinstance(value, str)
+        or not value.strip()
+        or len(value.encode("utf-8")) > _MAX_REMOTE_TASK_TYPE_BYTES
+        or any(ord(character) < 0x20 or ord(character) == 0x7F for character in value)
+    ):
+        return _error(
+            "TASK_INPUT_INVALID",
+            "task_type must be bounded, non-empty text without control characters.",
+            max_bytes=_MAX_REMOTE_TASK_TYPE_BYTES,
+        )
+    return None
+
+
+def _normalize_remote_task_submission(
+    body: Mapping[str, Any],
+) -> Result[Dict[str, Any], Error]:
+    """Normalize one bounded task admission request at the HTTP boundary."""
+    if not isinstance(body, Mapping):
+        return Result.err(
+            _error("TASK_INPUT_INVALID", "task request must be an object.")
+        )
+    allowed = {
+        "task_type",
+        "payload",
+        "priority",
+        "requirements",
+        "timeout_seconds",
+        "max_retries",
+        "metadata",
+    }
+    if any(key not in allowed for key in body):
+        return Result.err(
+            _error("TASK_INPUT_INVALID", "task request contains an unknown field.")
+        )
+    task_type = body.get("task_type")
+    task_type_error = _validate_task_type(task_type)
+    if task_type_error is not None:
+        return Result.err(task_type_error)
+    payload = body.get("payload", {})
+    if not isinstance(payload, Mapping):
+        return Result.err(_error("TASK_INPUT_INVALID", "payload must be an object."))
+    payload_result = _copy_bounded_json(payload, error_type="TASK_INPUT_INVALID")
+    if payload_result.is_err():
+        return Result.err(payload_result.unwrap_err())
+    metadata = body.get("metadata", {})
+    if not isinstance(metadata, Mapping):
+        return Result.err(_error("TASK_INPUT_INVALID", "metadata must be an object."))
+    metadata_result = _copy_bounded_json(metadata, error_type="TASK_INPUT_INVALID")
+    if metadata_result.is_err():
+        return Result.err(metadata_result.unwrap_err())
+    priority = body.get("priority", TaskPriority.NORMAL.value)
+    if (
+        not isinstance(priority, int)
+        or isinstance(priority, bool)
+        or priority not in {item.value for item in TaskPriority}
+    ):
+        return Result.err(
+            _error(
+                "TASK_INPUT_INVALID",
+                "priority must be one of the supported integer priority values.",
+            )
+        )
+    requirements = body.get("requirements", [])
+    if (
+        not isinstance(requirements, list)
+        or len(requirements) > _MAX_REMOTE_TASK_REQUIREMENTS
+    ):
+        return Result.err(
+            _error(
+                "TASK_INPUT_INVALID",
+                "requirements must be a bounded list of capability labels.",
+                max_items=_MAX_REMOTE_TASK_REQUIREMENTS,
+            )
+        )
+    normalized_requirements: List[str] = []
+    seen_requirements = set()
+    for requirement in requirements:
+        if (
+            not isinstance(requirement, str)
+            or not requirement.strip()
+            or len(requirement.encode("utf-8")) > _MAX_AGENT_CAPABILITY_BYTES
+            or any(
+                ord(character) < 0x20 or ord(character) == 0x7F
+                for character in requirement
+            )
+            or requirement in seen_requirements
+        ):
+            return Result.err(
+                _error(
+                    "TASK_INPUT_INVALID",
+                    "requirements must be unique, bounded, control-free labels.",
+                )
+            )
+        seen_requirements.add(requirement)
+        normalized_requirements.append(requirement)
+    timeout_seconds = body.get("timeout_seconds", 300)
+    if (
+        not isinstance(timeout_seconds, int)
+        or isinstance(timeout_seconds, bool)
+        or not 0 <= timeout_seconds <= _MAX_REMOTE_TASK_TIMEOUT_SECONDS
+    ):
+        return Result.err(
+            _error(
+                "TASK_INPUT_INVALID",
+                "timeout_seconds is outside the bounded range.",
+                max_seconds=_MAX_REMOTE_TASK_TIMEOUT_SECONDS,
+            )
+        )
+    max_retries = body.get("max_retries", 3)
+    if (
+        not isinstance(max_retries, int)
+        or isinstance(max_retries, bool)
+        or not 0 <= max_retries <= _MAX_REMOTE_TASK_RETRIES
+    ):
+        return Result.err(
+            _error(
+                "TASK_INPUT_INVALID",
+                "max_retries is outside the bounded range.",
+                max_retries=_MAX_REMOTE_TASK_RETRIES,
+            )
+        )
+    normalized: Dict[str, Any] = {
+        "task_type": task_type,
+        "payload": cast(Dict[str, Any], payload_result.unwrap()),
+        "priority": priority,
+        "requirements": normalized_requirements,
+        "timeout_seconds": timeout_seconds,
+        "max_retries": max_retries,
+        "metadata": cast(Dict[str, Any], metadata_result.unwrap()),
+    }
+    try:
+        encoded = json.dumps(
+            normalized, ensure_ascii=False, allow_nan=False, separators=(",", ":")
+        ).encode("utf-8")
+    except (TypeError, ValueError, OverflowError, RecursionError):
+        return Result.err(
+            _error("TASK_INPUT_INVALID", "task request is not JSON serializable.")
+        )
+    if len(encoded) > _MAX_REMOTE_TASK_BYTES:
+        return Result.err(
+            _error(
+                "TASK_INPUT_INVALID",
+                "task request exceeds the configured byte limit.",
+                max_bytes=_MAX_REMOTE_TASK_BYTES,
+            )
+        )
+    return Result.ok(normalized)
+
+
+def _task_to_dict(task: Task) -> Dict[str, Any]:
+    """Convert a queue record into a detached, stable remote envelope."""
+    return {
+        "task_id": task.task_id,
+        "task_type": task.task_type,
+        "payload": dict(task.payload),
+        "priority": task.priority.value,
+        "requirements": list(task.requirements),
+        "timeout_seconds": task.timeout_seconds,
+        "max_retries": task.max_retries,
+        "metadata": dict(task.metadata),
+        "status": task.status.value,
+        "assigned_agent": task.assigned_agent,
+        "created_at": task.created_at,
+        "started_at": task.started_at,
+        "completed_at": task.completed_at,
+        "retry_count": task.retry_count,
+        "result": task.result,
+        "error": task.error,
+    }
+
+
+def _task_operation_error(raw_error: Any) -> Tuple[int, Error]:
+    """Map queue-owned strings to stable HTTP errors without leaking internals."""
+    message = raw_error if isinstance(raw_error, str) else "queue operation failed"
+    lowered = message.lower()
+    if "not found" in lowered:
+        return 404, _error("TASK_NOT_FOUND", "Task was not found.")
+    if (
+        "already assigned" in lowered
+        or "not assigned" in lowered
+        or "cannot be" in lowered
+    ):
+        return 409, _error(
+            "TASK_CONFLICT", "Task state does not permit this operation."
+        )
+    if "queue is full" in lowered:
+        return 409, _error("TASK_QUEUE_FULL", "Task queue capacity is exhausted.")
+    if any(
+        marker in lowered
+        for marker in ("fence", "persist", "state is", "unavailable", "could not")
+    ):
+        return 503, _error(
+            "TASK_QUEUE_UNAVAILABLE", "Task queue is temporarily unavailable."
+        )
+    return 409, _error("TASK_OPERATION_REJECTED", "Task queue rejected the operation.")
+
+
 def _status_for_error(error: Error) -> int:
     error_type = error.get("errorType")
     if error_type in {
@@ -1388,6 +1620,11 @@ def _status_for_error(error: Error) -> int:
         "AGENT_RUN_CHECKPOINT_SIZE_EXCEEDED",
         "RUN_CHECKPOINT_INVALID",
         "RUN_CHECKPOINT_SIZE_EXCEEDED",
+        "TASK_IDENTIFIER_INVALID",
+        "TASK_INPUT_INVALID",
+        "TASK_QUERY_INVALID",
+        "TASK_RESULT_INVALID",
+        "TASK_ERROR_INVALID",
     }:
         return 400
     if error_type == "AGENT_REGISTRY_UNAVAILABLE":
@@ -1423,6 +1660,12 @@ def _status_for_error(error: Error) -> int:
         return 503
     if error_type == "APPROVAL_STORE_UNAVAILABLE":
         return 503
+    if error_type == "TASK_QUEUE_UNAVAILABLE":
+        return 503
+    if error_type == "TASK_NOT_FOUND":
+        return 404
+    if error_type in {"TASK_CONFLICT", "TASK_QUEUE_FULL", "TASK_OPERATION_REJECTED"}:
+        return 409
     if error_type == "HUMAN_INPUT_MULTI_ROUND_UNSUPPORTED":
         return 501
     if error_type in {
@@ -1639,6 +1882,23 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 return
             if self._approval_route(method, path):
                 return
+            if method == "POST" and path == ("v1", "tasks"):
+                self._submit_task()
+                return
+            if method == "GET" and path == ("v1", "tasks"):
+                self._list_tasks()
+                return
+            if method == "GET" and len(path) == 3 and path[0:2] == ("v1", "tasks"):
+                self._inspect_task(path[2])
+                return
+            if (
+                method == "POST"
+                and len(path) == 4
+                and path[0:2] == ("v1", "tasks")
+                and path[3] in {"claim", "complete", "fail"}
+            ):
+                self._mutate_task(path[2], path[3])
+                return
             if (
                 method == "GET"
                 and len(path) == 5
@@ -1690,6 +1950,305 @@ class _RequestHandler(BaseHTTPRequestHandler):
             self._write_error(
                 500, _error("INTERNAL_ERROR", "Request could not be processed.")
             )
+
+    def _task_queue(self) -> Optional[TaskQueue]:
+        queue = cast(Optional[TaskQueue], self.server.application.task_queue)
+        if queue is None:
+            self._write_error(
+                503,
+                _error(
+                    "TASK_QUEUE_UNAVAILABLE",
+                    "No task queue is configured.",
+                ),
+            )
+            return None
+        return queue
+
+    def _submit_task(self) -> None:
+        queue = self._task_queue()
+        if queue is None:
+            return
+        body = self._read_body()
+        normalized_result = _normalize_remote_task_submission(body)
+        if normalized_result.is_err():
+            self._write_error(400, normalized_result.unwrap_err())
+            return
+        normalized = normalized_result.unwrap()
+        principal = self._request_principal
+        if principal is not None and any(
+            not principal.allows_capability(requirement)
+            for requirement in normalized["requirements"]
+        ):
+            self._write_error(
+                403,
+                _error(
+                    "FORBIDDEN",
+                    "The authenticated principal cannot request one task capability.",
+                    principal_id=principal.principal_id,
+                    policy="allowed_capabilities",
+                ),
+            )
+            return
+        try:
+            result = queue.submit_task(
+                normalized["task_type"],
+                normalized["payload"],
+                TaskPriority(normalized["priority"]),
+                normalized["requirements"],
+                normalized["timeout_seconds"],
+                normalized["max_retries"],
+                normalized["metadata"],
+            )
+        except Exception:
+            self._write_error(
+                503,
+                _error(
+                    "TASK_QUEUE_UNAVAILABLE", "Task queue is temporarily unavailable."
+                ),
+            )
+            return
+        if result.is_err():
+            status, error = _task_operation_error(result.unwrap_err())
+            self._write_error(status, error)
+            return
+        self._write_json(201, {"task_id": result.unwrap()})
+
+    def _list_tasks(self) -> None:
+        queue = self._task_queue()
+        if queue is None:
+            return
+        parsed = urlsplit(self.path)
+        try:
+            pairs = parse_qsl(
+                parsed.query,
+                keep_blank_values=True,
+                strict_parsing=True,
+                max_num_fields=3,
+            )
+        except ValueError:
+            self._write_error(
+                400,
+                _error("TASK_QUERY_INVALID", "task query parameters are invalid."),
+            )
+            return
+        allowed = {"status", "task_type", "limit"}
+        if any(key not in allowed for key, _ in pairs) or len(
+            {key for key, _ in pairs}
+        ) != len(pairs):
+            self._write_error(
+                400,
+                _error(
+                    "TASK_QUERY_INVALID",
+                    "task query supports one status, task_type, and limit parameter.",
+                ),
+            )
+            return
+        query = dict(pairs)
+        status: Optional[TaskStatus] = None
+        if "status" in query:
+            try:
+                status = TaskStatus(query["status"])
+            except ValueError:
+                self._write_error(
+                    400,
+                    _error(
+                        "TASK_QUERY_INVALID", "status is not a supported task status."
+                    ),
+                )
+                return
+        task_type = query.get("task_type")
+        if task_type is not None:
+            task_type_error = _validate_task_type(task_type)
+            if task_type_error is not None:
+                task_type_error["errorType"] = "TASK_QUERY_INVALID"
+                self._write_error(400, task_type_error)
+                return
+        try:
+            limit = int(query.get("limit", str(_MAX_REMOTE_TASK_LIMIT)))
+        except (TypeError, ValueError):
+            self._write_error(
+                400, _error("TASK_QUERY_INVALID", "limit must be an integer.")
+            )
+            return
+        if not 0 < limit <= _MAX_REMOTE_TASK_LIMIT:
+            self._write_error(
+                400,
+                _error(
+                    "TASK_QUERY_INVALID",
+                    "limit is outside the configured range.",
+                    max_limit=_MAX_REMOTE_TASK_LIMIT,
+                ),
+            )
+            return
+        try:
+            tasks = queue.list_tasks(status=status, task_type=task_type, limit=limit)
+            payload = {"tasks": [_task_to_dict(task) for task in tasks]}
+        except Exception:
+            self._write_error(
+                503,
+                _error(
+                    "TASK_QUEUE_UNAVAILABLE", "Task queue is temporarily unavailable."
+                ),
+            )
+            return
+        self._write_json(200, payload)
+
+    def _inspect_task(self, task_id: str) -> None:
+        queue = self._task_queue()
+        if queue is None:
+            return
+        identifier_error = _validate_task_identifier(task_id, "task_id")
+        if identifier_error is not None:
+            self._write_error(400, identifier_error)
+            return
+        try:
+            result = queue.get_task(task_id)
+        except Exception:
+            self._write_error(
+                503,
+                _error(
+                    "TASK_QUEUE_UNAVAILABLE", "Task queue is temporarily unavailable."
+                ),
+            )
+            return
+        if result.is_err():
+            status, error = _task_operation_error(result.unwrap_err())
+            self._write_error(status, error)
+            return
+        self._write_json(200, {"task": _task_to_dict(result.unwrap())})
+
+    def _mutate_task(self, task_id: str, action: str) -> None:
+        queue = self._task_queue()
+        if queue is None:
+            return
+        identifier_error = _validate_task_identifier(task_id, "task_id")
+        if identifier_error is not None:
+            self._write_error(400, identifier_error)
+            return
+        body = self._read_body()
+        assigned_agent = cast(Optional[str], body.get("assigned_agent"))
+        agent_error = _validate_agent_identifier(assigned_agent, "assigned_agent")
+        if agent_error is not None:
+            self._write_error(400, agent_error)
+            return
+        assigned_agent = cast(str, assigned_agent)
+        principal = self._request_principal
+        if principal is not None and not principal.allows_agent(assigned_agent):
+            self._write_error(
+                403,
+                _error(
+                    "FORBIDDEN",
+                    "The authenticated principal cannot act for this agent.",
+                    principal_id=principal.principal_id,
+                    policy="allowed_agent_ids",
+                    agent_id=assigned_agent,
+                ),
+            )
+            return
+        if action == "claim":
+            if set(body) != {"assigned_agent"}:
+                self._write_error(
+                    400,
+                    _error("TASK_INPUT_INVALID", "claim accepts only assigned_agent."),
+                )
+                return
+
+            def operation() -> Result[Task, str]:
+                return queue.assign_task(task_id, assigned_agent)
+
+        elif action == "complete":
+            allowed = {"assigned_agent", "result"}
+            if any(key not in allowed for key in body):
+                self._write_error(
+                    400,
+                    _error("TASK_INPUT_INVALID", "complete contains an unknown field."),
+                )
+                return
+            result_value = None
+            if "result" in body:
+                result_validation = _copy_bounded_json(
+                    body["result"], error_type="TASK_RESULT_INVALID"
+                )
+                if result_validation.is_err():
+                    self._write_error(400, result_validation.unwrap_err())
+                    return
+                result_value = result_validation.unwrap()
+                try:
+                    encoded = json.dumps(
+                        result_value,
+                        ensure_ascii=False,
+                        allow_nan=False,
+                        separators=(",", ":"),
+                    ).encode("utf-8")
+                except (TypeError, ValueError, OverflowError, RecursionError):
+                    self._write_error(
+                        400,
+                        _error(
+                            "TASK_RESULT_INVALID", "result is not JSON serializable."
+                        ),
+                    )
+                    return
+                if len(encoded) > _MAX_REMOTE_TASK_BYTES:
+                    self._write_error(
+                        400,
+                        _error(
+                            "TASK_RESULT_INVALID",
+                            "result exceeds the configured byte limit.",
+                            max_bytes=_MAX_REMOTE_TASK_BYTES,
+                        ),
+                    )
+                    return
+
+            def operation() -> Result[Task, str]:
+                return queue.complete_task(task_id, assigned_agent, result=result_value)
+
+        else:
+            if set(body) != {"assigned_agent", "error"}:
+                self._write_error(
+                    400,
+                    _error(
+                        "TASK_ERROR_INVALID",
+                        "fail requires assigned_agent and error.",
+                    ),
+                )
+                return
+            failure = body.get("error")
+            if (
+                not isinstance(failure, str)
+                or not failure
+                or len(failure.encode("utf-8")) > 8_192
+                or any(
+                    ord(character) < 32 and character not in "\r\n\t"
+                    for character in failure
+                )
+            ):
+                self._write_error(
+                    400,
+                    _error(
+                        "TASK_ERROR_INVALID",
+                        "error must be bounded control-safe text.",
+                    ),
+                )
+                return
+
+            def operation() -> Result[Task, str]:
+                return queue.fail_task(task_id, assigned_agent, failure)
+
+        try:
+            result = operation()
+        except Exception:
+            self._write_error(
+                503,
+                _error(
+                    "TASK_QUEUE_UNAVAILABLE", "Task queue is temporarily unavailable."
+                ),
+            )
+            return
+        if result.is_err():
+            status, error = _task_operation_error(result.unwrap_err())
+            self._write_error(status, error)
+            return
+        self._write_json(200, {"task": _task_to_dict(result.unwrap())})
 
     def _interaction_route(self, method: str, path: Tuple[str, ...]) -> bool:
         if method == "POST" and path == ("v1", "interactions", "notifications"):
@@ -3516,6 +4075,7 @@ class RunServer:
         handoff_store: Optional[HandoffStore] = None,
         event_stream: Optional[EventStream] = None,
         event_deduplication_store: Optional[EventDeduplicationStore] = None,
+        task_queue: Optional[TaskQueue] = None,
     ) -> None:
         if not isinstance(registry, WorkflowRegistry):
             raise TypeError("registry must be a WorkflowRegistry")
@@ -3687,6 +4247,14 @@ class RunServer:
                 raise TypeError(
                     "event_deduplication_store must implement claim, complete, and abort"
                 )
+        if task_queue is not None:
+            if not isinstance(task_queue, TaskQueue):
+                raise TypeError("task_queue must be a TaskQueue")
+            if not authentication_configured:
+                raise ValueError(
+                    "auth_token or auth_principal_resolver is required when "
+                    "task_queue is configured"
+                )
         self.registry = registry
         self.host = host
         self.port = port
@@ -3705,6 +4273,7 @@ class RunServer:
         self.handoff_store = handoff_store
         self.event_stream = event_stream
         self.event_deduplication_store = event_deduplication_store
+        self.task_queue = task_queue
         self._server: Optional[_MAPLEHTTPServer] = None
         self._thread: Optional[threading.Thread] = None
 
@@ -3841,6 +4410,164 @@ class RunClient:
     def healthz(self) -> Result[Dict[str, Any], Error]:
         """Check the remote workflow service health endpoint."""
         return self._request("GET", ("healthz",))
+
+    def submit_task(
+        self,
+        task_type: str,
+        payload: Optional[Mapping[str, Any]] = None,
+        *,
+        priority: TaskPriority = TaskPriority.NORMAL,
+        requirements: Optional[Sequence[str]] = None,
+        timeout_seconds: int = 300,
+        max_retries: int = 3,
+        metadata: Optional[Mapping[str, Any]] = None,
+    ) -> Result[Dict[str, Any], Error]:
+        """Submit one bounded task to an authenticated remote queue."""
+        if not isinstance(priority, TaskPriority):
+            return Result.err(
+                _error("TASK_INPUT_INVALID", "priority must be a TaskPriority.")
+            )
+        normalized_requirements: Any = requirements
+        if isinstance(requirements, tuple):
+            normalized_requirements = list(requirements)
+        body: Dict[str, Any] = {
+            "task_type": task_type,
+            "payload": {} if payload is None else payload,
+            "priority": priority.value,
+            "requirements": (
+                [] if normalized_requirements is None else normalized_requirements
+            ),
+            "timeout_seconds": timeout_seconds,
+            "max_retries": max_retries,
+            "metadata": {} if metadata is None else metadata,
+        }
+        normalized = _normalize_remote_task_submission(body)
+        if normalized.is_err():
+            return Result.err(normalized.unwrap_err())
+        return self._request("POST", ("v1", "tasks"), normalized.unwrap())
+
+    def list_tasks(
+        self,
+        *,
+        status: Optional[TaskStatus] = None,
+        task_type: Optional[str] = None,
+        limit: int = _MAX_REMOTE_TASK_LIMIT,
+    ) -> Result[Dict[str, Any], Error]:
+        """List bounded task metadata from an authenticated remote queue."""
+        if status is not None and not isinstance(status, TaskStatus):
+            return Result.err(_error("TASK_QUERY_INVALID", "status is invalid."))
+        task_type_error = (
+            _validate_task_type(task_type) if task_type is not None else None
+        )
+        if task_type_error is not None:
+            task_type_error["errorType"] = "TASK_QUERY_INVALID"
+            return Result.err(task_type_error)
+        if (
+            not isinstance(limit, int)
+            or isinstance(limit, bool)
+            or not 0 < limit <= _MAX_REMOTE_TASK_LIMIT
+        ):
+            return Result.err(
+                _error(
+                    "TASK_QUERY_INVALID",
+                    "limit is outside the configured range.",
+                    max_limit=_MAX_REMOTE_TASK_LIMIT,
+                )
+            )
+        query: Dict[str, str] = {"limit": str(limit)}
+        if status is not None:
+            query["status"] = status.value
+        if task_type is not None:
+            query["task_type"] = task_type
+        return self._request("GET", ("v1", "tasks"), query=query)
+
+    def inspect_task(self, task_id: str) -> Result[Dict[str, Any], Error]:
+        """Inspect one remote task without changing its state."""
+        identifier_error = _validate_task_identifier(task_id, "task_id")
+        if identifier_error is not None:
+            return Result.err(identifier_error)
+        return self._request("GET", ("v1", "tasks", task_id))
+
+    def claim_task(
+        self, task_id: str, assigned_agent: str
+    ) -> Result[Dict[str, Any], Error]:
+        """Atomically claim one queued remote task for an agent."""
+        identifier_error = _validate_task_identifier(task_id, "task_id")
+        if identifier_error is not None:
+            return Result.err(identifier_error)
+        agent_error = _validate_agent_identifier(assigned_agent, "assigned_agent")
+        if agent_error is not None:
+            return Result.err(agent_error)
+        return self._request(
+            "POST",
+            ("v1", "tasks", task_id, "claim"),
+            {"assigned_agent": assigned_agent},
+        )
+
+    def complete_task(
+        self, task_id: str, assigned_agent: str, result: Any = None
+    ) -> Result[Dict[str, Any], Error]:
+        """Complete one claimed remote task with an optional JSON result."""
+        identifier_error = _validate_task_identifier(task_id, "task_id")
+        if identifier_error is not None:
+            return Result.err(identifier_error)
+        agent_error = _validate_agent_identifier(assigned_agent, "assigned_agent")
+        if agent_error is not None:
+            return Result.err(agent_error)
+        result_validation = _copy_bounded_json(result, error_type="TASK_RESULT_INVALID")
+        if result_validation.is_err():
+            return Result.err(result_validation.unwrap_err())
+        try:
+            encoded = json.dumps(
+                result_validation.unwrap(),
+                ensure_ascii=False,
+                allow_nan=False,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        except (TypeError, ValueError, OverflowError, RecursionError):
+            return Result.err(
+                _error("TASK_RESULT_INVALID", "result is not JSON serializable.")
+            )
+        if len(encoded) > _MAX_REMOTE_TASK_BYTES:
+            return Result.err(
+                _error(
+                    "TASK_RESULT_INVALID",
+                    "result exceeds the configured byte limit.",
+                    max_bytes=_MAX_REMOTE_TASK_BYTES,
+                )
+            )
+        return self._request(
+            "POST",
+            ("v1", "tasks", task_id, "complete"),
+            {"assigned_agent": assigned_agent, "result": result_validation.unwrap()},
+        )
+
+    def fail_task(
+        self, task_id: str, assigned_agent: str, error: str
+    ) -> Result[Dict[str, Any], Error]:
+        """Record one bounded failure for a claimed remote task."""
+        identifier_error = _validate_task_identifier(task_id, "task_id")
+        if identifier_error is not None:
+            return Result.err(identifier_error)
+        agent_error = _validate_agent_identifier(assigned_agent, "assigned_agent")
+        if agent_error is not None:
+            return Result.err(agent_error)
+        if (
+            not isinstance(error, str)
+            or not error
+            or len(error.encode("utf-8")) > 8_192
+            or any(
+                ord(character) < 32 and character not in "\r\n\t" for character in error
+            )
+        ):
+            return Result.err(
+                _error("TASK_ERROR_INVALID", "error must be bounded control-safe text.")
+            )
+        return self._request(
+            "POST",
+            ("v1", "tasks", task_id, "fail"),
+            {"assigned_agent": assigned_agent, "error": error},
+        )
 
     def list_agents(self) -> Result[Dict[str, Any], Error]:
         """List bounded public metadata for registered remote agents."""

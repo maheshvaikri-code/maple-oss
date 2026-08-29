@@ -10,6 +10,14 @@
 
 ### Additions
 
+- **Authenticated remote task-queue control**: optional `RunServer(task_queue=...)`
+  and `RunClient` methods expose bounded submit/list/inspect/claim/complete/fail
+  operations under separate `task:*` scopes. Existing queue ownership and
+  principal agent/capability policies remain authoritative; queue internals are
+  redacted from errors. Worker heartbeats, distributed scheduling, automatic
+  retry, handler execution, and exactly-once external effects remain outside
+  the contract.
+
 - **Durable local task queue**: `FileTaskQueue` persists bounded JSON task
   records through atomic replacement behind a local cross-process fence,
   retains terminal history across restart, and returns interrupted

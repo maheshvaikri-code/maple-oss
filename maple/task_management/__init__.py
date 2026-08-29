@@ -22,11 +22,15 @@ from .monitor import TaskMonitor
 from .performance_optimizer import PerformanceOptimizer
 from .result_collector import ResultCollector
 from .scheduler import TaskScheduler
-from .task_queue import TaskQueue
+from .task_queue import QueueStats, Task, TaskPriority, TaskQueue, TaskStatus
 
 __all__ = [
     "TaskQueue",
     "FileTaskQueue",
+    "Task",
+    "TaskPriority",
+    "TaskStatus",
+    "QueueStats",
     "TaskScheduler",
     "TaskMonitor",
     "FaultTolerantExecutor",

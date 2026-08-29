@@ -2953,6 +2953,56 @@ The route only records the decision. It does not consume or execute the
 approval, retry a request, schedule a run, or provide hosted identity,
 notifications, tenancy, or exactly-once effects.
 
+### Authenticated remote task queue control
+
+`RunServer(task_queue=...)` exposes the existing `TaskQueue` lifecycle through
+an authenticated process-boundary control plane. A configured queue requires
+`auth_token` or `auth_principal_resolver`; a `FileTaskQueue` may be supplied
+when local restart persistence and cross-process fencing are desired.
+
+```python
+from maple import RunClient, RunServer, WorkflowRegistry
+from maple.task_management import TaskPriority, TaskQueue
+
+queue = TaskQueue(max_queue_size=100)
+with RunServer(
+    WorkflowRegistry(),
+    task_queue=queue,
+    auth_token="task-token",
+) as server:
+    client = RunClient(server.url, auth_token="task-token")
+    submitted = client.submit_task(
+        "research",
+        {"query": "MAPLE"},
+        priority=TaskPriority.HIGH,
+        requirements=["search"],
+    )
+    task_id = submitted.unwrap()["task_id"]
+    claimed = client.claim_task(task_id, "worker-a")
+    completed = client.complete_task(task_id, "worker-a", {"ok": True})
+```
+
+The routes are `POST /v1/tasks`, `GET /v1/tasks`,
+`GET /v1/tasks/{task_id}`, and `POST /v1/tasks/{task_id}/{action}` where
+`action` is `claim`, `complete`, or `fail`. The corresponding client methods
+are `submit_task`, `list_tasks`, `inspect_task`, `claim_task`,
+`complete_task`, and `fail_task`. Task submission accepts a bounded task type,
+JSON object payload/metadata, priority, capability requirements, timeout, and
+retry count. Completion results and failure text are bounded as well. Listing
+supports exact status/task-type filters and a limit of 1 through 100.
+
+The scopes are `task:submit`, `task:read`, `task:claim`, `task:complete`, and
+`task:fail`. Principal `allowed_capabilities` is applied to submission
+requirements and `allowed_agent_ids` is applied to claim/complete/fail actor
+IDs. Queue ownership and lifecycle conflicts remain authoritative in the
+selected implementation, and queue internals are not returned in errors.
+
+This is a bounded control plane, not a distributed scheduler. It does not
+provide worker heartbeats, leases, automatic retry, atomic submit-and-claim,
+handler execution, queue federation, or exactly-once external effects. The
+client performs no retries; hosts own worker lifecycle, TLS, tenancy, and
+execution policy. A server without a configured queue returns `503`.
+
 ### Agent run HTTP transport
 
 `AgentRegistry` and `RunClient.run_agent(...)` provide a bounded, authenticated

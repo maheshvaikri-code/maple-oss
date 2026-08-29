@@ -58,6 +58,15 @@ and explicit at-least-once restart recovery for interrupted assignments. A
 durable local queue still does not provide distributed scheduling, remote
 workers, hosted scheduler ownership, automatic retry, or exactly-once effects.
 
+The authenticated local control plane now exposes an optional configured queue
+through `RunServer(task_queue=...)` and `RunClient` task methods for bounded
+submit/list/inspect/claim/complete/fail operations. Separate `task:*` scopes,
+principal capability requirements, and exact worker-agent policy checks are
+applied before queue mutation, while the selected `TaskQueue` remains the
+authority for ownership and lifecycle conflicts. This is a process-boundary
+control plane only: worker heartbeats, distributed leases, automatic retry,
+handler execution, queue federation, and exactly-once effects remain separate.
+
 Local scheduler assignment now uses an atomic queue-side claim, rejects
 duplicate task ownership, and returns scheduler assignment failures through
 physical bounded retry admission. This closes a local task-loss boundary; it
