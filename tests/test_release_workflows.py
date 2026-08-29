@@ -4,6 +4,7 @@ import re
 from pathlib import Path
 
 import maple
+import tests
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -84,6 +85,7 @@ def test_core_distribution_manifest_scope_and_version_are_explicit():
     version = (REPO / "VERSION").read_text(encoding="utf-8").strip()
 
     assert version == maple.__version__
+    assert tests.__version__ == maple.__version__
     assert "recursive-include maple *.py" in manifest
     assert "recursive-include docs" in manifest
     assert "recursive-include examples" in manifest

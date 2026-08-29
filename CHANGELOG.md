@@ -11,8 +11,9 @@
 ### Release hardening
 
 - **Core distribution scope guard**: release workflow tests now assert that
-  `VERSION` matches the imported package version and that the core manifest
-  excludes the separately versioned demo and n8n integration trees.
+  `VERSION` and the included test package match the imported package version,
+  and that the core manifest excludes the separately versioned demo and n8n
+  integration trees.
 
 - **Whole-package type-boundary closure**: the final invocation-store and
   remote handoff typing diagnostics are narrowed or annotated without runtime
