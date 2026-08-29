@@ -111,11 +111,13 @@ def _extract_bearer_token(authorization: Any) -> Optional[str]:
     if not isinstance(authorization, str) or not authorization.startswith("Bearer "):
         return None
     token = authorization[len("Bearer ") :]
-    if not token or len(token.encode("utf-8")) > _MAX_AUTH_TOKEN_BYTES:
+    if not token:
         return None
     try:
+        if len(token.encode("utf-8")) > _MAX_AUTH_TOKEN_BYTES:
+            return None
         _validate_auth_token(token)
-    except ValueError:
+    except (UnicodeError, ValueError):
         return None
     return token
 
