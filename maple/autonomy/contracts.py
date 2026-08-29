@@ -267,9 +267,15 @@ def _parse_json_value(
                 "Structured output exceeds the byte limit.",
             )
         )
+
+    def reject_non_standard_constant(value: str) -> None:
+        raise ValueError(f"non-standard JSON numeric constant: {value}")
+
     try:
-        return Result.ok(json.loads(content))
-    except (TypeError, ValueError) as exc:
+        return Result.ok(
+            json.loads(content, parse_constant=reject_non_standard_constant)
+        )
+    except (RecursionError, TypeError, ValueError) as exc:
         return Result.err(
             _error(
                 "STRUCTURED_OUTPUT_INVALID_JSON",

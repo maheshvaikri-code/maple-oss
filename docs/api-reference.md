@@ -835,6 +835,13 @@ config = AutonomousConfig(
 parsed = parse_structured_output('{"answer":"ready"}', report_schema)
 ```
 
+Structured parsing uses strict finite JSON. Non-standard numeric constants
+(`NaN`, `Infinity`, and `-Infinity`) and decoder recursion failures return the
+typed `STRUCTURED_OUTPUT_INVALID_JSON` error before schema validation. Valid
+finite JSON behavior and the existing UTF-8 byte bound are unchanged. This
+does not claim semantic correctness or provider-native structured-generation
+enforcement.
+
 ### Guardrail lifecycle events
 
 `run_guardrails(...)` can receive an optional `GuardrailObserver`. The observer

@@ -10,6 +10,11 @@
 
 ### Release hardening
 
+- **Strict structured-output JSON parsing**: structured and typed output now
+  reject non-standard `NaN`/`Infinity` constants and normalize JSON decoder
+  recursion failures to the existing `STRUCTURED_OUTPUT_INVALID_JSON` error;
+  valid finite JSON behavior and public signatures remain unchanged.
+
 - **Bounded retrieval citation tool**: `create_retrieval_tool()` adapts an
   existing lexical backend into a read-only model tool with bounded UTF-8
   queries, deterministic source URI/title citations, metadata-minimal results,

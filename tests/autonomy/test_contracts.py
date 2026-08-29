@@ -67,6 +67,40 @@ def test_structured_output_parses_and_validates_json():
     assert invalid.is_err()
 
 
+@pytest.mark.parametrize("constant", ["NaN", "Infinity", "-Infinity"])
+def test_structured_output_rejects_non_standard_numeric_constants(constant):
+    result = parse_structured_output(constant, {"type": "number"})
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "STRUCTURED_OUTPUT_INVALID_JSON"
+
+
+def test_structured_output_accepts_finite_json_numbers():
+    result = parse_structured_output(
+        '{"score":1.5}',
+        {
+            "type": "object",
+            "required": ["score"],
+            "properties": {"score": {"type": "number"}},
+        },
+    )
+
+    assert result.is_ok()
+    assert result.unwrap()["score"] == 1.5
+
+
+def test_structured_output_normalizes_decoder_recursion_failure(monkeypatch):
+    def raise_recursion_error(*args, **kwargs):
+        raise RecursionError("decoder nesting limit")
+
+    monkeypatch.setattr("maple.autonomy.contracts.json.loads", raise_recursion_error)
+
+    result = parse_structured_output("[0]", {"type": "array"})
+
+    assert result.is_err()
+    assert result.unwrap_err()["errorType"] == "STRUCTURED_OUTPUT_INVALID_JSON"
+
+
 def test_typed_output_returns_validated_model_and_advertises_schema():
     schema = structured_model_schema(TypedReport)
     result = parse_typed_output('{"title":"Report","count":2}', TypedReport)
