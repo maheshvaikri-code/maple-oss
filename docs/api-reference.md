@@ -1921,7 +1921,10 @@ need a separate calibrated evaluation contract.
 Providers can declare compatibility requirements independently of provider
 names. `ProviderRouter` orders matching descriptors by explicit priority and
 tries configured providers in that order, returning a structured failure if no
-compatible provider initializes.
+compatible provider initializes. The default `create(...)` behavior returns
+the first initialized provider; `failover=True` returns a bounded
+`FallbackLLMProvider` for completion-only failover across the configured
+compatible providers.
 
 ```python
 from maple import ProviderCapabilities, ProviderRequirements, ProviderRouter
@@ -1938,6 +1941,64 @@ provider = router.create(
     ProviderRequirements(tools=True, structured_output=True),
 )
 ```
+
+### Bounded completion failover (preview)
+
+`FallbackLLMProvider` is an opt-in local resilience boundary. It attempts each
+child provider at most once, in router priority/name order, and advances only
+for the exact configured error types. The default set is
+`LLM_RATE_LIMITED`, `LLM_TIMEOUT`, and `LLM_TRANSIENT_ERROR`; raised provider
+exceptions are classified conservatively. Non-transient errors fail fast, and
+an exhausted chain returns the final error type with bounded
+`details.attemptedProviders` labels. At most eight configured providers may be
+wrapped. Usage is tracked by the wrapper without mutating the returned
+`LLMResponse`.
+
+```python
+from maple import Result
+from maple.llm import (
+    ChatMessage,
+    ChatRole,
+    FallbackLLMProvider,
+    LLMConfig,
+    LLMResponse,
+    ProviderCapabilities,
+    ProviderRouter,
+)
+from maple.llm import LLMProvider
+
+
+class DemoProvider(LLMProvider):
+    def complete(self, messages, tools=None, temperature=None, max_tokens=None, stop=None):
+        if self.config.provider == "primary":
+            return Result.err({"errorType": "LLM_TIMEOUT", "message": "retry"})
+        return Result.ok(LLMResponse(content="backup", model=self.config.model))
+
+
+router = ProviderRouter()
+router.register("primary", DemoProvider, ProviderCapabilities(), priority=10)
+router.register("backup", DemoProvider, ProviderCapabilities(), priority=1)
+fallback = router.create(
+    {
+        "primary": LLMConfig(provider="primary", model="primary-model"),
+        "backup": LLMConfig(provider="backup", model="backup-model"),
+    },
+    failover=True,
+).unwrap()
+assert isinstance(fallback, FallbackLLMProvider)
+response = fallback.complete(
+    [ChatMessage(role=ChatRole.USER, content="hello")]
+).unwrap()
+assert response.content == "backup"
+```
+
+Failover is not enabled by default. `failover=True` with
+`ProviderRequirements(streaming=True)` returns
+`PROVIDER_FAILOVER_STREAM_UNSUPPORTED` before provider construction; native
+streaming must remain on one direct provider because a fallback cannot safely
+continue a partial stream. This feature does not provide health polling,
+circuit state, load balancing, hosted routing, distributed ownership, tool
+execution, or exactly-once external side effects.
 
 ### Native async provider completion (preview)
 

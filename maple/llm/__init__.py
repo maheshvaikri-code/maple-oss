@@ -16,6 +16,7 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 # LLM Provider Layer for MAPLE autonomous agents.
 
 from .capabilities import (
+    FallbackLLMProvider,
     ProviderCapabilities,
     ProviderDescriptor,
     ProviderRequirements,
@@ -62,4 +63,5 @@ __all__ = [
     "ProviderDescriptor",
     "ProviderRequirements",
     "ProviderRouter",
+    "FallbackLLMProvider",
 ]

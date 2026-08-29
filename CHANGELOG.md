@@ -17,6 +17,13 @@
 
 ### Additions
 
+- **Bounded provider failover**: `ProviderRouter.create(..., failover=True)`
+  can return an opt-in `FallbackLLMProvider` that makes at most eight
+  completion attempts in deterministic capability order for classified
+  transient errors, with sync/async support and fail-fast non-transient errors.
+  Native streaming, health-aware routing, distributed coordination, and
+  exactly-once side effects remain outside the contract.
+
 - **Bounded code-block artifact materialization**: `CodeBlock.sha256` and
   `materialize_code_block(...)` preserve exact UTF-8 code bytes and stable
   block index/language metadata through the existing content-addressed

@@ -273,6 +273,7 @@ from .error.circuit_breaker import CircuitBreaker
 from .error.recovery import RetryOptions, exponential_backoff, retry
 from .error.types import Error, ErrorType, Severity
 from .llm.capabilities import (
+    FallbackLLMProvider,
     ProviderCapabilities,
     ProviderDescriptor,
     ProviderRequirements,
@@ -575,6 +576,7 @@ __all__ = [
     "ProviderDescriptor",
     "ProviderRequirements",
     "ProviderRouter",
+    "FallbackLLMProvider",
     # S2.dev integration (optional)
     "S2Broker",
     "S2StateBackend",
