@@ -1,7 +1,8 @@
 # QA + Security Report — MAPLE Agent Runtime Slice 201 @ b2f3809
 
 **QA Engineer · Security Reviewer · Date:** 2026-08-29
-**Build under test:** `b2f3809` (`feat/maple-agent-runtime`)
+**Build under test:** `b2f3809` implementation; `b10114e` evidence-only
+closure (`feat/maple-agent-runtime`)
 
 ## Acceptance criteria verification
 
@@ -44,6 +45,28 @@ Full repository suite:
 
 No retry or test weakening was used. The existing single skip is the optional
 NATS integration test from the repository baseline.
+
+## Package smoke
+
+The exact `b10114e` source tree was archived into a temporary directory. The
+archive contained 878 tracked entries. The package smoke produced:
+
+```text
+Successfully built maple_oss-1.1.3.tar.gz and maple_oss-1.1.3-py3-none-any.whl
+Checking dist\maple_oss-1.1.3-py3-none-any.whl: PASSED
+Checking dist\maple_oss-1.1.3.tar.gz: PASSED
+Successfully installed maple-oss-1.1.3
+import_ok 1.1.3 100 10000 EvaluationHarness
+{"checks": {"core": true, "evaluation": true, "events": true, "execution": true, "interop": true, "retrieval": true, "server": true, "sessions": true}, "network": false, "ready": true, "status": "SUCCESS", "version": "1.1.3"}
+twine_exit=0
+install_exit=0
+import_exit=0
+doctor_exit=0
+wheel_sha256=DA528A9F587B4CD07325FDD23F1342CC53EC449CBC29D2A405FF493A2CCE2693
+sdist_sha256=BE9493CC26A97877534B6CCA494BC82D5BAD34774F8163EB0BA837394A9383CA
+```
+
+This is a local artifact check only; no registry publication was attempted.
 
 ## Bugs found
 

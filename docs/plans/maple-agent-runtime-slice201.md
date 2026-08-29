@@ -43,6 +43,6 @@ risks.
 
 ## Status snapshot
 
-G0/G1/G2 design, implementation, review, and QA are complete for the local
-contract. G6 package smoke remains for this slice. Hosted tenancy, distributed
-coordination, encryption, and remote APIs remain separate human-gated scope.
+G0/G1/G2 design, implementation, review, QA, and G6 package smoke are complete
+for the local contract. Hosted tenancy, distributed coordination, encryption,
+and remote APIs remain separate human-gated scope.
