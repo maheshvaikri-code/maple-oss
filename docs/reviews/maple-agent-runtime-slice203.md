@@ -1,7 +1,7 @@
 # Code Review — Slice 203 native run-ID validation
 
-**Reviewer role:** Code Reviewer · **Date:** 2026-08-29  
-**Reviewed commits:** `742661a`, `d7834d1`  
+**Reviewer role:** Code Reviewer · **Date:** 2026-08-29
+**Reviewed commits:** `742661a`, `d7834d1`
 **Design:** [Slice 203 brief](../briefs/maple-agent-runtime-slice203.md),
 [ADR-147](../adr/147-native-run-id-validation.md), and
 [Slice 203 plan](../plans/maple-agent-runtime-slice203.md)

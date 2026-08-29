@@ -1,6 +1,6 @@
 # QA + Security Report — Slice 203 native run-ID validation
 
-**QA Engineer · Security Reviewer · Date:** 2026-08-29  
+**QA Engineer · Security Reviewer · Date:** 2026-08-29
 **Build under test:** `d7834d1` (`742661a` implementation)
 
 ## Acceptance criteria
