@@ -2982,13 +2982,13 @@ with RunServer(
     completed = client.complete_task(task_id, "worker-a", {"ok": True})
 ```
 
-The routes are `POST /v1/tasks`, `GET /v1/tasks`,
+The routes are `POST /v1/tasks`, `GET /v1/tasks`, `GET /v1/tasks/stats`,
 `GET /v1/tasks/{task_id}`, `POST /v1/tasks/claim-next`, and
 `POST /v1/tasks/{task_id}/{action}` where `action` is `claim`, `complete`,
 `fail`, `cancel`, or `retry`. The corresponding client methods are
-`submit_task`, `list_tasks`, `inspect_task`, `claim_next_task`, `claim_task`,
-`cancel_task`, `retry_task`, `complete_task`, and `fail_task`. Task submission
-accepts a bounded task type,
+`submit_task`, `list_tasks`, `task_queue_stats`, `inspect_task`,
+`claim_next_task`, `claim_task`, `cancel_task`, `retry_task`, `complete_task`,
+and `fail_task`. Task submission accepts a bounded task type,
 JSON object payload/metadata, priority, capability requirements, timeout, and
 retry count. Completion results and failure text are bounded as well. Listing
 supports exact status/task-type filters and a limit of 1 through 100.
@@ -3017,6 +3017,10 @@ explicit caller-driven operation for a failed task owned by that agent; it
 respects the task retry count and queue capacity, clears ownership, and
 returns the requeued task. It does not automatically retry work or accept
 queued, assigned, running, completed, cancelled, or timed-out tasks.
+The `task_queue_stats()` method returns only the fixed aggregate counters and
+finite timing/throughput values from the selected queue; malformed optional
+queue statistics become `TASK_QUEUE_UNAVAILABLE`. It does not expose task
+payloads/results or provide a globally consistent distributed snapshot.
 
 ### Agent run HTTP transport
 

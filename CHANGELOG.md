@@ -10,6 +10,12 @@
 
 ### Additions
 
+- **Authenticated remote task queue statistics**: `RunClient.task_queue_stats()`
+  reads fixed finite counters and timing/throughput values through
+  `GET /v1/tasks/stats` under `task:read`. Malformed optional queue statistics
+  fail closed, and the route does not expose task payloads/results or claim a
+  distributed monitoring snapshot.
+
 - **Owner-safe remote task retry**: authenticated workers can call
   `RunClient.retry_task(...)` through `POST /v1/tasks/{task_id}/retry` under
   `task:retry`. Only failed work owned by the assigned agent is requeued, with

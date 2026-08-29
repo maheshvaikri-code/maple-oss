@@ -31,7 +31,13 @@ from urllib.parse import parse_qsl, quote, unquote, urlencode, urlsplit, urlunsp
 from urllib.request import Request, urlopen
 
 from ..core.result import Result
-from ..task_management.task_queue import Task, TaskPriority, TaskQueue, TaskStatus
+from ..task_management.task_queue import (
+    QueueStats,
+    Task,
+    TaskPriority,
+    TaskQueue,
+    TaskStatus,
+)
 from .approval import (
     ApprovalNotification,
     ApprovalNotifier,
@@ -1506,6 +1512,54 @@ def _task_to_dict(task: Task) -> Dict[str, Any]:
     }
 
 
+def _task_queue_stats_to_dict(stats: Any) -> Optional[Dict[str, Any]]:
+    """Return a fixed, finite queue-statistics envelope or ``None``."""
+    if not isinstance(stats, QueueStats):
+        return None
+    counters = (
+        stats.total_tasks,
+        stats.pending_tasks,
+        stats.running_tasks,
+        stats.completed_tasks,
+        stats.failed_tasks,
+    )
+    if any(
+        not isinstance(value, int) or isinstance(value, bool) or value < 0
+        for value in counters
+    ):
+        return None
+    measurements = (
+        stats.average_wait_time,
+        stats.average_execution_time,
+        stats.throughput_per_minute,
+    )
+    if any(
+        not isinstance(value, (int, float))
+        or isinstance(value, bool)
+        or not math.isfinite(float(value))
+        or value < 0
+        for value in measurements
+    ):
+        return None
+    payload: Dict[str, Any] = {
+        "total_tasks": stats.total_tasks,
+        "pending_tasks": stats.pending_tasks,
+        "running_tasks": stats.running_tasks,
+        "completed_tasks": stats.completed_tasks,
+        "failed_tasks": stats.failed_tasks,
+        "average_wait_time": stats.average_wait_time,
+        "average_execution_time": stats.average_execution_time,
+        "throughput_per_minute": stats.throughput_per_minute,
+    }
+    try:
+        encoded = json.dumps(
+            payload, ensure_ascii=False, allow_nan=False, separators=(",", ":")
+        ).encode("utf-8")
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return payload if len(encoded) <= _MAX_REMOTE_TASK_BYTES else None
+
+
 def _task_operation_error(raw_error: Any) -> Tuple[int, Error]:
     """Map queue-owned strings to stable HTTP errors without leaking internals."""
     message = raw_error if isinstance(raw_error, str) else "queue operation failed"
@@ -1893,6 +1947,9 @@ class _RequestHandler(BaseHTTPRequestHandler):
             if method == "GET" and path == ("v1", "tasks"):
                 self._list_tasks()
                 return
+            if method == "GET" and path == ("v1", "tasks", "stats"):
+                self._task_stats()
+                return
             if method == "POST" and path == ("v1", "tasks", "claim-next"):
                 self._claim_next_task()
                 return
@@ -2100,6 +2157,25 @@ class _RequestHandler(BaseHTTPRequestHandler):
             )
             return
         self._write_json(200, payload)
+
+    def _task_stats(self) -> None:
+        queue = self._task_queue()
+        if queue is None:
+            return
+        try:
+            stats = _task_queue_stats_to_dict(queue.get_queue_stats())
+        except Exception:
+            stats = None
+        if stats is None:
+            self._write_error(
+                503,
+                _error(
+                    "TASK_QUEUE_UNAVAILABLE",
+                    "Task queue statistics are temporarily unavailable.",
+                ),
+            )
+            return
+        self._write_json(200, {"stats": stats})
 
     def _claim_next_task(self) -> None:
         """Claim the first compatible task without blocking the HTTP worker."""
@@ -4612,6 +4688,10 @@ class RunClient:
         if task_type is not None:
             query["task_type"] = task_type
         return self._request("GET", ("v1", "tasks"), query=query)
+
+    def task_queue_stats(self) -> Result[Dict[str, Any], Error]:
+        """Read fixed aggregate statistics from an authenticated task queue."""
+        return self._request("GET", ("v1", "tasks", "stats"))
 
     def inspect_task(self, task_id: str) -> Result[Dict[str, Any], Error]:
         """Inspect one remote task without changing its state."""

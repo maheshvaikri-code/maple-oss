@@ -60,7 +60,7 @@ workers, hosted scheduler ownership, automatic retry, or exactly-once effects.
 
 The authenticated local control plane now exposes an optional configured queue
 through `RunServer(task_queue=...)` and `RunClient` task methods for bounded
-submit/list/inspect/claim/claim-next/complete/fail/cancel/retry operations. Separate `task:*` scopes,
+submit/list/stats/inspect/claim/claim-next/complete/fail/cancel/retry operations. Separate `task:*` scopes,
 principal capability requirements, and exact worker-agent policy checks are
 applied before queue mutation, while the selected `TaskQueue` remains the
 authority for ownership and lifecycle conflicts. This is a process-boundary
@@ -80,6 +80,12 @@ failed task can be requeued through this path, and the recorded owner must
 match the caller's allowed agent. Existing retry-count and queue-capacity
 bounds remain authoritative; automatic retry, scheduling, lease control,
 federation, and exactly-once effects remain separate.
+
+Slice 190 adds authenticated read-only queue statistics under `task:read`.
+The fixed counters and finite timing/throughput values are serialized without
+task payloads or results; malformed optional queue statistics fail closed.
+This is host-local telemetry, not distributed aggregation, alerting,
+dashboarding, or a globally consistent snapshot.
 
 Local scheduler assignment now uses an atomic queue-side claim, rejects
 duplicate task ownership, and returns scheduler assignment failures through

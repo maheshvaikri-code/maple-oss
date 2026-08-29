@@ -32,7 +32,7 @@ from maple.autonomy import (
     WorkflowRegistry,
 )
 from maple.core.result import Result
-from maple.task_management import TaskQueue
+from maple.task_management import FileTaskQueue, QueueStats, TaskQueue
 from maple.task_management.task_queue import TaskPriority, TaskStatus
 
 
@@ -373,6 +373,90 @@ def test_remote_task_retry_enforces_owner_failed_state_and_bounds():
     assert terminal_retry.unwrap_err()["errorType"] == "TASK_CONFLICT"
     assert malformed_status == 400
     assert malformed["error"]["errorType"] == "TASK_INPUT_INVALID"
+
+
+def test_remote_task_queue_stats_is_read_only_and_authenticated():
+    queue = TaskQueue(max_queue_size=4)
+    server = RunServer(
+        WorkflowRegistry(),
+        auth_token="task-token",
+        task_queue=queue,
+    )
+    base_url = server.start()
+
+    try:
+        client = RunClient(base_url, auth_token="task-token")
+        submitted = client.submit_task("stats", {"secret": "local-only"})
+        assert submitted.is_ok()
+        task_id = submitted.unwrap()["task_id"]
+        before = client.task_queue_stats()
+        claimed = client.claim_task(task_id, "worker-a")
+        completed = client.complete_task(task_id, "worker-a", {"ok": True})
+        after = client.task_queue_stats()
+        unauthorized = RunClient(base_url).task_queue_stats()
+    finally:
+        server.close()
+
+    expected_fields = {
+        "total_tasks",
+        "pending_tasks",
+        "running_tasks",
+        "completed_tasks",
+        "failed_tasks",
+        "average_wait_time",
+        "average_execution_time",
+        "throughput_per_minute",
+    }
+    assert before.is_ok()
+    assert before.unwrap()["stats"]["pending_tasks"] == 1
+    assert set(before.unwrap()["stats"]) == expected_fields
+    assert "secret" not in before.unwrap()["stats"]
+    assert claimed.is_ok() and completed.is_ok()
+    assert after.is_ok()
+    assert after.unwrap()["stats"]["completed_tasks"] == 1
+    assert after.unwrap()["stats"]["pending_tasks"] == 0
+    assert unauthorized.is_err()
+    assert unauthorized.unwrap_err()["errorType"] == "UNAUTHORIZED"
+
+
+def test_remote_task_queue_stats_rejects_malformed_queue_values():
+    class BrokenStatsQueue(TaskQueue):
+        def get_queue_stats(self):
+            return QueueStats(average_wait_time=float("nan"))
+
+    server = RunServer(
+        WorkflowRegistry(),
+        auth_token="task-token",
+        task_queue=BrokenStatsQueue(),
+    )
+    base_url = server.start()
+
+    try:
+        stats = RunClient(base_url, auth_token="task-token").task_queue_stats()
+    finally:
+        server.close()
+
+    assert stats.is_err()
+    assert stats.unwrap_err()["errorType"] == "TASK_QUEUE_UNAVAILABLE"
+
+
+def test_remote_task_queue_stats_supports_durable_queue(tmp_path):
+    queue = FileTaskQueue(tmp_path / "tasks.json")
+    server = RunServer(
+        WorkflowRegistry(),
+        auth_token="task-token",
+        task_queue=queue,
+    )
+    base_url = server.start()
+
+    try:
+        stats = RunClient(base_url, auth_token="task-token").task_queue_stats()
+    finally:
+        server.close()
+        queue.stop()
+
+    assert stats.is_ok()
+    assert stats.unwrap()["stats"]["total_tasks"] == 0
 
 
 def test_remote_task_queue_rejects_malformed_queries_and_payloads():
