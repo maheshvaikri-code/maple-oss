@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import os
+import time
 import uuid
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
@@ -26,6 +27,8 @@ from ..core.result import Result
 from ..resources.lease import FileLeaseManager
 
 Error = Dict[str, Any]
+
+_ACQUIRE_WAIT_SECONDS = 5.0
 
 
 class DurableRecordLease:
@@ -56,7 +59,8 @@ class DurableRecordLease:
             raise ValueError("lease_ttl_seconds must be positive")
         self._manager = lease_manager or FileLeaseManager(directory / ".maple-leases")
         self._namespace = namespace
-        self._holder = f"{holder_label}-store-{os.getpid()}-{uuid.uuid4().hex}"
+        self._holder_prefix = f"{holder_label}-store-"
+        self._holder = f"{self._holder_prefix}{os.getpid()}-{uuid.uuid4().hex}"
         self._ttl_seconds = float(lease_ttl_seconds)
 
     def _resource(self, record_id: str) -> str:
@@ -81,6 +85,15 @@ class DurableRecordLease:
             "details": {"operation": operation, "reason": self._reason(error)},
         }
 
+    def _is_internal_holder(self, error: Any) -> bool:
+        if not isinstance(error, dict):
+            return False
+        details = error.get("details")
+        if not isinstance(details, dict):
+            return False
+        holder = details.get("holder")
+        return isinstance(holder, str) and holder.startswith(self._holder_prefix)
+
     def run(
         self,
         record_id: str,
@@ -92,28 +105,43 @@ class DurableRecordLease:
         release_error_type: str,
         release_error_message: str,
     ) -> Result[Any, Error]:
-        try:
-            acquired = self._manager.acquire(
-                self._resource(record_id), self._holder, self._ttl_seconds
-            )
-        except (OSError, TypeError, ValueError) as exc:
-            return Result.err(
-                self._failure(
-                    acquire_error_type,
-                    acquire_error_message,
-                    operation,
-                    type(exc).__name__,
+        acquire_deadline = time.monotonic() + _ACQUIRE_WAIT_SECONDS
+        while True:
+            try:
+                acquired = self._manager.acquire(
+                    self._resource(record_id), self._holder, self._ttl_seconds
                 )
-            )
-        if acquired.is_err():
-            return Result.err(
-                self._failure(
-                    acquire_error_type,
-                    acquire_error_message,
-                    operation,
-                    acquired.unwrap_err(),
+            except (OSError, TypeError, ValueError) as exc:
+                return Result.err(
+                    self._failure(
+                        acquire_error_type,
+                        acquire_error_message,
+                        operation,
+                        type(exc).__name__,
+                    )
                 )
-            )
+            if acquired.is_ok():
+                break
+            acquire_error = acquired.unwrap_err()
+            if not self._is_internal_holder(acquire_error):
+                return Result.err(
+                    self._failure(
+                        acquire_error_type,
+                        acquire_error_message,
+                        operation,
+                        acquire_error,
+                    )
+                )
+            if time.monotonic() >= acquire_deadline:
+                return Result.err(
+                    self._failure(
+                        acquire_error_type,
+                        acquire_error_message,
+                        operation,
+                        acquire_error,
+                    )
+                )
+            time.sleep(0.01)
 
         lease = acquired.unwrap()
         result: Optional[Result[Any, Error]] = None

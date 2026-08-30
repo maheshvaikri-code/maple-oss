@@ -23,7 +23,12 @@
 - Declared the HTTP A2A adapter's `requests` integration extra and aligned the
   full-test CI jobs with the adapter and LLM SDK dependencies they import.
 - Fixed Doctrine metrics parsing of Git UTC timestamps on Python 3.8–3.10 and
-  tracked the Doctrine/Claude wiring required by its repository tests.
+- tracked the Doctrine/Claude wiring required by its repository tests.
+- Added a process-local guard and bounded retry around durable record leases so
+  concurrent local store instances serialize reliably on Windows while
+  externally held leases still fail closed.
+- Pinned checked-in JSON to LF line endings so the Doctrine canonical-byte
+  gate remains stable across platform checkouts.
 
 ### Release hardening
 

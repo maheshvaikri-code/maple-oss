@@ -43,9 +43,23 @@ import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import BinaryIO, Callable, Dict, Iterator, Optional, Tuple, Union, cast
+from typing import Any, BinaryIO, Callable, Dict, Iterator, Optional, Tuple, Union, cast
 
 from ..core.result import Result
+
+_PROCESS_FILE_LOCKS: Dict[str, Any] = {}
+_PROCESS_FILE_LOCKS_GUARD = threading.Lock()
+
+
+def _process_file_lock(path: Path) -> Any:
+    """Return the process-local lock paired with one durable lock file."""
+    key = os.path.normcase(os.path.abspath(str(path)))
+    with _PROCESS_FILE_LOCKS_GUARD:
+        lock = _PROCESS_FILE_LOCKS.get(key)
+        if lock is None:
+            lock = threading.RLock()
+            _PROCESS_FILE_LOCKS[key] = lock
+        return lock
 
 
 @dataclass
@@ -255,10 +269,19 @@ class _InterProcessFileLock:
         self._path = path
         self._timeout_seconds = timeout_seconds
         self._handle: Optional[BinaryIO] = None
+        self._process_lock = _process_file_lock(path)
 
     def __enter__(self) -> "_InterProcessFileLock":
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        handle = self._path.open("a+b")
+        deadline = time.monotonic() + self._timeout_seconds
+        remaining = max(0.0, deadline - time.monotonic())
+        if not self._process_lock.acquire(timeout=remaining):
+            raise TimeoutError("timed out acquiring file lease lock")
+        try:
+            self._path.parent.mkdir(parents=True, exist_ok=True)
+            handle = self._path.open("a+b")
+        except BaseException:
+            self._process_lock.release()
+            raise
         try:
             handle.seek(0, os.SEEK_END)
             if handle.tell() == 0:
@@ -266,7 +289,6 @@ class _InterProcessFileLock:
                 handle.flush()
                 os.fsync(handle.fileno())
             handle.seek(0)
-            deadline = time.monotonic() + self._timeout_seconds
             if os.name == "nt":
                 import msvcrt
 
@@ -299,6 +321,7 @@ class _InterProcessFileLock:
             return self
         except BaseException:
             handle.close()
+            self._process_lock.release()
             raise
 
     def __exit__(self, exc_type: object, exc_value: object, traceback: object) -> None:
@@ -322,6 +345,7 @@ class _InterProcessFileLock:
                 flock(handle.fileno(), lock_un)
         finally:
             handle.close()
+            self._process_lock.release()
 
 
 class FileLeaseManager:
