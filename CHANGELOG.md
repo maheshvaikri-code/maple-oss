@@ -22,6 +22,8 @@
   fail closed without raising during serializer initialization.
 - Declared the HTTP A2A adapter's `requests` integration extra and aligned the
   full-test CI jobs with the adapter and LLM SDK dependencies they import.
+- Fixed Doctrine metrics parsing of Git UTC timestamps on Python 3.8–3.10 and
+  tracked the Doctrine/Claude wiring required by its repository tests.
 
 ### Release hardening
 

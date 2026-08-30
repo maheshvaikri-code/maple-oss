@@ -140,6 +140,10 @@ class TestGates(TestEnrich):
         subprocess.run(["git", "tag", "-a", name, "-m", name],
                        cwd=self.root, check=True)
 
+    def test_git_utc_timestamp_is_supported_on_python_38(self):
+        parsed = dm._parse_git_timestamp("2026-08-30T22:24:13Z")
+        self.assertEqual(parsed.isoformat(), "2026-08-30T22:24:13+00:00")
+
     def test_per_release_verdict_mining(self):
         self.tag("v0.1.0")
         self.write_review(
