@@ -34,13 +34,15 @@ release documentation.
 ## Review decision
 
 The local source and package candidate are technically ready for the remaining
-human-controlled release gates. Do not publish yet: project sign-off, secret
-scanning, intended protected-branch state, cloud target, website target, and
-registry/tag authorization remain open.
+human-controlled release gates. Do not publish yet: project sign-off, intended
+protected-branch state, cloud target, website target, and registry/tag
+authorization remain open.
 
 ## Independence and security boundary
 
 This is not an independent fresh-context verifier sign-off because a new
 reviewer session was unavailable in the current execution context. Bandit and
-pip-audit passed; `gitleaks` was unavailable and must be run before external
-publication.
+pip-audit passed. Gitleaks `8.30.1` returned no leaks for the clean current
+tree. Its full-history scan reported three reviewed false positives in
+synthetic tests/documentation; no credentials, allowlist, or history rewrite is
+claimed.

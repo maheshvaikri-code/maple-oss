@@ -126,8 +126,14 @@ maple_oss-2.0.0.tar.gz            4F702096A8B2701359CA57678A9978FB6612202EFB051A
 
 ## Limitations and handoff
 
-- `gitleaks` is not installed in this environment; no secret-scan result is
-  claimed. Run the repository-approved secret scanner before publication.
+- Gitleaks `8.30.1` was downloaded temporarily from the official release and
+  its Windows x64 archive SHA-256 was verified before execution.
+- The full-history scan inspected `735` commits and found three fixture/document
+  false positives. The current secret-like test marker, the idempotency-key
+  fixture, and the n8n JWT placeholder are not credentials; the current files
+  are now scanner-clean. No allowlist or history rewrite was used.
+- A clean-tree Gitleaks directory scan inspected approximately `7.36 MB` and
+  returned `no leaks found` with exit `0`.
 - An independent fresh verifier session was not available in this execution
   context, so this file is an author-run QA record, not an independent sign-off.
 - The working tree contains pre-existing user changes. The release artifact

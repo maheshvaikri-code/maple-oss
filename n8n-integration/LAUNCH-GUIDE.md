@@ -234,7 +234,7 @@ npm audit
 openssl s_client -connect maple.yourdomain.com:443
 
 # Authentication test
-curl -H "Authorization: Bearer YOUR_JWT_TOKEN" https://maple.yourdomain.com/api/secure
+curl -H "Authorization: Bearer ${MAPLE_JWT_TOKEN}" https://maple.yourdomain.com/api/secure
 ```
 
 ---

@@ -256,7 +256,7 @@ class TestCheckpointVerify(TempRepo):
     def test_secretlike_claim_rejected(self):
         """Regression: security S-1 — fail closed on secret-like state."""
         prop = proposal(learned=[
-            {"claim": "set api_key = sk_live_abcdef123456 in prod",
+            {"claim": "set api_key = example-secret-value in prod",
              "kind": "fact", "evidence": "config:1",
              "confidence": "verified"}])
         p = self.root / "leak.json"

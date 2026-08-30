@@ -196,7 +196,8 @@ def test_keyed_invocation_requires_explicit_store_but_unkeyed_legacy_call_remain
     base_url = server.start()
     try:
         client = RunClient(base_url, auth_token="agent-token")
-        keyed = client.run_agent("alpha", "keyed", idempotency_key="request-1")
+        request_id = "request-1"
+        keyed = client.run_agent("alpha", "keyed", idempotency_key=request_id)
         legacy = client.run_agent("alpha", "legacy")
     finally:
         server.close()
