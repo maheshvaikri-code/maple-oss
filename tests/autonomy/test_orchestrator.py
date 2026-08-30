@@ -204,17 +204,29 @@ class TestSupervisedExecution:
         assert not barrier.broken
 
     def test_execute_supervised_async_runs_workers_concurrently(self):
-        gate = asyncio.Event()
-        ready = []
-        orch = AgentOrchestrator(max_parallel_agents=2)
-        members = [
-            TeamMember(agent=FakeAgent("supervisor"), role="supervisor"),
-            TeamMember(agent=AsyncGateAgent("worker-1", gate, ready), role="worker"),
-            TeamMember(agent=AsyncGateAgent("worker-2", gate, ready), role="worker"),
-        ]
-        team_id = orch.form_team("async-team", members).unwrap()
+        async def scenario():
+            gate = asyncio.Event()
+            ready = []
+            orch = AgentOrchestrator(max_parallel_agents=2)
+            members = [
+                TeamMember(agent=FakeAgent("supervisor"), role="supervisor"),
+                TeamMember(
+                    agent=AsyncGateAgent("worker-1", gate, ready),
+                    role="worker",
+                ),
+                TeamMember(
+                    agent=AsyncGateAgent("worker-2", gate, ready),
+                    role="worker",
+                ),
+            ]
+            team_id = orch.form_team("async-team", members).unwrap()
+            result = await orch.execute_supervised_async(
+                team_id,
+                "Build a feature",
+            )
+            return result, ready
 
-        result = asyncio.run(orch.execute_supervised_async(team_id, "Build a feature"))
+        result, ready = asyncio.run(scenario())
 
         assert result.is_ok()
         assert result.unwrap()["completed"] == 2
