@@ -1,6 +1,7 @@
 # QA Record - MAPLE v2.0.0 local candidate
 
-**Candidate commit:** `b4afc0c` (`chore(release): promote MAPLE to 2.0.0`)
+**Quality candidate commit:** `b4afc0c` (`chore(release): promote MAPLE to 2.0.0`)
+**Final repository candidate:** `e8e2faa` (`chore(repo): add doctrine tooling and pending updates`)
 **Verification date:** 2026-08-29
 **Scope:** MAPLE source quality gates, version promotion, full test suite, and
 clean-archive package smoke checks.
@@ -95,6 +96,32 @@ Final archive SHA-256 values:
 ```text
 maple_oss-2.0.0-py3-none-any.whl  94A5382D5F23C53B37FD35C2F1A18CDD87F313FD312311E61C37B4F52283153B
 maple_oss-2.0.0.tar.gz            8EB1D2499C173EBBC8F5737A59613444DA3B7E901945B74A2047BCF6D61F17DC
+```
+
+The pending repository updates were committed in `e8e2faa`. A post-commit
+clean-archive rebuild of that exact commit passed all package gates:
+
+```text
+archive_head=e8e2faabf45f7f30f3e76210fc5321d50bd06219
+Successfully built maple_oss-2.0.0-py3-none-any.whl and maple_oss-2.0.0.tar.gz
+twine_exit=0
+install_exit=0
+import_version=2.0.0
+import_exit=0
+{"checks": {"core": true, "evaluation": true, "events": true, "execution": true, "interop": true, "retrieval": true, "server": true, "sessions": true}, "network": false, "ready": true, "status": "SUCCESS", "version": "2.0.0"}
+doctor_exit=0
+wheel_entries=110
+sdist_entries=923
+wheel_excluded_demo=0
+sdist_excluded_demo=0
+sdist_has_release=True
+```
+
+Post-commit artifact SHA-256 values:
+
+```text
+maple_oss-2.0.0-py3-none-any.whl  1785E812C08F911339EF7E48D00DF2C008BFC7D99FF605E7CD1FFAD9350A3B65
+maple_oss-2.0.0.tar.gz            4F702096A8B2701359CA57678A9978FB6612202EFB051A2542ECD9633A044370
 ```
 
 ## Limitations and handoff
