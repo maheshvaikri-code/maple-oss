@@ -164,6 +164,7 @@ cython_debug/
 
 # MAPLE specific ignores
 _development_archive/
+.tmp-maple-*/
 *.log
 *.json.bak
 test_results/
