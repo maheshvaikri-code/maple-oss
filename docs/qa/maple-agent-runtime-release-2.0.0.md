@@ -2,6 +2,7 @@
 
 **Quality candidate commit:** `b4afc0c` (`chore(release): promote MAPLE to 2.0.0`)
 **Final repository candidate:** `e8e2faa` (`chore(repo): add doctrine tooling and pending updates`)
+**Security remediation candidate:** `b86b724` (`fix(security): neutralize scanner false-positive fixtures`)
 **Verification date:** 2026-08-29
 **Scope:** MAPLE source quality gates, version promotion, full test suite, and
 clean-archive package smoke checks.
@@ -122,6 +123,32 @@ Post-commit artifact SHA-256 values:
 ```text
 maple_oss-2.0.0-py3-none-any.whl  1785E812C08F911339EF7E48D00DF2C008BFC7D99FF605E7CD1FFAD9350A3B65
 maple_oss-2.0.0.tar.gz            4F702096A8B2701359CA57678A9978FB6612202EFB051A2542ECD9633A044370
+```
+
+The security remediation was committed in `b86b724`. A final clean-archive
+rebuild of that exact commit passed:
+
+```text
+archive_head=b86b724357c882c1cdbb2060e08bb229ac989300
+Successfully built maple_oss-2.0.0-py3-none-any.whl and maple_oss-2.0.0.tar.gz
+twine_exit=0
+install_exit=0
+import_version=2.0.0
+import_exit=0
+{"checks": {"core": true, "evaluation": true, "events": true, "execution": true, "interop": true, "retrieval": true, "server": true, "sessions": true}, "network": false, "ready": true, "status": "SUCCESS", "version": "2.0.0"}
+doctor_exit=0
+wheel_entries=110
+sdist_entries=923
+wheel_excluded_demo=0
+sdist_excluded_demo=0
+sdist_has_release=True
+```
+
+Security-remediated artifact SHA-256 values:
+
+```text
+maple_oss-2.0.0-py3-none-any.whl  3A7110AFA3990BB9691C16F6515E45989C43056D0BA9AE98D1C0DA115EECFDC7
+maple_oss-2.0.0.tar.gz            3C92491D64F6784975A1C73B23C92A35E28CA79F8D3CF2F4DECC6984B8C1C203
 ```
 
 ## Limitations and handoff
