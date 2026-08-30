@@ -1,5 +1,27 @@
 # Review Record - MAPLE v2.0.0 local candidate
 
+## Final hosted verification
+
+The exact final repository commit is `3d544af131f02cd2529c10b97484ffc4ecddc84b`
+(`fix(ci): stabilize durable stores on Windows`). GitHub CI passed all
+required final workflows: Security Scan `33340906280`, Code Quality
+`33340906353`, Tests `33340906329`, and aggregate CI `33340906289`.
+The matrix includes Python 3.9 through 3.12 on Linux, Windows, and macOS;
+the aggregate run also passed preflight, lint/type checking, package build,
+and its summary gate.
+
+The final clean-archive Gitleaks 8.30.1 scan reported `no leaks found` after
+scanning approximately 7.74 MB. Full history covered 743 commits and retained
+only the three reviewed synthetic historical findings. Main is explicitly
+unprotected (`protected: false`; protection endpoint HTTP 404) with zero
+repository rulesets.
+
+The fresh independent Code Reviewer, Security Reviewer, and QA Engineer
+session required by the doctrine was unavailable in this execution context.
+The following is therefore evidence of author-run verification, not an
+independent sign-off. No merge, tag, publication, cloud action, registry
+write, or website deployment was performed.
+
 **Candidate:** `b4afc0c` (`chore(release): promote MAPLE to 2.0.0`)
 **Review date:** 2026-08-29
 **Reviewer role:** Release/code review pass

@@ -1,5 +1,37 @@
 # QA Record - MAPLE v2.0.0 local candidate
 
+## Final repository gate closure
+
+**Exact final commit:** `3d544af131f02cd2529c10b97484ffc4ecddc84b`
+(`fix(ci): stabilize durable stores on Windows`)
+
+The final hosted workflows passed on this commit:
+
+| Workflow | Run | Result |
+|---|---:|---|
+| Security Scan | `33340906280` | success |
+| Code Quality | `33340906353` | success |
+| Tests | `33340906329` | success; Python 3.9/3.10/3.11/3.12 and Windows/Linux/macOS jobs |
+| CI | `33340906289` | success; preflight, lint/type check, test matrix, package build, summary |
+
+The final local targeted regression gate reported `11 passed in 1.16s` for
+the durable lease, Windows concurrency, Doctrine lint, and installer checks.
+The four concurrent durable-store tests were then repeated ten times with
+`repetitions_failed=0`. A complete local suite at the immediately preceding
+commit `fc52b3d` reported `1906 passed, 1 skipped in 781.02s`; the final
+commit's complete cross-platform suites are the hosted evidence above.
+
+Gitleaks `8.30.1` scanned a clean Git archive of this exact commit
+(`~7.74 MB`) and reported `no leaks found`. The explicit full-history scan
+covered `743 commits` and reported only the three previously reviewed
+synthetic historical findings; no credentials, allowlist, or history rewrite
+is claimed.
+
+GitHub reports `main` as `protected: false`; the branch-protection endpoint
+returned HTTP `404 Branch not protected`, and repository rulesets count is
+`0`. The independent fresh-context reviewer session remains unavailable, so
+this remains an author-run QA record pending that human-controlled gate.
+
 **Quality candidate commit:** `b4afc0c` (`chore(release): promote MAPLE to 2.0.0`)
 **Final repository candidate:** `e8e2faa` (`chore(repo): add doctrine tooling and pending updates`)
 **Security remediation candidate:** `b86b724` (`fix(security): neutralize scanner false-positive fixtures`)
