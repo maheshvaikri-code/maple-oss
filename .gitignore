@@ -183,6 +183,13 @@ website/
 ehthumbs.db
 Thumbs.db
 .claude/
+!.claude/
+.claude/*
+!.claude/agents/
+!.claude/agents/*.md
+!.claude/commands/
+!.claude/commands/*.md
+!.claude/settings.json
 
 # doctrine state plane (machine-local only)
 .doctrine-state/local/
