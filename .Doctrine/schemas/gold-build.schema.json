@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://doctrine.local/schemas/gold-build.schema.json",
+  "title": "Doctrine Gold Build Record",
+  "description": "Provenance record promoting a release candidate to GOLD. Written only by doctrine_gold record (propose/dispose: everything validated before write). Hash-chained via prev_gold_sha256 over the previous record's canonical bytes - the chain is the rollback ladder. Deploy pipelines run doctrine_gold check and refuse on any mismatch.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["gold_version", "tag", "at_commit", "created_at", "merge_verdict", "signoffs", "artifacts", "soak", "human_approval", "prev_gold_sha256"],
+  "properties": {
+    "gold_version": { "const": "1" },
+    "tag": { "type": "string", "pattern": "^v[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "at_commit": { "$ref": "#/$defs/gitsha" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "merge_verdict": { "$ref": "#/$defs/hashedref", "description": "The filed council verdict (docs/merges/<task>.md), content-pinned - an empty or later-edited verdict fails check." },
+    "signoffs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code_review", "security", "qa", "project_review"],
+      "properties": {
+        "code_review": { "$ref": "#/$defs/hashedref" },
+        "security": { "$ref": "#/$defs/hashedref" },
+        "qa": { "$ref": "#/$defs/hashedref" },
+        "project_review": { "$ref": "#/$defs/hashedref" },
+        "compliance": { "$ref": "#/$defs/hashedref" }
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "sha256"],
+        "properties": {
+          "path": { "$ref": "#/$defs/relpath" },
+          "sha256": { "$ref": "#/$defs/sha256" }
+        }
+      }
+    },
+    "soak": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["environment", "result", "evidence"],
+      "properties": {
+        "environment": { "type": "string", "minLength": 1 },
+        "result": { "enum": ["pass"] },
+        "evidence": { "type": "string", "minLength": 1, "maxLength": 400, "description": "Command/dashboard/report reference - never a paraphrase." }
+      }
+    },
+    "human_approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["approved_by", "date", "statement"],
+      "properties": {
+        "approved_by": { "type": "string", "minLength": 1 },
+        "date": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+        "statement": { "type": "string", "minLength": 1, "maxLength": 400 }
+      }
+    },
+    "prev_gold_sha256": {
+      "anyOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }],
+      "description": "null only for the first gold record in the repo."
+    }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "gitsha": { "type": "string", "pattern": "^[a-f0-9]{7,40}$" },
+    "relpath": { "type": "string", "minLength": 1, "pattern": "^(?!/)(?!.*\\.\\.)[^\\\\:*?\"<>|]+$", "description": "Repo-relative POSIX path; no leading slash, no '..', no drive letters. The tool additionally resolve()+prefix-checks every path." },
+    "hashedref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": { "$ref": "#/$defs/relpath" },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      },
+      "description": "Content-pinned file reference: existence is not evidence; the bytes are."
+    }
+  }
+}

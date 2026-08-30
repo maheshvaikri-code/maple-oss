@@ -1,0 +1,42 @@
+{
+  "at_commit": "f3a9c21",
+  "created_at": "2026-07-10T21:04:00Z",
+  "dead_ends": [
+    {
+      "approach": "argparse subparsers for the conformance CLI",
+      "why_failed": "Rung 6 applies: a 9-line manual argv dispatch covers both verbs; subparsers added 60 lines for nothing."
+    }
+  ],
+  "distillate_version": "1",
+  "learned": [
+    {
+      "claim": "Conformance vectors must load via importlib.resources, not path joins — wheel installs break relative paths.",
+      "confidence": "verified",
+      "evidence": "src/den/vectors.py:41",
+      "kind": "constraint"
+    },
+    {
+      "claim": "The u64 overflow guard in dot_i64 is load-bearing for 4096-dim vectors; removing it fails vector 23.",
+      "confidence": "verified",
+      "evidence": "make verify (vector 23)",
+      "kind": "gotcha"
+    },
+    {
+      "claim": "CLI exit codes: 0 pass, 1 mismatch, 2 malformed input — mirrors parity-ledger gate semantics.",
+      "confidence": "verified",
+      "evidence": "decisions:D-0042",
+      "kind": "decision_ref"
+    }
+  ],
+  "next_actions": [
+    "Run js conformance suite; checkpoint P4 gate if green"
+  ],
+  "open_threads": [
+    "JS SDK vector 23 still unchecked against the new guard"
+  ],
+  "seq": 17,
+  "session_id": "s-2026-07-10-a",
+  "task_refs": [
+    "den-conformance-cli"
+  ]
+}

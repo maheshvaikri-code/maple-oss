@@ -187,6 +187,5 @@ Thumbs.db
 # doctrine state plane (machine-local only)
 .doctrine-state/local/
 
-# Doctrine framework (local operating system, not distributed)
-.Doctrine/
-.Doctrine.md
+# Doctrine framework source is part of the repository contract; machine-local
+# state remains ignored above.

@@ -1,0 +1,49 @@
+# floci.manifest.yaml — worked example: rag-over-docs archetype
+# Produced in P2 (Shape) from a signed-off intent-spec.json.
+
+version: 1
+project: acme-rag-demo
+archetype: rag-over-docs          # rag-over-docs | agent-workflow | batch-eval
+promotion_target: aws             # aws | gcp | azure | undecided
+
+floci:
+  version: "0.4.2"                # pinned; floci-provision refuses on mismatch
+
+services:
+  object_store:
+    name: docs
+    kind: bucket
+    port: 47100
+  vector_store:
+    name: chunks
+    kind: vector
+    dims: 768
+    metric: cosine
+    port: 47110
+  queue:
+    name: ingest
+    kind: queue
+    port: 47120
+  functions:
+    - name: ingest-worker
+      runtime: python3.12
+      trigger: queue:ingest
+      port: 47130
+
+seed:
+  seed: 42                        # single source of all randomness
+  real_data_cleared: false        # synthetic-only; flipping this requires provenance
+  datasets:
+    - kind: synthetic-docs
+      count: 250
+      params:
+        topic: "industrial maintenance manuals"
+        avg_pages: 6
+
+determinism:
+  ports: fixed                    # declared above; never ephemeral
+  canonical_json: true            # all emitted artifacts follow pack-wide canon rules
+
+demo:
+  scenario: "analyst asks a cited question over the seeded corpus"
+  command: make demo              # prints: DEMO OK <output-sha256>
