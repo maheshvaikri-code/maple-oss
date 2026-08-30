@@ -252,6 +252,7 @@ pip install maple-oss[llm]          # OpenAI + Anthropic providers
 pip install maple-oss[s2]           # S2.dev durable streaming
 pip install maple-oss[security]     # Cryptography + JWT
 pip install maple-oss[performance]  # uvloop + orjson + msgpack
+pip install maple-oss[adapters]    # HTTP-based A2A adapter
 pip install maple-oss[dev]          # Testing + linting tools
 ```
 

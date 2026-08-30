@@ -79,6 +79,9 @@ security = [
     "cryptography[ssh]>=41.0.0",
     "pyjwt>=2.8.0"
 ]
+adapters = [
+    "requests>=2.28.0"
+]
 llm = [
     "openai>=1.0.0",
     "anthropic>=0.20.0"

@@ -659,11 +659,10 @@ if __debug__:
 # Package banner for CLI tools
 def print_banner() -> None:
     """Print MAPLE banner."""
-    print(
-        f"""
+    banner = f"""
 MAPLE v{__version__} - Multi Agent Protocol Language Engine
 
 Created by: {__author__}
 License: {__license__}
 """
-    )
+    print(banner)

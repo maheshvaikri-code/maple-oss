@@ -56,7 +56,7 @@ jobs:
       - name: Install MAPLE with development and security extras
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e ".[dev,security]"
+          python -m pip install -e ".[dev,security,llm,adapters]"
 
       - name: Verify isolated dependencies
         run: python -m pip check
@@ -116,7 +116,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev,security]"
+          pip install -e ".[dev,security,llm,adapters]"
 
       - name: Run tests
         run: |

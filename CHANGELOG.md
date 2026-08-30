@@ -17,6 +17,11 @@
   author notice to every `maple/**/*.py` module without weakening the checks.
 - Reformatted Protocol stubs and bounded source literals so the exact CI
   Flake8 command passes without blanket suppressions.
+- Stabilized formatter-sensitive multiline strings, closed the cross-platform
+  Windows lease typing boundary, and made missing optional protobuf discovery
+  fail closed without raising during serializer initialization.
+- Declared the HTTP A2A adapter's `requests` integration extra and aligned the
+  full-test CI jobs with the adapter and LLM SDK dependencies they import.
 
 ### Release hardening
 

@@ -101,10 +101,18 @@ class Serializer:
         self.msgpack_available = False
         self.protobuf_available = False
 
-        self.msgpack_available = importlib.util.find_spec("msgpack") is not None
-        self.protobuf_available = (
-            importlib.util.find_spec("google.protobuf") is not None
-        )
+        self.msgpack_available = self._module_available("msgpack")
+        self.protobuf_available = self._module_available("google.protobuf")
+
+    @staticmethod
+    def _module_available(module_name: str) -> bool:
+        """Return whether an optional module can be discovered safely."""
+        try:
+            return importlib.util.find_spec(module_name) is not None
+        except ModuleNotFoundError:
+            # ``find_spec('google.protobuf')`` imports the ``google`` parent
+            # package.  When protobuf is absent, that parent may not exist.
+            return False
 
     def serialize(
         self, data: Any, format: Optional[SerializationFormat] = None

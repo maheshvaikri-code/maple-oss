@@ -603,8 +603,7 @@ class StateStore:
         """Create the state_entries table if it doesn't exist."""
         with self._db_lock:
             conn = sqlite3.connect(cast(str, self._db_path))
-            conn.execute(
-                """
+            create_table_sql = """
                 CREATE TABLE IF NOT EXISTS state_entries (
                     key TEXT PRIMARY KEY,
                     value TEXT NOT NULL,
@@ -613,7 +612,7 @@ class StateStore:
                     updated_at REAL NOT NULL
                 )
             """
-            )
+            conn.execute(create_table_sql)
             conn.commit()
             conn.close()
 

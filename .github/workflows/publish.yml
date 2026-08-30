@@ -77,7 +77,7 @@ jobs:
 
       - name: Run tests before publish
         run: |
-          pip install -e ".[dev,security]"
+          pip install -e ".[dev,security,llm,adapters]"
           python -m pip check
           python -m compileall -q maple
           python -m maple.cli doctor --json

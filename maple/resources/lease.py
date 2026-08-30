@@ -270,9 +270,11 @@ class _InterProcessFileLock:
             if os.name == "nt":
                 import msvcrt
 
+                locking = getattr(msvcrt, "locking")
+                lock_nonblocking = getattr(msvcrt, "LK_NBLCK")
                 while True:
                     try:
-                        msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                        locking(handle.fileno(), lock_nonblocking, 1)
                         break
                     except OSError:
                         if time.monotonic() >= deadline:
@@ -309,7 +311,9 @@ class _InterProcessFileLock:
             if os.name == "nt":
                 import msvcrt
 
-                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+                locking = getattr(msvcrt, "locking")
+                lock_unlock = getattr(msvcrt, "LK_UNLCK")
+                locking(handle.fileno(), lock_unlock, 1)
             else:
                 import fcntl
 

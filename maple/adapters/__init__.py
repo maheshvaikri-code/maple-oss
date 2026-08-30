@@ -23,6 +23,9 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 MAPLE Adapters - Integration with external platforms and protocols.
 """
 
+# Optional HTTP-based A2A integration is available through the ``adapters``
+# extra.  Keep integrations opt-in so the core package remains lightweight.
+
 # S2.dev durable streaming integration
 try:
     from .s2_adapter import S2Broker, S2Config, S2StateBackend  # noqa: F401

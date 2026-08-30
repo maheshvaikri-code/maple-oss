@@ -4,6 +4,7 @@ import pickle
 
 import pytest
 
+import maple.core.serialization as serialization_module
 from maple.core.message import Message
 from maple.core.serialization import SerializationFormat, Serializer
 from maple.core.types import Priority
@@ -135,6 +136,20 @@ class TestMsgPackSerialization:
 
 class TestProtobufSerialization:
     """Test optional bounded Protocol Buffers serialization."""
+
+    def test_missing_parent_package_marks_protobuf_unavailable(self, monkeypatch):
+        original_find_spec = serialization_module.importlib.util.find_spec
+
+        def find_spec(module_name):
+            if module_name == "google.protobuf":
+                raise ModuleNotFoundError("No module named 'google'")
+            return original_find_spec(module_name)
+
+        monkeypatch.setattr(serialization_module.importlib.util, "find_spec", find_spec)
+
+        serializer = Serializer()
+
+        assert serializer.protobuf_available is False
 
     def test_protobuf_roundtrip_preserves_json_special_types(self, serializer):
         if not serializer.protobuf_available:

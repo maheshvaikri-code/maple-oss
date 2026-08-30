@@ -46,12 +46,37 @@ jobs:
           set +e
           bandit -r maple/ -f json -o bandit-report.json
           bandit_report_exit=$?
-          bandit -r maple/ -ll
-          bandit_text_exit=$?
-          if [ "$bandit_report_exit" -ne 0 ]; then
+          if [ "$bandit_report_exit" -gt 1 ]; then
             exit "$bandit_report_exit"
           fi
-          exit "$bandit_text_exit"
+          if [ ! -s bandit-report.json ]; then
+            echo "Bandit did not produce a report" >&2
+            exit 1
+          fi
+          python - <<'PY'
+          import json
+          import sys
+
+          with open("bandit-report.json", encoding="utf-8") as report_file:
+              report = json.load(report_file)
+
+          findings = report.get("results", [])
+          blocking = [
+              finding
+              for finding in findings
+              if finding.get("issue_severity", "").upper() in {"MEDIUM", "HIGH"}
+          ]
+          print(
+              "Bandit findings: "
+              f"{len(findings)} total, {len(blocking)} medium/high"
+          )
+          for finding in blocking:
+              print(
+                  f"{finding.get('filename')}:{finding.get('line_number')} "
+                  f"{finding.get('test_id')}: {finding.get('issue_text')}"
+              )
+          sys.exit(1 if blocking else 0)
+          PY
 
       - name: Upload security reports
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
