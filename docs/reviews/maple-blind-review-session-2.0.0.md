@@ -20,7 +20,7 @@ The branch is regression-green on Python 3.12 and the exact archived HEAD is lea
 | Package build | Pass | sdist/wheel and `twine check` passed |
 | HEAD archive secret scan | Pass | Gitleaks exit 0, no leaks found |
 | Full history secret scan | Not clean | 3 known synthetic fixture/document matches, exit 1 |
-| Protected branch | Not verified / currently unprotected | GitHub repository check reported `main` protected false and no rulesets |
+| Protected branch | Not verified / currently unprotected | GitHub repository check reported `main` protected false; the sole active ruleset only blocks deletion/non-fast-forward and does not require reviews, status checks, or protect tags |
 | Website/cloud/registry | Intentionally untouched | Per publication plan and user instruction |
 
 ## Release blockers
