@@ -164,43 +164,6 @@ where they are not configured. JWT, API-key, and certificate paths remain
 separate local mechanisms. `TrustedLocalExecutor` accepts explicitly trusted
 host handlers; it is not an untrusted-code sandbox.
 
-### Doctrine workforce
-
-The Doctrine profile gives a governed workforce a checked vocabulary for
-builder and verifier communication. `WORK.PACKAGE` and `GATE.RESULT` payloads
-can carry content-pinned artifact references, while the fresh-context verifier
-preset keeps sender and artifact-reference policy explicit. Token budgets are
-represented as resource requests, so reasoning limits can participate in the
-same negotiation path as compute or memory.
-
-~~~python
-from hashlib import sha256
-from pathlib import Path
-
-from maple.adapters.doctrine_adapter import (
-    ArtifactRef,
-    build_gate_result,
-    build_work_package,
-)
-
-brief_path = Path("docs/brief.md")
-brief_ref = ArtifactRef(
-    path=str(brief_path),
-    sha256=sha256(brief_path.read_bytes()).hexdigest(),
-)
-work = build_work_package(
-    package_id="release-review",
-    role="Code Reviewer",
-    file_scope=["maple/", "tests/"],
-    brief=brief_ref,
-).unwrap()
-gate = build_gate_result(
-    gate="G4",
-    verdict="PASS",
-    artifact=brief_ref,
-).unwrap()
-~~~
-
 ### Resource and reliability primitives
 
 `ResourceManager` distinguishes renewable capacity from consumable budgets.
@@ -227,7 +190,6 @@ inside MAPLE:
 | OpenAI SDK | `openai_sdk_adapter.py` | OpenAI-compatible message and tool format translation. |
 | IBM ACP | `acp_adapter.py` | ACP message and capability translation. |
 | S2.dev | `s2_adapter.py` | Optional durable stream and state backend integration. |
-| Doctrine profile | `doctrine_adapter.py` | Typed `WORK.PACKAGE` and `GATE.RESULT` contracts for governed agent workforces. |
 
 The sibling [n8n integration](n8n-integration/README.md) provides TypeScript
 nodes and sample workflows. Each adapter is a deliberately narrow translation
