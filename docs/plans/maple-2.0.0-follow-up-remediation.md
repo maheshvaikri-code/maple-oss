@@ -1,6 +1,6 @@
 # MAPLE 2.0.0 follow-up remediation plan
 
-**Baseline:** MAPLE 2.0.0 local release candidate  
+**Baseline:** MAPLE 2.0.0 local release candidate
 **Purpose:** track findings that are outside the closed release-blocker slice
 without presenting them as complete. Adoption and license are excluded.
 
