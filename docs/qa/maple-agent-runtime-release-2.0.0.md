@@ -2,17 +2,17 @@
 
 ## Final repository gate closure
 
-**Exact final commit:** `3d544af131f02cd2529c10b97484ffc4ecddc84b`
-(`fix(ci): stabilize durable stores on Windows`)
+**Exact final commit:** `aca5a751b2af8e543623f8e351afa8f7c0176c92`
+(`docs(release): record final CI gate closure`)
 
 The final hosted workflows passed on this commit:
 
 | Workflow | Run | Result |
 |---|---:|---|
-| Security Scan | `33340906280` | success |
-| Code Quality | `33340906353` | success |
-| Tests | `33340906329` | success; Python 3.9/3.10/3.11/3.12 and Windows/Linux/macOS jobs |
-| CI | `33340906289` | success; preflight, lint/type check, test matrix, package build, summary |
+| Security Scan | `33341517061` | success |
+| Code Quality | `33341517056` | success |
+| Tests | `33341517046` | success; Python 3.9/3.10/3.11/3.12 and Windows/Linux/macOS jobs |
+| CI | `33341517051` | success; preflight, lint/type check, test matrix, package build, summary |
 
 The final local targeted regression gate reported `11 passed in 1.16s` for
 the durable lease, Windows concurrency, Doctrine lint, and installer checks.
@@ -33,7 +33,7 @@ returned HTTP `404 Branch not protected`, and repository rulesets count is
 this remains an author-run QA record pending that human-controlled gate.
 
 **Quality candidate commit:** `b4afc0c` (`chore(release): promote MAPLE to 2.0.0`)
-**Final repository candidate:** `e8e2faa` (`chore(repo): add doctrine tooling and pending updates`)
+**Final repository candidate:** `aca5a75` (`docs(release): record final CI gate closure`)
 **Security remediation candidate:** `b86b724` (`fix(security): neutralize scanner false-positive fixtures`)
 **Verification date:** 2026-08-29
 **Scope:** MAPLE source quality gates, version promotion, full test suite, and

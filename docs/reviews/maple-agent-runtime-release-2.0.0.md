@@ -2,10 +2,10 @@
 
 ## Final hosted verification
 
-The exact final repository commit is `3d544af131f02cd2529c10b97484ffc4ecddc84b`
-(`fix(ci): stabilize durable stores on Windows`). GitHub CI passed all
-required final workflows: Security Scan `33340906280`, Code Quality
-`33340906353`, Tests `33340906329`, and aggregate CI `33340906289`.
+The exact final repository commit is `aca5a751b2af8e543623f8e351afa8f7c0176c92`
+(`docs(release): record final CI gate closure`). GitHub CI passed all
+required final workflows: Security Scan `33341517061`, Code Quality
+`33341517056`, Tests `33341517046`, and aggregate CI `33341517051`.
 The matrix includes Python 3.9 through 3.12 on Linux, Windows, and macOS;
 the aggregate run also passed preflight, lint/type checking, package build,
 and its summary gate.

@@ -1,6 +1,6 @@
 # MAPLE 2.0.0 publication, website, cloud, and registry plan
 
-**Status:** prepared; no external action taken
+**Status:** website in standing; local documentation only; no external action taken
 **Prerequisite:** local 2.0.0 quality and package gates are complete, subject to
 the open limitations in the release QA record.
 
@@ -8,6 +8,11 @@ the open limitations in the release QA record.
 
 ### 1. Website
 
+- Current standing decision: keep the tracked website assets unchanged until a
+  separate copy, link, accessibility, and deployment review is authorized.
+- The repository-level website status is recorded in
+  [`website/README.md`](../../website/README.md); it is not a deployment
+  approval.
 - Confirm the website repository/path and intended domain.
 - Update current version, release notes, install instructions, and capability
   language to match MAPLE 2.0.0.
