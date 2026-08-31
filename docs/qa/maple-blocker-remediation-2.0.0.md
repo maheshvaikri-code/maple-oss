@@ -1,8 +1,8 @@
 # QA + Security Report — MAPLE 2.0.0 blocker remediation
 
 **QA Engineer · Security Reviewer** · **Date:** 2026-08-30
-**Build under test:** final MAPLE 2.0.0 working tree before commit; package
-metadata reports `2.0.0`.
+**Build under test:** committed MAPLE 2.0.0 HEAD; package metadata reports
+`2.0.0`.
 
 ## Acceptance criteria verification
 
@@ -29,14 +29,13 @@ metadata reports `2.0.0`.
 
 ## Regression
 
-The full local release-equivalent run completed before the final documentation-
-only pass:
+The final local release-equivalent run completed from committed HEAD:
 
 ```text
-================= 1912 passed, 1 skipped in 958.76s (0:15:58) =================
+================ 1912 passed, 1 skipped in 1092.06s (0:18:12) =================
 ```
 
-The final focused rerun completed after all documentation additions:
+The focused security/workflow rerun completed after all implementation changes:
 
 ```text
 253 passed in 14.53s
