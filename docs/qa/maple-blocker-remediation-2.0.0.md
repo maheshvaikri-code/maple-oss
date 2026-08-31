@@ -66,8 +66,11 @@ also passed.
   streams, retrieval, serialization, and approval contracts remained covered by
   the full suite; new JWT and release-tag boundaries have direct regressions.
 
-**Security verdict:** SIGN-OFF for the implemented remediation slice.
-**QA verdict:** pass for local acceptance criteria.
+**Security verdict:** CONDITIONAL / VETO for publication pending the open
+follow-ups in [the remediation plan](../plans/maple-2.0.0-follow-up-remediation.md).
+The implemented blocker-remediation slice itself passed its security checks.
+**QA verdict:** pass for the local acceptance criteria; publication remains
+conditional.
 
 Four fresh independent reviewer sessions were attempted through the reviewer
 tool (two code-review attempts, one security attempt, and one QA attempt), but
