@@ -525,7 +525,8 @@ def cmd_checkpoint(plane: Plane, proposal_path: Path,
     intents_index = {}
     if plane.intents.exists():
         for p in sorted(plane.intents.glob("*.intent.json")):
-            stem = p.name.removesuffix(".intent.json")
+            suffix = ".intent.json"
+            stem = p.name[: -len(suffix)]
             if not SAFE_ID_RE.fullmatch(stem):
                 raise StateError(f"unsafe intent filename: {p.name}")
             intents_index[stem] = sha256_file(p)

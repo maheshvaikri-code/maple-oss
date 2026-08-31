@@ -16,6 +16,8 @@
 - Switched the PEP 621 license declaration to a setuptools-compatible
   `LICENSE` file reference so Python 3.8 editable installs pass metadata
   validation.
+- Fixed the remaining Python 3.8 runtime boundaries in the durable outbox
+  test annotations and Doctrine state intent indexing.
 - Restored Python 3.8 runtime compatibility and added Python 3.8 coverage to
   the release test matrix.
 - Removed the shared JWT signing-key fallback; JWT operations now fail closed

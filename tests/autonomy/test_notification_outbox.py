@@ -1,5 +1,7 @@
 """Regression coverage for bounded durable notification outboxes."""
 
+from __future__ import annotations
+
 import json
 import threading
 from typing import Any, Dict, List
