@@ -1,6 +1,6 @@
 # Ultra Review - MAPLE 2.0.0 public release candidate
 
-- Review target: 9db830b14d3a8b028c2d912364013a8f92efe926
+- Review target: 67c988fb3347e98ed5e46caf7004ba06c33db0d9
 - Review date: 2026-08-30
 - Reviewer hats: Code Reviewer, Tech Writer, Release Manager
 **Scope:** full repository release-readiness review with emphasis on public
@@ -135,10 +135,10 @@ The core distribution boundary excludes the demo package and n8n integration.
 
 ~~~text
 gitleaks 8.30.1 clean archive:
-scanned ~7643797 bytes (7.64 MB)
+scanned ~7651778 bytes (7.65 MB)
 no leaks found
 gitleaks_clean_archive_exit=0
-archive_commit=9db830b14d3a8b028c2d912364013a8f92efe926
+archive_commit=67c988fb3347e98ed5e46caf7004ba06c33db0d9
 
 gitleaks full history:
 745 commits scanned
@@ -158,7 +158,7 @@ dependency policy and pip-audit result.
 The final hosted release workflows recorded for the preceding implementation
 closure are all green: Security Scan 33341517061, Code Quality 33341517056,
 Tests 33341517046, and CI 33341517051. The exact current documentation commit
-is 9db830b; pushing it will require the normal hosted CI rerun.
+is 67c988f; pushing it will require the normal hosted CI rerun.
 
 The branch was clean before the documentation commit, and the documentation
 commit contains no source behavior changes. The website assets, cloud state,
