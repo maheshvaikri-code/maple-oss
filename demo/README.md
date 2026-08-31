@@ -17,7 +17,6 @@ python demo/adapters_demo/performance_comparison_demo.py
 ~~~
 
 Examples may require optional provider SDKs or host configuration. They do not
-claim benchmark parity, hosted availability, or production readiness. See the
-[root README](../README.md), [API reference](../docs/api-reference.md), and
-[parity ledger](../docs/agent-framework-parity.md) for authoritative behavior
-and limitations.
+claim benchmark equivalence, hosted availability, or production readiness.
+See the [root README](../README.md) and [API reference](../docs/api-reference.md)
+for authoritative behavior and limitations.

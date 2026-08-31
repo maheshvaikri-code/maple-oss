@@ -1,4 +1,10 @@
+<div align="center">
+  <img width="354" height="174" alt="MAPLE logo" src="https://github.com/user-attachments/assets/e9eaf167-712f-448c-adf3-d55a0562cff7" />
+</div>
+
 # MAPLE - Multi Agent Protocol Language Engine
+
+**Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)**
 
 MAPLE is a Python multi-agent runtime and protocol layer. It combines
 autonomous agent execution with typed messaging, resource-aware coordination,
@@ -11,19 +17,33 @@ tools.
 - Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
 
 [![Version](https://img.shields.io/badge/version-2.0.0-brightgreen)](VERSION)
-[![Python](https://img.shields.io/badge/Python-3.8%2B-blue)](pyproject.toml)
+[![Python](https://img.shields.io/badge/Python-3.8%20%7C%203.9%20%7C%203.10%20%7C%203.11%20%7C%203.12-blue)](pyproject.toml)
+[![CI](https://github.com/maheshvaikri-code/maple-oss/actions/workflows/ci.yml/badge.svg)](https://github.com/maheshvaikri-code/maple-oss/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-AGPL%203.0-blue.svg)](LICENSE)
+[![Documentation](https://img.shields.io/badge/Docs-mapleagent.org-blue)](https://mapleagent.org)
 
-> MAPLE is designed for hosts that need an agent loop and a reliability
-> boundary in the same runtime. The release makes local, bounded contracts
-> explicit; it does not imply hosted services, sandboxing, or exactly-once
-> effects.
+> An agent can be clever and still be unreliable. MAPLE gives that agent a
+> typed message, a bounded tool, a resource budget, a durable checkpoint, and
+> an explainable result—so the host can decide what happens next.
+
+MAPLE is the runtime beneath that story: a Python protocol layer for agents
+that need to communicate, reason, recover, and remain governable. Version
+2.0.0 brings the autonomy loop and the operational boundary into one coherent
+local package while keeping hosted services and external side effects under
+host control.
 
 ## Why MAPLE
 
-Agent frameworks commonly focus on reasoning and orchestration. MAPLE also
-provides protocol and runtime primitives that a production host normally has
-to assemble separately:
+An agent begins with a goal, but a dependable system begins with boundaries.
+MAPLE connects those boundaries around the loop that turns intent into work:
+
+`goal → model decision → validated tool → typed result → event/checkpoint`
+
+That loop is useful on a laptop, inside a service, or as a building block in a
+larger platform. The host still owns credentials, deployment, tenancy, and
+external side effects; MAPLE makes the local contract explicit and testable.
+
+The package provides:
 
 - Result[T, E] values for explicit success and failure paths.
 - Resource negotiation, lifecycle-aware budgets, priority routing, leases, and
@@ -46,9 +66,10 @@ MAPLE has three related layers:
 
 ## MAPLE 2.0.0 capability surface
 
-The following is the shipped and tested local surface. Items marked
-**preview** in the parity ledger are bounded or opt-in contracts; they are not
-claims of a hosted service or distributed control plane.
+The following is the shipped and tested local surface. **Preview** means a
+bounded or opt-in contract that is ready for local integration and still
+requires the host to supply policy, persistence, credentials, or operations.
+It does not claim a hosted control plane or automatic distributed behavior.
 
 ### Agent execution and tools
 
@@ -114,45 +135,104 @@ claims of a hosted service or distributed control plane.
   routing, in-memory/file leases, discovery, health monitoring, retry/backoff,
   circuit breakers, and cryptographic link/security layers.
 
-## Protocol and framework interoperability
+## Production infrastructure
 
-The Python package contains ten adapter modules under maple/adapters:
+MAPLE keeps the operational primitives close to the agent contract. A host can
+start with an in-memory broker and move individual boundaries to files or an
+injected transport as its deployment grows:
 
-| Adapter | Surface |
-| --- | --- |
-| Google A2A | Message and agent-card translation through the optional HTTP adapter. |
-| MCP | Bounded Streamable HTTP initialization, live tool discovery, JSON-RPC calls, namespacing, and approval-aware registration. |
-| FIPA ACL | Performative and message translation. |
-| AutoGen | Compatibility wrapper for AutoGen participants and group chats. |
-| CrewAI | Compatibility wrapper for crews and tasks. |
-| LangGraph | MAPLE-backed graph state and node integration. |
-| OpenAI SDK | OpenAI-compatible message and tool format translation. |
-| IBM ACP | ACP message and capability translation. |
-| S2.dev | Optional durable stream and state backend integration. |
-| Doctrine profile | Typed WORK.PACKAGE and GATE.RESULT contracts for governed agent workforces. |
+- **Typed failure handling** — `Result[T, E]` keeps validation, capacity,
+  transport, and provider failures explicit and composable.
+- **Resource-aware messaging** — CPU, memory, bandwidth, time, tokens, and
+  caller-defined numeric dimensions travel with a request for negotiation.
+- **Link and identity security** — cryptographic links, authentication,
+  authorization scopes, token revocation, and recursive event redaction make
+  security decisions visible at the boundary.
+- **Reliability primitives** — priority queues, health-aware discovery,
+  bounded retries, exponential backoff, circuit breakers, leases, and
+  ownership-checked task transitions.
+- **State and coordination** — local state stores, consistency policies,
+  file-backed checkpoints, journals, cursor stores, and fencing leases support
+  restartable single-host workflows.
+
+### Explicit release boundaries
+
+MAPLE fails closed for surfaces that are not native local runtime features.
+Optional integrations such as Redis state operations, mutual-TLS
+authentication, and OAuth2 currently return typed `NOT_IMPLEMENTED` results
+where they are not configured. JWT, API-key, and certificate paths remain
+separate local mechanisms. `TrustedLocalExecutor` accepts explicitly trusted
+host handlers; it is not an untrusted-code sandbox.
+
+### Doctrine workforce
+
+The Doctrine profile gives a governed workforce a checked vocabulary for
+builder and verifier communication. `WORK.PACKAGE` and `GATE.RESULT` payloads
+can carry content-pinned artifact references, while the fresh-context verifier
+preset keeps sender and artifact-reference policy explicit. Token budgets are
+represented as resource requests, so reasoning limits can participate in the
+same negotiation path as compute or memory.
+
+~~~python
+from hashlib import sha256
+from pathlib import Path
+
+from maple.adapters.doctrine_adapter import (
+    ArtifactRef,
+    build_gate_result,
+    build_work_package,
+)
+
+brief_path = Path("docs/brief.md")
+brief_ref = ArtifactRef(
+    path=str(brief_path),
+    sha256=sha256(brief_path.read_bytes()).hexdigest(),
+)
+work = build_work_package(
+    package_id="release-review",
+    role="Code Reviewer",
+    file_scope=["maple/", "tests/"],
+    brief=brief_ref,
+).unwrap()
+gate = build_gate_result(
+    gate="G4",
+    verdict="PASS",
+    artifact=brief_ref,
+).unwrap()
+~~~
+
+### Resource and reliability primitives
+
+`ResourceManager` distinguishes renewable capacity from consumable budgets.
+`LeaseManager` and `FileLeaseManager` provide bounded holds with fencing tokens;
+expiry is the recovery mechanism when a local holder crashes. `TaskQueue` and
+`FileTaskQueue` preserve ownership checks and explicit at-least-once restart
+semantics. Nothing in these local primitives silently upgrades an external
+side effect to exactly once.
+
+## Integrations and protocol boundaries
+
+The Python package contains eleven adapter modules under `maple/adapters`. Each
+one is a translation boundary, not a claim that an external runtime is bundled
+inside MAPLE:
+
+| Adapter | Module | Boundary |
+| --- | --- | --- |
+| Google A2A | `a2a_adapter.py` | Message and agent-card translation through the optional HTTP adapter. |
+| MCP | `mcp_adapter.py` | Bounded Streamable HTTP initialization, live tool discovery, JSON-RPC calls, namespacing, and approval-aware registration. |
+| FIPA ACL | `fipa_acl_adapter.py` | Performative and message translation. |
+| AutoGen | `autogen_adapter.py` | Compatibility wrapper for participants and group chats. |
+| CrewAI | `crewai_adapter.py` | Compatibility wrapper for crews and tasks. |
+| LangGraph | `langgraph_adapter.py` | MAPLE-backed graph state and node integration. |
+| OpenAI SDK | `openai_sdk_adapter.py` | OpenAI-compatible message and tool format translation. |
+| IBM ACP | `acp_adapter.py` | ACP message and capability translation. |
+| S2.dev | `s2_adapter.py` | Optional durable stream and state backend integration. |
+| Doctrine profile | `doctrine_adapter.py` | Typed `WORK.PACKAGE` and `GATE.RESULT` contracts for governed agent workforces. |
 
 The sibling [n8n integration](n8n-integration/README.md) provides TypeScript
-nodes and sample workflows. An adapter is an interoperability boundary; it
-does not make MAPLE natively equivalent to the external framework.
-
-## Framework parity boundary
-
-The [Agent-Framework Parity Ledger](docs/agent-framework-parity.md) covers
-functionality and developer/runtime surfaces for LangGraph, CrewAI, Microsoft
-Agent Framework, LlamaIndex, and OpenAI Agents SDK. Adoption and licensing are
-intentionally excluded.
-
-| Capability | MAPLE 2.0.0 boundary |
-| --- | --- |
-| Agent loop, tools, schemas, typed errors | Native local runtime. |
-| Workflows, branching, fan-out, retries | Bounded local preview. |
-| Guardrails and approval | Fail-closed local preview; hosted identity and policy remain host-owned. |
-| Handoffs and agent-as-tool | Bounded local preview with an authenticated remote payload seam. |
-| Sessions, memory, checkpoints, history | Local partial/preview surfaces with explicit replay limits. |
-| Retrieval, citations, tracing, evaluations | Deterministic local preview surfaces. |
-| Hosted runtime, studio, managed stores, multi-language SDKs | Deferred. |
-| Sandboxed execution, browser/computer control | Unsupported by the core runtime; handlers remain trusted-host code. |
-| Distributed scheduling, federation, exactly-once effects | Deferred; local durability is at-least-once where stated. |
+nodes and sample workflows. Each adapter is a deliberately narrow translation
+boundary: it maps messages, tools, or capabilities into MAPLE contracts while
+leaving identity, credentials, and deployment with the host.
 
 ## Installation
 
@@ -265,11 +345,256 @@ agent.register_tool(
 )
 ~~~
 
+### Multi-agent orchestration
+
+Teams are explicit objects. A supervisor can decompose a goal while specialist
+agents execute bounded work; the orchestrator returns typed per-member results
+and preserves the host's control over model credentials and side effects.
+
+~~~python
+from maple import AutonomousAgent, AutonomousConfig, Config, LLMConfig
+from maple.autonomy.orchestrator import AgentOrchestrator, TeamMember
+
+llm = LLMConfig(
+    provider="openai",
+    model="gpt-4o-mini",
+    api_key=os.environ["OPENAI_API_KEY"],
+)
+supervisor = AutonomousAgent(
+    Config(agent_id="supervisor", broker_url="memory://local"),
+    AutonomousConfig(llm=llm, max_reasoning_steps=6),
+)
+researcher = AutonomousAgent(
+    Config(agent_id="researcher", broker_url="memory://local"),
+    AutonomousConfig(llm=llm, max_reasoning_steps=6),
+)
+orchestrator = AgentOrchestrator(max_parallel_agents=2)
+team_id = orchestrator.form_team(
+    "review-team",
+    [
+        TeamMember(supervisor, role="supervisor", capabilities=["planning"]),
+        TeamMember(researcher, role="worker", capabilities=["research"]),
+    ],
+).unwrap()
+result = orchestrator.execute_supervised(team_id, "Review the approved report")
+~~~
+
+### Secure links, state, and pub/sub
+
+For message-level protection, construct the agent with a host-owned
+`SecurityConfig`, establish a bounded link, and attach that link to the message.
+State stores expose versioned reads and updates; the broker also supports topic
+subscriptions for notifications that do not need request/response semantics.
+
+~~~python
+import os
+
+from maple import Config, Message, Priority, SecurityConfig
+from maple import Agent
+from maple.state import ConsistencyLevel, StateStore
+
+agent = Agent(
+    Config(
+        agent_id="secure-worker",
+        broker_url="memory://local",
+        security=SecurityConfig(
+            auth_type="token",
+            credentials=os.environ["MAPLE_AGENT_TOKEN"],
+            require_links=True,
+        ),
+    )
+)
+link = agent.establish_link("specialist", lifetime_seconds=3_600).unwrap()
+secure_message = Message(
+    message_type="SENSITIVE_DATA",
+    receiver="specialist",
+    priority=Priority.HIGH,
+    payload={"status": "ready"},
+).with_link(link)
+agent.send_with_link(secure_message, "specialist")
+
+state = StateStore(consistency=ConsistencyLevel.STRONG)
+state.set("mission_status", {"phase": "active"}).unwrap()
+print(state.get("mission_status").unwrap())
+~~~
+
+The link handshake is a protocol boundary, not a replacement for TLS or host
+identity management. Hosts remain responsible for secret rotation, trust roots,
+network exposure, and authorization policy.
+
+### Explicit authentication configuration
+
+JWT support is intentionally fail-closed. MAPLE never invents a signing key:
+the host must provide a secret through a secret manager or environment
+variable, and the secret must contain at least 32 UTF-8 bytes. A missing or
+short secret returns a typed `JWT_SECRET_NOT_CONFIGURED` result.
+
+~~~python
+import os
+
+from maple.security import AuthenticationConfig, AuthenticationManager
+
+auth = AuthenticationManager(
+    AuthenticationConfig(jwt_secret=os.environ["MAPLE_JWT_SECRET"])
+)
+issued = auth.generate_jwt(
+    principal="worker-agent",
+    permissions=["tasks:read", "tasks:write"],
+    expires_in=3_600,
+)
+if issued.is_ok():
+    verified = auth.verify_token(issued.unwrap())
+    print(verified.unwrap().principal)
+~~~
+
+The configuration object keeps policy visible at the call site. Hosts should
+rotate secrets outside the process, avoid logging tokens, and treat revocation
+as a deny decision: a revoked token cannot be authenticated again.
+
+### Typed failures and resource budgets
+
+MAPLE uses `Result[T, E]` at important boundaries. A caller can compose work
+without turning expected validation, capacity, or transport failures into
+unstructured exceptions. Resource requests carry the budget alongside the
+message so the receiving host can accept, reject, or negotiate it.
+
+~~~python
+from maple import Message, Priority, Result
+from maple.resources import ResourceRange, ResourceRequest, TimeConstraint
+
+request = ResourceRequest(
+    compute=ResourceRange(min=2, preferred=4, max=8),
+    memory=ResourceRange(min="2GB", preferred="4GB", max="8GB"),
+    time=TimeConstraint(timeout="120s"),
+    priority="HIGH",
+)
+
+message = Message(
+    message_type="INDEX_DOCUMENTS",
+    receiver="retrieval-worker",
+    priority=Priority.HIGH,
+    payload={"document_id": "doc-42", "resources": request.to_dict()},
+)
+
+def accept(result: Result) -> str:
+    if result.is_err():
+        return f"rejected: {result.unwrap_err()}"
+    return f"accepted: {result.unwrap()}"
+~~~
+
+### Durable local queues and workflows
+
+Use the in-memory queue while shaping a system, then move to
+`FileTaskQueue` or a host-owned remote control plane when restart behavior is
+part of the deployment contract. Queue transitions are ownership-checked and
+bounded; restart recovery is explicitly at-least-once.
+
+~~~python
+from maple.task_management import TaskPriority, TaskQueue
+
+queue = TaskQueue(max_queue_size=100)
+submitted = queue.submit_task(
+    "summarize",
+    {"document_id": "doc-42"},
+    priority=TaskPriority.HIGH,
+)
+task_id = submitted.unwrap()
+queue.assign_task(task_id, "worker-agent").unwrap()
+queue.start_task(task_id, "worker-agent").unwrap()
+queue.complete_task(task_id, "worker-agent", {"status": "done"}).unwrap()
+~~~
+
+For stateful branches, a `Workflow` gives each node a read-only context and
+commits bounded JSON state at node boundaries. The same model supports
+conditional routing, bounded fan-out/fan-in, retry policies, checkpoint
+stores, and explicit resume.
+
+~~~python
+from maple import Workflow
+
+workflow = Workflow("normalize-document")
+workflow.add_node(
+    "normalize",
+    lambda context: {"text": context.state["text"].strip().lower()},
+).unwrap()
+workflow.set_entry_point("normalize").unwrap()
+workflow.add_edge("normalize", None).unwrap()
+
+run = workflow.run({"text": "  Hello MAPLE  "}).unwrap()
+assert run.status == "completed"
+~~~
+
+### Memory, retrieval, and citations
+
+Working memory is bounded admission, not an unbounded transcript. Retrieval
+keeps source references attached to results so an application can decide how
+to cite or display them. Embedding generation and corpus authorization remain
+host-owned.
+
+~~~python
+from maple import Document, InMemoryLexicalRetriever, SourceRef
+from maple.autonomy import WorkingMemory
+
+memory = WorkingMemory(max_tokens=2_048)
+memory.add("mission", "The worker is indexing the approved corpus.")
+
+retriever = InMemoryLexicalRetriever()
+retriever.add_document(
+    Document(
+        document_id="doc-42",
+        text="MAPLE keeps source references with retrieval results.",
+        source=SourceRef(uri="https://example.test/doc-42", title="MAPLE note"),
+    )
+).unwrap()
+hits = retriever.search("source references", top_k=3).unwrap()
+print(hits[0].chunk.source.uri)
+~~~
+
+For restartable local search, replace the in-memory retriever with
+`FileLexicalRetriever` or `FileVectorRetriever`. Both use bounded versioned
+JSON, atomic replacement, and local fencing. A vector retriever accepts
+caller-supplied embeddings; it does not call a model or a managed vector
+service on your behalf.
+
+### Sessions, events, and code blocks
+
+Conversation sessions store JSON-safe turns with optimistic versions and
+data-only forking. Event streams retain a bounded, redacted window and expose
+cursor-based reads. Code-block extraction creates content-addressed artifacts;
+it never executes model-produced Python, shell, browser, or computer-use code.
+
+~~~python
+from maple import EventStream, InMemorySessionStore, SessionMessage
+
+sessions = InMemorySessionStore()
+session = sessions.create("case-42").unwrap()
+session = sessions.append(
+    session.session_id,
+    SessionMessage(role="user", content="Summarize the approved report."),
+    expected_version=session.version,
+).unwrap()
+
+events = EventStream(max_events=100)
+events.publish(
+    "session.message.accepted",
+    {"session_id": session.session_id, "status": "stored"},
+    run_id="run-42",
+).unwrap()
+batch = events.read(limit=10).unwrap()
+print(batch.events[0].event_type)
+~~~
+
+The durable variants (`FileSessionStore`, `FileEventJournal`, and the local
+run/checkpoint stores) are suitable for one host or a shared local filesystem.
+They do not claim distributed consensus, exactly-once external effects, or
+automatic background scheduling.
+
 ### Code blocks remain data
 
 ~~~python
 from maple.autonomy import InMemoryArtifactStore, extract_code_blocks, materialize_code_block
 
+model_text = "```python\nprint('stored as data')\n```"
 blocks = extract_code_blocks(model_text).unwrap()
 store = InMemoryArtifactStore()
 for block in blocks:
@@ -279,6 +604,92 @@ for block in blocks:
 
 The artifact boundary validates sizes, names, UTF-8 bytes, and SHA-256
 identity. It does not run Python, shell, browser, or computer-use code.
+
+## Architecture
+
+MAPLE is intentionally layered so a host can adopt the smallest useful
+surface first:
+
+~~~text
+maple/
+├── core/             Message, Result[T, E], serialization, and type contracts
+├── agent/            Agent lifecycle, configuration, handlers, and routing
+├── autonomy/         ReAct loops, tools, memory, retrieval, runs, events, and workflows
+├── broker/           In-memory and optional broker-backed message delivery
+├── discovery/        Agent registry, capabilities, health, and failure detection
+├── resources/        Resource ranges, allocation, negotiation, and local leases
+├── security/         Authentication, authorization, cryptographic links, and redaction
+├── state/            State stores, consistency, and synchronization
+├── task_management/  Bounded queues, scheduling, workers, and result collection
+└── adapters/         A2A, MCP, FIPA ACL, ACP, S2.dev, and ecosystem translations
+~~~
+
+The autonomy loop sits above the protocol/runtime layer:
+
+~~~text
+goal
+  │
+  ▼
+model provider ──► validated tool ──► typed Result[T, E]
+  │                                      │
+  └────────────── event + checkpoint ◄───┘
+                         │
+                         ▼
+                    host decision
+~~~
+
+This shape makes the important transitions inspectable. A tool can be
+approved before execution, a failure can be returned as data, a run can be
+checkpointed before a later side effect, and an event can be redacted before
+it reaches a subscriber or exporter.
+
+## Operational boundaries
+
+MAPLE supplies local contracts. The application or platform hosting MAPLE
+supplies the environment around them:
+
+| Host responsibility | MAPLE's local contribution |
+| --- | --- |
+| Secret storage and rotation | Explicit authentication configuration and token lifecycle |
+| Model credentials and provider choice | Provider interfaces, capability checks, and typed failures |
+| Authorization policy and tenancy | Scoped local control-plane routes and host policy hooks |
+| External side effects | Approval, bounded tools, cancellation signals, and durable records |
+| Deployment, TLS, and network exposure | Loopback transport with bounded requests and responses |
+| Distributed coordination | Local file fencing, version checks, and clear at-least-once boundaries |
+| Untrusted-code isolation | Trusted host handlers only; MAPLE is not a sandbox |
+
+Keeping this boundary visible is part of using MAPLE correctly. Local
+durability is useful without pretending to be a hosted service, and an adapter
+is useful without silently changing who owns identity or side effects.
+
+## n8n companion integration
+
+The repository also contains a separate TypeScript integration for visual
+workflows. It provides MAPLE Agent, MAPLE Coordinator, and MAPLE Resource
+Manager nodes plus sample workflows. The integration is not part of the
+Python wheel or source distribution and has its own Node/npm validation loop.
+
+~~~bash
+cd n8n-integration
+npm install
+npm run validate
+~~~
+
+The node package submits work to a host; it does not provide hosted MAPLE,
+credential storage, tenancy, or deployment by itself. See the
+[integration README](n8n-integration/README.md) for node fields and sample
+workflows.
+
+| Node | Purpose |
+| --- | --- |
+| **MAPLE Agent** | Submit bounded agent work to a configured MAPLE host. |
+| **MAPLE Coordinator** | Orchestrate workflow steps and collect typed results. |
+| **MAPLE Resource Manager** | Surface resource-aware allocation in a visual flow. |
+
+The included workflows are starting points for research, content, and
+customer-service automations. They remain host integrations: credentials,
+network policy, deployment, and external effects are configured outside the
+Python runtime.
 
 ## Examples and companion integrations
 
@@ -295,6 +706,11 @@ identity. It does not run Python, shell, browser, or computer-use code.
 
 ~~~bash
 python -m pytest tests/ -q
+python -m pytest tests/security/ -q
+python -m pytest tests/autonomy/ -q
+python -m pytest tests/task_management/ -q
+python -m pytest tests/broker/ -q
+python -m pytest tests/ --cov=maple --cov-report=term-missing
 python -m black --check maple
 python -m isort --check-only maple
 python -m flake8 maple/ --max-line-length=88
@@ -302,12 +718,14 @@ python -m compileall -q maple
 python -m maple.cli doctor --json
 ~~~
 
-Recorded release evidence includes a complete local suite of 1906 passed and
-1 skipped at the final implementation parent, a green hosted matrix on the
-release branch, and a clean-archive Gitleaks result of no leaks found. The
-full-history scan retained three reviewed synthetic fixture findings without
-an allowlist or history rewrite. See the [release QA record](docs/qa/maple-agent-runtime-release-2.0.0.md)
-and [ultra-review record](docs/reviews/maple-ultra-review-2.0.0.md).
+The final local release-equivalent run completed with **1,912 passed and 1
+skipped**. The full suite is the release gate; focused suites are useful while
+iterating on a boundary. The offline doctor checks core, evaluation, events,
+execution, interop, retrieval, server, and session readiness without making a
+network request. Re-run the commands above on the exact checkout before
+publishing; no evidence in this README authorizes publication. See the
+[release QA record](docs/qa/maple-agent-runtime-release-2.0.0.md) and
+[ultra-review record](docs/reviews/maple-ultra-review-2.0.0.md).
 
 ## Release and website status
 
@@ -323,7 +741,6 @@ for a later copy/link/accessibility pass and deployment decision. See
 
 - [Getting started](docs/getting-started.md)
 - [API reference](docs/api-reference.md)
-- [Agent-framework parity ledger](docs/agent-framework-parity.md)
 - [Protocol specification](docs/Protocol_Language_Specification.txt)
 - [Protocol comparison](docs/protocol-comparison.md)
 - [Type system](docs/type-system.md)

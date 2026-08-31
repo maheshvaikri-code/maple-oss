@@ -12,7 +12,6 @@ The repository README and release documents are authoritative for the current
 2.0.0 runtime surface:
 
 - [Root README](../README.md)
-- [Agent-framework parity ledger](../docs/agent-framework-parity.md)
 - [Release checklist](../docs/releases/v2.0.0.md)
 - [Release QA record](../docs/qa/maple-agent-runtime-release-2.0.0.md)
 - [External-phase plan](../docs/plans/maple-publication-website-cloud-registry.md)
@@ -28,8 +27,8 @@ Before a future website change:
 1. Confirm the website repository/path, owner, target domain, and deployment
    authority.
 2. Reconcile version, installation commands, capability claims, examples,
-   links, accessibility, and security language with the root README and parity
-   ledger.
+   links, accessibility, and security language with the root README and
+   release checklist.
 3. Run local HTML, link, accessibility, and copy checks.
 4. Obtain explicit approval before any deployment or external hosting action.
 

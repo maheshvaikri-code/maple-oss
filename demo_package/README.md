@@ -48,9 +48,8 @@ authentication, authorization, TLS, and network controls.
 The demo package shows messaging, resources, security, task management, and
 selected autonomy features. It does not prove throughput, scalability,
 regulatory compliance, hosted availability, or exactly-once external effects.
-Use the core [README](../README.md), [API reference](../docs/api-reference.md),
-and [parity ledger](../docs/agent-framework-parity.md) as the authoritative
-technical documentation.
+Use the core [README](../README.md) and [API reference](../docs/api-reference.md)
+as the authoritative technical documentation.
 
 ## Release boundary
 
