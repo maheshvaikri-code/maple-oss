@@ -1,6 +1,6 @@
 # Ultra Review - MAPLE 2.0.0 public release candidate
 
-- Review target: 67c988fb3347e98ed5e46caf7004ba06c33db0d9
+- Review target: f88bf9d98f744417442ada87f3dd32aaf8769083
 - Review date: 2026-08-30
 - Reviewer hats: Code Reviewer, Tech Writer, Release Manager
 **Scope:** full repository release-readiness review with emphasis on public
@@ -61,7 +61,7 @@ independent sign-off.
    installation/summary documents were reduced to truthful redirects.
 5. **[MINOR, resolved] Review artifact drift.** The release QA and review
    records now point their final repository verification to the documentation
-   closure commit 9db830b and the current hosted run IDs.
+   closure commit f88bf9d and the current hosted run IDs.
 
 ### Remaining, explicitly accepted as release conditions
 
@@ -135,14 +135,14 @@ The core distribution boundary excludes the demo package and n8n integration.
 
 ~~~text
 gitleaks 8.30.1 clean archive:
-scanned ~7651778 bytes (7.65 MB)
+scanned ~7651836 bytes (7.65 MB)
 no leaks found
 gitleaks_clean_archive_exit=0
-archive_commit=67c988fb3347e98ed5e46caf7004ba06c33db0d9
+archive_commit=f88bf9d98f744417442ada87f3dd32aaf8769083
 
 gitleaks full history:
-745 commits scanned
-scanned ~8820511 bytes (8.82 MB)
+749 commits scanned
+scanned ~8828740 bytes (8.83 MB)
 leaks found: 3
 ~~~
 
@@ -155,11 +155,10 @@ dependency policy and pip-audit result.
 
 ### Hosted and repository state
 
-The final hosted release workflows recorded for the preceding implementation
-closure are all green: Security Scan 33341517061, Code Quality 33341517056,
-Tests 33341517046, and CI 33341517051. The documentation closure was reviewed
-at 67c988f; the later provenance alignment is docs-only and the final report
-commit requires the normal hosted CI rerun.
+The final hosted release workflows for exact HEAD f88bf9d are all green:
+Security Scan 33344998929, Code Quality 33344998918, Tests 33344998916, and
+CI 33344998936. The matrix includes all configured Python and operating-system
+lanes, release preflight, package build, and summary gates.
 
 The branch was clean before the documentation commit, and the documentation
 commit contains no source behavior changes. The website assets, cloud state,

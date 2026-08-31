@@ -2,28 +2,27 @@
 
 ## Final repository gate closure
 
-**Exact final commit:** `aca5a751b2af8e543623f8e351afa8f7c0176c92`
-(`docs(release): record final CI gate closure`)
+**Exact final commit:** `f88bf9d98f744417442ada87f3dd32aaf8769083`
+(`docs(readme): preserve CI quickstart heading`)
 
 The final hosted workflows passed on this commit:
 
 | Workflow | Run | Result |
 |---|---:|---|
-| Security Scan | `33341517061` | success |
-| Code Quality | `33341517056` | success |
-| Tests | `33341517046` | success; Python 3.9/3.10/3.11/3.12 and Windows/Linux/macOS jobs |
-| CI | `33341517051` | success; preflight, lint/type check, test matrix, package build, summary |
+| Security Scan | `33344998929` | success |
+| Code Quality | `33344998918` | success |
+| Tests | `33344998916` | success; Python 3.9/3.10/3.11/3.12 and Windows/Linux/macOS jobs |
+| CI | `33344998936` | success; preflight, lint/type check, test matrix, package build, summary |
 
-The final local targeted regression gate reported `11 passed in 1.16s` for
-the durable lease, Windows concurrency, Doctrine lint, and installer checks.
-The four concurrent durable-store tests were then repeated ten times with
-`repetitions_failed=0`. A complete local suite at the immediately preceding
-commit `fc52b3d` reported `1906 passed, 1 skipped in 781.02s`; the final
-commit's complete cross-platform suites are the hosted evidence above.
+The final local targeted release, CI, hygiene, and CLI gate reported
+`20 passed in 1.10s`. The four concurrent durable-store tests were repeated
+ten times with `repetitions_failed=0`. The complete local suite reported
+`1906 passed, 1 skipped in 1166.27s`; the final commit's complete
+cross-platform suites are the hosted evidence above.
 
 Gitleaks `8.30.1` scanned a clean Git archive of this exact commit
-(`~7.74 MB`) and reported `no leaks found`. The explicit full-history scan
-covered `743 commits` and reported only the three previously reviewed
+(`~7.65 MB`) and reported `no leaks found`. The explicit full-history scan
+covered `749 commits` and reported only the three previously reviewed
 synthetic historical findings; no credentials, allowlist, or history rewrite
 is claimed.
 
@@ -33,11 +32,12 @@ returned HTTP `404 Branch not protected`, and repository rulesets count is
 this remains an author-run QA record pending that human-controlled gate.
 
 **Quality candidate commit:** `b4afc0c` (`chore(release): promote MAPLE to 2.0.0`)
-**Final repository candidate:** `aca5a75` (`docs(release): record final CI gate closure`)
+**Final repository candidate:** `f88bf9d` (`docs(readme): preserve CI quickstart heading`)
 **Security remediation candidate:** `b86b724` (`fix(security): neutralize scanner false-positive fixtures`)
-**Verification date:** 2026-08-29
-**Scope:** MAPLE source quality gates, version promotion, full test suite, and
-clean-archive package smoke checks.
+**Verification date:** 2026-08-30
+**Scope:** MAPLE source quality gates, version promotion, full test suite,
+public documentation, website standing, and clean-archive package smoke
+checks.
 
 ## Repository quality gates
 
