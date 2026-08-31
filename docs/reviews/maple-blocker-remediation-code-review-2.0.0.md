@@ -3,7 +3,7 @@
 <!-- G4 artifact. This is a local serial review record; independent session
      approval is not claimed when a fresh verifier session does not return. -->
 
-**Reviewer role:** Code Reviewer · **Date:** 2026-08-30  
+**Reviewer role:** Code Reviewer · **Date:** 2026-08-30
 **Reviewed against:** the MAPLE 2.0.0 release brief, release checklist, and
 the final working-tree diff before commit.
 

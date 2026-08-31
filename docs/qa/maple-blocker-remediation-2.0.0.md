@@ -1,6 +1,6 @@
 # QA + Security Report — MAPLE 2.0.0 blocker remediation
 
-**QA Engineer · Security Reviewer** · **Date:** 2026-08-30  
+**QA Engineer · Security Reviewer** · **Date:** 2026-08-30
 **Build under test:** final MAPLE 2.0.0 working tree before commit; package
 metadata reports `2.0.0`.
 
@@ -67,7 +67,7 @@ also passed.
   streams, retrieval, serialization, and approval contracts remained covered by
   the full suite; new JWT and release-tag boundaries have direct regressions.
 
-**Security verdict:** SIGN-OFF for the implemented remediation slice.  
+**Security verdict:** SIGN-OFF for the implemented remediation slice.
 **QA verdict:** pass for local acceptance criteria.
 
 Fresh independent reviewer sessions were attempted but timed out twice before
