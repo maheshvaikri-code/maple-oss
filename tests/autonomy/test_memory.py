@@ -1,14 +1,25 @@
 """Tests for the autonomy memory system."""
 
 import pytest
+
 from maple.autonomy.memory import (
-    WorkingMemory, EpisodicMemory, SemanticMemory, MemoryManager, MemoryEntry,
+    EpisodicMemory,
+    MemoryEntry,
+    MemoryManager,
+    SemanticMemory,
+    WorkingMemory,
 )
-from maple.state.store import StateStore, StorageBackend
 from maple.core.result import Result
+from maple.llm.types import LLMResponse
+from maple.state.store import StateStore, StorageBackend
 
 
 class TestWorkingMemory:
+    @pytest.mark.parametrize("max_tokens", [0, -1, True, 1.5, 1_000_001])
+    def test_invalid_budget_fails_fast(self, max_tokens):
+        with pytest.raises(ValueError):
+            WorkingMemory(max_tokens=max_tokens)
+
     def test_add_and_retrieve(self):
         wm = WorkingMemory(max_tokens=1000)
         wm.add("key1", "hello world")
@@ -48,8 +59,86 @@ class TestWorkingMemory:
         ctx = wm.get_context()
         assert ctx[0]["relevance"] == 0.9
 
+    def test_unicode_token_accounting_uses_utf8_bytes(self):
+        wm = WorkingMemory(max_tokens=2)
+
+        result = wm.add("unicode", "é" * 3)
+
+        assert result.is_ok()
+        assert wm.token_usage == 2
+
+    def test_oversized_entry_rejected_without_eviction(self):
+        wm = WorkingMemory(max_tokens=2)
+        wm.add("existing", "kept")
+
+        result = wm.add("too-large", "x" * 9)
+
+        assert result.is_err()
+        assert result.unwrap_err()["errorType"] == "MEMORY_ENTRY_TOO_LARGE"
+        assert [entry["key"] for entry in wm.get_context()] == ["existing"]
+        assert wm.token_usage == 1
+
+    def test_entry_count_is_bounded_with_empty_content(self):
+        wm = WorkingMemory(max_tokens=1_000_000)
+        for index in range(4_096):
+            assert wm.add(str(index), "").is_ok()
+
+        result = wm.add("new", "")
+
+        assert result.is_ok()
+        assert wm.size == 4_096
+        assert wm.get_context()[0]["key"] == "1"
+
+    def test_invalid_entry_metadata_rejected_without_mutation(self):
+        wm = WorkingMemory(max_tokens=4)
+
+        invalid_key = wm.add("bad\nkey", "value")
+        invalid_unicode_control_key = wm.add("bad\x7fkey", "value")
+        oversized_key = wm.add("k" * 257, "value")
+        invalid_unicode_key = wm.add("\ud800", "value")
+        invalid_content = wm.add("content", 123)
+        invalid_unicode_content = wm.add("unicode", "\ud800")
+        invalid_relevance = wm.add("relevance", "value", relevance=2.0)
+        non_finite_relevance = wm.add("non-finite", "value", relevance=float("nan"))
+
+        assert invalid_key.unwrap_err()["errorType"] == "MEMORY_KEY_INVALID"
+        assert (
+            invalid_unicode_control_key.unwrap_err()["errorType"]
+            == "MEMORY_KEY_INVALID"
+        )
+        assert oversized_key.unwrap_err()["errorType"] == "MEMORY_KEY_INVALID"
+        assert invalid_unicode_key.unwrap_err()["errorType"] == "MEMORY_KEY_INVALID"
+        assert invalid_content.unwrap_err()["errorType"] == "MEMORY_CONTENT_INVALID"
+        assert (
+            invalid_unicode_content.unwrap_err()["errorType"]
+            == "MEMORY_CONTENT_INVALID"
+        )
+        assert invalid_relevance.unwrap_err()["errorType"] == "MEMORY_RELEVANCE_INVALID"
+        assert (
+            non_finite_relevance.unwrap_err()["errorType"] == "MEMORY_RELEVANCE_INVALID"
+        )
+        assert wm.size == 0
+        assert wm.token_usage == 0
+
 
 class TestEpisodicMemory:
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"max_events_per_task": 0},
+            {"max_events_per_task": True},
+            {"max_events_per_task": 1_025},
+            {"max_event_bytes": 0},
+            {"max_event_bytes": True},
+            {"max_event_bytes": 65 * 1024},
+        ],
+    )
+    def test_invalid_bounds_fail_fast(self, kwargs):
+        store = StateStore(backend=StorageBackend.MEMORY)
+
+        with pytest.raises(ValueError):
+            EpisodicMemory(store, **kwargs)
+
     def test_record_and_recall(self):
         store = StateStore(backend=StorageBackend.MEMORY)
         em = EpisodicMemory(store)
@@ -82,6 +171,58 @@ class TestEpisodicMemory:
         assert len(matches) >= 1
         assert any("error" in str(m).lower() for m in matches)
 
+    @pytest.mark.parametrize("query", [None, "bad\x7fquery", "\ud800", "x" * 4097])
+    def test_search_rejects_invalid_or_oversized_query(self, query):
+        store = StateStore(backend=StorageBackend.MEMORY)
+        em = EpisodicMemory(store)
+
+        result = em.search(query)
+
+        assert result.is_err()
+        assert result.unwrap_err()["errorType"] == "EPISODIC_QUERY_INVALID"
+
+    @pytest.mark.parametrize("limit", [0, -1, True, 1.5, 1_001])
+    def test_search_rejects_invalid_result_limit(self, limit):
+        store = StateStore(backend=StorageBackend.MEMORY)
+        em = EpisodicMemory(store)
+
+        result = em.search("query", limit=limit)
+
+        assert result.is_err()
+        assert result.unwrap_err()["errorType"] == "EPISODIC_SEARCH_LIMIT_INVALID"
+
+    def test_search_propagates_list_and_read_errors(self, monkeypatch):
+        store = StateStore(backend=StorageBackend.MEMORY)
+        em = EpisodicMemory(store)
+        list_error = {"errorType": "STATE_LIST_ERROR", "message": "list failed"}
+        get_error = {"errorType": "STATE_GET_ERROR", "message": "read failed"}
+
+        monkeypatch.setattr(
+            store, "list_keys", lambda prefix=None: Result.err(list_error)
+        )
+        listed = em.search("query")
+
+        monkeypatch.setattr(
+            store,
+            "list_keys",
+            lambda prefix=None: Result.ok(["episodic:task1"]),
+        )
+        monkeypatch.setattr(store, "get", lambda key: Result.err(get_error))
+        read = em.search("query")
+
+        assert listed.unwrap_err() == list_error
+        assert read.unwrap_err() == get_error
+
+    def test_search_rejects_malformed_stored_history(self):
+        store = StateStore(backend=StorageBackend.MEMORY)
+        em = EpisodicMemory(store)
+        store.set("episodic:task1", {"not": "a list"})
+
+        result = em.search("list")
+
+        assert result.is_err()
+        assert result.unwrap_err()["errorType"] == "EPISODIC_STATE_INVALID"
+
 
 class TestSemanticMemory:
     def test_store_and_recall(self):
@@ -103,7 +244,9 @@ class TestSemanticMemory:
     def test_store_with_metadata(self):
         store = StateStore(backend=StorageBackend.MEMORY)
         sm = SemanticMemory(store)
-        result = sm.store_fact("fact1", {"value": True}, metadata={"source": "observation"})
+        result = sm.store_fact(
+            "fact1", {"value": True}, metadata={"source": "observation"}
+        )
         assert result.is_ok()
 
     def test_list_facts(self):
@@ -138,6 +281,45 @@ class TestMemoryManager:
         assert result.is_ok()
         assert len(result.unwrap()) == 1
 
+    def test_record_keeps_newest_bounded_event_window(self):
+        store = StateStore(backend=StorageBackend.MEMORY)
+        em = EpisodicMemory(store, max_events_per_task=2)
+
+        assert em.record("task1", {"event": "first"}).is_ok()
+        assert em.record("task1", {"event": "second"}).is_ok()
+        assert em.record("task1", {"event": "third"}).is_ok()
+
+        recalled = em.recall("task1")
+
+        assert recalled.is_ok()
+        assert [episode["event"] for episode in recalled.unwrap()] == [
+            "second",
+            "third",
+        ]
+
+    def test_oversized_event_rejected_without_write(self):
+        store = StateStore(backend=StorageBackend.MEMORY)
+        em = EpisodicMemory(store, max_event_bytes=128)
+
+        result = em.record("task1", {"payload": "x" * 256})
+
+        assert result.is_err()
+        assert result.unwrap_err()["errorType"] == "EPISODIC_EVENT_TOO_LARGE"
+        assert em.recall("task1").unwrap() == []
+
+    def test_invalid_event_and_task_id_rejected_without_write(self):
+        store = StateStore(backend=StorageBackend.MEMORY)
+        em = EpisodicMemory(store)
+
+        invalid_event = em.record("task1", {"value": float("nan")})
+        invalid_task = em.record("bad\x7ftask", {"event": "ignored"})
+        invalid_unicode = em.record("\ud800", {"event": "ignored"})
+
+        assert invalid_event.unwrap_err()["errorType"] == "EPISODIC_EVENT_INVALID"
+        assert invalid_task.unwrap_err()["errorType"] == "EPISODIC_TASK_ID_INVALID"
+        assert invalid_unicode.unwrap_err()["errorType"] == "EPISODIC_TASK_ID_INVALID"
+        assert em.recall("task1").unwrap() == []
+
     def test_semantic_integration(self):
         mm = MemoryManager()
         mm.semantic.store_fact("key", "value")
@@ -158,6 +340,31 @@ class TestMemoryManager:
         result = mm.summarize_and_archive(llm_provider="fake")
         assert result.is_ok()
         assert "nothing" in result.unwrap()
+
+    def test_summarize_preserves_working_memory_when_archive_fails(self, monkeypatch):
+        mm = MemoryManager()
+        mm.working.add("k1", "retain this context")
+
+        class FakeProvider:
+            def complete(self, messages):
+                return Result.ok(LLMResponse(content="summary"))
+
+        archive_error = {
+            "errorType": "MEMORY_ARCHIVE_FAILED",
+            "message": "persist failed",
+        }
+        monkeypatch.setattr(
+            mm.episodic,
+            "record",
+            lambda task_id, event: Result.err(archive_error),
+        )
+
+        result = mm.summarize_and_archive(llm_provider=FakeProvider())
+
+        assert result.is_err()
+        assert result.unwrap_err() == archive_error
+        assert [entry["key"] for entry in mm.working.get_context()] == ["k1"]
+        assert mm.working.token_usage > 0
 
 
 class TestMemoryEntry:

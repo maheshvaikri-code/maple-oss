@@ -1,11 +1,16 @@
 """Tests for maple.task_management.fault_tolerance - FaultTolerantExecutor."""
 
-import pytest
 from unittest.mock import MagicMock
-from maple.task_management.task_queue import TaskQueue, TaskPriority
+
+import pytest
+
 from maple.task_management.fault_tolerance import (
-    FaultTolerantExecutor, FaultTolerancePolicy, FailureType, RetryStrategy
+    CircuitBreakerState,
+    FailureType,
+    FaultTolerancePolicy,
+    FaultTolerantExecutor,
 )
+from maple.task_management.task_queue import TaskPriority, TaskQueue
 
 
 @pytest.fixture
@@ -34,7 +39,9 @@ class TestFailureHandling:
     """Test task failure handling."""
 
     def test_handle_agent_failure(self, executor, task_queue):
-        result = task_queue.submit_task("compute", {"data": 1}, priority=TaskPriority.NORMAL)
+        result = task_queue.submit_task(
+            "compute", {"data": 1}, priority=TaskPriority.NORMAL
+        )
         task_id = result.unwrap()
 
         handle_result = executor.handle_task_failure(
@@ -43,7 +50,9 @@ class TestFailureHandling:
         assert handle_result is not None
 
     def test_handle_timeout(self, executor, task_queue):
-        result = task_queue.submit_task("compute", {"data": 1}, priority=TaskPriority.NORMAL)
+        result = task_queue.submit_task(
+            "compute", {"data": 1}, priority=TaskPriority.NORMAL
+        )
         task_id = result.unwrap()
 
         handle_result = executor.handle_task_failure(
@@ -63,6 +72,15 @@ class TestCircuitBreaker:
         result = executor.reset_circuit_breaker("worker_1")
         assert result is not None
 
+    def test_state_transition_is_writable_for_executor_loop(self):
+        state = CircuitBreakerState("worker_1")
+
+        state.state = "half_open"
+
+        assert state.state == "half_open"
+        with pytest.raises(ValueError):
+            state.state = "invalid"
+
 
 class TestRecoveryHandlers:
     """Test recovery handler registration."""
@@ -70,8 +88,7 @@ class TestRecoveryHandlers:
     def test_register_recovery_handler(self, executor):
         called = []
         executor.register_recovery_handler(
-            FailureType.AGENT_FAILURE,
-            lambda task, failure: called.append(task) or True
+            FailureType.AGENT_FAILURE, lambda task, failure: called.append(task) or True
         )
 
     def test_failure_callback(self, executor):

@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://doctrine.local/schemas/distillate.schema.json",
+  "title": "Doctrine Session Distillate",
+  "description": "What a session learned that is not expressed in code. Hard caps on counts and lengths are the mechanized defense against transcript-as-state: a distillate physically cannot grow into a replayed conversation. Evidence is file:line, a command, or a decision id — never a dialogue quote.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["distillate_version", "seq", "session_id", "created_at", "at_commit", "task_refs", "learned", "dead_ends", "open_threads", "next_actions"],
+  "properties": {
+    "distillate_version": { "const": "1" },
+    "seq": { "type": "integer", "minimum": 0, "description": "Matches the checkpoint seq that wrote it." },
+    "session_id": { "type": "string", "minLength": 1 },
+    "created_at": { "type": "string", "format": "date-time" },
+    "at_commit": { "$ref": "#/$defs/gitsha" },
+    "task_refs": { "type": "array", "items": { "type": "string" }, "maxItems": 8 },
+    "learned": {
+      "type": "array",
+      "maxItems": 12,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["claim", "kind", "evidence", "confidence"],
+        "properties": {
+          "claim": { "type": "string", "maxLength": 280 },
+          "kind": { "enum": ["constraint", "gotcha", "fact", "decision_ref"] },
+          "evidence": { "type": "string", "maxLength": 160 },
+          "confidence": { "enum": ["verified", "inferred"], "description": "verified = reproduced by command/test this session; inferred = concluded but not executed." }
+        }
+      }
+    },
+    "dead_ends": {
+      "type": "array",
+      "maxItems": 8,
+      "description": "Approaches tried and abandoned. The anti-thought-drift payload: merged forward when older distillates are pruned, so negatives outlive the sessions that found them.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["approach", "why_failed"],
+        "properties": {
+          "approach": { "type": "string", "maxLength": 200 },
+          "why_failed": { "type": "string", "maxLength": 200 }
+        }
+      }
+    },
+    "open_threads": { "type": "array", "maxItems": 6, "items": { "type": "string", "maxLength": 200 } },
+    "next_actions": { "type": "array", "maxItems": 6, "items": { "type": "string", "maxLength": 200 } }
+  },
+  "$defs": {
+    "gitsha": { "type": "string", "pattern": "^[a-f0-9]{7,40}$" }
+  }
+}

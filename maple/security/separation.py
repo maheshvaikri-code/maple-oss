@@ -1,18 +1,20 @@
 """
-Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
+Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy
+(Mahesh Vaikri)
 
 This file is part of MAPLE - Multi Agent Protocol Language Engine.
 
-MAPLE - Multi Agent Protocol Language Engine is free software: you can redistribute it and/or
-modify it under the terms of the GNU Affero General Public License as published by the Free Software
-Foundation, either version 3 of the License, or (at your option) any later version.
-MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
-PARTICULAR PURPOSE. See the GNU Affero General Public License for more details. You should have
-received a copy of the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
+MAPLE - Multi Agent Protocol Language Engine is free software: you can
+redistribute it and/or modify it under the terms of the GNU Affero General
+Public License as published by the Free Software Foundation, either version 3
+of the License, or (at your option) any later version.
+MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that
+it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero
+General Public License for more details. You should have received a copy of
+the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
 Language Engine. If not, see <https://www.gnu.org/licenses/>.
 """
-
 
 # maple/security/separation.py
 # Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
@@ -47,12 +49,12 @@ consult the policy — attach it on the in-memory broker, or treat those
 transports as out of the guarantee until they wire it in.
 """
 
-import hashlib
-import re
-from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, Optional, Set
+import hashlib  # noqa: E402
+import re  # noqa: E402
+from dataclasses import dataclass, field  # noqa: E402
+from typing import Any, Dict, Iterable, Optional, Set  # noqa: E402
 
-from ..core.result import Result
+from ..core.result import Result  # noqa: E402
 
 # Doctrine protocol message types that must carry artifact references only.
 # Message.__init__ upper-cases message_type, so these match verbatim.
@@ -158,9 +160,7 @@ class SeparationOfDutiesPolicy:
     """
 
     sender_allowlist: Dict[str, Set[str]] = field(default_factory=dict)
-    guarded_types: Set[str] = field(
-        default_factory=lambda: {WORK_PACKAGE, GATE_RESULT}
-    )
+    guarded_types: Set[str] = field(default_factory=lambda: {WORK_PACKAGE, GATE_RESULT})
     require_artifact_ref: bool = True
     max_prose_chars: int = 512
     default_allow_unlisted: bool = False
@@ -206,7 +206,9 @@ class SeparationOfDutiesPolicy:
             return Result.err(
                 {
                     "errorType": "MISSING_SENDER",
-                    "message": "Message has no sender; cannot enforce separation of duties",
+                    "message": (
+                        "Message has no sender; cannot enforce separation of duties"
+                    ),
                 }
             )
 
@@ -330,9 +332,7 @@ class SeparationOfDutiesPolicy:
             return any(self._has_artifact_ref(v, depth + 1) for v in value)
         return False
 
-    def _find_prose(
-        self, value: Any, path: str = "", depth: int = 0
-    ) -> Optional[str]:
+    def _find_prose(self, value: Any, path: str = "", depth: int = 0) -> Optional[str]:
         """Return a dotted field path to the first prose violation, or None.
 
         "Prose" is any string longer than ``max_prose_chars``, wherever it

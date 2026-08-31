@@ -2,18 +2,58 @@
 
 import pytest
 import time
+
 from maple.security.authentication import (
-    AuthenticationManager, AuthMethod, AuthCredentials, AuthToken
+    AuthenticationConfig,
+    AuthenticationManager,
+    AuthMethod,
+    AuthCredentials,
+    AuthToken,
 )
+
+
+TEST_JWT_CONFIG = AuthenticationConfig(jwt_secret="test-secret-" + "a" * 32)
 
 
 @pytest.fixture
 def auth():
-    return AuthenticationManager()
+    return AuthenticationManager(TEST_JWT_CONFIG)
 
 
 class TestJWTAuthentication:
     """Test JWT token generation, verification, and revocation."""
+
+    def test_missing_jwt_secret_fails_closed(self):
+        result = AuthenticationManager().generate_jwt("agent_001")
+
+        assert result.is_err()
+        assert result.unwrap_err()["errorType"] == "JWT_SECRET_NOT_CONFIGURED"
+
+    def test_short_jwt_secret_fails_closed(self):
+        manager = AuthenticationManager(AuthenticationConfig(jwt_secret="x" * 31))
+
+        result = manager.generate_jwt("agent_001")
+
+        assert result.is_err()
+        assert result.unwrap_err()["errorType"] == "JWT_SECRET_NOT_CONFIGURED"
+
+    def test_authentication_config_does_not_repr_secret(self):
+        config = AuthenticationConfig(jwt_secret="x" * 32)
+
+        assert "x" * 32 not in repr(config)
+
+    def test_shared_default_secret_cannot_forge_a_token(self):
+        jwt = pytest.importorskip("jwt")
+        token = jwt.encode(
+            {"sub": "attacker", "permissions": ["admin"]},
+            "maple-default-secret-change-in-production",
+            algorithm="HS256",
+        )
+
+        result = AuthenticationManager().verify_token(token)
+
+        assert result.is_err()
+        assert result.unwrap_err()["errorType"] == "JWT_SECRET_NOT_CONFIGURED"
 
     def test_generate_jwt(self, auth):
         result = auth.generate_jwt("agent_001", permissions=["read", "write"])
@@ -96,6 +136,17 @@ class TestJWTAuthentication:
         result = auth.authenticate(creds)
         assert result.is_err()
 
+    def test_authenticate_rejects_revoked_jwt(self, auth):
+        token = auth.generate_jwt("agent_001").unwrap()
+        assert auth.revoke_token(token).is_ok()
+
+        result = auth.authenticate(
+            {"method": "jwt", "principal": "agent_001", "token": token}
+        )
+
+        assert result.is_err()
+        assert result.unwrap_err()["errorType"] == "TOKEN_REVOKED"
+
     def test_authenticate_missing_token(self, auth):
         creds = {'method': 'jwt', 'principal': 'agent_001'}
         result = auth.authenticate(creds)
@@ -140,6 +191,18 @@ class TestAPIKeyAuthentication:
         result = auth.authenticate(creds)
         assert result.is_err()
         assert result.unwrap_err()['errorType'] == 'API_KEY_EXPIRED'
+
+
+class TestDeferredAuthenticationMethods:
+    """Unsupported transport/provider methods fail closed explicitly."""
+
+    @pytest.mark.parametrize("method", [AuthMethod.MUTUAL_TLS, AuthMethod.OAUTH2])
+    def test_deferred_methods_return_not_implemented(self, auth, method):
+        result = auth.authenticate(
+            AuthCredentials(method=method, principal="agent", credentials={})
+        )
+        assert result.is_err()
+        assert result.unwrap_err()['errorType'] == 'NOT_IMPLEMENTED'
 
 
 class TestAuthCredentials:

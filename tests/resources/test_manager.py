@@ -2,7 +2,7 @@
 
 import pytest
 from maple.resources.manager import ResourceManager, ResourceAllocation
-from maple.resources.specification import ResourceRequest, ResourceRange, TimeConstraint
+from maple.resources.specification import ResourceRequest, ResourceRange
 
 
 @pytest.fixture

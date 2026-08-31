@@ -1,30 +1,33 @@
 """
-Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
+Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy
+(Mahesh Vaikri)
 
 This file is part of MAPLE - Multi Agent Protocol Language Engine.
 
-MAPLE - Multi Agent Protocol Language Engine is free software: you can redistribute it and/or
-modify it under the terms of the GNU Affero General Public License as published by the Free Software
-Foundation, either version 3 of the License, or (at your option) any later version.
-MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
-PARTICULAR PURPOSE. See the GNU Affero General Public License for more details. You should have
-received a copy of the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
+MAPLE - Multi Agent Protocol Language Engine is free software: you can
+redistribute it and/or modify it under the terms of the GNU Affero General
+Public License as published by the Free Software Foundation, either version 3
+of the License, or (at your option) any later version.
+MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that
+it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero
+General Public License for more details. You should have received a copy of
+the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
 Language Engine. If not, see <https://www.gnu.org/licenses/>.
 """
 
 # mapl/broker/broker.py
 # Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
 
-import json
 import logging
 import threading
 import time
 import uuid
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, cast
 
 from ..agent.config import Config
 from ..core.message import Message
+from ..core.types import MessageID
 
 # NOTE: a LIBRARY must not configure the root logger (that hijacks the host's logging
 # and emits INFO noise). Use a module logger; the host owns logging config.
@@ -47,8 +50,9 @@ class MessageBroker:
     """
 
     # Class-level storage for the broker
-    _instance = None
+    _instance: Optional["MessageBroker"] = None
     _lock = threading.Lock()
+    _initialized: bool = False
 
     # Shared broker state
     _agent_queues: Dict[str, List[Message]] = {}
@@ -57,7 +61,7 @@ class MessageBroker:
     _topic_subscribers: Dict[str, List[str]] = {}
     _topic_handlers: Dict[str, Dict[str, Callable[[str, Message], None]]] = {}
 
-    def __new__(cls, config: Config):
+    def __new__(cls, config: Config) -> "MessageBroker":
         """Create or return a singleton instance."""
         with cls._lock:
             if cls._instance is None:
@@ -65,7 +69,7 @@ class MessageBroker:
                 cls._instance._initialized = False
             return cls._instance
 
-    def __init__(self, config: Config):
+    def __init__(self, config: Config) -> None:
         """Initialize the broker."""
         # Only initialize once. The broker is a process-wide singleton, so
         # every Agent constructs it with its own Config. Honor a newly
@@ -78,7 +82,7 @@ class MessageBroker:
 
         self.config = config
         self.running = False
-        self.delivery_thread = None
+        self.delivery_thread: Optional[threading.Thread] = None
         self.security_config = getattr(config, "security", None)
         # Separation-of-duties policy (fresh-context verifier preset), if any.
         # When set, send() enforces its sender allowlist + artifact-ref-only
@@ -101,7 +105,10 @@ class MessageBroker:
         self._message_queue = None
         try:
             from .queue import MessageQueue, QueueType
-            self._message_queue = MessageQueue(queue_type=QueueType.PRIORITY, max_size=10000)
+
+            self._message_queue = MessageQueue(
+                queue_type=QueueType.PRIORITY, max_size=10000
+            )
         except Exception:
             logger.debug("MessageQueue not available, using basic queue")
 
@@ -109,6 +116,7 @@ class MessageBroker:
         self._message_router = None
         try:
             from .routing import MessageRouter
+
             self._message_router = MessageRouter()
         except Exception:
             logger.debug("MessageRouter not available, using direct routing")
@@ -118,6 +126,7 @@ class MessageBroker:
         if self.security_config:
             try:
                 from ..security.authorization import AuthorizationManager
+
                 self._auth_manager = AuthorizationManager()
             except Exception:
                 logger.debug("AuthorizationManager not available")
@@ -190,7 +199,7 @@ class MessageBroker:
 
         # Ensure the message has an ID
         if not message.message_id:
-            message.message_id = str(uuid.uuid4())
+            message.message_id = MessageID(str(uuid.uuid4()))
 
         # Separation-of-duties enforcement (fresh-context verifier preset):
         # broker-enforced sender allowlist + artifact-ref-only payloads.
@@ -198,9 +207,7 @@ class MessageBroker:
             sod_result = self._separation_policy.authorize_send(message)
             if sod_result.is_err():
                 error = sod_result.unwrap_err()
-                raise SecurityError(
-                    f"Separation-of-duties denied: {error['message']}"
-                )
+                raise SecurityError(f"Separation-of-duties denied: {error['message']}")
 
         # Check if link validation is required
         if self.security_config and getattr(
@@ -212,7 +219,7 @@ class MessageBroker:
                 # If no link ID is provided, check if there's an existing link
                 if not link_id:
                     links_result = self.link_manager.get_links_for_agent(
-                        message.sender
+                        cast(str, message.sender)
                     )
                     if links_result.is_ok():
                         links = links_result.unwrap()
@@ -237,7 +244,7 @@ class MessageBroker:
                 # Validate the link if one is provided
                 if link_id:
                     link_result = self.link_manager.validate_link(
-                        link_id, message.sender, message.receiver
+                        link_id, cast(str, message.sender), cast(str, message.receiver)
                     )
 
                     if link_result.is_err():
@@ -264,15 +271,14 @@ class MessageBroker:
         # both would deliver it twice.
         enqueued = False
         if self._message_queue is not None:
-            enq_result = self._message_queue.enqueue(
-                message, priority=message.priority
-            )
+            enq_result = self._message_queue.enqueue(message, priority=message.priority)
             enqueued = enq_result.is_ok()
         if not enqueued:
             with self._lock:
-                if message.receiver not in self._agent_queues:
-                    self._agent_queues[message.receiver] = []
-                self._agent_queues[message.receiver].append(message)
+                receiver = cast(str, message.receiver)
+                if receiver not in self._agent_queues:
+                    self._agent_queues[receiver] = []
+                self._agent_queues[receiver].append(message)
 
         logger.debug(
             f"Message {message.message_id} queued for delivery to {message.receiver}"
@@ -287,7 +293,7 @@ class MessageBroker:
 
         # Ensure the message has an ID
         if not message.message_id:
-            message.message_id = str(uuid.uuid4())
+            message.message_id = MessageID(str(uuid.uuid4()))
 
         # Send the message to all subscribers (thread-safe)
         with self._lock:
@@ -325,7 +331,8 @@ class MessageBroker:
                 self._agent_queues[subscriber].append(subscriber_message)
 
         logger.debug(
-            f"Message {message.message_id} published to topic {topic} with {len(subscribers)} subscribers"
+            f"Message {message.message_id} published to topic {topic} with "
+            f"{len(subscribers)} subscribers"
         )
         return str(message.message_id)  # Ensure we always return a string
 
@@ -406,7 +413,9 @@ class MessageBroker:
             # Infer agent_id from the calling context if not provided
             import inspect
 
-            frame = inspect.currentframe().f_back
+            frame = inspect.currentframe()
+            if frame is not None:
+                frame = frame.f_back
             while frame:
                 if "self" in frame.f_locals and hasattr(
                     frame.f_locals["self"], "agent_id"

@@ -164,6 +164,7 @@ cython_debug/
 
 # MAPLE specific ignores
 _development_archive/
+.tmp-maple-*/
 *.log
 *.json.bak
 test_results/
@@ -182,10 +183,16 @@ website/
 ehthumbs.db
 Thumbs.db
 .claude/
+!.claude/
+.claude/*
+!.claude/agents/
+!.claude/agents/*.md
+!.claude/commands/
+!.claude/commands/*.md
+!.claude/settings.json
 
 # doctrine state plane (machine-local only)
 .doctrine-state/local/
 
-# Doctrine framework (local operating system, not distributed)
-.Doctrine/
-.Doctrine.md
+# Doctrine framework source is part of the repository contract; machine-local
+# state remains ignored above.

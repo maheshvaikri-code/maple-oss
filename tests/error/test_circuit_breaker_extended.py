@@ -1,9 +1,7 @@
 """Extended tests for the shared CircuitBreaker (record_failure, record_success, should_allow)."""
 
 import time
-import pytest
 from maple.error.circuit_breaker import CircuitBreaker, CircuitState
-from maple.core.result import Result
 
 
 class TestRecordFailure:

@@ -1,15 +1,18 @@
 """
-Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
+Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy
+(Mahesh Vaikri)
 
 This file is part of MAPLE - Multi Agent Protocol Language Engine.
 
-MAPLE - Multi Agent Protocol Language Engine is free software: you can redistribute it and/or
-modify it under the terms of the GNU Affero General Public License as published by the Free Software
-Foundation, either version 3 of the License, or (at your option) any later version.
-MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
-PARTICULAR PURPOSE. See the GNU Affero General Public License for more details. You should have
-received a copy of the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
+MAPLE - Multi Agent Protocol Language Engine is free software: you can
+redistribute it and/or modify it under the terms of the GNU Affero General
+Public License as published by the Free Software Foundation, either version 3
+of the License, or (at your option) any later version.
+MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that
+it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero
+General Public License for more details. You should have received a copy of
+the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
 Language Engine. If not, see <https://www.gnu.org/licenses/>.
 """
 
@@ -23,13 +26,25 @@ import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Callable, Dict, List, Optional, TypeVar, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    TypeVar,
+    cast,
+)
 
 from ..broker.broker import MessageBroker
 from ..core.message import Message
 from ..core.result import Result
 from ..core.types import Priority
 from .config import Config
+
+if TYPE_CHECKING:
+    from ..communication.streaming import Stream
 
 # Type variables for handlers
 T = TypeVar("T")
@@ -46,35 +61,45 @@ class Agent:
     """
 
     # Shared agent registry singleton
-    _shared_registry = None
+    _shared_registry: Optional[Any] = None
 
-    def __init__(self, config: Config, broker: Optional[MessageBroker] = None):
+    def __init__(self, config: Config, broker: Optional[MessageBroker] = None) -> None:
         self.config = config
         self.agent_id = config.agent_id
-        self.capabilities = getattr(config, 'capabilities', [])
-        self.registry = None
-        self._crypto_manager = None
+        self.capabilities = getattr(config, "capabilities", [])
+        self.registry: Optional[Any] = None
+        self._crypto_manager: Optional[Any] = None
 
         # Auto-detect broker type from broker_url
         if broker:
             self.broker = broker
-        elif hasattr(config, 'broker_url') and config.broker_url and config.broker_url.startswith("nats://"):
-            from ..broker.production_broker import ProductionBrokerManager, BrokerType
+        elif (
+            hasattr(config, "broker_url")
+            and config.broker_url
+            and config.broker_url.startswith("nats://")
+        ):
+            from ..broker.production_broker import BrokerType, ProductionBrokerManager
+
             result = ProductionBrokerManager.create_broker(config, BrokerType.NATS)
             self.broker = result.unwrap() if result.is_ok() else MessageBroker(config)
-        elif hasattr(config, 'broker_url') and config.broker_url and config.broker_url.startswith("s2://"):
-            from ..broker.production_broker import ProductionBrokerManager, BrokerType
+        elif (
+            hasattr(config, "broker_url")
+            and config.broker_url
+            and config.broker_url.startswith("s2://")
+        ):
+            from ..broker.production_broker import BrokerType, ProductionBrokerManager
+
             result = ProductionBrokerManager.create_broker(config, BrokerType.S2)
             self.broker = result.unwrap() if result.is_ok() else MessageBroker(config)
         else:
             self.broker = MessageBroker(config)
 
         self.running = False
-        self.message_queue = queue.Queue()
-        self.handler_thread = None
-        self.message_handlers = {}
-        self.topic_handlers = {}
-        self.stream_handlers = {}
+        self.message_queue: queue.Queue[Message] = queue.Queue()
+        self.handler_thread: Optional[threading.Thread] = None
+        self.message_handlers: Dict[str, Callable[[Message], Optional[Message]]] = {}
+        self.topic_handlers: Dict[str, Callable[[Message], Optional[Message]]] = {}
+        self.stream_handlers: Dict[str, Callable[[Message], None]] = {}
         self.executor = ThreadPoolExecutor(max_workers=10)
 
         # Agent metrics
@@ -101,6 +126,7 @@ class Agent:
         """Auto-register this agent in the global AgentRegistry."""
         try:
             from ..discovery.registry import AgentRegistry
+
             if Agent._shared_registry is None:
                 Agent._shared_registry = AgentRegistry()
             self.registry = Agent._shared_registry
@@ -108,12 +134,14 @@ class Agent:
                 agent_id=self.agent_id,
                 name=self.agent_id,
                 capabilities=self.capabilities,
-                metadata={'broker_url': self.config.broker_url}
+                metadata={"broker_url": self.config.broker_url},
             )
             if result.is_ok():
                 logger.info(f"Agent {self.agent_id} auto-registered in AgentRegistry")
             else:
-                logger.debug(f"Agent {self.agent_id} registration note: {result.unwrap_err()}")
+                logger.debug(
+                    f"Agent {self.agent_id} registration note: {result.unwrap_err()}"
+                )
         except Exception as e:
             logger.debug(f"Auto-registration skipped: {e}")
 
@@ -151,7 +179,7 @@ class Agent:
             message.sender = self.agent_id
 
         if require_routable and hasattr(self.broker, "is_routable"):
-            if not self.broker.is_routable(message.receiver):
+            if not self.broker.is_routable(cast(str, message.receiver)):
                 self.messages_failed += 1
                 error = {
                     "errorType": "UNROUTABLE",
@@ -195,7 +223,7 @@ class Agent:
         correlation_id = message.metadata["correlationId"]
 
         # Create a response queue for this request
-        response_queue = queue.Queue()
+        response_queue: queue.Queue[Message] = queue.Queue()
 
         # Register a temporary handler for the response
         def response_handler(response: Message) -> None:
@@ -226,7 +254,9 @@ class Agent:
         except queue.Empty:
             error = {
                 "errorType": "TIMEOUT",
-                "message": f"Timed out waiting for response to message {message.message_id}",
+                "message": (
+                    "Timed out waiting for response to message " f"{message.message_id}"
+                ),
                 "details": {
                     "messageType": message.message_type,
                     "receiver": message.receiver,
@@ -239,9 +269,7 @@ class Agent:
             # Unsubscribe the temporary handler
             self.broker.unsubscribe_temporary(self.agent_id, response_handler)
 
-    def receive(
-        self, timeout: Optional[str] = None
-    ) -> Result[Message, Dict[str, Any]]:
+    def receive(self, timeout: Optional[str] = None) -> Result[Message, Dict[str, Any]]:
         """Receive a message from the queue."""
         try:
             if timeout:
@@ -364,7 +392,9 @@ class Agent:
                 return Result.err(
                     {
                         "errorType": "NO_SECURITY_CONFIG",
-                        "message": "Security configuration required for link establishment",
+                        "message": (
+                            "Security configuration required for link establishment"
+                        ),
                     }
                 )
 
@@ -385,8 +415,7 @@ class Agent:
 
             # Wait for a challenge response
             response_result = self.receive_filtered(
-                lambda m: m.message_type == "LINK_CHALLENGE"
-                and m.sender == agent_id,
+                lambda m: m.message_type == "LINK_CHALLENGE" and m.sender == agent_id,
                 timeout="10s",
             )
 
@@ -404,9 +433,7 @@ class Agent:
             challenge = response_result.unwrap()
 
             # Verify the challenge contains our nonce
-            if not self._verify_nonce(
-                challenge.payload["encryptedNonce"], nonce_a
-            ):
+            if not self._verify_nonce(challenge.payload["encryptedNonce"], nonce_a):
                 logger.error("Failed to verify nonce in link challenge")
                 return Result.err(
                     {
@@ -443,14 +470,14 @@ class Agent:
 
             # Wait for establishment confirmation
             establish_result = self.receive_filtered(
-                lambda m: m.message_type == "LINK_ESTABLISHED"
-                and m.sender == agent_id,
+                lambda m: m.message_type == "LINK_ESTABLISHED" and m.sender == agent_id,
                 timeout="10s",
             )
 
             if establish_result.is_err():
                 logger.error(
-                    f"Failed to receive link established: {establish_result.unwrap_err()}"
+                    "Failed to receive link established: "
+                    f"{establish_result.unwrap_err()}"
                 )
                 return Result.err(
                     {
@@ -494,7 +521,7 @@ class Agent:
             link_id = message.metadata["linkId"]
         else:
             # Find an existing link
-            links_result = self.broker.link_manager.get_links_for_agent(
+            links_result = cast(Any, self.broker.link_manager).get_links_for_agent(
                 self.agent_id
             )
             if links_result.is_ok():
@@ -517,11 +544,15 @@ class Agent:
         # Send the message
         return self.send(linked_message)
 
-    def _get_crypto_manager(self):
+    def _get_crypto_manager(self) -> Any:
         """Get or create a CryptographyManager for this agent."""
         if self._crypto_manager is None:
             try:
-                from ..security.cryptography_impl import CryptographyManager, CRYPTO_AVAILABLE
+                from ..security.cryptography_impl import (
+                    CRYPTO_AVAILABLE,
+                    CryptographyManager,
+                )
+
                 if CRYPTO_AVAILABLE:
                     self._crypto_manager = CryptographyManager()
             except (ImportError, Exception):
@@ -529,20 +560,23 @@ class Agent:
         return self._crypto_manager
 
     def _verify_nonce(self, encrypted_nonce: str, original_nonce: str) -> bool:
-        """Verify that encrypted nonce matches original using real crypto when available."""
+        """Verify encrypted nonce with real crypto when available."""
         crypto = self._get_crypto_manager()
         if crypto is not None:
             try:
-                security_config = getattr(self.config, 'security', None)
+                security_config = getattr(self.config, "security", None)
                 if security_config and security_config.private_key:
-                    result = crypto.decrypt_data(encrypted_nonce, security_config.private_key)
+                    result = crypto.decrypt_data(
+                        encrypted_nonce, security_config.private_key
+                    )
                     if result.is_ok():
-                        return result.unwrap() == original_nonce
+                        return bool(result.unwrap() == original_nonce)
             except Exception:
                 pass
         # Fallback to base64 for compatibility
         try:
             import base64
+
             decoded = base64.b64decode(encrypted_nonce.encode()).decode()
             return decoded == original_nonce
         except Exception:
@@ -553,28 +587,32 @@ class Agent:
         crypto = self._get_crypto_manager()
         if crypto is not None:
             try:
-                security_config = getattr(self.config, 'security', None)
+                security_config = getattr(self.config, "security", None)
                 if security_config and security_config.public_key:
                     result = crypto.encrypt_data(nonce, security_config.public_key)
                     if result.is_ok():
-                        return result.unwrap()
+                        return cast(str, result.unwrap())
             except Exception:
                 pass
         # Fallback to base64 for compatibility
         try:
             import base64
+
             return base64.b64encode(nonce.encode()).decode()
         except Exception:
             return nonce
 
-    def _verify_link_params(self, encrypted_params: str, params: dict) -> bool:
+    def _verify_link_params(
+        self, encrypted_params: str, params: Dict[str, Any]
+    ) -> bool:
         """Verify link parameters by decrypting and comparing."""
         try:
             import base64
             import json
+
             decoded = base64.b64decode(encrypted_params.encode()).decode()
             decoded_params = json.loads(decoded)
-            return decoded_params == params
+            return bool(decoded_params == params)
         except Exception:
             return False
 
@@ -622,7 +660,9 @@ class Agent:
         handler registered as ``"work.package"`` would silently never fire for
         an incoming ``WORK.PACKAGE`` (the "case trap").
         """
-        normalized = message_type.upper() if isinstance(message_type, str) else message_type
+        normalized = (
+            message_type.upper() if isinstance(message_type, str) else message_type
+        )
         self.message_handlers[normalized] = handler
         logger.info(f"Registered handler for message type {normalized}")
 
@@ -728,32 +768,28 @@ class Agent:
         else:
             logger.warning(f"No handler found for topic {topic}")
 
-    def handler(
-        self, message_type: str
-    ) -> Callable[
+    def handler(self, message_type: str) -> Callable[
         [Callable[[Message], Optional[Message]]],
         Callable[[Message], Optional[Message]],
     ]:
         """Decorator for registering message handlers."""
 
         def decorator(
-            func: Callable[[Message], Optional[Message]]
+            func: Callable[[Message], Optional[Message]],
         ) -> Callable[[Message], Optional[Message]]:
             self.register_handler(message_type, func)
             return func
 
         return decorator
 
-    def topic_handler(
-        self, topic: str
-    ) -> Callable[
+    def topic_handler(self, topic: str) -> Callable[
         [Callable[[Message], Optional[Message]]],
         Callable[[Message], Optional[Message]],
     ]:
         """Decorator for registering topic handlers."""
 
         def decorator(
-            func: Callable[[Message], Optional[Message]]
+            func: Callable[[Message], Optional[Message]],
         ) -> Callable[[Message], Optional[Message]]:
             self.register_topic_handler(topic, func)
             return func
@@ -765,9 +801,7 @@ class Agent:
     ) -> Callable[[Callable[[Message], None]], Callable[[Message], None]]:
         """Decorator for registering stream handlers."""
 
-        def decorator(
-            func: Callable[[Message], None]
-        ) -> Callable[[Message], None]:
+        def decorator(func: Callable[[Message], None]) -> Callable[[Message], None]:
             self.register_stream_handler(stream_name, func)
             return func
 

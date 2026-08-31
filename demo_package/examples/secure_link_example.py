@@ -47,15 +47,31 @@ def secure_link_example():
     
     try:
         from maple import (
-            LinkManager, Link, LinkState,
-            AuthenticationManager, AuthToken,
-            Message, Priority,
-            get_audit_logger, AuditEventType, AuditSeverity
+            Message,
+            Priority,
+        )
+        from maple.security import (
+            AuthenticationConfig,
+            AuthenticationManager,
+            LinkManager,
+            Link,
+            LinkState,
+        )
+        from maple.security.audit import (
+            AuditEventType,
+            AuditSeverity,
+            get_audit_logger,
         )
         
         # Create authentication manager
         print("\n🏛️ Setting up Secure Authentication System...")
-        auth_manager = AuthenticationManager()
+        jwt_secret = os.environ.get("MAPLE_JWT_SECRET")
+        if not jwt_secret:
+            print("Set MAPLE_JWT_SECRET to run the authentication portion.")
+            return
+        auth_manager = AuthenticationManager(
+            AuthenticationConfig(jwt_secret=jwt_secret)
+        )
         
         # Create link manager
         link_manager = LinkManager()

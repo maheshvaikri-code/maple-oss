@@ -22,24 +22,25 @@ Creator: Mahesh Vaikri
 Tests core MAPLE components to ensure they work correctly.
 """
 
-import sys
-import traceback
+import sys  # noqa: E402
+import traceback  # noqa: E402
 
 def test_imports():
     """Test that all MAPLE components can be imported."""
     print("[TEST] Testing MAPLE imports...")
     
     try:
-        from maple.core.types import Priority, Size, Duration, Boolean, Integer, String
-        from maple.core.result import Result
-        from maple.core.message import Message
-        from maple.agent.config import Config, SecurityConfig
+        from maple.core.types import (  # noqa: F401
+            Priority, Size, Duration, Boolean, Integer, String
+        )
+        from maple.core.result import Result  # noqa: F401
+        from maple.core.message import Message  # noqa: F401
+        from maple.agent.config import Config, SecurityConfig  # noqa: F401
         print("[PASS] Core imports successful")
-        return True
     except Exception as e:
         print(f"[FAIL] Import failed: {e}")
         traceback.print_exc()
-        return False
+        raise
 
 def test_types():
     """Test the type system."""
@@ -49,7 +50,7 @@ def test_types():
         from maple.core.types import Boolean, Integer, String, Size, Duration, Priority
         
         # Test basic types
-        assert Boolean.validate(True) == True
+        assert Boolean.validate(True)
         assert Integer.validate(42) == 42
         assert String.validate("hello") == "hello"
         
@@ -67,11 +68,10 @@ def test_types():
         assert Priority.HIGH.value == "HIGH"
         
         print("[PASS] Type system tests passed")
-        return True
     except Exception as e:
         print(f"[FAIL] Type system test failed: {e}")
         traceback.print_exc()
-        return False
+        raise
 
 def test_result():
     """Test the Result<T,E> type."""
@@ -82,14 +82,14 @@ def test_result():
         
         # Test Ok result
         ok_result = Result.ok("success")
-        assert ok_result.is_ok() == True
-        assert ok_result.is_err() == False
+        assert ok_result.is_ok()
+        assert not ok_result.is_err()
         assert ok_result.unwrap() == "success"
         
         # Test Err result
         err_result = Result.err("error")
-        assert err_result.is_ok() == False
-        assert err_result.is_err() == True
+        assert not err_result.is_ok()
+        assert err_result.is_err()
         assert err_result.unwrap_err() == "error"
         
         # Test map
@@ -100,11 +100,10 @@ def test_result():
         assert err_result.unwrap_or("default") == "default"
         
         print("[PASS] Result<T,E> tests passed")
-        return True
     except Exception as e:
         print(f"[FAIL] Result<T,E> test failed: {e}")
         traceback.print_exc()
-        return False
+        raise
 
 def test_message():
     """Test message creation and serialization."""
@@ -144,11 +143,10 @@ def test_message():
         assert reconstructed.payload == msg.payload
         
         print("[PASS] Message system tests passed")
-        return True
     except Exception as e:
         print(f"[FAIL] Message test failed: {e}")
         traceback.print_exc()
-        return False
+        raise
 
 def test_config():
     """Test configuration system."""
@@ -182,15 +180,14 @@ def test_config():
             default_lifetime=3600
         )
         
-        assert link_config.enabled == True
+        assert link_config.enabled
         assert link_config.default_lifetime == 3600
         
         print("[PASS] Configuration tests passed")
-        return True
     except Exception as e:
         print(f"[FAIL] Configuration test failed: {e}")
         traceback.print_exc()
-        return False
+        raise
 
 def test_link_management():
     """Test link management system."""
@@ -220,11 +217,10 @@ def test_link_management():
         assert established_link.state == LinkState.ESTABLISHED
         
         print("[PASS] Link management tests passed")
-        return True
     except Exception as e:
         print(f"[FAIL] Link management test failed: {e}")
         traceback.print_exc()
-        return False
+        raise
 
 def main():
     """Run all tests."""
@@ -246,10 +242,8 @@ def main():
     
     for test in tests:
         try:
-            if test():
-                passed += 1
-            else:
-                failed += 1
+            test()
+            passed += 1
         except Exception as e:
             print(f"[FAIL] Test {test.__name__} crashed: {e}")
             failed += 1

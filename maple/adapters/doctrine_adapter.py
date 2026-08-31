@@ -1,18 +1,20 @@
 """
-Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
+Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy
+(Mahesh Vaikri)
 
 This file is part of MAPLE - Multi Agent Protocol Language Engine.
 
-MAPLE - Multi Agent Protocol Language Engine is free software: you can redistribute it and/or
-modify it under the terms of the GNU Affero General Public License as published by the Free Software
-Foundation, either version 3 of the License, or (at your option) any later version.
-MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
-PARTICULAR PURPOSE. See the GNU Affero General Public License for more details. You should have
-received a copy of the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
+MAPLE - Multi Agent Protocol Language Engine is free software: you can
+redistribute it and/or modify it under the terms of the GNU Affero General
+Public License as published by the Free Software Foundation, either version 3
+of the License, or (at your option) any later version.
+MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that
+it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero
+General Public License for more details. You should have received a copy of
+the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
 Language Engine. If not, see <https://www.gnu.org/licenses/>.
 """
-
 
 # maple/adapters/doctrine_adapter.py
 # Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
@@ -35,17 +37,15 @@ message built here already satisfies the fresh-context verifier preset
   ``artifact`` ref, and optional short ``evidence``.
 """
 
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, cast  # noqa: E402
 
-from ..core.message import Message
-from ..core.result import Result
-from ..core.types import Priority
-from ..security.separation import (
-    ArtifactRef,
-    is_artifact_ref,
-    WORK_PACKAGE,
-    GATE_RESULT,
-)
+from ..core.message import Message  # noqa: E402
+from ..core.result import Result  # noqa: E402
+from ..core.types import Priority  # noqa: E402
+from ..security.separation import GATE_RESULT  # noqa: E402
+from ..security.separation import WORK_PACKAGE  # noqa: E402
+from ..security.separation import ArtifactRef  # noqa: E402
+from ..security.separation import is_artifact_ref  # noqa: E402
 
 # Canonical gate verdicts. Honest reporting is a doctrine non-negotiable:
 # "blocked" and "failed" are first-class, respectable statuses.
@@ -57,22 +57,22 @@ RefLike = Union[ArtifactRef, Dict[str, str]]
 def _ref_dict(ref: Any) -> Optional[Dict[str, str]]:
     """Normalize an ArtifactRef or a ``{path, sha256}`` dict; None if invalid."""
     if isinstance(ref, ArtifactRef):
-        return ref.to_dict()
+        return cast(Dict[str, str], ref.to_dict())
     if is_artifact_ref(ref):
-        return ref
+        return cast(Dict[str, str], ref)
     return None
 
 
 def _err(error_type: str, message: str, **details: Any) -> Result:
-    return Result.err(
-        {"errorType": error_type, "message": message, "details": details}
-    )
+    return Result.err({"errorType": error_type, "message": message, "details": details})
 
 
 # --------------------------------------------------------------------------- #
 # WORK.PACKAGE
 # --------------------------------------------------------------------------- #
-def validate_work_package_payload(payload: Any) -> Result[Dict[str, Any], Dict[str, Any]]:
+def validate_work_package_payload(
+    payload: Any,
+) -> Result[Dict[str, Any], Dict[str, Any]]:
     """Validate a WORK.PACKAGE payload dict; return it on success."""
     if not isinstance(payload, dict):
         return _err("INVALID_WORK_PACKAGE", "payload must be a dict")
@@ -126,13 +126,15 @@ def build_work_package(
     payload = {
         "package_id": package_id,
         "role": role,
-        "file_scope": list(file_scope) if isinstance(file_scope, (list, tuple)) else file_scope,
+        "file_scope": (
+            list(file_scope) if isinstance(file_scope, (list, tuple)) else file_scope
+        ),
         "brief": brief_dict,
     }
 
     check = validate_work_package_payload(payload)
     if check.is_err():
-        return check
+        return Result.err(check.unwrap_err())
 
     try:
         message = Message(
@@ -162,7 +164,9 @@ def validate_work_package(message: Any) -> Result[Dict[str, Any], Dict[str, Any]
 # --------------------------------------------------------------------------- #
 # GATE.RESULT
 # --------------------------------------------------------------------------- #
-def validate_gate_result_payload(payload: Any) -> Result[Dict[str, Any], Dict[str, Any]]:
+def validate_gate_result_payload(
+    payload: Any,
+) -> Result[Dict[str, Any], Dict[str, Any]]:
     """Validate a GATE.RESULT payload dict; return it on success."""
     if not isinstance(payload, dict):
         return _err("INVALID_GATE_RESULT", "payload must be a dict")
@@ -217,7 +221,7 @@ def build_gate_result(
 
     check = validate_gate_result_payload(payload)
     if check.is_err():
-        return check
+        return Result.err(check.unwrap_err())
 
     try:
         message = Message(
@@ -282,8 +286,11 @@ class DoctrineAdapter:
             priority=priority,
         )
         if built.is_err():
-            return built
-        return self.maple_agent.send(built.unwrap(), require_routable=require_routable)
+            return Result.err(built.unwrap_err())
+        return cast(
+            Result[str, Dict[str, Any]],
+            self.maple_agent.send(built.unwrap(), require_routable=require_routable),
+        )
 
     def send_gate_result(
         self,
@@ -307,5 +314,8 @@ class DoctrineAdapter:
             priority=priority,
         )
         if built.is_err():
-            return built
-        return self.maple_agent.send(built.unwrap(), require_routable=require_routable)
+            return Result.err(built.unwrap_err())
+        return cast(
+            Result[str, Dict[str, Any]],
+            self.maple_agent.send(built.unwrap(), require_routable=require_routable),
+        )

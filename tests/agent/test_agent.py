@@ -1,13 +1,9 @@
 """Tests for maple.agent.agent - Agent class."""
 
 import pytest
-import time
-import threading
-from unittest.mock import MagicMock, patch
 from maple.agent.agent import Agent
 from maple.agent.config import Config
 from maple.core.message import Message
-from maple.core.types import Priority
 from maple.broker.broker import MessageBroker
 
 

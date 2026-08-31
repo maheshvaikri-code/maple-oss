@@ -22,7 +22,7 @@ Creator: Mahesh Vaikri
 Tests the specific issues that were fixed.
 """
 
-def test_size_parsing():
+def _run_size_parsing():
     """Test the fixed Size.parse method."""
     print("[TEST] Testing Size.parse fixes...")
     
@@ -53,6 +53,11 @@ def test_size_parsing():
         import traceback
         traceback.print_exc()
         return False
+
+
+def test_size_parsing():
+    """Test the fixed Size.parse method without returning a pytest value."""
+    assert _run_size_parsing() is True
 
 def test_security_imports():
     """Test the fixed security module imports."""
@@ -86,7 +91,7 @@ def main():
     print("Creator: Mahesh Vaikri")
     print("=" * 50)
     
-    tests = [test_size_parsing, test_security_imports]
+    tests = [_run_size_parsing, test_security_imports]
     passed = 0
     failed = 0
     

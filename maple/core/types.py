@@ -1,3 +1,18 @@
+# Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy
+# (Mahesh Vaikri)
+#
+# This file is part of MAPLE - Multi Agent Protocol Language Engine.
+#
+# MAPLE - Multi Agent Protocol Language Engine is free software: you can
+# redistribute it and/or modify it under the terms of the GNU Affero General
+# Public License as published by the Free Software Foundation, either version 3
+# of the License, or (at your option) any later version.
+# MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that
+# it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+# of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero
+# General Public License for more details. You should have received a copy of
+# the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
+# Language Engine. If not, see <https://www.gnu.org/licenses/>.
 """
 MAPLE Core Types
 Created by: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
@@ -7,9 +22,8 @@ Type system for MAPLE's 32/32 perfect validation.
 
 import re
 import uuid
-from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Any, Optional, Union
 
 
 # Primitive type validators
@@ -48,10 +62,10 @@ class Priority(Enum):
 class AgentID:
     """Agent identifier with validation."""
 
-    def __init__(self, agent_id: str):
+    def __init__(self, agent_id: str) -> None:
         if not self.validate(agent_id):
             raise ValueError(f"Invalid agent ID: {agent_id}")
-        self.id = agent_id
+        self.id: str = agent_id
 
     @staticmethod
     def validate(agent_id: str) -> bool:
@@ -68,7 +82,7 @@ class AgentID:
     def __repr__(self) -> str:
         return f"AgentID('{self.id}')"
 
-    def __eq__(self, other) -> bool:
+    def __eq__(self, other: object) -> bool:
         if isinstance(other, AgentID):
             return self.id == other.id
         if isinstance(other, str):
@@ -82,9 +96,9 @@ class AgentID:
 class MessageID:
     """Message identifier using UUID v4."""
 
-    def __init__(self, message_id: Optional[str] = None):
+    def __init__(self, message_id: Optional[str] = None) -> None:
         if message_id is None:
-            self.id = str(uuid.uuid4())
+            self.id: str = str(uuid.uuid4())
         else:
             if not self.validate(message_id):
                 raise ValueError(f"Invalid message ID: {message_id}")
@@ -105,7 +119,7 @@ class MessageID:
     def __repr__(self) -> str:
         return f"MessageID('{self.id}')"
 
-    def __eq__(self, other) -> bool:
+    def __eq__(self, other: object) -> bool:
         if isinstance(other, MessageID):
             return self.id == other.id
         if isinstance(other, str):
@@ -120,7 +134,7 @@ class Duration:
     """Duration parser and validator."""
 
     @staticmethod
-    def parse(duration_str: str) -> float:
+    def parse(duration_str: Union[str, int, float]) -> float:
         """Parse a duration string like '30s' into seconds."""
         units = {"ms": 0.001, "s": 1, "m": 60, "h": 3600, "d": 86400}
 
@@ -201,9 +215,7 @@ class TypeValidator:
         if not isinstance(value, str):
             raise TypeError(f"Expected string, got {type(value).__name__}")
         if not (min_len <= len(value) <= max_len):
-            raise ValueError(
-                f"String length must be between {min_len} and {max_len}"
-            )
+            raise ValueError(f"String length must be between {min_len} and {max_len}")
         return value
 
     @staticmethod

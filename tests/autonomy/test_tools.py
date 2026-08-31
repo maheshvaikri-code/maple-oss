@@ -1,12 +1,23 @@
 """Tests for the autonomy tool framework."""
 
 import pytest
-from maple.autonomy.tools import Tool, ToolRegistry, create_builtin_tools
+
+from maple.autonomy.agent import Goal
+from maple.autonomy.execution import CancellationToken
+from maple.autonomy.handoffs import InMemoryHandoffStore
+from maple.autonomy.tools import (
+    Tool,
+    ToolRegistry,
+    create_agent_tool,
+    create_builtin_tools,
+    create_handoff_tool,
+)
 from maple.core.result import Result
 
 
 def make_tool(name="test_tool", requires_approval=False, tags=None):
     """Helper to create a simple test tool."""
+
     def handler(x: int = 0) -> Result:
         return Result.ok({"doubled": x * 2})
 
@@ -49,6 +60,114 @@ class TestTool:
         assert result.is_err()
         assert "boom" in result.unwrap_err()["message"]
 
+    def test_execute_rejects_invalid_cancellation(self):
+        result = make_tool().execute(cancellation=object())
+
+        assert result.is_err()
+        assert result.unwrap_err()["errorType"] == "EXECUTION_CANCELLATION_INVALID"
+
+    def test_cancellation_aware_handler_receives_exact_token(self):
+        token = CancellationToken()
+        received = []
+
+        def handler(*, cancellation=None):
+            received.append(cancellation)
+            return Result.ok({"ok": True})
+
+        tool = Tool(
+            name="aware",
+            description="Cancellation-aware tool",
+            parameters={"type": "object"},
+            handler=handler,
+            accepts_cancellation=True,
+        )
+
+        result = tool.execute(cancellation=token)
+
+        assert result.is_ok()
+        assert received == [token]
+
+    def test_cancellation_aware_executor_configuration_fails_closed(self):
+        from maple.autonomy.execution import TrustedLocalExecutor
+
+        with pytest.raises(ValueError, match="cannot be combined"):
+            Tool(
+                name="invalid-aware-executor",
+                description="Invalid cancellation-aware executor tool",
+                parameters={"type": "object"},
+                handler=lambda: Result.ok({"ok": True}),
+                executor=TrustedLocalExecutor(),
+                accepts_cancellation=True,
+            )
+
+    async def test_execute_async_rejects_invalid_cancellation(self):
+        result = await make_tool().execute_async(cancellation=object())
+
+        assert result.is_err()
+        assert result.unwrap_err()["errorType"] == "EXECUTION_CANCELLATION_INVALID"
+
+    @pytest.mark.asyncio
+    async def test_async_cancellation_aware_handler_receives_exact_token(self):
+        token = CancellationToken()
+        received = []
+
+        async def handler(*, cancellation=None):
+            received.append(cancellation)
+            return Result.ok({"ok": True})
+
+        tool = Tool(
+            name="async-aware",
+            description="Async cancellation-aware tool",
+            parameters={"type": "object"},
+            handler=lambda: Result.ok({"ok": True}),
+            async_handler=handler,
+            accepts_cancellation=True,
+        )
+
+        result = await tool.execute_async(cancellation=token)
+
+        assert result.is_ok()
+        assert received == [token]
+
+    def test_execute_accepts_cancelled_token_without_calling_handler(self):
+        token = CancellationToken()
+        token.cancel()
+        called = []
+        tool = Tool(
+            name="cancelled",
+            description="Cancelled tool",
+            parameters={"type": "object"},
+            handler=lambda: called.append(True) or Result.ok({"ok": True}),
+        )
+
+        result = tool.execute(cancellation=token)
+
+        assert result.is_err()
+        assert result.unwrap_err()["errorType"] == "EXECUTION_CANCELLED"
+        assert called == []
+
+    async def test_execute_async_preserves_executor_boundary(self):
+        from maple.autonomy.execution import ExecutionPolicy, TrustedLocalExecutor
+
+        calls = []
+
+        async def async_handler():
+            raise AssertionError("async handler must not bypass executor policy")
+
+        tool = Tool(
+            name="bounded_async",
+            description="Uses the trusted execution boundary",
+            parameters={"type": "object"},
+            handler=lambda: calls.append("sync") or Result.ok({"ok": True}),
+            async_handler=async_handler,
+            executor=TrustedLocalExecutor(ExecutionPolicy(timeout_seconds=1)),
+        )
+
+        result = await tool.execute_async()
+
+        assert result.is_ok()
+        assert calls == ["sync"]
+
     def test_to_llm_definition(self):
         tool = make_tool("calc")
         defn = tool.to_llm_definition()
@@ -60,6 +179,16 @@ class TestTool:
         tool = make_tool("tagged", tags=["math", "utility"])
         assert "math" in tool.tags
         assert "utility" in tool.tags
+
+    def test_invalid_replay_policy_is_rejected(self):
+        with pytest.raises(ValueError, match="replay_policy"):
+            Tool(
+                name="invalid_replay",
+                description="Invalid replay policy",
+                parameters={"type": "object"},
+                handler=lambda: Result.ok({"ok": True}),
+                replay_policy=[],
+            )
 
 
 class TestToolRegistry:
@@ -114,6 +243,309 @@ class TestToolRegistry:
         result = reg.execute("missing", {})
         assert result.is_err()
 
+    async def test_execute_async_uses_declared_handler(self):
+        async def async_handler(x):
+            return Result.ok({"doubled": x * 2})
+
+        reg = ToolRegistry()
+        reg.register(
+            Tool(
+                name="async_doubler",
+                description="Double asynchronously",
+                parameters={
+                    "type": "object",
+                    "properties": {"x": {"type": "integer"}},
+                    "required": ["x"],
+                },
+                handler=lambda x: Result.ok({"doubled": x * 2}),
+                async_handler=async_handler,
+            )
+        )
+
+        result = await reg.execute_async("async_doubler", {"x": 6})
+
+        assert result.is_ok()
+        assert result.unwrap() == {"doubled": 12}
+
+
+class HandoffAgent:
+    """Minimal synchronous target for handoff-tool tests."""
+
+    def __init__(self, agent_id="specialist"):
+        self.agent_id = agent_id
+        self.tasks = []
+
+    def pursue_goal(self, description):
+        self.tasks.append(description)
+        return Result.ok(
+            Goal(
+                goal_id="goal-specialist",
+                description=description,
+                status="completed",
+                result={"answer": description.upper()},
+            )
+        )
+
+
+class ContextHandoffAgent(HandoffAgent):
+    """Target that explicitly accepts filtered handoff context."""
+
+    def __init__(self, agent_id="specialist"):
+        super().__init__(agent_id=agent_id)
+        self.contexts = []
+
+    def pursue_goal_with_context(self, description, context):
+        self.contexts.append(context)
+        return self.pursue_goal(description)
+
+
+class AsyncHandoffAgent(ContextHandoffAgent):
+    """Target that explicitly accepts async handoff execution."""
+
+    async def pursue_goal_async(self, description):
+        return self.pursue_goal(description)
+
+    async def pursue_goal_with_context_async(self, description, context):
+        self.contexts.append(context)
+        return self.pursue_goal(description)
+
+
+class TestHandoffTool:
+    def test_handoff_success_is_structured_and_approval_required(self):
+        target = HandoffAgent()
+        tool = create_handoff_tool(target)
+
+        result = tool.execute(task="Research the release notes")
+
+        assert result.is_ok()
+        assert result.unwrap() == {
+            "agent_id": "specialist",
+            "goal_id": "goal-specialist",
+            "status": "completed",
+            "result": {"answer": "RESEARCH THE RELEASE NOTES"},
+        }
+        assert target.tasks == ["Research the release notes"]
+        assert tool.requires_approval is True
+        assert tool.to_llm_definition().parameters["required"] == ["task"]
+
+    def test_handoff_target_failure_does_not_expose_raw_error(self):
+        class FailingAgent(HandoffAgent):
+            def pursue_goal(self, description):
+                return Result.err(
+                    {
+                        "errorType": "TARGET_FAILURE",
+                        "message": "secret provider response",
+                    }
+                )
+
+        result = create_handoff_tool(FailingAgent()).execute(task="Try this")
+
+        assert result.is_err()
+        error = result.unwrap_err()
+        assert error["errorType"] == "HANDOFF_TARGET_FAILED"
+        assert error["details"]["target_error_type"] == "TARGET_FAILURE"
+        assert "secret" not in str(error)
+
+    def test_handoff_target_exception_is_normalized(self):
+        class RaisingAgent(HandoffAgent):
+            def pursue_goal(self, description):
+                raise RuntimeError("private failure")
+
+        result = create_handoff_tool(RaisingAgent()).execute(task="Try this")
+
+        assert result.is_err()
+        assert result.unwrap_err()["errorType"] == "HANDOFF_TARGET_ERROR"
+        assert result.unwrap_err()["details"]["exception"] == "RuntimeError"
+        assert "private failure" not in str(result.unwrap_err())
+
+    def test_handoff_rejects_empty_and_oversized_tasks_before_target(self):
+        target = HandoffAgent()
+        tool = create_handoff_tool(target, requires_approval=False)
+
+        empty = tool.execute(task="")
+        oversized = tool.execute(task="x" * 8193)
+
+        assert empty.is_err()
+        assert oversized.is_err()
+        assert empty.unwrap_err()["errorType"] == "TOOL_INPUT_INVALID"
+        assert oversized.unwrap_err()["errorType"] == "TOOL_INPUT_INVALID"
+        assert target.tasks == []
+
+    def test_handoff_rejects_invalid_target(self):
+        with pytest.raises(ValueError, match="target_agent"):
+            create_handoff_tool(object())
+
+    def test_handoff_filters_context_and_requires_explicit_target_support(self):
+        target = ContextHandoffAgent()
+        tool = create_handoff_tool(target, allowed_context_keys=["project"])
+
+        result = tool.execute(
+            task="Use the release notes",
+            context={"project": {"name": "MAPLE"}},
+        )
+
+        assert result.is_ok()
+        assert target.contexts == [{"project": {"name": "MAPLE"}}]
+        assert tool.to_llm_definition().parameters["required"] == ["task"]
+
+    def test_handoff_rejects_context_keys_outside_allowlist_before_target(self):
+        target = ContextHandoffAgent()
+        tool = create_handoff_tool(target, allowed_context_keys=["project"])
+
+        result = tool.execute(task="Use the release notes", context={"secret": "x"})
+
+        assert result.is_err()
+        assert result.unwrap_err()["errorType"] == "HANDOFF_CONTEXT_KEY_DENIED"
+        assert target.tasks == []
+
+    def test_handoff_rejects_context_for_legacy_target(self):
+        target = HandoffAgent()
+        tool = create_handoff_tool(target, allowed_context_keys=["project"])
+
+        result = tool.execute(
+            task="Use the release notes", context={"project": "MAPLE"}
+        )
+
+        assert result.is_err()
+        assert result.unwrap_err()["errorType"] == "HANDOFF_CONTEXT_UNSUPPORTED"
+        assert target.tasks == []
+
+    async def test_async_handoff_uses_async_target_contract(self):
+        target = AsyncHandoffAgent()
+        tool = create_handoff_tool(target, allowed_context_keys=["project"])
+
+        result = await tool.execute_async(
+            task="Use the release notes",
+            context={"project": "MAPLE"},
+        )
+
+        assert result.is_ok()
+        assert target.contexts == [{"project": "MAPLE"}]
+
+    def test_handoff_id_is_forwarded_only_to_targets_that_accept_it(self):
+        class CorrelatedAgent(HandoffAgent):
+            def __init__(self):
+                super().__init__()
+                self.handoff_ids = []
+
+            def pursue_goal(self, description, *, handoff_id=None):
+                self.handoff_ids.append(handoff_id)
+                return super().pursue_goal(description)
+
+        target = CorrelatedAgent()
+        tool = create_handoff_tool(
+            target,
+            requires_approval=False,
+            handoff_store=InMemoryHandoffStore(),
+            source_agent_id="source",
+        )
+
+        result = tool.execute(task="Correlate this", handoff_id="handoff-correlation")
+
+        assert result.is_ok()
+        assert target.handoff_ids == ["handoff-correlation"]
+
+
+class TestAgentTool:
+    def test_agent_tool_returns_bounded_child_result_without_handoff_state(self):
+        target = HandoffAgent()
+        tool = create_agent_tool(target)
+
+        result = tool.execute(task="Research the release notes")
+
+        assert result.is_ok()
+        assert result.unwrap() == {
+            "agent_id": "specialist",
+            "goal_id": "goal-specialist",
+            "status": "completed",
+            "result": {"answer": "RESEARCH THE RELEASE NOTES"},
+        }
+        assert target.tasks == ["Research the release notes"]
+        assert tool.requires_approval is True
+        assert "agent-as-tool" in tool.tags
+        assert "handoff_id" not in result.unwrap()
+
+    def test_agent_tool_filters_context_and_requires_explicit_support(self):
+        target = ContextHandoffAgent()
+        tool = create_agent_tool(target, allowed_context_keys=["project"])
+
+        result = tool.execute(
+            task="Use the release notes",
+            context={"project": {"name": "MAPLE"}},
+        )
+
+        assert result.is_ok()
+        assert target.contexts == [{"project": {"name": "MAPLE"}}]
+
+        legacy = create_agent_tool(HandoffAgent(), allowed_context_keys=["project"])
+        unsupported = legacy.execute(
+            task="Use the release notes", context={"project": "MAPLE"}
+        )
+
+        assert unsupported.is_err()
+        assert unsupported.unwrap_err()["errorType"] == "AGENT_TOOL_CONTEXT_UNSUPPORTED"
+
+    def test_agent_tool_rejects_context_outside_allowlist_before_target(self):
+        target = ContextHandoffAgent()
+        tool = create_agent_tool(target, allowed_context_keys=["project"])
+
+        result = tool.execute(task="Use the release notes", context={"secret": "x"})
+
+        assert result.is_err()
+        assert result.unwrap_err()["errorType"] == "AGENT_TOOL_CONTEXT_KEY_DENIED"
+        assert target.tasks == []
+
+    def test_agent_tool_redacts_child_failures_and_exceptions(self):
+        class FailingAgent(HandoffAgent):
+            def pursue_goal(self, description):
+                return Result.err(
+                    {"errorType": "TARGET_FAILURE", "message": "secret response"}
+                )
+
+        class RaisingAgent(HandoffAgent):
+            def pursue_goal(self, description):
+                raise RuntimeError("private failure")
+
+        failed = create_agent_tool(FailingAgent()).execute(task="Try this")
+        raised = create_agent_tool(RaisingAgent()).execute(task="Try this")
+
+        assert failed.is_err()
+        assert failed.unwrap_err()["errorType"] == "AGENT_TOOL_TARGET_FAILED"
+        assert failed.unwrap_err()["details"]["target_error_type"] == "TARGET_FAILURE"
+        assert "secret" not in str(failed.unwrap_err())
+        assert raised.is_err()
+        assert raised.unwrap_err()["errorType"] == "AGENT_TOOL_TARGET_ERROR"
+        assert raised.unwrap_err()["details"]["exception"] == "RuntimeError"
+        assert "private failure" not in str(raised.unwrap_err())
+
+    def test_agent_tool_rejects_unbounded_child_result(self):
+        class UnboundedAgent(HandoffAgent):
+            def pursue_goal(self, description):
+                return Result.ok(
+                    Goal(
+                        goal_id="goal-specialist",
+                        description=description,
+                        status="completed",
+                        result=object(),
+                    )
+                )
+
+        result = create_agent_tool(UnboundedAgent()).execute(task="Try this")
+
+        assert result.is_err()
+        assert result.unwrap_err()["errorType"] == "AGENT_TOOL_TARGET_INVALID"
+
+    async def test_async_agent_tool_uses_async_child_contract(self):
+        target = AsyncHandoffAgent()
+        tool = create_agent_tool(target, allowed_context_keys=["project"])
+
+        result = await tool.execute_async(
+            task="Use the release notes", context={"project": "MAPLE"}
+        )
+
+        assert result.is_ok()
+        assert target.contexts == [{"project": "MAPLE"}]
+
 
 class TestBuiltinTools:
     def test_create_builtin_tools(self):
@@ -132,6 +564,7 @@ class TestBuiltinTools:
         assert "query_agents" in names
         assert "read_state" in names
         assert "write_state" in names
+        assert "request_human_input" in names
 
     def test_write_state_requires_approval(self):
         class FakeAgent:

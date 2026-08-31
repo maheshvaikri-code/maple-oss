@@ -1,51 +1,35 @@
 """
-Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
+Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy
+(Mahesh Vaikri)
 
 This file is part of MAPLE - Multi Agent Protocol Language Engine.
 
-MAPLE - Multi Agent Protocol Language Engine is free software: you can redistribute it and/or
-modify it under the terms of the GNU Affero General Public License as published by the Free Software
-Foundation, either version 3 of the License, or (at your option) any later version.
-MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
-PARTICULAR PURPOSE. See the GNU Affero General Public License for more details. You should have
-received a copy of the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
+MAPLE - Multi Agent Protocol Language Engine is free software: you can
+redistribute it and/or modify it under the terms of the GNU Affero General
+Public License as published by the Free Software Foundation, either version 3
+of the License, or (at your option) any later version.
+MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that
+it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero
+General Public License for more details. You should have received a copy of
+the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
 Language Engine. If not, see <https://www.gnu.org/licenses/>.
 """
-
 
 # maple/adapters/s2_adapter.py
 # Creator: Mahesh Vaikri
 
-"""
-S2.dev Integration Adapter for MAPLE
-
-Bridges MAPLE's agent communication with S2's durable streaming platform
-(https://s2.dev). S2 provides unlimited, durable, real-time streams that
-are ideal for multi-agent message transport and persistent state storage.
-
-Usage:
-    pip install streamstore
-
-    from maple.adapters.s2_adapter import S2Broker, S2StateBackend
-
-    # As a message broker
-    broker = S2Broker(access_token="your_s2_token", basin_name="maple-agents")
-    await broker.connect()
-    await broker.send("agent_a", "agent_b", message)
-
-    # As a state backend
-    state = S2StateBackend(access_token="your_s2_token", basin_name="maple-state")
-    await state.connect()
-    await state.set("key", {"value": 42})
-"""
+# S2.dev Integration Adapter for MAPLE.
+# Bridges MAPLE's agent communication with S2's durable streaming platform
+# (https://s2.dev) for message transport and persistent state storage.
+# Install the optional dependency with `pip install streamstore`.
 
 import asyncio
 import json
-import time
 import logging
-from typing import Any, Dict, List, Optional, Callable, AsyncIterator
+import time
 from dataclasses import dataclass
+from typing import Any, Callable, Dict, List, Optional, cast
 
 from ..core.message import Message
 from ..core.result import Result
@@ -53,13 +37,14 @@ from ..core.result import Result
 try:
     from streamstore import (
         S2,
-        Record,
         AppendInput,
-        SeqNum,
-        ReadLimit,
-        StreamConfig,
         BasinConfig,
+        ReadLimit,
+        Record,
+        SeqNum,
     )
+    from streamstore import StreamConfig as _StreamConfig  # noqa: F401
+
     S2_AVAILABLE = True
 except ImportError:
     S2_AVAILABLE = False
@@ -70,6 +55,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class S2Config:
     """Configuration for S2.dev integration."""
+
     access_token: str
     basin_name: str = "maple-agents"
     endpoint: Optional[str] = None
@@ -95,7 +81,7 @@ class S2Broker:
     - Topic-based pub/sub via dedicated topic streams
     """
 
-    def __init__(self, config: S2Config):
+    def __init__(self, config: S2Config) -> None:
         if not S2_AVAILABLE:
             raise ImportError(
                 "S2 SDK not available. Install with: pip install streamstore"
@@ -112,13 +98,13 @@ class S2Broker:
         """Connect to S2 and initialize the basin."""
         try:
             kwargs = {
-                'access_token': self.config.access_token,
-                'request_timeout': self.config.request_timeout,
-                'max_retries': self.config.max_retries,
-                'enable_compression': self.config.enable_compression,
+                "access_token": self.config.access_token,
+                "request_timeout": self.config.request_timeout,
+                "max_retries": self.config.max_retries,
+                "enable_compression": self.config.enable_compression,
             }
             if self.config.endpoint:
-                kwargs['endpoints'] = self.config.endpoint
+                kwargs["endpoints"] = self.config.endpoint
 
             self._client = S2(**kwargs)
 
@@ -126,7 +112,7 @@ class S2Broker:
                 try:
                     await self._client.create_basin(
                         self.config.basin_name,
-                        BasinConfig(create_stream_on_append=True)
+                        BasinConfig(create_stream_on_append=True),
                     )
                     logger.info(f"Created S2 basin: {self.config.basin_name}")
                 except Exception:
@@ -140,10 +126,12 @@ class S2Broker:
             return Result.ok(None)
 
         except Exception as e:
-            return Result.err({
-                'errorType': 'S2_CONNECTION_ERROR',
-                'message': f'Failed to connect to S2: {str(e)}'
-            })
+            return Result.err(
+                {
+                    "errorType": "S2_CONNECTION_ERROR",
+                    "message": f"Failed to connect to S2: {str(e)}",
+                }
+            )
 
     async def disconnect(self) -> None:
         """Disconnect from S2."""
@@ -153,22 +141,20 @@ class S2Broker:
             self._client = None
         logger.info("S2Broker disconnected")
 
-    async def _ensure_stream(self, stream_name: str):
+    async def _ensure_stream(self, stream_name: str) -> Any:
         """Get or create a stream for an agent."""
+        basin = cast(Any, self._basin)
         if stream_name not in self._streams:
             if self.config.create_streams_on_demand:
                 try:
-                    await self._basin.create_stream(stream_name)
+                    await basin.create_stream(stream_name)
                 except Exception:
                     pass  # Stream may already exist
-            self._streams[stream_name] = self._basin.stream(stream_name)
+            self._streams[stream_name] = basin.stream(stream_name)
         return self._streams[stream_name]
 
     async def send(
-        self,
-        sender: str,
-        receiver: str,
-        message: Message
+        self, sender: str, receiver: str, message: Message
     ) -> Result[str, Dict[str, Any]]:
         """
         Send a MAPLE message to a receiver via S2 stream.
@@ -181,15 +167,25 @@ class S2Broker:
 
             # Serialize message to JSON bytes
             msg_dict = message.to_dict()
-            msg_dict['_maple_sender'] = sender
-            msg_dict['_maple_timestamp'] = time.time()
-            body = json.dumps(msg_dict).encode('utf-8')
+            msg_dict["_maple_sender"] = sender
+            msg_dict["_maple_timestamp"] = time.time()
+            body = json.dumps(msg_dict).encode("utf-8")
 
-            record = Record(body=body, headers=[
-                (b'sender', sender.encode()),
-                (b'type', message.message_type.encode()),
-                (b'priority', (message.priority.value if hasattr(message.priority, 'value') else str(message.priority)).encode()),
-            ])
+            record = Record(
+                body=body,
+                headers=[
+                    (b"sender", sender.encode()),
+                    (b"type", message.message_type.encode()),
+                    (
+                        b"priority",
+                        (
+                            message.priority.value
+                            if hasattr(message.priority, "value")
+                            else str(message.priority)
+                        ).encode(),
+                    ),
+                ],
+            )
 
             result = await stream.append(AppendInput(records=[record]))
 
@@ -198,16 +194,16 @@ class S2Broker:
             return Result.ok(msg_id)
 
         except Exception as e:
-            return Result.err({
-                'errorType': 'S2_SEND_ERROR',
-                'message': f'Failed to send message via S2: {str(e)}',
-                'details': {'sender': sender, 'receiver': receiver}
-            })
+            return Result.err(
+                {
+                    "errorType": "S2_SEND_ERROR",
+                    "message": f"Failed to send message via S2: {str(e)}",
+                    "details": {"sender": sender, "receiver": receiver},
+                }
+            )
 
     async def receive(
-        self,
-        agent_id: str,
-        timeout: float = 5.0
+        self, agent_id: str, timeout: float = 5.0
     ) -> Result[Message, Dict[str, Any]]:
         """
         Receive the next message for an agent from their S2 stream.
@@ -218,21 +214,17 @@ class S2Broker:
             stream = await self._ensure_stream(f"agent-{agent_id}")
             start = self._read_positions.get(agent_id, 0)
 
-            records = await stream.read(
-                start=SeqNum(start),
-                limit=ReadLimit(count=1)
-            )
+            records = await stream.read(start=SeqNum(start), limit=ReadLimit(count=1))
 
-            if hasattr(records, 'next_seq_num'):
+            if hasattr(records, "next_seq_num"):
                 # Got a Tail response - no new records
-                return Result.err({
-                    'errorType': 'NO_MESSAGES',
-                    'message': 'No new messages available'
-                })
+                return Result.err(
+                    {"errorType": "NO_MESSAGES", "message": "No new messages available"}
+                )
 
             if records and len(records) > 0:
                 record = records[0]
-                msg_data = json.loads(record.body.decode('utf-8'))
+                msg_data = json.loads(record.body.decode("utf-8"))
 
                 # Update read position
                 self._read_positions[agent_id] = record.seq_num + 1
@@ -241,46 +233,47 @@ class S2Broker:
                 message = Message.from_dict(msg_data)
                 return Result.ok(message)
 
-            return Result.err({
-                'errorType': 'NO_MESSAGES',
-                'message': 'No new messages available'
-            })
+            return Result.err(
+                {"errorType": "NO_MESSAGES", "message": "No new messages available"}
+            )
 
         except Exception as e:
-            return Result.err({
-                'errorType': 'S2_RECEIVE_ERROR',
-                'message': f'Failed to receive from S2: {str(e)}'
-            })
+            return Result.err(
+                {
+                    "errorType": "S2_RECEIVE_ERROR",
+                    "message": f"Failed to receive from S2: {str(e)}",
+                }
+            )
 
     async def publish(
-        self,
-        topic: str,
-        message: Message
+        self, topic: str, message: Message
     ) -> Result[str, Dict[str, Any]]:
         """Publish a message to a topic stream."""
         try:
             stream = await self._ensure_stream(f"topic-{topic}")
 
-            body = json.dumps(message.to_dict()).encode('utf-8')
-            record = Record(body=body, headers=[
-                (b'topic', topic.encode()),
-                (b'type', message.message_type.encode()),
-            ])
+            body = json.dumps(message.to_dict()).encode("utf-8")
+            record = Record(
+                body=body,
+                headers=[
+                    (b"topic", topic.encode()),
+                    (b"type", message.message_type.encode()),
+                ],
+            )
 
             result = await stream.append(AppendInput(records=[record]))
             return Result.ok(f"s2_topic_{result.start_seq_num}")
 
         except Exception as e:
-            return Result.err({
-                'errorType': 'S2_PUBLISH_ERROR',
-                'message': f'Failed to publish to topic {topic}: {str(e)}'
-            })
+            return Result.err(
+                {
+                    "errorType": "S2_PUBLISH_ERROR",
+                    "message": f"Failed to publish to topic {topic}: {str(e)}",
+                }
+            )
 
     async def subscribe_stream(
-        self,
-        agent_id: str,
-        topic: str,
-        handler: Callable[[Message], None]
+        self, agent_id: str, topic: str, handler: Callable[[Message], None]
     ) -> Result[None, Dict[str, Any]]:
         """
         Subscribe to a topic stream. Messages are delivered to the handler
@@ -299,18 +292,20 @@ class S2Broker:
 
             return Result.ok(None)
         except Exception as e:
-            return Result.err({
-                'errorType': 'S2_SUBSCRIBE_ERROR',
-                'message': f'Failed to subscribe to topic {topic}: {str(e)}'
-            })
+            return Result.err(
+                {
+                    "errorType": "S2_SUBSCRIBE_ERROR",
+                    "message": f"Failed to subscribe to topic {topic}: {str(e)}",
+                }
+            )
 
-    async def _topic_reader(self, stream, handler_key: str):
+    async def _topic_reader(self, stream: Any, handler_key: str) -> None:
         """Background task that reads from a topic stream and dispatches messages."""
         position = 0
         while self._running:
             try:
                 async for record in stream.read_session(start=SeqNum(position)):
-                    msg_data = json.loads(record.body.decode('utf-8'))
+                    msg_data = json.loads(record.body.decode("utf-8"))
                     message = Message.from_dict(msg_data)
                     position = record.seq_num + 1
 
@@ -335,10 +330,10 @@ class S2Broker:
             )
         """
         return {
-            's2_broker': {
-                'basin': self.config.basin_name,
-                'endpoint': self.config.endpoint,
-                'compression': self.config.enable_compression,
+            "s2_broker": {
+                "basin": self.config.basin_name,
+                "endpoint": self.config.endpoint,
+                "compression": self.config.enable_compression,
             }
         }
 
@@ -355,7 +350,7 @@ class S2StateBackend:
     type (set/delete).
     """
 
-    def __init__(self, config: S2Config):
+    def __init__(self, config: S2Config) -> None:
         if not S2_AVAILABLE:
             raise ImportError(
                 "S2 SDK not available. Install with: pip install streamstore"
@@ -377,8 +372,7 @@ class S2StateBackend:
 
             try:
                 await self._client.create_basin(
-                    self.config.basin_name,
-                    BasinConfig(create_stream_on_append=True)
+                    self.config.basin_name, BasinConfig(create_stream_on_append=True)
                 )
             except Exception:
                 pass
@@ -395,14 +389,18 @@ class S2StateBackend:
             # Replay log to rebuild state
             await self._replay_log()
 
-            logger.info(f"S2StateBackend connected, replayed {self._version_counter} entries")
+            logger.info(
+                f"S2StateBackend connected, replayed {self._version_counter} entries"
+            )
             return Result.ok(None)
 
         except Exception as e:
-            return Result.err({
-                'errorType': 'S2_STATE_CONNECTION_ERROR',
-                'message': f'Failed to connect S2 state backend: {str(e)}'
-            })
+            return Result.err(
+                {
+                    "errorType": "S2_STATE_CONNECTION_ERROR",
+                    "message": f"Failed to connect S2 state backend: {str(e)}",
+                }
+            )
 
     async def disconnect(self) -> None:
         """Disconnect from S2."""
@@ -410,28 +408,26 @@ class S2StateBackend:
             await self._client.close()
             self._client = None
 
-    async def _replay_log(self):
+    async def _replay_log(self) -> None:
         """Replay the state log to rebuild the in-memory cache."""
         try:
-            records = await self._stream.read(
-                start=SeqNum(0),
-                limit=ReadLimit(count=100000)
-            )
+            stream = cast(Any, self._stream)
+            records = await stream.read(start=SeqNum(0), limit=ReadLimit(count=100000))
 
-            if hasattr(records, 'next_seq_num'):
+            if hasattr(records, "next_seq_num"):
                 return  # Empty stream
 
             for record in records:
-                entry = json.loads(record.body.decode('utf-8'))
-                op = entry.get('operation', 'set')
-                key = entry['key']
+                entry = json.loads(record.body.decode("utf-8"))
+                op = entry.get("operation", "set")
+                key = entry["key"]
 
-                if op == 'delete':
+                if op == "delete":
                     self._state_cache.pop(key, None)
                 else:
                     self._state_cache[key] = entry
                     self._version_counter = max(
-                        self._version_counter, entry.get('version', 0)
+                        self._version_counter, entry.get("version", 0)
                     )
         except Exception as e:
             logger.warning(f"State log replay error: {e}")
@@ -440,34 +436,35 @@ class S2StateBackend:
         """Get a value from the state cache."""
         entry = self._state_cache.get(key)
         if entry:
-            return Result.ok(entry.get('value'))
+            return Result.ok(entry.get("value"))
         return Result.ok(None)
 
     async def set(
-        self,
-        key: str,
-        value: Any,
-        metadata: Optional[Dict[str, Any]] = None
+        self, key: str, value: Any, metadata: Optional[Dict[str, Any]] = None
     ) -> Result[Dict[str, Any], Dict[str, Any]]:
         """Set a value by appending to the state log."""
         try:
             self._version_counter += 1
             entry = {
-                'operation': 'set',
-                'key': key,
-                'value': value,
-                'version': self._version_counter,
-                'timestamp': time.time(),
-                'metadata': metadata or {}
+                "operation": "set",
+                "key": key,
+                "value": value,
+                "version": self._version_counter,
+                "timestamp": time.time(),
+                "metadata": metadata or {},
             }
 
-            body = json.dumps(entry, default=str).encode('utf-8')
-            record = Record(body=body, headers=[
-                (b'key', key.encode()),
-                (b'op', b'set'),
-            ])
+            body = json.dumps(entry, default=str).encode("utf-8")
+            record = Record(
+                body=body,
+                headers=[
+                    (b"key", key.encode()),
+                    (b"op", b"set"),
+                ],
+            )
 
-            await self._stream.append(AppendInput(records=[record]))
+            stream = cast(Any, self._stream)
+            await stream.append(AppendInput(records=[record]))
             self._state_cache[key] = entry
 
             # Notify listeners
@@ -480,10 +477,12 @@ class S2StateBackend:
             return Result.ok(entry)
 
         except Exception as e:
-            return Result.err({
-                'errorType': 'S2_STATE_SET_ERROR',
-                'message': f'Failed to set state via S2: {str(e)}'
-            })
+            return Result.err(
+                {
+                    "errorType": "S2_STATE_SET_ERROR",
+                    "message": f"Failed to set state via S2: {str(e)}",
+                }
+            )
 
     async def delete(self, key: str) -> Result[bool, Dict[str, Any]]:
         """Delete a key by appending a delete marker to the log."""
@@ -491,30 +490,34 @@ class S2StateBackend:
             if key not in self._state_cache:
                 return Result.ok(False)
 
-            entry = {
-                'operation': 'delete',
-                'key': key,
-                'timestamp': time.time()
-            }
+            entry = {"operation": "delete", "key": key, "timestamp": time.time()}
 
-            body = json.dumps(entry).encode('utf-8')
-            record = Record(body=body, headers=[
-                (b'key', key.encode()),
-                (b'op', b'delete'),
-            ])
+            body = json.dumps(entry).encode("utf-8")
+            record = Record(
+                body=body,
+                headers=[
+                    (b"key", key.encode()),
+                    (b"op", b"delete"),
+                ],
+            )
 
-            await self._stream.append(AppendInput(records=[record]))
+            stream = cast(Any, self._stream)
+            await stream.append(AppendInput(records=[record]))
             self._state_cache.pop(key, None)
 
             return Result.ok(True)
 
         except Exception as e:
-            return Result.err({
-                'errorType': 'S2_STATE_DELETE_ERROR',
-                'message': f'Failed to delete state via S2: {str(e)}'
-            })
+            return Result.err(
+                {
+                    "errorType": "S2_STATE_DELETE_ERROR",
+                    "message": f"Failed to delete state via S2: {str(e)}",
+                }
+            )
 
-    async def list_keys(self, prefix: Optional[str] = None) -> Result[List[str], Dict[str, Any]]:
+    async def list_keys(
+        self, prefix: Optional[str] = None
+    ) -> Result[List[str], Dict[str, Any]]:
         """List all keys in the state cache."""
         keys = list(self._state_cache.keys())
         if prefix:
@@ -528,9 +531,9 @@ class S2StateBackend:
     def get_statistics(self) -> Dict[str, Any]:
         """Get state backend statistics."""
         return {
-            'backend': 's2',
-            'basin': self.config.basin_name,
-            'keys_count': len(self._state_cache),
-            'version_counter': self._version_counter,
-            'listeners_count': len(self._listeners)
+            "backend": "s2",
+            "basin": self.config.basin_name,
+            "keys_count": len(self._state_cache),
+            "version_counter": self._version_counter,
+            "listeners_count": len(self._listeners),
         }

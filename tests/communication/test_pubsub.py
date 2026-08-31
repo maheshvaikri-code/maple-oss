@@ -1,9 +1,13 @@
 """Tests for maple.communication.pubsub - PublishSubscribePattern."""
 
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
+
 from maple.communication.pubsub import (
-    PublishSubscribePattern, SubscriptionType, SubscriptionConfig
+    PublishSubscribePattern,
+    SubscriptionConfig,
+    SubscriptionType,
 )
 from maple.core.message import Message
 from maple.core.types import Priority
@@ -29,7 +33,9 @@ class TestSubscriptionConfig:
     """Test SubscriptionConfig dataclass."""
 
     def test_defaults(self):
-        handler = lambda msg: None
+        def handler(msg):
+            pass
+
         sc = SubscriptionConfig(topic="test", handler=handler)
         assert sc.topic == "test"
         assert sc.subscription_type == SubscriptionType.EXACT
@@ -51,21 +57,29 @@ class TestSubscribe:
     """Test subscribing to topics."""
 
     def test_subscribe(self, pubsub):
-        handler = lambda msg: None
+        def handler(msg):
+            pass
+
         result = pubsub.subscribe("alerts", handler)
         assert result.is_ok()
         assert "alerts" in pubsub.get_topics()
 
     def test_subscribe_returns_id(self, pubsub):
-        handler = lambda msg: None
+        def handler(msg):
+            pass
+
         result = pubsub.subscribe("alerts", handler)
         sub_id = result.unwrap()
         assert isinstance(sub_id, str)
         assert "pub_test_agent" in sub_id
 
     def test_subscribe_with_filter(self, pubsub):
-        handler = lambda msg: None
-        filter_fn = lambda msg: msg.priority == Priority.HIGH
+        def handler(msg):
+            pass
+
+        def filter_fn(msg):
+            return msg.priority == Priority.HIGH
+
         result = pubsub.subscribe("alerts", handler, filter_func=filter_fn)
         assert result.is_ok()
 
@@ -105,8 +119,19 @@ class TestPublish:
         assert result is not None
 
     def test_publish_with_metadata(self, pubsub):
-        result = pubsub.publish("alerts", {"alert": "fire"}, metadata={"source": "sensor"})
+        result = pubsub.publish(
+            "alerts", {"alert": "fire"}, metadata={"source": "sensor"}
+        )
         assert result is not None
+
+    def test_direct_publish_returns_string_message_id(self, pubsub, mock_agent):
+        mock_agent.broker = object()
+        pubsub.subscribe("alerts", lambda msg: None)
+
+        result = pubsub.publish("alerts", {"alert": "fire"})
+
+        assert result.is_ok()
+        assert isinstance(result.unwrap(), str)
 
 
 class TestTopicSubscribers:
@@ -131,7 +156,7 @@ class TestHandleTopicMessage:
         msg = Message(
             message_type="TOPIC_PUBLICATION",
             payload={"alert": "fire"},
-            metadata={"topic": "alerts"}
+            metadata={"topic": "alerts"},
         )
         pubsub._handle_topic_message("alerts", msg)
         assert len(received) == 1
@@ -141,7 +166,7 @@ class TestHandleTopicMessage:
         pubsub.subscribe(
             "alerts",
             lambda msg: received.append(msg),
-            filter_func=lambda msg: msg.payload.get("severity") == "HIGH"
+            filter_func=lambda msg: msg.payload.get("severity") == "HIGH",
         )
 
         # Should be filtered out
@@ -166,24 +191,24 @@ class TestStatistics:
 
     def test_initial_stats(self, pubsub):
         stats = pubsub.get_statistics()
-        assert stats['messages_published'] == 0
-        assert stats['messages_delivered'] == 0
-        assert stats['subscriptions_active'] == 0
-        assert stats['topics_count'] == 0
+        assert stats["messages_published"] == 0
+        assert stats["messages_delivered"] == 0
+        assert stats["subscriptions_active"] == 0
+        assert stats["topics_count"] == 0
 
     def test_stats_after_subscribe(self, pubsub):
         pubsub.subscribe("topic_a", lambda m: None)
         pubsub.subscribe("topic_b", lambda m: None)
         stats = pubsub.get_statistics()
-        assert stats['subscriptions_active'] == 2
-        assert stats['topics_count'] == 2
+        assert stats["subscriptions_active"] == 2
+        assert stats["topics_count"] == 2
 
     def test_delivery_count(self, pubsub):
         pubsub.subscribe("alerts", lambda msg: None)
         msg = Message(message_type="TEST", payload={})
         pubsub._handle_topic_message("alerts", msg)
         stats = pubsub.get_statistics()
-        assert stats['messages_delivered'] == 1
+        assert stats["messages_delivered"] == 1
 
 
 class TestCleanup:

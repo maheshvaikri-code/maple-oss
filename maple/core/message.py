@@ -1,3 +1,18 @@
+# Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy
+# (Mahesh Vaikri)
+#
+# This file is part of MAPLE - Multi Agent Protocol Language Engine.
+#
+# MAPLE - Multi Agent Protocol Language Engine is free software: you can
+# redistribute it and/or modify it under the terms of the GNU Affero General
+# Public License as published by the Free Software Foundation, either version 3
+# of the License, or (at your option) any later version.
+# MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that
+# it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+# of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero
+# General Public License for more details. You should have received a copy of
+# the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
+# Language Engine. If not, see <https://www.gnu.org/licenses/>.
 """
 MAPLE Message System
 Created by: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
@@ -6,7 +21,6 @@ Core message handling for MAPLE's perfect communication protocol.
 """
 
 import json
-import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Union
 
@@ -29,7 +43,7 @@ class Message:
         message_id: Optional[Union[str, MessageID]] = None,
         sender: Optional[Union[str, AgentID]] = None,
         timestamp: Optional[datetime] = None,
-    ):
+    ) -> None:
         # Validate and set message ID
         if message_id is None:
             self.message_id = MessageID()
@@ -221,15 +235,15 @@ class Message:
     class Builder:
         """Builder pattern for creating messages."""
 
-        def __init__(self):
-            self._message_id = None
-            self._timestamp = None
-            self._sender = None
-            self._receiver = None
+        def __init__(self) -> None:
+            self._message_id: Optional[str] = None
+            self._timestamp: Optional[datetime] = None
+            self._sender: Optional[str] = None
+            self._receiver: Optional[str] = None
             self._priority = Priority.MEDIUM
-            self._message_type = None
-            self._payload = {}
-            self._metadata = {}
+            self._message_type: Optional[str] = None
+            self._payload: Dict[str, Any] = {}
+            self._metadata: Dict[str, Any] = {}
 
         def message_id(self, message_id: str) -> "Message.Builder":
             self._message_id = message_id
@@ -287,7 +301,7 @@ class Message:
         """Create a message builder."""
         return cls.Builder()
 
-    def __eq__(self, other) -> bool:
+    def __eq__(self, other: object) -> bool:
         if not isinstance(other, Message):
             return False
         return (

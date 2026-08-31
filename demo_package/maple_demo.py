@@ -279,14 +279,32 @@ class Scenario2_SecureLinkDemo:
         
         try:
             from maple import (
-                Agent, Config, SecurityConfig, Message, Priority,
-                LinkManager, Link, LinkState, AuthenticationManager
+                Agent,
+                Config,
+                SecurityConfig,
+                Message,
+                Priority,
+            )
+            from maple.security import (
+                AuthenticationConfig,
+                AuthenticationManager,
+                LinkManager,
+                Link,
+                LinkState,
             )
             
             print("\n🎬 Setting up secure banking system with encrypted agent links...")
             
             # Create authentication manager
-            auth_manager = AuthenticationManager()
+            jwt_secret = os.environ.get("MAPLE_JWT_SECRET")
+            if not jwt_secret:
+                self.demo.print_info(
+                    "Set MAPLE_JWT_SECRET to run JWT authentication examples"
+                )
+                return
+            auth_manager = AuthenticationManager(
+                AuthenticationConfig(jwt_secret=jwt_secret)
+            )
             
             # Create link manager
             link_manager = LinkManager()

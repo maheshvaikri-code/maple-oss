@@ -1,584 +1,750 @@
-<div align="center"> <img width="354" align="centre" height="174" alt="fulstretch" src="https://github.com/user-attachments/assets/e9eaf167-712f-448c-adf3-d55a0562cff7" /> </div>
+<div align="center">
+  <img width="354" height="174" alt="MAPLE logo" src="https://github.com/user-attachments/assets/e9eaf167-712f-448c-adf3-d55a0562cff7" />
+</div>
 
 # MAPLE - Multi Agent Protocol Language Engine
 
 **Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)**
 
-<p>
-<a href="https://github.com/maheshvaikri-code/maple-oss"><img src="https://img.shields.io/badge/version-1.1.3-brightgreen" alt="Version"></a>
-<a href="https://github.com/maheshvaikri-code/maple-oss"><img src="https://img.shields.io/badge/Python-3.8%20|%203.9%20|%203.10%20|%203.11%20|%203.12%20|%203.13-brightgreen" alt="Python"></a>
-<a href="https://github.com/maheshvaikri-code/maple-oss"><img src="https://img.shields.io/badge/Tests-1002%20PASSED-brightgreen" alt="Tests"></a>
-<a href="https://github.com/maheshvaikri-code/maple-oss"><img src="https://img.shields.io/badge/Coverage-80%25-brightgreen" alt="Coverage"></a>
-<a href="https://github.com/maheshvaikri-code/maple-oss/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-AGPL%203.0-blue.svg" alt="License"></a>
-<a href="https://mapleagent.org"><img src="https://img.shields.io/badge/Docs-mapleagent.org-blue" alt="Documentation"></a>
-</p>
+MAPLE is a Python multi-agent runtime and protocol layer. It combines
+autonomous agent execution with typed messaging, resource-aware coordination,
+durable local state, security boundaries, interoperability, and evaluation
+tools.
 
-> The autonomous agentic AI framework with production-grade infrastructure. MAPLE combines LLM-powered autonomous agents with resource-aware messaging, type-safe error handling, cryptographic security, and distributed state — capabilities no other framework offers together.
+- Release: 2.0.0 local release candidate (not published)
+- Python package: maple-oss
+- License: [AGPL-3.0-only](LICENSE), with a [commercial license](COMMERCIAL_LICENSE.md) available
+- Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
 
----
+[![Version](https://img.shields.io/badge/version-2.0.0-brightgreen)](VERSION)
+[![Python](https://img.shields.io/badge/Python-3.8%20%7C%203.9%20%7C%203.10%20%7C%203.11%20%7C%203.12-blue)](pyproject.toml)
+[![CI](https://github.com/maheshvaikri-code/maple-oss/actions/workflows/ci.yml/badge.svg)](https://github.com/maheshvaikri-code/maple-oss/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/License-AGPL%203.0-blue.svg)](LICENSE)
+[![Documentation](https://img.shields.io/badge/Docs-mapleagent.org-blue)](https://mapleagent.org)
+
+> An agent can be clever and still be unreliable. MAPLE gives that agent a
+> typed message, a bounded tool, a resource budget, a durable checkpoint, and
+> an explainable result—so the host can decide what happens next.
+
+MAPLE is the runtime beneath that story: a Python protocol layer for agents
+that need to communicate, reason, recover, and remain governable. Version
+2.0.0 brings the autonomy loop and the operational boundary into one coherent
+local package while keeping hosted services and external side effects under
+host control.
 
 ## Why MAPLE
 
-Most agent frameworks give you either **infrastructure** (messaging, security, fault tolerance) or **autonomy** (LLM reasoning, tool use, memory). MAPLE is the first to provide both in a single, cohesive framework.
+An agent begins with a goal, but a dependable system begins with boundaries.
+MAPLE connects those boundaries around the loop that turns intent into work:
 
-|  | Infrastructure | Autonomy |
-|---|---|---|
-| **LangGraph / CrewAI / AutoGen** | Basic | Yes |
-| **Google A2A / MCP / FIPA ACL** | Yes | No |
-| **MAPLE** | **Yes** | **Yes** |
+`goal → model decision → validated tool → typed result → event/checkpoint`
 
-**What this means in practice:** Your autonomous agents get resource negotiation, circuit breakers, cryptographic link security, priority message queuing, distributed state, and fault-tolerant task scheduling — out of the box, not bolted on.
+That loop is useful on a laptop, inside a service, or as a building block in a
+larger platform. The host still owns credentials, deployment, tenancy, and
+external side effects; MAPLE makes the local contract explicit and testable.
 
----
+The package provides:
 
-## Key Features
+- Result[T, E] values for explicit success and failure paths.
+- Resource negotiation, lifecycle-aware budgets, priority routing, leases, and
+  fencing tokens.
+- Agent discovery, health monitoring, circuit breakers, retries, and task
+  scheduling.
+- Cryptographic link identification, authentication, authorization, bounded
+  serialization, and redaction.
+- Autonomous agents, typed tools, guardrails, memory, retrieval, workflows,
+  sessions, durable local runs, events, and evaluation.
 
-### Autonomous Agentic AI (v1.1.1)
+MAPLE has three related layers:
 
-- **ReAct Reasoning Loop** — Agents think, act, and reflect autonomously. Built-in backtracking when approaches fail.
-- **Pluggable LLM Providers** — OpenAI, Anthropic Claude, or any compatible API (vLLM, Ollama, Together AI).
-- **Tool Framework** — Register custom tools with JSON Schema parameters. Built-in tools for inter-agent communication, state read/write, resource checks, and secure link establishment.
-- **Three-Tier Memory** — Working memory (context window), episodic memory (task history), semantic memory (learned facts). LLM-assisted summarization when context fills up.
-- **Multi-Agent Orchestration** — Form teams by capability, execute via supervisor delegation or consensus voting.
-- **MCP Tool Discovery** — Discover and use tools from any MCP server as native MAPLE tools.
-- **Observability** — Full decision traces, agent snapshots, token usage tracking.
+1. **Protocol:** typed messages, resource requirements, priorities, errors, and
+   interoperability formats.
+2. **Runtime:** brokers, discovery, state, leases, security, scheduling, and
+   observability.
+3. **Autonomy SDK:** ReAct agents, tools, model providers, workflows, memory,
+   retrieval, approvals, handoffs, sessions, and evaluations.
 
-### Production Infrastructure
+## MAPLE 2.0.0 capability surface
 
-- **Result\<T,E\> Error Handling** — Rust-inspired type-safe results. No silent failures, no uncaught exceptions. Chain with `.map()`, `.and_then()`, `.map_err()`.
-- **Resource-Aware Messaging** — Agents declare CPU, memory, and bandwidth requirements as first-class protocol features.
-- **Link Identification Mechanism (LIM)** — Cryptographic channel verification using AES-256-GCM between agents.
-- **Distributed State** — Shared state across agents with configurable consistency levels and change listeners.
-- **Circuit Breakers & Retry** — Automatic failure detection, exponential backoff, and circuit breaker patterns.
-- **Priority Message Queuing** — Messages routed by priority with health-aware routing.
-- **Task Management** — Task queue, scheduler (capability matching + load balancing), fault-tolerant execution, result collection with 7 aggregation strategies.
-- **Agent Discovery** — Auto-registration, capability matching, health monitoring, failure detection.
-- **11 Protocol Adapters** — Native interop with A2A, MCP, FIPA ACL, AutoGen, CrewAI, LangGraph, OpenAI SDK, IBM ACP, S2.dev, n8n, plus a native doctrine profile.
+The following is the shipped and tested local surface. **Preview** means a
+bounded or opt-in contract that is ready for local integration and still
+requires the host to supply policy, persistence, credentials, or operations.
+It does not claim a hosted control plane or automatic distributed behavior.
 
-### Doctrine Workforce (v1.1.2)
+### Agent execution and tools
 
-Primitives for running a governed multi-agent workforce (builders + fresh-context verifiers) as a runtime guarantee rather than a convention:
+- Synchronous and asynchronous ReAct-style agent loops with bounded reasoning
+  and token budgets.
+- OpenAI-compatible and Anthropic provider adapters, capability routing,
+  native async completion when the optional SDK supports it, and explicit
+  compatibility fallback otherwise.
+- JSON Schema and typed tool contracts with bounded arguments/results,
+  approval-by-default execution, structured-output repair, guardrails,
+  cancellation tokens, timeouts, and concurrency limits.
+- Agent handoffs and manager-style agent-as-tool delegation with bounded
+  allowlisted context, local durable ownership records, optional local replay,
+  and authenticated remote handoff payload delivery.
+- Trusted local execution for host-supplied handlers. This is a bounded
+  execution policy, not an untrusted-code sandbox.
+- Markdown code-block extraction and content-addressed artifacts. Extracted
+  code is data and is never executed by MAPLE.
 
-- **Fresh-Context Verifier Preset** — Separation of duties enforced by the broker: a per-agent **sender allowlist** (a verifier can be wired to reply only to the orchestrator, never to the builder it judges) plus an **artifact-ref-only payload policy** for guarded message types. `from maple.security import fresh_context_verifier_preset, SeparationOfDutiesPolicy, ArtifactRef`.
-- **Doctrine Message Schemas** — Typed `WORK.PACKAGE` / `GATE.RESULT` builders and validators so a workforce speaks a checked vocabulary; payloads carry content-pinned artifact hashedrefs, not prose. `from maple.adapters.doctrine_adapter import DoctrineAdapter, build_work_package, build_gate_result`.
-- **Token Budget as a Resource** — `tokens` is a first-class `ResourceRequest` type alongside `compute`/`memory`/`bandwidth`, so LLM budget maps to loop-engineering caps in negotiation.
-- **Routability Check** — `broker.is_routable(agent_id)` and `agent.send(msg, require_routable=True)` distinguish "enqueued" from "deliverable" — a send to a nonexistent agent returns `Result.err(UNROUTABLE)` instead of a misleading `Ok`.
-- **Exactly-Once Delivery** — Direct messages fire the receiver's handler exactly once; handler keys are normalized so a handler registered `"work.package"` receives an incoming `WORK.PACKAGE`.
+### Workflows, sessions, memory, and human control
 
-### Resource & Reliability Primitives (v1.1.3)
+- Typed workflow nodes, conditional routing, bounded fan-out/fan-in,
+  deterministic joins, composable sub-workflows, and per-node retry/backoff.
+- Durable in-memory and file-backed agent-run checkpoints with stable run IDs,
+  bounded history, CAS versions, fencing leases, and cooperative cancellation.
+- Durable approval and human-input records, schema-validated responses,
+  bounded follow-up rounds, actor authorization hooks, notification outboxes,
+  and fail-closed resume behavior.
+- Bounded working and episodic memory, fail-closed summary archiving, keyword
+  search, conversation sessions, compaction, file persistence, and
+  data-only version-based forking.
+- Loopback RunServer/RunClient control-plane routes for bounded local
+  workflow, agent, task, approval, interaction, event, handoff, and checkpoint
+  operations with per-route authorization scopes.
 
-Extensibility and hardening surfaced by integrating MAPLE into a governed downstream host:
+### Retrieval, events, and evaluation
 
-- **Resource Lifecycles** — `ResourceManager` distinguishes **renewable** pools (returned on release) from **consumable** budgets (spent, never refunded — money, API calls, energy). `register_resource(type, amount, lifecycle=...)`; `release()` refunds only renewable resources.
-- **Custom Resource Dimensions** — `ResourceRequest.custom` negotiates arbitrarily-named numeric resources (GPU, disk, `$` spend, QPS) without MAPLE hard-coding each.
-- **Exclusive Leases** — `LeaseManager` / `Lease` grant exclusive, TTL-bounded holds with monotonic **fencing tokens** — a lock, a device, a license seat, or a singleton "leader" role. Expiry is the preemption mechanism; a crashed holder can't deadlock the resource. `from maple.resources import LeaseManager`.
-- **MCP Tool Governance** — `register_mcp_tools(..., policy=..., namespace=True, max_tools=...)` mediates the trust boundary for untrusted MCP servers: fail-closed authorization, server-namespacing to prevent tool shadowing, name sanitization, and a registration cap.
-- **Bounded Backoff** — `exponential_backoff(max_delay=...)` caps per-attempt delay so a large retry count can't stall a caller holding a resource.
-- **On-Demand Health** — `HealthMonitor.snapshot()` returns an immediate health read without waiting for the first sampling interval.
+- Deterministic document chunking, source references, synchronous and
+  asynchronous cursor ingestion, checkpointed ingestion, host-owned embedding
+  providers, lexical retrieval, caller-supplied-vector retrieval, and an
+  optional provider-neutral reranker.
+- FileLexicalRetriever and FileVectorRetriever with bounded versioned JSON,
+  atomic replacement, restart rebuilds, local instance refresh, and
+  cross-process mutation fencing.
+- Read-only retrieval/citation tools with bounded queries, top-k limits, source
+  URI/title citations, output limits, and fail-closed backend/provider errors.
+- Bounded sequenced event streams, cursor expiry, cooperative waiter
+  cancellation, subscriber isolation, recursive credential redaction, provider
+  correlation, local trace spans, journals, exporters, forwarding, and
+  source-sequence deduplication.
+- Deterministic evaluation for golden outputs, schemas, tool trajectories,
+  retrieval/citation metrics, grounded-answer overlap, trace structure, judge
+  calibration, and redacted bounded reports.
 
----
+### Reliability and task management
 
-## Integrations
+- In-memory and file-backed task queues with bounded admission,
+  ownership-safe lifecycle transitions, terminal history, at-least-once restart
+  recovery, and a trusted one-shot local task worker.
+- Authenticated remote task queue control for bounded submit, inspect, claim,
+  start, heartbeat, complete, fail, cancel, retry, and statistics operations.
+- Result[T, E], resource lifecycles, custom resource dimensions, priority
+  routing, in-memory/file leases, discovery, health monitoring, retry/backoff,
+  circuit breakers, and cryptographic link/security layers.
 
-MAPLE ships with 11 adapters in `maple/adapters/` for bridging to external protocols and frameworks (10 external, plus a native doctrine profile).
+## Production infrastructure
 
-| Adapter | File | What It Does |
-|---------|------|-------------|
-| **Google A2A** | `a2a_adapter.py` | Translate MAPLE messages to/from A2A Agent-to-Agent protocol. Maps MAPLE resources to A2A task metadata, bridges agent discovery via A2A Agent Cards. |
-| **Anthropic MCP** | `mcp_adapter.py` | Bridge MCP tool servers into MAPLE. Discover MCP tools and register them as native MAPLE `Tool` objects. MAPLE agents call MCP tools via the ReAct loop. |
-| **FIPA ACL** | `fipa_acl_adapter.py` | Convert MAPLE messages to FIPA Agent Communication Language format. Supports performatives (inform, request, propose) and maps MAPLE priority to FIPA protocol fields. |
-| **AutoGen** | `autogen_adapter.py` | Wrap MAPLE agents as AutoGen-compatible participants. Run AutoGen group chats backed by MAPLE's broker, security, and resource management. |
-| **CrewAI** | `crewai_adapter.py` | Register MAPLE agents as CrewAI crew members. Map CrewAI tasks to MAPLE's task scheduler with fault tolerance and result collection. |
-| **LangGraph** | `langgraph_adapter.py` | Expose MAPLE agents as LangGraph nodes. Run LangGraph state machines over MAPLE's message broker with distributed state sync. |
-| **OpenAI SDK** | `openai_sdk_adapter.py` | Make MAPLE agents callable via OpenAI's Assistants/Chat API format. Translates tool calls and function results between OpenAI and MAPLE conventions. |
-| **IBM ACP** | `acp_adapter.py` | Bridge to IBM Agent Communication Protocol. Maps MAPLE resource specifications to ACP capabilities and translates message formats. |
-| **S2.dev** | `s2_adapter.py` | Durable streaming via [s2.dev](https://s2.dev). `S2Broker` provides persistent message delivery (per-agent and per-topic streams). `S2StateBackend` provides append-only state with full audit history. Install: `pip install maple-oss[s2]` |
-| **n8n** | `n8n-integration/` | 3 visual workflow nodes (Agent, Coordinator, Resource Manager) for building multi-agent AI pipelines in [n8n](https://n8n.io) without code. |
-| **Doctrine profile** | `doctrine_adapter.py` | Native, first-class `WORK.PACKAGE` / `GATE.RESULT` schemas — typed builders and validators for a governed workforce. Payloads carry artifact hashedrefs (via `ArtifactRef`), so they satisfy the fresh-context verifier preset. Imported explicitly, so `import maple` stays free of the security layer. |
+MAPLE keeps the operational primitives close to the agent contract. A host can
+start with an in-memory broker and move individual boundaries to files or an
+injected transport as its deployment grows:
 
-All adapters follow MAPLE's `Result<T,E>` pattern and work with the existing security, resource, and broker infrastructure.
+- **Typed failure handling** — `Result[T, E]` keeps validation, capacity,
+  transport, and provider failures explicit and composable.
+- **Resource-aware messaging** — CPU, memory, bandwidth, time, tokens, and
+  caller-defined numeric dimensions travel with a request for negotiation.
+- **Link and identity security** — cryptographic links, authentication,
+  authorization scopes, token revocation, and recursive event redaction make
+  security decisions visible at the boundary.
+- **Reliability primitives** — priority queues, health-aware discovery,
+  bounded retries, exponential backoff, circuit breakers, leases, and
+  ownership-checked task transitions.
+- **State and coordination** — local state stores, consistency policies,
+  file-backed checkpoints, journals, cursor stores, and fencing leases support
+  restartable single-host workflows.
 
----
+### Explicit release boundaries
+
+MAPLE fails closed for surfaces that are not native local runtime features.
+Optional integrations such as Redis state operations, mutual-TLS
+authentication, and OAuth2 currently return typed `NOT_IMPLEMENTED` results
+where they are not configured. JWT, API-key, and certificate paths remain
+separate local mechanisms. `TrustedLocalExecutor` accepts explicitly trusted
+host handlers; it is not an untrusted-code sandbox.
+
+### Resource and reliability primitives
+
+`ResourceManager` distinguishes renewable capacity from consumable budgets.
+`LeaseManager` and `FileLeaseManager` provide bounded holds with fencing tokens;
+expiry is the recovery mechanism when a local holder crashes. `TaskQueue` and
+`FileTaskQueue` preserve ownership checks and explicit at-least-once restart
+semantics. Nothing in these local primitives silently upgrades an external
+side effect to exactly once.
+
+## Integrations and protocol boundaries
+
+The Python package contains eleven adapter modules under `maple/adapters`. Each
+one is a translation boundary, not a claim that an external runtime is bundled
+inside MAPLE:
+
+| Adapter | Module | Boundary |
+| --- | --- | --- |
+| Google A2A | `a2a_adapter.py` | Message and agent-card translation through the optional HTTP adapter. |
+| MCP | `mcp_adapter.py` | Bounded Streamable HTTP initialization, live tool discovery, JSON-RPC calls, namespacing, and approval-aware registration. |
+| FIPA ACL | `fipa_acl_adapter.py` | Performative and message translation. |
+| AutoGen | `autogen_adapter.py` | Compatibility wrapper for participants and group chats. |
+| CrewAI | `crewai_adapter.py` | Compatibility wrapper for crews and tasks. |
+| LangGraph | `langgraph_adapter.py` | MAPLE-backed graph state and node integration. |
+| OpenAI SDK | `openai_sdk_adapter.py` | OpenAI-compatible message and tool format translation. |
+| IBM ACP | `acp_adapter.py` | ACP message and capability translation. |
+| S2.dev | `s2_adapter.py` | Optional durable stream and state backend integration. |
+
+The sibling [n8n integration](n8n-integration/README.md) provides TypeScript
+nodes and sample workflows. Each adapter is a deliberately narrow translation
+boundary: it maps messages, tools, or capabilities into MAPLE contracts while
+leaving identity, credentials, and deployment with the host.
 
 ## Installation
 
-```bash
-pip install maple-oss
-```
+The core package supports Python 3.8+.
 
-With LLM support (for autonomous agents):
+~~~bash
+python -m pip install maple-oss
+python -m pip install "maple-oss[llm]"          # OpenAI and Anthropic SDKs
+python -m pip install "maple-oss[security]"     # JWT and SSH crypto extras
+python -m pip install "maple-oss[performance]"  # optional speedups
+python -m pip install "maple-oss[adapters]"     # HTTP adapter dependency
+python -m pip install "maple-oss[s2]"           # S2.dev integration
+python -m pip install "maple-oss[dev]"          # test and quality tooling
+~~~
 
-```bash
-pip install maple-oss[llm]
-```
+For a source checkout:
 
-From source:
-
-```bash
+~~~bash
 git clone https://github.com/maheshvaikri-code/maple-oss.git
 cd maple-oss
-pip install -e ".[llm]"
-```
+python -m pip install -e ".[dev,llm,security,adapters]"
+~~~
 
-All optional dependency groups:
+Verify the installed package and offline doctor:
 
-```bash
-pip install maple-oss[llm]          # OpenAI + Anthropic providers
-pip install maple-oss[s2]           # S2.dev durable streaming
-pip install maple-oss[security]     # Cryptography + JWT
-pip install maple-oss[performance]  # uvloop + orjson + msgpack
-pip install maple-oss[dev]          # Testing + linting tools
-```
-
-Verify:
-
-```bash
-python -c "from maple import Agent, AutonomousAgent, Message, Config; print('MAPLE ready')"
-```
-
----
+~~~bash
+python -c "import maple; print(maple.__version__)"
+python -m maple.cli doctor --json
+~~~
 
 ## Quick Start
 
-### 1. Basic Agent Communication
+### Typed agent messaging
 
-```python
-from maple import Agent, Message, Priority, Config, SecurityConfig
+~~~python
+from maple import Agent, Config, Message, Priority, Result
 
-# Create an agent
-config = Config(
-    agent_id="worker_agent",
-    broker_url="memory://local",
-    security=SecurityConfig(
-        auth_type="token",
-        credentials="secure_token",
-        require_links=True
+agent = Agent(Config(agent_id="worker", broker_url="memory://local"))
+agent.start()
+sent: Result = agent.send(
+    Message(
+        message_type="TASK_REQUEST",
+        receiver="specialist",
+        priority=Priority.HIGH,
+        payload={"task": "summarize", "document_id": "doc-42"},
     )
 )
-agent = Agent(config)
-agent.start()
-
-# Send a typed message with Result<T,E>
-message = Message(
-    message_type="PROCESS_DATA",
-    receiver="analysis_agent",
-    priority=Priority.HIGH,
-    payload={"task": "sentiment_analysis", "data": ["review_1", "review_2"]}
-)
-
-result = agent.send(message)
-if result.is_ok():
-    print(f"Sent: {result.unwrap()}")
+if sent.is_ok():
+    print("queued", sent.unwrap())
 else:
-    print(f"Failed: {result.unwrap_err()['message']}")
-
+    print("send failed", sent.unwrap_err())
 agent.stop()
-```
+~~~
 
-### 2. Autonomous Agent with Tools
+### Autonomous agent with a safe local tool
 
-```python
-from maple import (
-    Config, AutonomousAgent, AutonomousConfig,
-    LLMConfig, Tool, Result,
-)
+This example uses a small AST parser rather than evaluating model text as
+Python. Credentials are read from the environment and are not placed in code.
 
-# Define a custom tool
-def calculator(expression: str = "") -> Result:
-    allowed = set("0123456789+-*/.() ")
-    if not all(c in allowed for c in expression):
-        return Result.err({"error": "Only basic math allowed"})
-    return Result.ok({"result": eval(expression)})
+~~~python
+import ast
+import operator
+import os
 
-calc_tool = Tool(
-    name="calculator",
-    description="Evaluate a math expression like '2 + 3 * 4'",
-    parameters={
-        "type": "object",
-        "properties": {
-            "expression": {"type": "string", "description": "Math expression"},
-        },
-        "required": ["expression"],
-    },
-    handler=calculator,
-)
+from maple import AutonomousAgent, AutonomousConfig, Config, LLMConfig, Result, Tool
 
-# Create an autonomous agent
+_OPS = {ast.Add: operator.add, ast.Mult: operator.mul}
+
+
+def calculate(expression: str = "") -> Result:
+    try:
+        tree = ast.parse(expression, mode="eval").body
+        if not isinstance(tree, ast.BinOp) or type(tree.op) not in _OPS:
+            raise ValueError("only addition and multiplication are supported")
+        if not all(
+            isinstance(node, ast.Constant) and isinstance(node.value, int)
+            for node in (tree.left, tree.right)
+        ):
+            raise ValueError("operands must be integers")
+        return Result.ok(
+            {"result": _OPS[type(tree.op)](tree.left.value, tree.right.value)}
+        )
+    except (SyntaxError, ValueError, TypeError, OverflowError) as error:
+        return Result.err({"errorType": "VALIDATION_ERROR", "message": str(error)})
+
+
 agent = AutonomousAgent(
     Config(agent_id="math-agent", broker_url="memory://local"),
     AutonomousConfig(
-        llm=LLMConfig(provider="openai", model="gpt-4", api_key="sk-..."),
-        max_reasoning_steps=10,
+        llm=LLMConfig(
+            provider="openai",
+            model="gpt-4o-mini",
+            api_key=os.environ["OPENAI_API_KEY"],
+        ),
+        max_reasoning_steps=8,
+        max_total_tokens=8_000,
     ),
 )
-agent.register_tool(calc_tool)
+agent.register_tool(
+    Tool(
+        name="calculator",
+        description="Calculate a small integer expression.",
+        parameters={
+            "type": "object",
+            "properties": {"expression": {"type": "string"}},
+            "required": ["expression"],
+        },
+        handler=calculate,
+    )
+)
+~~~
 
-# Pursue a goal — the agent reasons, uses tools, and reflects
-result = agent.pursue_goal("What is (15 * 37) + 42?")
-if result.is_ok():
-    goal = result.unwrap()
-    print(f"Answer: {goal.result}")
-    print(f"Reasoning steps: {len(goal.reasoning_trace)}")
-```
+### Multi-agent orchestration
 
-### 3. Multi-Agent Team
+Teams are explicit objects. A supervisor can decompose a goal while specialist
+agents execute bounded work; the orchestrator returns typed per-member results
+and preserves the host's control over model credentials and side effects.
 
-```python
-from maple import Config, AutonomousAgent, AutonomousConfig, LLMConfig
+~~~python
+from maple import AutonomousAgent, AutonomousConfig, Config, LLMConfig
 from maple.autonomy.orchestrator import AgentOrchestrator, TeamMember
 
-# Create specialized agents
-llm = LLMConfig(provider="openai", model="gpt-4", api_key="sk-...")
-
+llm = LLMConfig(
+    provider="openai",
+    model="gpt-4o-mini",
+    api_key=os.environ["OPENAI_API_KEY"],
+)
 supervisor = AutonomousAgent(
-    Config(agent_id="supervisor", broker_url="memory://local", capabilities=["planning"]),
-    AutonomousConfig(llm=llm),
+    Config(agent_id="supervisor", broker_url="memory://local"),
+    AutonomousConfig(llm=llm, max_reasoning_steps=6),
 )
 researcher = AutonomousAgent(
-    Config(agent_id="researcher", broker_url="memory://local", capabilities=["research"]),
-    AutonomousConfig(llm=llm),
+    Config(agent_id="researcher", broker_url="memory://local"),
+    AutonomousConfig(llm=llm, max_reasoning_steps=6),
 )
-coder = AutonomousAgent(
-    Config(agent_id="coder", broker_url="memory://local", capabilities=["coding"]),
-    AutonomousConfig(llm=llm),
+orchestrator = AgentOrchestrator(max_parallel_agents=2)
+team_id = orchestrator.form_team(
+    "review-team",
+    [
+        TeamMember(supervisor, role="supervisor", capabilities=["planning"]),
+        TeamMember(researcher, role="worker", capabilities=["research"]),
+    ],
+).unwrap()
+result = orchestrator.execute_supervised(team_id, "Review the approved report")
+~~~
+
+### Secure links, state, and pub/sub
+
+For message-level protection, construct the agent with a host-owned
+`SecurityConfig`, establish a bounded link, and attach that link to the message.
+State stores expose versioned reads and updates; the broker also supports topic
+subscriptions for notifications that do not need request/response semantics.
+
+~~~python
+import os
+
+from maple import Config, Message, Priority, SecurityConfig
+from maple import Agent
+from maple.state import ConsistencyLevel, StateStore
+
+agent = Agent(
+    Config(
+        agent_id="secure-worker",
+        broker_url="memory://local",
+        security=SecurityConfig(
+            auth_type="token",
+            credentials=os.environ["MAPLE_AGENT_TOKEN"],
+            require_links=True,
+        ),
+    )
 )
+link = agent.establish_link("specialist", lifetime_seconds=3_600).unwrap()
+secure_message = Message(
+    message_type="SENSITIVE_DATA",
+    receiver="specialist",
+    priority=Priority.HIGH,
+    payload={"status": "ready"},
+).with_link(link)
+agent.send_with_link(secure_message, "specialist")
 
-# Form team and execute
-orchestrator = AgentOrchestrator()
-team_id = orchestrator.form_team("dev-team", members=[
-    TeamMember(agent=supervisor, role="supervisor", capabilities=["planning"]),
-    TeamMember(agent=researcher, role="worker", capabilities=["research"]),
-    TeamMember(agent=coder, role="worker", capabilities=["coding"]),
-]).unwrap()
+state = StateStore(consistency=ConsistencyLevel.STRONG)
+state.set("mission_status", {"phase": "active"}).unwrap()
+print(state.get("mission_status").unwrap())
+~~~
 
-# Supervisor decomposes goal, assigns sub-tasks to workers
-result = orchestrator.execute_supervised(team_id, "Build a data processing pipeline")
-```
+The link handshake is a protocol boundary, not a replacement for TLS or host
+identity management. Hosts remain responsible for secret rotation, trust roots,
+network exposure, and authorization policy.
 
-### 4. Result\<T,E\> Error Handling
+### Explicit authentication configuration
 
-```python
-from maple import Result
+JWT support is intentionally fail-closed. MAPLE never invents a signing key:
+the host must provide a secret through a secret manager or environment
+variable, and the secret must contain at least 32 UTF-8 bytes. A missing or
+short secret returns a typed `JWT_SECRET_NOT_CONFIGURED` result.
 
-def process_data(data) -> Result:
-    if not data:
-        return Result.err({
-            "errorType": "VALIDATION_ERROR",
-            "message": "Empty data",
-            "recoverable": True,
-        })
-    return Result.ok({"processed": len(data), "status": "complete"})
+~~~python
+import os
 
-# Chain operations safely — no exceptions, no silent failures
-result = (
-    process_data(input_data)
-    .map(lambda data: enrich(data))
-    .and_then(lambda enriched: validate(enriched))
-    .map_err(lambda err: log_error(err))
+from maple.security import AuthenticationConfig, AuthenticationManager
+
+auth = AuthenticationManager(
+    AuthenticationConfig(jwt_secret=os.environ["MAPLE_JWT_SECRET"])
 )
-```
+issued = auth.generate_jwt(
+    principal="worker-agent",
+    permissions=["tasks:read", "tasks:write"],
+    expires_in=3_600,
+)
+if issued.is_ok():
+    verified = auth.verify_token(issued.unwrap())
+    print(verified.unwrap().principal)
+~~~
 
-### 5. Resource-Aware Communication
+The configuration object keeps policy visible at the call site. Hosts should
+rotate secrets outside the process, avoid logging tokens, and treat revocation
+as a deny decision: a revoked token cannot be authenticated again.
 
-```python
-from maple.resources.specification import ResourceRequest, ResourceRange, TimeConstraint
+### Typed failures and resource budgets
+
+MAPLE uses `Result[T, E]` at important boundaries. A caller can compose work
+without turning expected validation, capacity, or transport failures into
+unstructured exceptions. Resource requests carry the budget alongside the
+message so the receiving host can accept, reject, or negotiate it.
+
+~~~python
+from maple import Message, Priority, Result
+from maple.resources import ResourceRange, ResourceRequest, TimeConstraint
 
 request = ResourceRequest(
-    compute=ResourceRange(min=4, preferred=8, max=16),
-    memory=ResourceRange(min="8GB", preferred="16GB", max="32GB"),
-    bandwidth=ResourceRange(min="100Mbps", preferred="1Gbps"),
+    compute=ResourceRange(min=2, preferred=4, max=8),
+    memory=ResourceRange(min="2GB", preferred="4GB", max="8GB"),
     time=TimeConstraint(timeout="120s"),
     priority="HIGH",
 )
 
 message = Message(
-    message_type="HEAVY_COMPUTATION",
-    receiver="compute_agent",
+    message_type="INDEX_DOCUMENTS",
+    receiver="retrieval-worker",
     priority=Priority.HIGH,
-    payload={"task": "train_model", "resources": request.to_dict()},
+    payload={"document_id": "doc-42", "resources": request.to_dict()},
 )
-```
 
-### 6. Secure Links (LIM)
+def accept(result: Result) -> str:
+    if result.is_err():
+        return f"rejected: {result.unwrap_err()}"
+    return f"accepted: {result.unwrap()}"
+~~~
 
-```python
-# Establish cryptographically verified communication channel
-link_result = agent.establish_link("partner_agent", lifetime_seconds=3600)
+### Durable local queues and workflows
 
-if link_result.is_ok():
-    link_id = link_result.unwrap()
-    secure_msg = Message(
-        message_type="SENSITIVE_DATA",
-        receiver="partner_agent",
-        payload={"data": "confidential"},
-    ).with_link(link_id)
-    agent.send_with_link(secure_msg, "partner_agent")
-```
+Use the in-memory queue while shaping a system, then move to
+`FileTaskQueue` or a host-owned remote control plane when restart behavior is
+part of the deployment contract. Queue transitions are ownership-checked and
+bounded; restart recovery is explicitly at-least-once.
 
-### 7. Distributed State
+~~~python
+from maple.task_management import TaskPriority, TaskQueue
 
-```python
-from maple.state import StateStore, ConsistencyLevel
+queue = TaskQueue(max_queue_size=100)
+submitted = queue.submit_task(
+    "summarize",
+    {"document_id": "doc-42"},
+    priority=TaskPriority.HIGH,
+)
+task_id = submitted.unwrap()
+queue.assign_task(task_id, "worker-agent").unwrap()
+queue.start_task(task_id, "worker-agent").unwrap()
+queue.complete_task(task_id, "worker-agent", {"status": "done"}).unwrap()
+~~~
 
-store = StateStore(consistency=ConsistencyLevel.STRONG)
-store.set("mission_status", {"phase": "active", "agents": 5})
+For stateful branches, a `Workflow` gives each node a read-only context and
+commits bounded JSON state at node boundaries. The same model supports
+conditional routing, bounded fan-out/fan-in, retry policies, checkpoint
+stores, and explicit resume.
 
-result = store.get("mission_status")
-if result.is_ok():
-    print(result.unwrap())
+~~~python
+from maple import Workflow
 
-# Watch for changes
-store.add_listener(lambda key, entry: print(f"Changed: {key}"))
-```
+workflow = Workflow("normalize-document")
+workflow.add_node(
+    "normalize",
+    lambda context: {"text": context.state["text"].strip().lower()},
+).unwrap()
+workflow.set_entry_point("normalize").unwrap()
+workflow.add_edge("normalize", None).unwrap()
 
-### 8. Pub/Sub and Handlers
+run = workflow.run({"text": "  Hello MAPLE  "}).unwrap()
+assert run.status == "completed"
+~~~
 
-```python
-# Register message handlers
-@agent.handler("TASK_REQUEST")
-def handle_task(message):
-    print(f"Received task: {message.payload}")
-    return Message(
-        message_type="TASK_RESULT",
-        receiver=message.sender,
-        payload={"result": "done"},
+### Memory, retrieval, and citations
+
+Working memory is bounded admission, not an unbounded transcript. Retrieval
+keeps source references attached to results so an application can decide how
+to cite or display them. Embedding generation and corpus authorization remain
+host-owned.
+
+~~~python
+from maple import Document, InMemoryLexicalRetriever, SourceRef
+from maple.autonomy import WorkingMemory
+
+memory = WorkingMemory(max_tokens=2_048)
+memory.add("mission", "The worker is indexing the approved corpus.")
+
+retriever = InMemoryLexicalRetriever()
+retriever.add_document(
+    Document(
+        document_id="doc-42",
+        text="MAPLE keeps source references with retrieval results.",
+        source=SourceRef(uri="https://example.test/doc-42", title="MAPLE note"),
     )
+).unwrap()
+hits = retriever.search("source references", top_k=3).unwrap()
+print(hits[0].chunk.source.uri)
+~~~
 
-# Topic-based pub/sub
-agent.subscribe("notifications")
+For restartable local search, replace the in-memory retriever with
+`FileLexicalRetriever` or `FileVectorRetriever`. Both use bounded versioned
+JSON, atomic replacement, and local fencing. A vector retriever accepts
+caller-supplied embeddings; it does not call a model or a managed vector
+service on your behalf.
 
-@agent.topic_handler("notifications")
-def handle_notification(message):
-    print(f"Notification: {message.payload}")
+### Sessions, events, and code blocks
 
-# Publish to topic
-agent.publish("notifications", Message(
-    message_type="ALERT",
-    payload={"level": "info", "text": "System healthy"},
-))
-```
+Conversation sessions store JSON-safe turns with optimistic versions and
+data-only forking. Event streams retain a bounded, redacted window and expose
+cursor-based reads. Code-block extraction creates content-addressed artifacts;
+it never executes model-produced Python, shell, browser, or computer-use code.
 
----
+~~~python
+from maple import EventStream, InMemorySessionStore, SessionMessage
+
+sessions = InMemorySessionStore()
+session = sessions.create("case-42").unwrap()
+session = sessions.append(
+    session.session_id,
+    SessionMessage(role="user", content="Summarize the approved report."),
+    expected_version=session.version,
+).unwrap()
+
+events = EventStream(max_events=100)
+events.publish(
+    "session.message.accepted",
+    {"session_id": session.session_id, "status": "stored"},
+    run_id="run-42",
+).unwrap()
+batch = events.read(limit=10).unwrap()
+print(batch.events[0].event_type)
+~~~
+
+The durable variants (`FileSessionStore`, `FileEventJournal`, and the local
+run/checkpoint stores) are suitable for one host or a shared local filesystem.
+They do not claim distributed consensus, exactly-once external effects, or
+automatic background scheduling.
+
+### Code blocks remain data
+
+~~~python
+from maple.autonomy import InMemoryArtifactStore, extract_code_blocks, materialize_code_block
+
+model_text = "```python\nprint('stored as data')\n```"
+blocks = extract_code_blocks(model_text).unwrap()
+store = InMemoryArtifactStore()
+for block in blocks:
+    artifact = materialize_code_block(store, block).unwrap()
+    print(artifact.artifact_id, artifact.size)
+~~~
+
+The artifact boundary validates sizes, names, UTF-8 bytes, and SHA-256
+identity. It does not run Python, shell, browser, or computer-use code.
 
 ## Architecture
 
-```text
+MAPLE is intentionally layered so a host can adopt the smallest useful
+surface first:
+
+~~~text
 maple/
-├── agent/            Agent lifecycle, config, message handlers, auto-registration
-├── autonomy/         AutonomousAgent, ReAct loop, tools, memory, orchestrator, observability
-├── broker/           Message routing (in-memory + NATS), priority queue, health-aware routing
-├── core/             Message, Result<T,E>, type system, serialization
-├── communication/    Streaming, pub/sub, request-response patterns
-├── discovery/        Agent registry, capability matching, health monitoring, failure detection
-├── error/            Circuit breaker, retry with backoff, error types and severity
-├── llm/              LLM provider abstraction (OpenAI, Anthropic, compatible APIs)
-├── resources/        Resource specification, allocation, negotiation
-├── security/         Authentication, authorization, Link ID Mechanism, AES-256-GCM encryption
-├── state/            Distributed state store, synchronization, consistency models
-├── task_management/  Task queue, scheduler, fault tolerance, result collection, optimization
-└── adapters/         A2A, MCP, FIPA ACL, AutoGen, CrewAI, LangGraph, OpenAI SDK, ACP, S2
-```
+├── core/             Message, Result[T, E], serialization, and type contracts
+├── agent/            Agent lifecycle, configuration, handlers, and routing
+├── autonomy/         ReAct loops, tools, memory, retrieval, runs, events, and workflows
+├── broker/           In-memory and optional broker-backed message delivery
+├── discovery/        Agent registry, capabilities, health, and failure detection
+├── resources/        Resource ranges, allocation, negotiation, and local leases
+├── security/         Authentication, authorization, cryptographic links, and redaction
+├── state/            State stores, consistency, and synchronization
+├── task_management/  Bounded queues, scheduling, workers, and result collection
+└── adapters/         A2A, MCP, FIPA ACL, ACP, S2.dev, and ecosystem translations
+~~~
 
-### Autonomy Architecture
+The autonomy loop sits above the protocol/runtime layer:
 
-```text
-┌─────────────────────────────────────────────────────┐
-│                  AutonomousAgent                     │
-│  ┌──────────┐  ┌──────────┐  ┌──────────────────┐  │
-│  │ LLM      │  │ Tool     │  │ Memory           │  │
-│  │ Provider  │  │ Registry │  │ (Working/Episodic│  │
-│  │ (OpenAI/ │  │ (Custom +│  │  /Semantic)       │  │
-│  │ Anthropic)│  │ Built-in)│  │                  │  │
-│  └────┬─────┘  └────┬─────┘  └────────┬─────────┘  │
-│       │              │                 │             │
-│       └──────────────┼─────────────────┘             │
-│                      │                               │
-│              ┌───────▼───────┐                       │
-│              │  ReAct Loop   │                       │
-│              │ Think → Act → │                       │
-│              │   Reflect     │                       │
-│              └───────┬───────┘                       │
-│                      │                               │
-│  Inherits: Agent (messaging, security, resources)    │
-└──────────────────────┼───────────────────────────────┘
-                       │
-          ┌────────────▼────────────┐
-          │   AgentOrchestrator     │
-          │  (Supervisor/Consensus) │
-          └─────────────────────────┘
-```
+~~~text
+goal
+  │
+  ▼
+model provider ──► validated tool ──► typed Result[T, E]
+  │                                      │
+  └────────────── event + checkpoint ◄───┘
+                         │
+                         ▼
+                    host decision
+~~~
 
----
+This shape makes the important transitions inspectable. A tool can be
+approved before execution, a failure can be returned as data, a run can be
+checkpointed before a later side effect, and an event can be redacted before
+it reaches a subscriber or exporter.
 
-## How MAPLE Compares
+## Operational boundaries
 
-| Feature | MAPLE | LangGraph | CrewAI | AutoGen | Google A2A | MCP |
-| ------- | ----- | --------- | ------ | ------- | ---------- | --- |
-| Autonomous agents (ReAct) | Built-in | Built-in | Built-in | Built-in | No | No |
-| Resource specification in protocol | Built-in | No | No | No | Via payload | No |
-| Result\<T,E\> error handling | Built-in | No | No | No | No | No |
-| Circuit breakers & fault tolerance | Built-in | No | No | No | No | No |
-| Cryptographic link security (LIM) | Built-in | No | No | No | OAuth | Platform |
-| Distributed state management | Built-in | Checkpointer | No | No | No | No |
-| Agent discovery & health monitoring | Built-in | No | No | No | Agent Cards | No |
-| Priority message queuing | Built-in | No | No | No | No | No |
-| Task scheduling & load balancing | Built-in | No | No | No | No | No |
-| Multi-agent orchestration | Built-in | Built-in | Built-in | Built-in | No | No |
-| Tool framework | Built-in | Built-in | Built-in | Built-in | No | Built-in |
-| Memory system | Built-in | Partial | Partial | No | No | No |
-| MCP tool discovery | Built-in | No | No | No | No | Native |
-| Protocol adapters | 10 adapters | No | No | No | No | No |
+MAPLE supplies local contracts. The application or platform hosting MAPLE
+supplies the environment around them:
 
-**Where MAPLE excels:** Production infrastructure + autonomous reasoning in one framework. If your agents need resource awareness, security, fault tolerance, AND autonomous decision-making — MAPLE provides all of these as first-class features.
+| Host responsibility | MAPLE's local contribution |
+| --- | --- |
+| Secret storage and rotation | Explicit authentication configuration and token lifecycle |
+| Model credentials and provider choice | Provider interfaces, capability checks, and typed failures |
+| Authorization policy and tenancy | Scoped local control-plane routes and host policy hooks |
+| External side effects | Approval, bounded tools, cancellation signals, and durable records |
+| Deployment, TLS, and network exposure | Loopback transport with bounded requests and responses |
+| Distributed coordination | Local file fencing, version checks, and clear at-least-once boundaries |
+| Untrusted-code isolation | Trusted host handlers only; MAPLE is not a sandbox |
 
-**Where others are stronger:** LangGraph has deeper graph-based workflow primitives. CrewAI has simpler role-based setup. A2A and MCP have broader language support and larger ecosystems. AutoGen has mature human-in-the-loop patterns.
+Keeping this boundary visible is part of using MAPLE correctly. Local
+durability is useful without pretending to be a hosted service, and an adapter
+is useful without silently changing who owns identity or side effects.
 
----
+## n8n companion integration
 
-## n8n Integration
+The repository also contains a separate TypeScript integration for visual
+workflows. It provides MAPLE Agent, MAPLE Coordinator, and MAPLE Resource
+Manager nodes plus sample workflows. The integration is not part of the
+Python wheel or source distribution and has its own Node/npm validation loop.
 
-MAPLE ships with first-class [n8n](https://n8n.io) integration — 3 visual workflow nodes for building multi-agent AI pipelines without code.
+~~~bash
+cd n8n-integration
+npm install
+npm run validate
+~~~
+
+The node package submits work to a host; it does not provide hosted MAPLE,
+credential storage, tenancy, or deployment by itself. See the
+[integration README](n8n-integration/README.md) for node fields and sample
+workflows.
 
 | Node | Purpose |
-|------|---------|
-| **MAPLE Agent** | LLM integration, smart processing, resource-aware execution |
-| **MAPLE Coordinator** | Workflow orchestration, task distribution, result aggregation |
-| **MAPLE Resource Manager** | Dynamic allocation, cost optimization, scaling |
+| --- | --- |
+| **MAPLE Agent** | Submit bounded agent work to a configured MAPLE host. |
+| **MAPLE Coordinator** | Orchestrate workflow steps and collect typed results. |
+| **MAPLE Resource Manager** | Surface resource-aware allocation in a visual flow. |
 
-Pre-built workflows included: AI Research Assistant, Content Creation Pipeline, Customer Service Bot.
+The included workflows are starting points for research, content, and
+customer-service automations. They remain host integrations: credentials,
+network policy, deployment, and external effects are configured outside the
+Python runtime.
 
-See [n8n-integration/](n8n-integration/) for setup and usage.
+## Examples and companion integrations
 
----
+- [Examples](examples/README.md) - small core and autonomy examples.
+- [Legacy hello-world example](example/README.md) - compatibility example.
+- [External demo package](demo_package/README.md) - interactive demos; not
+  included in the core wheel or sdist.
+- [n8n integration](n8n-integration/README.md) - TypeScript nodes and sample
+  workflows; not included in the Python distribution.
+- [Launch materials](LAUNCH/README.md) - local launch/demo helpers and their
+  publication boundary.
 
-## Testing
+## Testing and quality
 
-```bash
-# Run all tests
-python -m pytest tests/ -v
-
-# Run with coverage
+~~~bash
+python -m pytest tests/ -q
+python -m pytest tests/security/ -q
+python -m pytest tests/autonomy/ -q
+python -m pytest tests/task_management/ -q
+python -m pytest tests/broker/ -q
 python -m pytest tests/ --cov=maple --cov-report=term-missing
+python -m black --check maple
+python -m isort --check-only maple
+python -m flake8 maple/ --max-line-length=88
+python -m compileall -q maple
+python -m maple.cli doctor --json
+~~~
 
-# Run specific modules
-python -m pytest tests/autonomy/ -v       # Autonomous agent tests
-python -m pytest tests/llm/ -v            # LLM provider tests
-python -m pytest tests/discovery/ -v      # Discovery tests
-python -m pytest tests/task_management/ -v # Task management tests
-python -m pytest tests/security/ -v       # Security tests
-python -m pytest tests/broker/ -v         # Broker tests
-```
+The final local release-equivalent run completed with **1,912 passed and 1
+skipped**. The full suite is the release gate; focused suites are useful while
+iterating on a boundary. The offline doctor checks core, evaluation, events,
+execution, interop, retrieval, server, and session readiness without making a
+network request. Re-run the commands above on the exact checkout before
+publishing; no evidence in this README authorizes publication. See the
+[release QA record](docs/qa/maple-agent-runtime-release-2.0.0.md) and
+[ultra-review record](docs/reviews/maple-ultra-review-2.0.0.md).
 
-Current status: **1002 tests passing**, **80% code coverage**.
+## Release and website status
 
----
+MAPLE 2.0.0 is a local, untagged, unpublished candidate. No release tag,
+registry upload, cloud call, or website deployment has been performed.
 
-## Examples
+The website is intentionally **in standing**: tracked static assets are held
+for a later copy/link/accessibility pass and deployment decision. See
+[website/README.md](website/README.md) and the
+[external-phase plan](docs/plans/maple-publication-website-cloud-registry.md).
 
-| Example | Description |
-|---------|-------------|
-| [examples/hello_autonomous_agent.py](examples/hello_autonomous_agent.py) | Create an autonomous agent with custom tools, pursue a goal using ReAct |
-| [examples/multi_agent_team.py](examples/multi_agent_team.py) | Form a team with supervisor + workers, execute goals, share memory |
-| [example/helloworld.py](example/helloworld.py) | Basic agent communication hello world |
-| [demo_package/](demo_package/) | Full demo suite with web dashboard and benchmarks |
-| [demo/adapters_demo/](demo/adapters_demo/) | Protocol adapter performance comparison |
-| [demo/autogen/](demo/autogen/) | AutoGen integration multi-agent coding team |
+## Documentation map
 
----
+- [Getting started](docs/getting-started.md)
+- [API reference](docs/api-reference.md)
+- [Protocol specification](docs/Protocol_Language_Specification.txt)
+- [Protocol comparison](docs/protocol-comparison.md)
+- [Type system](docs/type-system.md)
+- [Best practices](docs/best-practices.md)
+- [Troubleshooting](docs/troubleshooting.md)
+- [Changelog](CHANGELOG.md)
+- [2.0.0 release checklist](docs/releases/v2.0.0.md)
 
-## Documentation
+## Project structure
 
-- [Getting Started](docs/getting-started.md) — Installation and first steps
-- [API Reference](docs/api-reference.md) — Complete API documentation
-- [Type System](docs/type-system.md) — MAPLE's rich type system
-- [Protocol Specification](docs/Protocol_Language_Specification.txt) — Formal protocol definition
-- [Protocol Comparison](docs/protocol-comparison.md) — Detailed comparison with A2A, MCP, FIPA ACL
-- [Result\<T,E\> Details](docs/details_Result_Type.md) — Deep dive into type-safe error handling
-- [Best Practices](docs/best-practices.md) — Production deployment guidelines
-- [Industry Applications](docs/industry-applications.md) — Real-world use cases
-- [Troubleshooting](docs/troubleshooting.md) — Common issues and solutions
-- [Changelog](CHANGELOG.md) — Version history
-
----
-
-## Project Structure
-
-```text
+~~~text
 maple-oss/
-├── maple/                   Core framework (70 Python modules)
-│   ├── agent/               Agent lifecycle and configuration
-│   ├── autonomy/            Autonomous agent, tools, memory, orchestrator
-│   ├── broker/              Message routing and delivery
-│   ├── core/                Message, Result<T,E>, types, serialization
-│   ├── communication/       Streaming, pub/sub, request-response
-│   ├── discovery/           Registry, capability matching, health monitoring
-│   ├── error/               Circuit breaker, retry, error types
-│   ├── llm/                 LLM provider abstraction layer
-│   ├── resources/           Resource specification and negotiation
-│   ├── security/            Auth, encryption, Link ID Mechanism
-│   ├── state/               Distributed state management
-│   ├── task_management/     Scheduling, fault tolerance, optimization
-│   └── adapters/            10 protocol adapters
-├── tests/                   1002 tests across all modules
-├── docs/                    Comprehensive documentation
-├── examples/                Autonomous agent and team examples
-├── demo_package/            Interactive demos and web dashboard
-├── n8n-integration/         Visual workflow nodes for n8n
-├── pyproject.toml           Package configuration
-├── setup.py                 Legacy setup script
-└── VERSION                  Current version (1.1.3)
-```
-
----
+├── maple/                 Python runtime and public package
+├── docs/                  specifications, ADRs, plans, reviews, and QA records
+├── tests/                 Python regression and contract tests
+├── examples/              supported examples
+├── demo/                  adapter-focused demonstrations
+├── demo_package/          external interactive demo package
+├── n8n-integration/       companion TypeScript integration
+├── website/               held static website assets and website notes
+├── pyproject.toml         package metadata and optional dependencies
+├── VERSION                Python package version
+└── CHANGELOG.md           release history
+~~~
 
 ## Contributing
 
-```bash
-git clone https://github.com/maheshvaikri-code/maple-oss.git
-cd maple-oss
-pip install -e ".[dev,llm]"
-python -m pytest tests/ -v
-```
+~~~bash
+python -m pip install -e ".[dev,llm,security,adapters]"
+python -m pytest tests/ -q
+~~~
 
-Contributions welcome in:
+Keep behavior changes covered by tests, preserve local versus hosted
+boundaries, and update the relevant docs, changelog, and review/QA artifact.
 
-- Core protocol and infrastructure enhancements
-- LLM provider implementations (Gemini, Mistral, Cohere, etc.)
-- Tool ecosystem expansion
-- Adapter implementations for new protocols
-- Test coverage expansion
-- Documentation improvements
+## License and attribution
 
----
+MAPLE is Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy (Mahesh
+Vaikri). The core project is licensed under the [GNU Affero General Public
+License, version 3](LICENSE). Proprietary use may require the separate
+[commercial license](COMMERCIAL_LICENSE.md).
 
-## License
-
-**MAPLE - Multi Agent Protocol Language Engine**
-**Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)**
-
-MAPLE is **dual-licensed**:
-
-| Use case | License |
-| --- | --- |
-| Open source projects, research, personal use | [AGPL-3.0](LICENSE) — free |
-| Proprietary software, SaaS, enterprise deployment | [Commercial License](COMMERCIAL_LICENSE.md) |
-
-### Open Source (AGPL-3.0)
-
-Free to use, modify, and distribute. If you run MAPLE as part of a network service, AGPL-3.0 requires you to make your application source code available to users of that service.
-
-### Commercial License
-
-If your organization builds proprietary products, deploys SaaS services, or has a policy against AGPL dependencies, a commercial license removes the copyleft obligation. Startup, Business, and Enterprise tiers available.
-
-→ **[See COMMERCIAL_LICENSE.md](COMMERCIAL_LICENSE.md)** for tiers and pricing, or email **[maheshvaikri@gmail.com](mailto:maheshvaikri@gmail.com)** with subject `[MAPLE Commercial License]`.
-
----
-
-**MAPLE - Multi Agent Protocol Language Engine**
-**Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)**
-
-- Email: [mahesh@mapleagent.org](mailto:mahesh@mapleagent.org)
-- GitHub: [github.com/maheshvaikri-code/maple-oss](https://github.com/maheshvaikri-code/maple-oss)
-- Issues: [Report bugs or request features](https://github.com/maheshvaikri-code/maple-oss/issues)
-- Website: [mapleagent.org](https://mapleagent.org)
+- GitHub: <https://github.com/maheshvaikri-code/maple-oss>
+- Issues: <https://github.com/maheshvaikri-code/maple-oss/issues>
+- Documentation site: <https://mapleagent.org>

@@ -1,14 +1,14 @@
 """Extended tests for ResultCollector — aggregation types, cleanup, callbacks, collector loop."""
 
 import time
+
 import pytest
-from maple.task_management.task_queue import TaskQueue, TaskPriority
+
 from maple.task_management.result_collector import (
-    ResultCollector,
     AggregationType,
-    TaskResult,
-    AggregationGroup,
+    ResultCollector,
 )
+from maple.task_management.task_queue import TaskPriority, TaskQueue
 
 
 @pytest.fixture
@@ -37,6 +37,7 @@ def _submit(task_queue, n=1):
 #  COLLECT_ALL aggregation
 # ---------------------------------------------------------------------------
 
+
 class TestCollectAllAggregation:
     def test_collect_all_completes(self, collector, task_queue):
         ids = _submit(task_queue, 3)
@@ -54,6 +55,7 @@ class TestCollectAllAggregation:
 #  FIRST_COMPLETE aggregation
 # ---------------------------------------------------------------------------
 
+
 class TestFirstCompleteAggregation:
     def test_first_complete(self, collector, task_queue):
         ids = _submit(task_queue, 3)
@@ -70,6 +72,7 @@ class TestFirstCompleteAggregation:
 # ---------------------------------------------------------------------------
 #  MAJORITY_VOTE aggregation
 # ---------------------------------------------------------------------------
+
 
 class TestMajorityVoteAggregation:
     def test_majority_vote(self, collector, task_queue):
@@ -90,6 +93,7 @@ class TestMajorityVoteAggregation:
 # ---------------------------------------------------------------------------
 #  BEST_SCORE aggregation
 # ---------------------------------------------------------------------------
+
 
 class TestBestScoreAggregation:
     def test_best_score_from_confidence(self, collector, task_queue):
@@ -128,6 +132,7 @@ class TestBestScoreAggregation:
 # ---------------------------------------------------------------------------
 #  AVERAGE aggregation
 # ---------------------------------------------------------------------------
+
 
 class TestAverageAggregation:
     def test_average_numeric(self, collector, task_queue):
@@ -169,11 +174,14 @@ class TestAverageAggregation:
 #  WEIGHTED_AVERAGE aggregation
 # ---------------------------------------------------------------------------
 
+
 class TestWeightedAverageAggregation:
     def test_weighted_average(self, collector, task_queue):
         ids = _submit(task_queue, 2)
         collector.create_aggregation_group(
-            "g1", ids, AggregationType.WEIGHTED_AVERAGE,
+            "g1",
+            ids,
+            AggregationType.WEIGHTED_AVERAGE,
             weights={"w0": 1.0, "w1": 3.0},
         )
 
@@ -192,13 +200,14 @@ class TestWeightedAverageAggregation:
         collector.collect_task_result(ids[0], "w0", 10.0)
         collector.collect_task_result(ids[1], "w1", 20.0)
 
-        group = collector.get_aggregation_group("g1").unwrap()
         # Expect error because no weights, but group may not complete
+        collector.get_aggregation_group("g1").unwrap()
 
 
 # ---------------------------------------------------------------------------
 #  CUSTOM aggregation
 # ---------------------------------------------------------------------------
+
 
 class TestCustomAggregation:
     def test_custom_aggregator(self, collector, task_queue):
@@ -222,6 +231,9 @@ class TestCustomAggregation:
         ids = _submit(task_queue, 1)
         result = collector.create_aggregation_group("g1", ids, AggregationType.CUSTOM)
         assert result.is_err()
+        assert result.unwrap_err() == (
+            "Custom aggregator function is required for CUSTOM aggregation"
+        )
 
     def test_custom_aggregator_error(self, collector, task_queue):
         ids = _submit(task_queue, 2)
@@ -237,18 +249,20 @@ class TestCustomAggregation:
         collector.collect_task_result(ids[1], "w1", 2)
 
         # Should not crash, group may be marked as failed
-        group = collector.get_aggregation_group("g1").unwrap()
 
 
 # ---------------------------------------------------------------------------
 #  Duplicate group / completion callbacks / aggregation callbacks
 # ---------------------------------------------------------------------------
 
+
 class TestGroupManagement:
     def test_duplicate_group_rejected(self, collector, task_queue):
         ids = _submit(task_queue, 2)
         collector.create_aggregation_group("g1", ids, AggregationType.COLLECT_ALL)
-        result = collector.create_aggregation_group("g1", ids, AggregationType.COLLECT_ALL)
+        result = collector.create_aggregation_group(
+            "g1", ids, AggregationType.COLLECT_ALL
+        )
         assert result.is_err()
 
     def test_completion_callback(self, collector, task_queue):
@@ -256,7 +270,9 @@ class TestGroupManagement:
         collector.create_aggregation_group("g1", ids, AggregationType.FIRST_COMPLETE)
 
         fired = []
-        collector.add_completion_callback("g1", lambda gid, res: fired.append((gid, res)))
+        collector.add_completion_callback(
+            "g1", lambda gid, res: fired.append((gid, res))
+        )
         collector.collect_task_result(ids[0], "w0", "done")
         assert len(fired) == 1
 
@@ -278,6 +294,7 @@ class TestGroupManagement:
 #  list_results filtering
 # ---------------------------------------------------------------------------
 
+
 class TestListFiltering:
     def test_filter_by_timestamp(self, collector, task_queue):
         ids = _submit(task_queue, 2)
@@ -293,6 +310,7 @@ class TestListFiltering:
 #  cleanup_old_results
 # ---------------------------------------------------------------------------
 
+
 class TestCleanup:
     def test_cleanup_removes_old(self, collector, task_queue):
         ids = _submit(task_queue, 1)
@@ -307,6 +325,7 @@ class TestCleanup:
 # ---------------------------------------------------------------------------
 #  start / stop collector
 # ---------------------------------------------------------------------------
+
 
 class TestCollectorLifecycle:
     def test_start_stop(self, collector):
@@ -324,6 +343,7 @@ class TestCollectorLifecycle:
 # ---------------------------------------------------------------------------
 #  statistics
 # ---------------------------------------------------------------------------
+
 
 class TestCollectionStats:
     def test_stats_after_collection(self, collector, task_queue):

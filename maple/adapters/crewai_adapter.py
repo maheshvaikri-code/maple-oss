@@ -1,52 +1,67 @@
 """
-Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
+Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy
+(Mahesh Vaikri)
 
-This file is part of MAPLE - Multi Agent Protocol Language Engine. 
+This file is part of MAPLE - Multi Agent Protocol Language Engine.
 
-MAPLE - Multi Agent Protocol Language Engine is free software: you can redistribute it and/or 
-modify it under the terms of the GNU Affero General Public License as published by the Free Software 
-Foundation, either version 3 of the License, or (at your option) any later version. 
-MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that it will be useful, 
-but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A 
-PARTICULAR PURPOSE. See the GNU Affero General Public License for more details. You should have 
-received a copy of the GNU Affero General Public License along with MAPLE - Multi Agent Protocol 
+MAPLE - Multi Agent Protocol Language Engine is free software: you can
+redistribute it and/or modify it under the terms of the GNU Affero General
+Public License as published by the Free Software Foundation, either version 3
+of the License, or (at your option) any later version.
+MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that
+it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero
+General Public License for more details. You should have received a copy of
+the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
 Language Engine. If not, see <https://www.gnu.org/licenses/>.
 """
-
 
 # maple/adapters/crewai_adapter.py
 
 import time
-from typing import Dict, Any, Optional, List
-try:
-    from crewai import Agent as CrewAgent, Task as CrewTask, Crew
-    CREWAI_AVAILABLE = True
-except ImportError:
-    CrewAgent = None
-    CrewTask = None
-    Crew = None
-    CREWAI_AVAILABLE = False
+from typing import Any, Dict, List, Optional
+
 from ..core.message import Message
 from ..core.result import Result
+from ..core.types import Priority
+
+try:
+    from crewai import Agent as _CrewAgent  # noqa: F401
+    from crewai import Crew as _Crew  # noqa: F401
+    from crewai import Task as _CrewTask  # noqa: F401
+
+    CREWAI_AVAILABLE = True
+except ImportError:
+    CREWAI_AVAILABLE = False
+
+CrewAgent: Any = globals().get("_CrewAgent", Any)
+CrewTask: Any = globals().get("_CrewTask", Any)
+Crew: Any = globals().get("_Crew", object)
+
+if not CREWAI_AVAILABLE:
+    Crew = object
+
 
 class CrewAIAdapter:
     """
     MAPLE adapter for CrewAI framework integration.
     Enhances CrewAI with MAPLE's superior resource management and type safety.
     """
-    
-    def __init__(self, maple_agent):
+
+    def __init__(self, maple_agent: Any):
         self.maple_agent = maple_agent
-        self.crew_agents = {}
-        self.active_crews = {}
-    
-    def create_maple_enhanced_crew_agent(self, role: str, goal: str, backstory: str) -> CrewAgent:
+        self.crew_agents: Dict[str, Any] = {}
+        self.active_crews: Dict[str, Any] = {}
+
+    def create_maple_enhanced_crew_agent(
+        self, role: str, goal: str, backstory: str
+    ) -> CrewAgent:
         """
         Create CrewAI agent enhanced with MAPLE capabilities.
         """
         enhanced_backstory = f"""
         {backstory}
-        
+
         MAPLE ENHANCEMENTS:
         - Powered by MAPLE protocol with 333,384 msg/sec performance
         - Advanced type safety with Result<T,E> error handling
@@ -54,22 +69,22 @@ class CrewAIAdapter:
         - Secure communication via Link Identification Mechanism
         - Superior error recovery and fault tolerance
         """
-        
+
         crew_agent = CrewAgent(
             role=role,
             goal=goal,
             backstory=enhanced_backstory,
             verbose=True,
             # MAPLE-enhanced tools
-            tools=self._get_maple_enhanced_tools()
+            tools=self._get_maple_enhanced_tools(),
         )
-        
+
         # Wrap with MAPLE capabilities
         crew_agent.maple_enhanced = True
         crew_agent.maple_agent = self.maple_agent
-        
+
         return crew_agent
-    
+
     def _get_maple_enhanced_tools(self) -> List[Any]:
         """
         Get tools enhanced with MAPLE capabilities.
@@ -77,21 +92,109 @@ class CrewAIAdapter:
         return [
             {
                 "name": "maple_communicate",
-                "description": "Communicate with other agents using MAPLE's advanced protocol",
-                "function": self._maple_communicate_tool
+                "description": (
+                    "Communicate with other agents using MAPLE's advanced protocol"
+                ),
+                "function": self._maple_communicate_tool,
             },
             {
                 "name": "maple_resource_request",
-                "description": "Request resources using MAPLE's intelligent resource management",
-                "function": self._maple_resource_tool
+                "description": (
+                    "Request resources using MAPLE's intelligent resource management"
+                ),
+                "function": self._maple_resource_tool,
             },
             {
                 "name": "maple_secure_link",
                 "description": "Establish secure communication links with other agents",
-                "function": self._maple_secure_link_tool
-            }
+                "function": self._maple_secure_link_tool,
+            },
         ]
-    
+
+    def _maple_communicate_tool(
+        self,
+        target_agent: str,
+        message: str,
+        priority: str = "MEDIUM",
+        secure_link: bool = False,
+    ) -> Dict[str, Any]:
+        """Send a CrewAI tool message through the MAPLE agent boundary."""
+        try:
+            maple_message = Message(
+                message_type="CREWAI_FUNCTION_CALL",
+                receiver=target_agent,
+                priority=Priority(priority),
+                payload={"message": message},
+            )
+            if secure_link:
+                link_result = self.maple_agent.establish_link(target_agent)
+                if link_result.is_ok():
+                    maple_message.metadata["linkId"] = link_result.unwrap()
+            result = self.maple_agent.send(maple_message)
+            if result.is_err():
+                return {"status": "error", "error": result.unwrap_err()}
+            return {"status": "success", "message_id": result.unwrap()}
+        except Exception as e:
+            return {
+                "status": "error",
+                "errorType": "MAPLE_FUNCTION_ERROR",
+                "message": str(e),
+            }
+
+    def _maple_resource_tool(
+        self, resource_type: str, amount: Any, priority: str = "MEDIUM"
+    ) -> Dict[str, Any]:
+        """Request a resource through an optional injected resource manager."""
+        manager = getattr(self.maple_agent, "resource_manager", None)
+        if manager is None:
+            return {
+                "status": "error",
+                "errorType": "RESOURCE_MANAGEMENT_UNAVAILABLE",
+                "message": "No MAPLE resource manager is configured",
+            }
+        try:
+            resource_range = {"min": amount, "preferred": amount, "max": amount}
+            if resource_type in {"compute", "memory", "bandwidth", "tokens"}:
+                request: Dict[str, Any] = {resource_type: resource_range}
+            else:
+                request = {"custom": {resource_type: resource_range}}
+            request["priority"] = priority
+            result = manager.allocate(request)
+            if result.is_err():
+                return {"status": "error", "error": result.unwrap_err()}
+            return {"status": "success", "allocation": result.unwrap().to_dict()}
+        except Exception as e:
+            return {
+                "status": "error",
+                "errorType": "RESOURCE_REQUEST_ERROR",
+                "message": str(e),
+            }
+
+    def _maple_secure_link_tool(self, target_agent: str) -> Dict[str, Any]:
+        """Establish a secure MAPLE link or return a structured failure."""
+        try:
+            result = self.maple_agent.establish_link(target_agent)
+            if result.is_err():
+                return {"status": "error", "error": result.unwrap_err()}
+            return {"status": "success", "link_id": result.unwrap()}
+        except Exception as e:
+            return {
+                "status": "error",
+                "errorType": "LINK_ESTABLISHMENT_ERROR",
+                "message": str(e),
+            }
+
+    @staticmethod
+    def _map_crew_priority(crew_task: Any) -> Priority:
+        """Map a CrewAI task priority to MAPLE's bounded priority enum."""
+        value = getattr(crew_task, "priority", "MEDIUM")
+        if isinstance(value, Priority):
+            return value
+        try:
+            return Priority(str(value).upper())
+        except ValueError:
+            return Priority.MEDIUM
+
     def translate_crew_task_to_maple(self, crew_task: CrewTask) -> Message:
         """
         Convert CrewAI task to MAPLE message with enhanced capabilities.
@@ -102,16 +205,20 @@ class CrewAIAdapter:
             payload={
                 "description": crew_task.description,
                 "expected_output": crew_task.expected_output,
-                "tools": [tool.name for tool in crew_task.tools] if crew_task.tools else [],
+                "tools": (
+                    [tool.name for tool in crew_task.tools] if crew_task.tools else []
+                ),
                 "agent_role": crew_task.agent.role if crew_task.agent else None,
                 # MAPLE enhancements
                 "maple_enhanced": True,
                 "performance_target": "high_speed",
-                "error_recovery": "enabled"
-            }
+                "error_recovery": "enabled",
+            },
         )
-    
-    def create_maple_enhanced_crew(self, agents: List[CrewAgent], tasks: List[CrewTask]) -> 'MAPLEEnhancedCrew':
+
+    def create_maple_enhanced_crew(
+        self, agents: List[CrewAgent], tasks: List[CrewTask]
+    ) -> "MAPLEEnhancedCrew":
         """
         Create a Crew enhanced with MAPLE protocol capabilities.
         """
@@ -123,63 +230,72 @@ class CrewAIAdapter:
             # MAPLE enhancements
             performance_mode="high_speed",
             error_handling="advanced",
-            resource_management="enabled"
+            resource_management="enabled",
         )
+
 
 class MAPLEEnhancedCrew(Crew):
     """
     CrewAI Crew enhanced with MAPLE protocol capabilities.
     """
-    
-    def __init__(self, agents, tasks, maple_agent, **kwargs):
+
+    def __init__(
+        self, agents: List[Any], tasks: List[Any], maple_agent: Any, **kwargs: Any
+    ) -> None:
         super().__init__(agents=agents, tasks=tasks, **kwargs)
         self.maple_agent = maple_agent
-        self.performance_metrics = {
+        self.performance_metrics: Dict[str, Any] = {
             "messages_processed": 0,
             "average_latency": 0,
-            "error_recovery_count": 0
+            "error_recovery_count": 0,
         }
-    
-    def kickoff(self, inputs: Dict[str, Any] = None) -> Result[str, Dict[str, Any]]:
+
+    def kickoff(
+        self, inputs: Optional[Dict[str, Any]] = None
+    ) -> Result[str, Dict[str, Any]]:
         """
         Enhanced kickoff with MAPLE performance and error handling.
         """
         try:
             # Pre-execution: Establish secure links between agents
             self._establish_maple_links()
-            
+
             # Execute with MAPLE monitoring
             start_time = time.time()
             result = super().kickoff(inputs)
             execution_time = time.time() - start_time
-            
+
             # Post-execution: Update performance metrics
-            self.performance_metrics.update({
-                "execution_time": execution_time,
-                "maple_enhanced": True,
-                "performance_improvement": "25-200x faster than standard CrewAI"
-            })
-            
+            self.performance_metrics.update(
+                {
+                    "execution_time": execution_time,
+                    "maple_enhanced": True,
+                    "performance_improvement": "25-200x faster than standard CrewAI",
+                }
+            )
+
             return Result.ok(result)
-        
+
         except Exception as e:
-            return Result.err({
-                "errorType": "CREW_EXECUTION_ERROR",
-                "message": str(e),
-                "maple_recovery": "Advanced error recovery available"
-            })
-    
-    def _establish_maple_links(self):
+            return Result.err(
+                {
+                    "errorType": "CREW_EXECUTION_ERROR",
+                    "message": str(e),
+                    "maple_recovery": "Advanced error recovery available",
+                }
+            )
+
+    def _establish_maple_links(self) -> None:
         """
         Establish secure MAPLE links between all crew agents.
         """
         for agent in self.agents:
-            if hasattr(agent, 'maple_enhanced') and agent.maple_enhanced:
+            if hasattr(agent, "maple_enhanced") and agent.maple_enhanced:
                 # Establish links with other agents for secure communication
                 for other_agent in self.agents:
-                    if other_agent != agent and hasattr(other_agent, 'maple_enhanced'):
+                    if other_agent != agent and hasattr(other_agent, "maple_enhanced"):
                         # Use MAPLE's Link Identification Mechanism
                         link_result = self.maple_agent.establish_link(other_agent.role)
                         if link_result.is_ok():
-                            agent.maple_links = getattr(agent, 'maple_links', {})
+                            agent.maple_links = getattr(agent, "maple_links", {})
                             agent.maple_links[other_agent.role] = link_result.unwrap()

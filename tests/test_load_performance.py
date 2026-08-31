@@ -22,17 +22,16 @@ Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
 Load testing capabilities for MAPLE protocol performance validation.
 """
 
-import time
-import threading
-from typing import Dict, Any, List
-import sys
-import os
+import time  # noqa: E402
+from typing import Dict, Any  # noqa: E402
+import sys  # noqa: E402
+import os  # noqa: E402
 
 # Add the project root to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
-    from maple import Message, Priority, Result, Agent, Config
+    from maple import Message, Priority, Agent, Config
     MAPLE_AVAILABLE = True
 except ImportError:
     MAPLE_AVAILABLE = False
@@ -60,7 +59,7 @@ class HighVolumeMessageTest:
         try:
             # Create messages as fast as possible
             for i in range(self.message_count):
-                message = Message(
+                Message(
                     message_type="LOAD_TEST",
                     receiver=f"agent_{i % 100}",
                     priority=Priority.MEDIUM,
@@ -131,7 +130,7 @@ class ConcurrentAgentTest:
                 try:
                     if hasattr(agent, 'stop'):
                         agent.stop()
-                except:
+                except Exception:
                     pass
             
             return {
@@ -227,7 +226,7 @@ if __name__ == "__main__":
     
     print("\n" + "=" * 50)
     print("MAPLE Load Test Suite Complete")
-    print(f"Creator: Mahesh Vaikri")
+    print("Creator: Mahesh Vaikri")
     print(f"Results: {results['passed']}/{results['total_scenarios']} scenarios passed")
     
     if results['success_rate'] >= 80:

@@ -4,8 +4,7 @@
 import unittest
 import time
 import threading
-from maple.discovery.registry import AgentRegistry, AgentInfo
-from maple.core.result import Result
+from maple.discovery.registry import AgentRegistry
 
 
 class TestAgentRegistrationDeregistration(unittest.TestCase):

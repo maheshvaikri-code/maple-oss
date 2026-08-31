@@ -17,7 +17,15 @@ pip install -e .
 
 # Verify installation
 python -c "from maple import Agent, Message, Config; print('MAPLE ready')"
+
+# Run the local, network-free readiness check
+maple doctor --json
 ```
+
+`maple doctor` checks the installed core, trusted execution, retrieval, event,
+evaluation, and interop surfaces locally. It does not call an LLM provider or
+cloud service; a successful doctor report is a preflight signal, not a release
+or security audit.
 
 ## Your First MAPLE Agent
 

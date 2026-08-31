@@ -1,0 +1,34 @@
+{
+  "at_commit": "f3a9c21",
+  "checkpoint_version": "1",
+  "control": {
+    "active_intents": [
+      "den-conformance-cli"
+    ],
+    "gates_passed": [
+      "P1",
+      "P2",
+      "P3"
+    ],
+    "phase": "fde:P4",
+    "ponytail_mode": "full",
+    "role": "fde"
+  },
+  "created_at": "2026-07-10T21:04:00Z",
+  "prev_sha256": "89fb8562393502318a108795f60c84614d38570d3ccbd642471f4e3b60b0b313",
+  "seq": 17,
+  "session_id": "s-2026-07-10-a",
+  "state_index": {
+    "decisions_sha256": "5bca48a6dbdb6a85b0130031ad2732116bb553625ab01ba6687a848d58c977d2",
+    "graph": {
+      "built_at_commit": "f3a9c21",
+      "sha256": "24aa3bfd2d0133f7482839f86acda1808b8e8b418a9a5cd224e6a45c4aaeef56"
+    },
+    "intents": {
+      "den-conformance-cli": "02244a918a61312df47790964fb99830acda6ea575fa7a9c0551eca1b2861a78"
+    },
+    "latest_distillate_sha256": "f364d0710d926bc9d50528a19e8e13f1197f1ff42e694f78c47d57096b351bff",
+    "unresolved_effects": 1
+  },
+  "worktree": "clean"
+}

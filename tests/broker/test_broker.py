@@ -2,11 +2,9 @@
 
 import pytest
 import time
-import threading
-from maple.broker.broker import MessageBroker, SecurityError
+from maple.broker.broker import MessageBroker
 from maple.agent.config import Config
 from maple.core.message import Message
-from maple.core.types import Priority
 
 
 def _reset_broker_singleton():
@@ -124,21 +122,29 @@ class TestSubscribe:
     """Test agent subscription."""
 
     def test_subscribe_creates_queue(self, broker):
-        handler = lambda msg: None
+        def handler(msg):
+            pass
+
         broker.subscribe("agent_x", handler)
         assert "agent_x" in MessageBroker._agent_queues
         assert "agent_x" in MessageBroker._agent_handlers
 
     def test_unsubscribe(self, broker):
-        handler = lambda msg: None
+        def handler(msg):
+            pass
+
         broker.subscribe("agent_x", handler)
         broker.unsubscribe("agent_x")
         assert "agent_x" not in MessageBroker._agent_handlers
         assert "agent_x" not in MessageBroker._agent_queues
 
     def test_subscribe_multiple_handlers(self, broker):
-        h1 = lambda msg: None
-        h2 = lambda msg: None
+        def h1(msg):
+            pass
+
+        def h2(msg):
+            pass
+
         broker.subscribe("agent_x", h1)
         broker.subscribe("agent_x", h2)
         assert len(MessageBroker._agent_handlers["agent_x"]) == 2
@@ -148,19 +154,25 @@ class TestTemporaryHandlers:
     """Test temporary handler subscription."""
 
     def test_subscribe_temporary(self, broker):
-        handler = lambda msg: None
+        def handler(msg):
+            pass
+
         broker.subscribe_temporary("agent_x", handler)
         assert "agent_x" in MessageBroker._temp_handlers
         assert handler in MessageBroker._temp_handlers["agent_x"]
 
     def test_unsubscribe_temporary(self, broker):
-        handler = lambda msg: None
+        def handler(msg):
+            pass
+
         broker.subscribe_temporary("agent_x", handler)
         broker.unsubscribe_temporary("agent_x", handler)
         assert handler not in MessageBroker._temp_handlers.get("agent_x", [])
 
     def test_unsubscribe_nonexistent_temporary(self, broker):
-        handler = lambda msg: None
+        def handler(msg):
+            pass
+
         broker.unsubscribe_temporary("nobody", handler)  # Should not raise
 
 
@@ -178,7 +190,10 @@ class TestPublish:
 
     def test_publish_to_subscribers(self, broker):
         # Subscribe an agent to a topic
-        broker.subscribe_topic("alerts", lambda t, m: None, agent_id="agent_x")
+        def handler(topic, message):
+            pass
+
+        broker.subscribe_topic("alerts", handler, agent_id="agent_x")
 
         msg = Message(
             message_type="ALERT",
@@ -208,18 +223,24 @@ class TestTopicSubscription:
     """Test topic subscription management."""
 
     def test_subscribe_topic(self, broker):
-        handler = lambda t, m: None
+        def handler(topic, message):
+            pass
+
         broker.subscribe_topic("news", handler, agent_id="agent_1")
         assert "agent_1" in MessageBroker._topic_subscribers.get("news", [])
 
     def test_subscribe_topic_idempotent(self, broker):
-        handler = lambda t, m: None
+        def handler(topic, message):
+            pass
+
         broker.subscribe_topic("news", handler, agent_id="agent_1")
         broker.subscribe_topic("news", handler, agent_id="agent_1")
         assert MessageBroker._topic_subscribers["news"].count("agent_1") == 1
 
     def test_unsubscribe_topic(self, broker):
-        handler = lambda t, m: None
+        def handler(topic, message):
+            pass
+
         broker.subscribe_topic("news", handler, agent_id="agent_1")
         broker.unsubscribe_topic("news", "agent_1")
         assert "agent_1" not in MessageBroker._topic_subscribers.get("news", [])
@@ -233,7 +254,10 @@ class TestMessageDelivery:
 
     def test_delivery_to_handler(self, broker):
         received = []
-        handler = lambda msg: received.append(msg)
+
+        def handler(msg):
+            received.append(msg)
+
         broker.subscribe("agent_x", handler)
         broker.connect()
 
@@ -252,7 +276,10 @@ class TestMessageDelivery:
 
     def test_delivery_to_temp_handler(self, broker):
         received = []
-        handler = lambda msg: received.append(msg)
+
+        def handler(msg):
+            received.append(msg)
+
         broker.subscribe_temporary("agent_x", handler)
         broker.connect()
 
@@ -269,7 +296,10 @@ class TestMessageDelivery:
 
     def test_delivery_to_topic_handler(self, broker):
         received = []
-        handler = lambda t, m: received.append((t, m))
+
+        def handler(topic, message):
+            received.append((topic, message))
+
         broker.subscribe_topic("events", handler, agent_id="agent_x")
         broker.connect()
 

@@ -1,9 +1,10 @@
 """Tests for maple/security/__init__.py — fallback classes and exports."""
 
 import time
-import pytest
+
 from maple.security import (
     AuthenticationManager,
+    AuthenticationConfig,
     AuthMethod,
     AuthCredentials,
     AuthToken,
@@ -15,6 +16,9 @@ from maple.security import (
     AUTHZ_AVAILABLE,
     LINK_AVAILABLE,
 )
+
+
+TEST_JWT_CONFIG = AuthenticationConfig(jwt_secret="test-secret-" + "a" * 32)
 
 
 class TestAvailabilityFlags:
@@ -105,25 +109,25 @@ class TestAuthCredentials:
 
 class TestAuthenticationManager:
     def test_generate_jwt(self):
-        mgr = AuthenticationManager()
+        mgr = AuthenticationManager(TEST_JWT_CONFIG)
         result = mgr.generate_jwt("agent-1", permissions=["read"])
         assert result.is_ok()
         token = result.unwrap()
         assert isinstance(token, str)
 
     def test_verify_valid_token(self):
-        mgr = AuthenticationManager()
+        mgr = AuthenticationManager(TEST_JWT_CONFIG)
         token = mgr.generate_jwt("agent-1").unwrap()
         result = mgr.verify_token(token)
         assert result.is_ok()
 
     def test_verify_invalid_token(self):
-        mgr = AuthenticationManager()
+        mgr = AuthenticationManager(TEST_JWT_CONFIG)
         result = mgr.verify_token("fake-token")
         assert result.is_err()
 
     def test_verify_expired_token(self):
-        mgr = AuthenticationManager()
+        mgr = AuthenticationManager(TEST_JWT_CONFIG)
         token = mgr.generate_jwt("agent-1", expires_in=-1).unwrap()
         # Token should be expired immediately with negative expires_in
         result = mgr.verify_token(token)
@@ -131,13 +135,13 @@ class TestAuthenticationManager:
         assert result is not None
 
     def test_revoke_token(self):
-        mgr = AuthenticationManager()
+        mgr = AuthenticationManager(TEST_JWT_CONFIG)
         token = mgr.generate_jwt("agent-1").unwrap()
         result = mgr.revoke_token(token)
         assert result.is_ok()
 
     def test_revoke_nonexistent(self):
-        mgr = AuthenticationManager()
+        mgr = AuthenticationManager(TEST_JWT_CONFIG)
         result = mgr.revoke_token("nonexistent")
         # Real implementation may succeed (idempotent revoke) or fail
         assert result is not None

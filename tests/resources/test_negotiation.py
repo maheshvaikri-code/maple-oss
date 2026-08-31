@@ -44,7 +44,9 @@ class TestHandleRequest:
                 ).to_dict()
             }
         )
-        evaluator = lambda req: Result.ok({"compute": 8, "memory": 16384})
+        def evaluator(req):
+            return Result.ok({"compute": 8, "memory": 16384})
+
         response = negotiator.handle_request(msg, evaluator)
         assert response.message_type == "RESOURCE_OFFER"
         assert response.receiver == "agent_b"
@@ -61,10 +63,12 @@ class TestHandleRequest:
                 ).to_dict()
             }
         )
-        evaluator = lambda req: Result.err({
-            'message': 'Insufficient resources',
-            'details': {'shortfall': 'compute'}
-        })
+        def evaluator(req):
+            return Result.err({
+                'message': 'Insufficient resources',
+                'details': {'shortfall': 'compute'}
+            })
+
         response = negotiator.handle_request(msg, evaluator)
         assert response.message_type == "RESOURCE_REJECTION"
         assert response.receiver == "agent_b"
@@ -78,7 +82,9 @@ class TestHandleRequest:
                 'resources': ResourceRequest(compute=ResourceRange(min=4)).to_dict()
             }
         )
-        evaluator = lambda req: Result.ok({"compute": 4})
+        def evaluator(req):
+            return Result.ok({"compute": 4})
+
         negotiator.handle_request(msg, evaluator)
         assert 'req_3' in negotiator.pending_offers
 

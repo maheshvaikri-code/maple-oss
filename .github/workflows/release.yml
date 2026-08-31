@@ -4,22 +4,6 @@ on:
   push:
     tags:
       - "v*"
-  workflow_dispatch:
-    inputs:
-      version_type:
-        description: "Version bump type"
-        required: true
-        default: "patch"
-        type: choice
-        options:
-          - major
-          - minor
-          - patch
-      pre_release:
-        description: "Create pre-release"
-        required: false
-        default: false
-        type: boolean
 
 jobs:
   # Job 1: When triggered by a tag push, create a GitHub Release from the tag
@@ -30,20 +14,57 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12"
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev,security]"
+          pip install -e ".[dev,security,llm,adapters]"
           pip install build twine
+          python -m pip check
+          python -m compileall -q maple
+          python -m maple.cli doctor --json
+
+      - name: Verify tag matches package and changelog
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Release tag has an invalid format: $RELEASE_TAG" >&2
+            exit 1
+          fi
+          tag_version="${RELEASE_TAG#v}"
+          package_version="$(python -c 'import maple; print(maple.__version__)')"
+          if [[ "$tag_version" != "$package_version" ]]; then
+            echo "Release tag $tag_version does not match package version $package_version" >&2
+            exit 1
+          fi
+          python - "$tag_version" <<'PY'
+          from pathlib import Path
+          import sys
+
+          version = sys.argv[1]
+          for line in Path("CHANGELOG.md").read_text(encoding="utf-8").splitlines():
+              if not line.startswith("## "):
+                  continue
+              heading = line[3:]
+              if heading.startswith("Version "):
+                  heading = heading[8:]
+              if heading == version or heading.startswith(version + " "):
+                  break
+          else:
+              raise SystemExit(f"CHANGELOG.md has no heading for version {version}")
+          PY
+          echo "Validated release version $tag_version"
 
       - name: Run tests
         run: python -m pytest tests/ -v --tb=short -q
@@ -77,99 +98,11 @@ jobs:
 
       - name: Create GitHub Release
         run: |
-          gh release create "${{ github.ref_name }}" \
+          gh release create "$RELEASE_TAG" \
             --title "MAPLE v${{ env.VERSION }}" \
             --notes-file release_notes.md \
             --latest \
             dist/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  # Job 2: When triggered manually, bump version, tag, push, and release
-  release-manual:
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          fetch-depth: 0
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev,security]"
-          pip install bump2version build twine
-
-      - name: Configure Git
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-
-      - name: Bump version
-        run: |
-          bump2version ${{ github.event.inputs.version_type }}
-          echo "NEW_VERSION=$(cat VERSION)" >> $GITHUB_ENV
-
-      - name: Run tests
-        run: python -m pytest tests/ -v --tb=short -q
-
-      - name: Build package
-        run: |
-          python -m build
-          twine check dist/*
-
-      - name: Commit version bump
-        run: |
-          git add -A
-          git commit -m "Release v$NEW_VERSION
-
-          Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
-          "
-
-      - name: Create Git tag
-        run: |
-          git tag -a "v$NEW_VERSION" -m "MAPLE v$NEW_VERSION - Multi Agent Protocol Language Engine"
-
-      - name: Push changes and tag
-        run: |
-          git push origin main
-          git push origin "v$NEW_VERSION"
-
-      - name: Generate release notes
-        run: |
-          cat > release_notes.md << EOF
-          # MAPLE v${{ env.NEW_VERSION }}
-
-          **Multi Agent Protocol Language Engine**
-          **Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)**
-
-          ## Installation
-
-          \`\`\`bash
-          pip install maple-oss==${{ env.NEW_VERSION }}
-          \`\`\`
-
-          ## What's Changed
-
-          See [CHANGELOG.md](https://github.com/maheshvaikri-code/maple-oss/blob/main/CHANGELOG.md) for detailed changes.
-          EOF
-
-      - name: Create GitHub Release
-        run: |
-          gh release create "v$NEW_VERSION" \
-            --title "MAPLE v$NEW_VERSION" \
-            --notes-file release_notes.md \
-            --latest \
-            ${{ github.event.inputs.pre_release == 'true' && '--prerelease' || '' }} \
-            dist/*
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}

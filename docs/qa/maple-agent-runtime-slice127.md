@@ -1,0 +1,45 @@
+# MAPLE Agent Runtime Slice 127 QA Report
+
+**Date:** 2026-08-27
+**Scope:** authenticated bounded remote approval control transport
+**Implementation commit:** `3b0121c`
+
+## Acceptance evidence
+
+| Criterion | Evidence | Pass |
+|---|---|---|
+| Remote approval control is authenticated | Configuring `RunServer(approval_store=...)` requires a bearer token; unauthorized `RunClient` calls return `UNAUTHORIZED`. | Yes |
+| Transport operations are bounded | `RunServer` and `RunClient` expose bounded pending-list, inspection, and decision routes with existing path/body/response limits and an approval list cap of `100`. | Yes |
+| Store authority and decision semantics are preserved | The server delegates list/get/decide to the configured `ApprovalStore`; optional edited arguments are validated before mutation, and store conflicts remain typed. | Yes |
+| Remote control cannot consume or execute tools | Slice 127 adds no remote consume/execute route. The local agent remains responsible for consumption, handler invocation, terminal-outcome replay, and side-effect uncertainty. | Yes |
+| Existing behavior remains green | Focused server suite: `26 passed in 11.38s`; full autonomy suite: `362 passed in 14.29s`; exact tracked manifest: `1324 passed, 1 skipped in 253.70s` across `108` tracked Python test files. | Yes |
+| Public contract is documented | ADR-073, API reference, README, parity ledger, changelog, and this QA/review evidence describe the authenticated control-plane boundary and its non-claims. | Yes |
+
+## Static and security evidence
+
+- isort: changed imports pass.
+- Black: `2 files would be left unchanged`.
+- Ruff: `All checks passed!`.
+- Changed-boundary mypy: `Success: no issues found in 1 source file` with
+  `--follow-imports=skip`.
+- Compile gate: `python -m compileall -q maple` passed.
+- Diff check: passed for the implementation/public-doc changes.
+- Narrow changed-surface secret scan: no matches.
+- No runtime dependency was added. The declared-project dependency audit and
+  clean package evidence are green: `No known vulnerabilities found`.
+
+## Package evidence
+
+- `git archive HEAD` clean checkout plus `python -m build --wheel --sdist`:
+  `Successfully built maple_oss-1.1.3-py3-none-any.whl and
+  maple_oss-1.1.3.tar.gz`; exit `0`.
+- Twine checks: wheel and sdist both `PASSED`; exit `0`.
+- Artifact shape: wheel `104` entries and clean sdist `567` entries; the clean
+  archive excludes workspace-only Doctrine files.
+- Isolated wheel smoke: `clean archive no-dependency approval transport export
+  smoke passed`; exit `0`.
+
+## QA verdict
+
+**Pass for Slice 127 behavior and repository gates.** Publication, deployment,
+cloud action, and website changes were not performed.

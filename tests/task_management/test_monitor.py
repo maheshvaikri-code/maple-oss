@@ -1,7 +1,6 @@
 """Tests for maple.task_management.monitor - TaskMonitor."""
 
 import pytest
-import time
 from maple.task_management.task_queue import TaskQueue, TaskPriority
 from maple.task_management.monitor import TaskMonitor
 

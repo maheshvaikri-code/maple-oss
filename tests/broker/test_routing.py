@@ -3,7 +3,6 @@
 import pytest
 from maple.broker.routing import MessageRouter, RoutingStrategy
 from maple.core.message import Message
-from maple.core.types import Priority
 
 
 @pytest.fixture

@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://doctrine.local/schemas/checkpoint.schema.json",
+  "title": "Doctrine State Checkpoint",
+  "description": "Control-plane snapshot written only by the checkpoint protocol (model proposes, validator disposes). Hash-linked via prev_sha256 over the previous checkpoint's canonical bytes (UTF-8, LF, sorted keys, single trailing newline). state_index makes each checkpoint a verifiable root over the whole state plane.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["checkpoint_version", "seq", "prev_sha256", "created_at", "at_commit", "session_id", "worktree", "control", "state_index"],
+  "properties": {
+    "checkpoint_version": { "const": "1" },
+    "seq": { "type": "integer", "minimum": 0, "description": "Monotonic; 0 is genesis." },
+    "prev_sha256": {
+      "anyOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }],
+      "description": "null only when seq is 0."
+    },
+    "created_at": { "type": "string", "format": "date-time" },
+    "at_commit": { "$ref": "#/$defs/gitsha" },
+    "session_id": { "type": "string", "minLength": 1 },
+    "worktree": { "enum": ["clean", "dirty"], "description": "Uncommitted changes present at checkpoint time." },
+    "control": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "phase", "ponytail_mode", "active_intents"],
+      "properties": {
+        "role": { "type": "string", "minLength": 1 },
+        "phase": { "type": "string", "minLength": 1, "description": "e.g. fde:P4, or repo-defined." },
+        "gates_passed": { "type": "array", "items": { "type": "string" } },
+        "ponytail_mode": { "enum": ["off", "lite", "full", "ultra"] },
+        "active_intents": { "type": "array", "items": { "$ref": "#/$defs/intent_id" }, "maxItems": 8 }
+      }
+    },
+    "state_index": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decisions_sha256", "latest_distillate_sha256", "graph", "unresolved_effects"],
+      "properties": {
+        "intents": {
+          "type": "object",
+          "propertyNames": { "$ref": "#/$defs/intent_id" },
+          "additionalProperties": { "$ref": "#/$defs/sha256" },
+          "description": "intent-id → sha256 of its canonical bytes."
+        },
+        "decisions_sha256": { "$ref": "#/$defs/sha256" },
+        "latest_distillate_sha256": { "anyOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }] },
+        "graph": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["built_at_commit"],
+          "properties": {
+            "sha256": { "$ref": "#/$defs/sha256" },
+            "built_at_commit": { "anyOf": [{ "$ref": "#/$defs/gitsha" }, { "type": "null" }], "description": "null when no graph exists yet." }
+          }
+        },
+        "unresolved_effects": { "type": "integer", "minimum": 0 }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "gitsha": { "type": "string", "pattern": "^[a-f0-9]{7,40}$" },
+    "intent_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$", "description": "Filesystem-safe id: also a path-traversal defense (ids become intent/<id>.intent.json)." }
+  }
+}

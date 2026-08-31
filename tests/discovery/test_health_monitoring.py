@@ -5,7 +5,7 @@ import unittest
 import time
 import threading
 from maple.discovery.registry import AgentRegistry
-from maple.discovery.health_monitor import HealthMonitor, HealthMetrics, HealthStatus
+from maple.discovery.health_monitor import HealthMonitor
 
 
 class TestHealthMonitoringHeartbeat(unittest.TestCase):

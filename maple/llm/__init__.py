@@ -1,29 +1,70 @@
 """
-Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
+Copyright (C) 2025 Mahesh Vaijainthymala Krishnamoorthy
+(Mahesh Vaikri)
 
 This file is part of MAPLE - Multi Agent Protocol Language Engine.
 
-MAPLE - Multi Agent Protocol Language Engine is free software: you can redistribute it and/or
-modify it under the terms of the GNU Affero General Public License as published by the Free Software
-Foundation, either version 3 of the License, or (at your option) any later version.
-MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
-PARTICULAR PURPOSE. See the GNU Affero General Public License for more details. You should have
-received a copy of the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
+MAPLE - Multi Agent Protocol Language Engine is free software: you can
+redistribute it and/or modify it under the terms of the GNU Affero General
+Public License as published by the Free Software Foundation, either version 3
+of the License, or (at your option) any later version.
+MAPLE - Multi Agent Protocol Language Engine is distributed in the hope that
+it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero
+General Public License for more details. You should have received a copy of
+the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
 Language Engine. If not, see <https://www.gnu.org/licenses/>.
 """
 
-"""LLM Provider Layer for MAPLE autonomous agents."""
+# LLM Provider Layer for MAPLE autonomous agents.
 
-from .types import (
-    ChatRole, ChatMessage, ToolDefinition, ToolCall, ToolResult,
-    TokenUsage, LLMResponse, LLMChunk, LLMConfig,
+from .capabilities import (
+    FallbackLLMProvider,
+    ProviderCapabilities,
+    ProviderDescriptor,
+    ProviderRequirements,
+    ProviderRouter,
 )
-from .provider import LLMProvider
+from .provider import LLMProvider, classify_provider_exception
 from .registry import LLMProviderRegistry
+from .types import (
+    ChatContent,
+    ChatMessage,
+    ChatRole,
+    ContentPart,
+    ImageContent,
+    LLMChunk,
+    LLMConfig,
+    LLMResponse,
+    ModelRetryPolicy,
+    TokenUsage,
+    ToolCall,
+    ToolDefinition,
+    ToolResult,
+    validate_chat_content,
+)
 
 __all__ = [
-    'ChatRole', 'ChatMessage', 'ToolDefinition', 'ToolCall', 'ToolResult',
-    'TokenUsage', 'LLMResponse', 'LLMChunk', 'LLMConfig',
-    'LLMProvider', 'LLMProviderRegistry',
+    "ChatRole",
+    "ChatMessage",
+    "ChatContent",
+    "ContentPart",
+    "ImageContent",
+    "ToolDefinition",
+    "ToolCall",
+    "ToolResult",
+    "validate_chat_content",
+    "TokenUsage",
+    "LLMResponse",
+    "LLMChunk",
+    "LLMConfig",
+    "ModelRetryPolicy",
+    "LLMProvider",
+    "classify_provider_exception",
+    "LLMProviderRegistry",
+    "ProviderCapabilities",
+    "ProviderDescriptor",
+    "ProviderRequirements",
+    "ProviderRouter",
+    "FallbackLLMProvider",
 ]

@@ -1,12 +1,23 @@
 """Tests for LLM provider base class and registry."""
 
+from types import SimpleNamespace
+
 import pytest
-from maple.llm.provider import LLMProvider
+
+from maple.core.result import Result
+from maple.llm.anthropic_provider import AnthropicProvider
+from maple.llm.openai_provider import OpenAIProvider
+from maple.llm.provider import LLMProvider, classify_provider_exception
 from maple.llm.registry import LLMProviderRegistry
 from maple.llm.types import (
-    ChatMessage, ChatRole, LLMConfig, LLMResponse, TokenUsage, ToolDefinition,
+    ChatMessage,
+    ChatRole,
+    ImageContent,
+    LLMConfig,
+    LLMResponse,
+    ModelRetryPolicy,
+    TokenUsage,
 )
-from maple.core.result import Result
 
 
 class MockProvider(LLMProvider):
@@ -21,7 +32,9 @@ class MockProvider(LLMProvider):
             usage=TokenUsage(prompt_tokens=10, completion_tokens=5, total_tokens=15),
         )
 
-    def complete(self, messages, tools=None, temperature=None, max_tokens=None, stop=None):
+    def complete(
+        self, messages, tools=None, temperature=None, max_tokens=None, stop=None
+    ):
         self._track_usage(self._response)
         return Result.ok(self._response)
 
@@ -61,6 +74,244 @@ class TestLLMProvider:
         provider = MockProvider(config)
         count = provider.count_tokens("Hello world")
         assert count > 0
+
+    def test_provider_exception_classification_is_conservative_and_retryable(self):
+        class RateLimitError(Exception):
+            status_code = 429
+
+        class ServerError(Exception):
+            status_code = 503
+
+        class ProviderFailure(Exception):
+            pass
+
+        assert (
+            classify_provider_exception(
+                RateLimitError("slow down"), fallback="LLM_COMPLETION_ERROR"
+            )
+            == "LLM_RATE_LIMITED"
+        )
+        assert (
+            classify_provider_exception(
+                ServerError("unavailable"), fallback="LLM_COMPLETION_ERROR"
+            )
+            == "LLM_TRANSIENT_ERROR"
+        )
+        assert (
+            classify_provider_exception(
+                ProviderFailure("deadline"), fallback="LLM_COMPLETION_ERROR"
+            )
+            == "LLM_COMPLETION_ERROR"
+        )
+        assert (
+            classify_provider_exception(
+                TimeoutError("deadline"), fallback="LLM_COMPLETION_ERROR"
+            )
+            == "LLM_TIMEOUT"
+        )
+
+    def test_model_retry_policy_caps_backoff_and_rejects_unbounded_values(self):
+        policy = ModelRetryPolicy(
+            max_retries=3,
+            base_delay_seconds=2,
+            max_delay_seconds=3,
+        )
+        assert policy.delay_for_retry(1) == 2
+        assert policy.delay_for_retry(2) == 3
+        assert policy.delay_for_retry(3) == 3
+        assert policy.is_retryable({"errorType": "LLM_TIMEOUT"})
+        assert not policy.is_retryable({"errorType": "LLM_AUTHENTICATION_ERROR"})
+        with pytest.raises(ValueError, match="max_retries"):
+            ModelRetryPolicy(max_retries=4)
+        with pytest.raises(ValueError, match="delay"):
+            ModelRetryPolicy(base_delay_seconds=4, max_delay_seconds=3)
+
+    def test_openai_and_anthropic_adapters_preserve_classified_failures(self):
+        class RateLimitError(Exception):
+            status_code = 429
+
+        class FailingCompletions:
+            def create(self, **kwargs):
+                raise RateLimitError("retry later")
+
+        class FailingMessages:
+            def create(self, **kwargs):
+                raise RateLimitError("retry later")
+
+        openai_provider = object.__new__(OpenAIProvider)
+        LLMProvider.__init__(
+            openai_provider, LLMConfig(provider="openai", model="test")
+        )
+        openai_provider.client = SimpleNamespace(
+            chat=SimpleNamespace(completions=FailingCompletions())
+        )
+        anthropic_provider = object.__new__(AnthropicProvider)
+        LLMProvider.__init__(
+            anthropic_provider, LLMConfig(provider="anthropic", model="test")
+        )
+        anthropic_provider.client = SimpleNamespace(messages=FailingMessages())
+        messages = [ChatMessage(role=ChatRole.USER, content="hello")]
+
+        assert openai_provider.complete(messages).unwrap_err()["errorType"] == (
+            "LLM_RATE_LIMITED"
+        )
+        assert anthropic_provider.complete(messages).unwrap_err()["errorType"] == (
+            "LLM_RATE_LIMITED"
+        )
+
+    def test_openai_formats_text_and_image_content(self):
+        provider = object.__new__(OpenAIProvider)
+        message = ChatMessage(
+            role=ChatRole.USER,
+            content=[
+                "inspect this",
+                ImageContent(source="https://example.com/image.png", detail="high"),
+            ],
+        )
+
+        formatted = provider._format_message(message)
+
+        assert formatted["content"] == [
+            {"type": "text", "text": "inspect this"},
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": "https://example.com/image.png",
+                    "detail": "high",
+                },
+            },
+        ]
+
+    def test_anthropic_formats_data_uri_and_rejects_remote_image(self):
+        provider = object.__new__(AnthropicProvider)
+        data_message = ChatMessage(
+            role=ChatRole.USER,
+            content=[
+                "inspect this",
+                ImageContent(source="data:image/png;base64,aW1hZ2U="),
+            ],
+        )
+
+        formatted = provider._format_messages([data_message])
+
+        assert formatted.is_ok()
+        assert formatted.unwrap()[1][0]["content"][1] == {
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": "image/png",
+                "data": "aW1hZ2U=",
+            },
+        }
+
+        remote = provider._format_messages(
+            [
+                ChatMessage(
+                    role=ChatRole.USER,
+                    content=[ImageContent(source="https://example.com/image.png")],
+                )
+            ]
+        )
+
+        assert remote.is_err()
+        assert remote.unwrap_err()["errorType"] == "LLM_UNSUPPORTED_CONTENT"
+
+    async def test_openai_native_async_completion_uses_async_client(self):
+        seen = {}
+
+        class AsyncCompletions:
+            async def create(self, **kwargs):
+                seen.update(kwargs)
+                return SimpleNamespace(
+                    choices=[
+                        SimpleNamespace(
+                            message=SimpleNamespace(
+                                content="async result", tool_calls=None
+                            ),
+                            finish_reason="stop",
+                        )
+                    ],
+                    usage=None,
+                    model="gpt-test",
+                    id="request-1",
+                )
+
+        provider = object.__new__(OpenAIProvider)
+        LLMProvider.__init__(provider, LLMConfig(provider="openai", model="gpt-test"))
+        provider.async_client = SimpleNamespace(
+            chat=SimpleNamespace(completions=AsyncCompletions())
+        )
+
+        result = await provider.complete_async(
+            [ChatMessage(role=ChatRole.USER, content="hello")],
+            stop=["END"],
+        )
+
+        assert result.is_ok()
+        assert result.unwrap().content == "async result"
+        assert seen["messages"] == [{"role": "user", "content": "hello"}]
+        assert seen["stop"] == ["END"]
+
+    async def test_openai_async_completion_falls_back_without_async_client(self):
+        class Completions:
+            def create(self, **kwargs):
+                return SimpleNamespace(
+                    choices=[
+                        SimpleNamespace(
+                            message=SimpleNamespace(
+                                content="sync fallback", tool_calls=None
+                            ),
+                            finish_reason="stop",
+                        )
+                    ],
+                    usage=None,
+                    model="gpt-test",
+                    id="request-fallback",
+                )
+
+        provider = object.__new__(OpenAIProvider)
+        LLMProvider.__init__(provider, LLMConfig(provider="openai", model="gpt-test"))
+        provider.client = SimpleNamespace(
+            chat=SimpleNamespace(completions=Completions())
+        )
+        provider.async_client = None
+
+        result = await provider.complete_async(
+            [ChatMessage(role=ChatRole.USER, content="hello")]
+        )
+
+        assert result.is_ok()
+        assert result.unwrap().content == "sync fallback"
+
+    async def test_anthropic_native_async_completion_uses_async_client(self):
+        seen = {}
+
+        class AsyncMessages:
+            async def create(self, **kwargs):
+                seen.update(kwargs)
+                return SimpleNamespace(
+                    content=[SimpleNamespace(type="text", text="async result")],
+                    usage=None,
+                    model="claude-test",
+                    stop_reason="end_turn",
+                    id="request-2",
+                )
+
+        provider = object.__new__(AnthropicProvider)
+        LLMProvider.__init__(
+            provider, LLMConfig(provider="anthropic", model="claude-test")
+        )
+        provider.async_client = SimpleNamespace(messages=AsyncMessages())
+
+        result = await provider.complete_async(
+            [ChatMessage(role=ChatRole.USER, content="hello")],
+            stop=["END"],
+        )
+
+        assert result.is_ok()
+        assert result.unwrap().content == "async result"
+        assert seen["messages"] == [{"role": "user", "content": "hello"}]
+        assert seen["stop_sequences"] == ["END"]
 
 
 class TestLLMProviderRegistry:

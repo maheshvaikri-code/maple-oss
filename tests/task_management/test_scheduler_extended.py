@@ -110,10 +110,8 @@ class TestCapabilityMatching:
         assert result.is_ok()
 
     def test_unknown_matching_strategy(self, task_queue):
-        sched = _make_scheduler(task_queue, policy=SchedulingPolicy(capability_matching="magic"))
-        tid = _submit(task_queue, reqs=["compute"])
-        result = sched.schedule_task(tid)
-        assert result.is_err()
+        with pytest.raises(ValueError):
+            SchedulingPolicy(capability_matching="magic")
 
     def test_no_requirements_uses_load_balancing(self, task_queue):
         sched = _make_scheduler(task_queue, policy=SchedulingPolicy(capability_matching="first_match"))
@@ -159,10 +157,8 @@ class TestLoadBalancing:
         assert result.is_ok()
 
     def test_unknown_lb_strategy(self, task_queue):
-        sched = _make_scheduler(task_queue, policy=SchedulingPolicy(load_balancing="random"))
-        tid = _submit(task_queue)
-        result = sched.schedule_task(tid)
-        assert result.is_err()
+        with pytest.raises(ValueError):
+            SchedulingPolicy(load_balancing="random")
 
     def test_no_agents_available(self, task_queue):
         sched = _make_scheduler(task_queue, agents=[])
@@ -171,13 +167,8 @@ class TestLoadBalancing:
         assert result.is_err()
 
     def test_all_agents_at_capacity(self, task_queue):
-        sched = _make_scheduler(
-            task_queue,
-            policy=SchedulingPolicy(max_concurrent_per_agent=0),
-        )
-        tid = _submit(task_queue, reqs=["compute"])
-        result = sched.schedule_task(tid)
-        assert result.is_err()
+        with pytest.raises(ValueError):
+            SchedulingPolicy(max_concurrent_per_agent=0)
 
 
 # ---------------------------------------------------------------------------
@@ -191,13 +182,72 @@ class TestTaskCompletion:
         sched.schedule_task(tid)
         agent = list(sched.agent_loads.keys())[0]
         assert sched.agent_loads[agent] >= 1
-        sched.task_completed(tid, agent)
+        completed = sched.task_completed(tid, agent, result={"ok": True})
+        assert completed.is_ok()
         assert sched.agent_loads[agent] == 0
+        assert task_queue.get_task(tid).unwrap().status == TaskStatus.COMPLETED
+        assert task_queue.get_task(tid).unwrap().result == {"ok": True}
 
-    def test_task_completed_unknown_agent(self, task_queue):
+    def test_task_completed_unknown_task_fails_closed(self, task_queue):
         sched = _make_scheduler(task_queue)
         result = sched.task_completed("t1", "unknown")
-        assert result.is_ok()
+        assert result.is_err()
+        assert "not found" in result.unwrap_err()
+
+    def test_task_completed_wrong_owner_fails_without_releasing_load(
+        self, task_queue
+    ):
+        sched = _make_scheduler(task_queue)
+        tid = _submit(task_queue, reqs=["compute"])
+        assert sched.schedule_task(tid).is_ok()
+        owner = list(sched.agent_loads.keys())[0]
+
+        result = sched.task_completed(tid, "other-agent")
+
+        assert result.is_err()
+        assert "not assigned" in result.unwrap_err()
+        assert sched.get_agent_load(owner) == 1
+        assert task_queue.get_task(tid).unwrap().status == TaskStatus.ASSIGNED
+
+    def test_task_completed_rejects_repeated_terminal_transition(self, task_queue):
+        sched = _make_scheduler(task_queue)
+        tid = _submit(task_queue, reqs=["compute"])
+        assert sched.schedule_task(tid).is_ok()
+        owner = list(sched.agent_loads.keys())[0]
+
+        assert sched.task_completed(tid, owner).is_ok()
+        repeated = sched.task_completed(tid, owner)
+
+        assert repeated.is_err()
+        assert "completed" in repeated.unwrap_err()
+
+    def test_task_failed_releases_load_and_records_error(self, task_queue):
+        sched = _make_scheduler(task_queue)
+        tid = _submit(task_queue, reqs=["compute"])
+        assert sched.schedule_task(tid).is_ok()
+        owner = list(sched.agent_loads.keys())[0]
+
+        failed = sched.task_failed(tid, owner, "worker crashed")
+
+        assert failed.is_ok()
+        assert sched.get_agent_load(owner) == 0
+        task = task_queue.get_task(tid).unwrap()
+        assert task.status == TaskStatus.FAILED
+        assert task.error == "worker crashed"
+
+    def test_task_failed_wrong_owner_preserves_assignment(self, task_queue):
+        sched = _make_scheduler(task_queue)
+        tid = _submit(task_queue, reqs=["compute"])
+        assert sched.schedule_task(tid).is_ok()
+        owner = list(sched.agent_loads.keys())[0]
+
+        failed = sched.task_failed(tid, "other-agent", "not my task")
+
+        assert failed.is_err()
+        assert sched.get_agent_load(owner) == 1
+        task = task_queue.get_task(tid).unwrap()
+        assert task.status == TaskStatus.ASSIGNED
+        assert task.error is None
 
 
 # ---------------------------------------------------------------------------
@@ -216,6 +266,30 @@ class TestRebalance:
         result = sched.rebalance_loads()
         assert result.is_ok()
         assert result.unwrap() == 0
+
+    def test_rebalance_transfers_assigned_task_to_underloaded_agent(self, task_queue):
+        agents = [FakeAgent("w1"), FakeAgent("w2")]
+        sched = _make_scheduler(
+            task_queue,
+            agents=agents,
+            match_result=Result.ok([FakeMatch("w1", 0.9), FakeMatch("w2", 0.8)]),
+        )
+        first_id = _submit(task_queue, reqs=["compute"])
+        second_id = _submit(task_queue, reqs=["compute"])
+        assert sched.schedule_task(first_id).unwrap() == "w1"
+        assert sched.schedule_task(second_id).unwrap() == "w1"
+
+        result = sched.rebalance_loads()
+
+        assert result.is_ok()
+        assert result.unwrap() == 1
+        assert sched.get_agent_load("w1") == 1
+        assert sched.get_agent_load("w2") == 1
+        owners = {
+            task_queue.get_task(task_id).unwrap().assigned_agent
+            for task_id in (first_id, second_id)
+        }
+        assert owners == {"w1", "w2"}
 
 
 # ---------------------------------------------------------------------------
