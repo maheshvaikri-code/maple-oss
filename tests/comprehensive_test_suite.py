@@ -414,9 +414,14 @@ class MAPLETestSuite:
         
         # Test 1: Authentication manager
         try:
-            from maple.security.authentication import AuthenticationManager
-            
-            auth_manager = AuthenticationManager()
+            from maple.security.authentication import (
+                AuthenticationConfig,
+                AuthenticationManager,
+            )
+
+            auth_manager = AuthenticationManager(
+                AuthenticationConfig(jwt_secret="test-secret-" + "a" * 32)
+            )
             
             # Test JWT generation
             jwt_result = auth_manager.generate_jwt("test_agent", ["read", "write"])
@@ -1039,9 +1044,14 @@ class MAPLETestSuite:
         
         # Test 3: Security token lifecycle
         try:
-            from maple.security.authentication import AuthenticationManager
-            
-            auth_manager = AuthenticationManager()
+            from maple.security.authentication import (
+                AuthenticationConfig,
+                AuthenticationManager,
+            )
+
+            auth_manager = AuthenticationManager(
+                AuthenticationConfig(jwt_secret="test-secret-" + "a" * 32)
+            )
             
             # Generate token
             token_result = auth_manager.generate_jwt(

@@ -38,6 +38,10 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Release tag has an invalid format: $RELEASE_TAG" >&2
+            exit 1
+          fi
           tag_version="${RELEASE_TAG#v}"
           package_version="$(python -c 'import maple; print(maple.__version__)')"
           if [[ "$tag_version" != "$package_version" ]]; then
@@ -94,10 +98,11 @@ jobs:
 
       - name: Create GitHub Release
         run: |
-          gh release create "${{ github.ref_name }}" \
+          gh release create "$RELEASE_TAG" \
             --title "MAPLE v${{ env.VERSION }}" \
             --notes-file release_notes.md \
             --latest \
             dist/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}

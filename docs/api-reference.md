@@ -397,6 +397,29 @@ class SecurityConfig:
     link_config: Optional[LinkConfig] = None
 ```
 
+### AuthenticationConfig and AuthenticationManager
+
+JWT operations require an explicit host-supplied secret. MAPLE does not use a
+library-wide fallback key. Secrets shorter than 32 UTF-8 bytes leave JWT
+issuance and verification disabled and return the typed
+`JWT_SECRET_NOT_CONFIGURED` error.
+
+```python
+import os
+
+from maple.security import AuthenticationConfig, AuthenticationManager
+
+auth = AuthenticationManager(
+    AuthenticationConfig(jwt_secret=os.environ["MAPLE_JWT_SECRET"])
+)
+token = auth.generate_jwt("worker-agent", permissions=["tasks:read"])
+verified = auth.verify_token(token.unwrap())
+```
+
+`revoke_token()` is terminal for the manager's revocation window: subsequent
+JWT authentication and verification return `TOKEN_REVOKED`. Keep secrets in a
+secret manager or environment, and do not log token values.
+
 ## State Management
 
 ### StateStore Class

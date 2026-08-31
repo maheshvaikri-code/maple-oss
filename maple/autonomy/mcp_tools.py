@@ -15,6 +15,8 @@
 # Language Engine. If not, see <https://www.gnu.org/licenses/>.
 """MCP tool discovery and integration for MAPLE autonomous agents."""
 
+from __future__ import annotations
+
 import asyncio
 import dataclasses
 import inspect

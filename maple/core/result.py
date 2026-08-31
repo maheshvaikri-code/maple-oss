@@ -20,6 +20,8 @@ Created by: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
 Type-safe error handling mechanism for distributed agent communication.
 """
 
+from __future__ import annotations
+
 from typing import Any, Callable, Generic, Mapping, TypeVar, Union, cast
 
 T = TypeVar("T")

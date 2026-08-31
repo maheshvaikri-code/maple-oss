@@ -16,6 +16,8 @@ the GNU Affero General Public License along with MAPLE - Multi Agent Protocol
 Language Engine. If not, see <https://www.gnu.org/licenses/>.
 """
 
+from __future__ import annotations
+
 # maple/security/authentication.py
 # Creator: Mahesh Vaikri
 
@@ -28,7 +30,7 @@ import base64  # noqa: E402
 import hashlib  # noqa: E402
 import logging  # noqa: E402
 import time  # noqa: E402
-from dataclasses import dataclass  # noqa: E402
+from dataclasses import dataclass, field  # noqa: E402
 from enum import Enum  # noqa: E402
 from typing import Any, Dict, List, Optional, Union  # noqa: E402
 
@@ -46,6 +48,8 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+MIN_JWT_SECRET_BYTES = 32
+
 
 class AuthMethod(Enum):
     """Supported authentication methods."""
@@ -55,6 +59,20 @@ class AuthMethod(Enum):
     API_KEY = "api_key"
     MUTUAL_TLS = "mutual_tls"
     OAUTH2 = "oauth2"
+
+
+@dataclass(frozen=True)
+class AuthenticationConfig:
+    """Host-supplied configuration for :class:`AuthenticationManager`.
+
+    JWT signing is disabled unless ``jwt_secret`` is explicitly supplied and
+    meets the manager's minimum length requirement. Keeping the secret out of
+    this dataclass's repr also prevents accidental logging by callers.
+    """
+
+    jwt_secret: Optional[str] = field(default=None, repr=False)
+    jwt_algorithm: str = "HS256"
+    jwt_expiry_seconds: int = 3600
 
 
 @dataclass
@@ -126,10 +144,16 @@ class AuthenticationManager:
         if CRYPTO_AVAILABLE:
             self.crypto_manager = CryptographyManager()
 
-        # JWT configuration
-        self.jwt_secret = getattr(
-            config, "jwt_secret", "maple-default-secret-change-in-production"
-        )
+        # JWT configuration is deliberately fail-closed. A library default is
+        # shared by every installation and therefore cannot protect identities.
+        configured_secret = getattr(config, "jwt_secret", None)
+        if (
+            isinstance(configured_secret, str)
+            and len(configured_secret.encode("utf-8")) >= MIN_JWT_SECRET_BYTES
+        ):
+            self.jwt_secret: Optional[str] = configured_secret
+        else:
+            self.jwt_secret = None
         self.jwt_algorithm = getattr(config, "jwt_algorithm", "HS256")
         self.jwt_expiry = getattr(config, "jwt_expiry_seconds", 3600)  # 1 hour default
 
@@ -223,6 +247,33 @@ class AuthenticationManager:
                     {
                         "errorType": "MISSING_JWT_TOKEN",
                         "message": "JWT token is required",
+                    }
+                )
+
+            if token in self.revoked_tokens:
+                return Result.err(
+                    {
+                        "errorType": "TOKEN_REVOKED",
+                        "message": "Authentication token has been revoked",
+                    }
+                )
+
+            if not JWT_AVAILABLE:
+                return Result.err(
+                    {
+                        "errorType": "JWT_UNAVAILABLE",
+                        "message": "JWT support is not installed",
+                    }
+                )
+
+            if self.jwt_secret is None:
+                return Result.err(
+                    {
+                        "errorType": "JWT_SECRET_NOT_CONFIGURED",
+                        "message": (
+                            "JWT authentication is disabled until config.jwt_secret "
+                            f"contains at least {MIN_JWT_SECRET_BYTES} UTF-8 bytes"
+                        ),
                     }
                 )
 
@@ -466,7 +517,27 @@ class AuthenticationManager:
                     }
                 )
 
-        # Try to verify as JWT if not in active tokens
+        # Try to verify as JWT if not in active tokens. Both the dependency and
+        # the signing secret are optional runtime capabilities, but neither may
+        # silently degrade into a shared default.
+        if not JWT_AVAILABLE:
+            return Result.err(
+                {
+                    "errorType": "JWT_UNAVAILABLE",
+                    "message": "JWT support is not installed",
+                }
+            )
+        if self.jwt_secret is None:
+            return Result.err(
+                {
+                    "errorType": "JWT_SECRET_NOT_CONFIGURED",
+                    "message": (
+                        "JWT verification is disabled until config.jwt_secret "
+                        f"contains at least {MIN_JWT_SECRET_BYTES} UTF-8 bytes"
+                    ),
+                }
+            )
+
         try:
             payload = jwt.decode(
                 token, self.jwt_secret, algorithms=[self.jwt_algorithm]
@@ -549,7 +620,8 @@ class AuthenticationManager:
         if token in self.active_tokens:
             del self.active_tokens[token]
 
-        logger.info(f"Token revoked: {token[:16]}...")
+        token_digest = hashlib.sha256(token.encode("utf-8")).hexdigest()[:12]
+        logger.info("Token revoked: sha256=%s", token_digest)
         return Result.ok(None)
 
     def generate_jwt(
@@ -569,6 +641,24 @@ class AuthenticationManager:
         Returns:
             Result containing JWT token or error
         """
+        if not JWT_AVAILABLE:
+            return Result.err(
+                {
+                    "errorType": "JWT_UNAVAILABLE",
+                    "message": "JWT support is not installed",
+                }
+            )
+        if self.jwt_secret is None:
+            return Result.err(
+                {
+                    "errorType": "JWT_SECRET_NOT_CONFIGURED",
+                    "message": (
+                        "JWT generation is disabled until config.jwt_secret "
+                        f"contains at least {MIN_JWT_SECRET_BYTES} UTF-8 bytes"
+                    ),
+                }
+            )
+
         try:
             now = time.time()
             expires_in = expires_in or self.jwt_expiry

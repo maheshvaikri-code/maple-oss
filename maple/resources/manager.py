@@ -18,6 +18,8 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 
 # mapl/resources/manager.py
 
+from __future__ import annotations
+
 import logging
 import threading
 from copy import deepcopy

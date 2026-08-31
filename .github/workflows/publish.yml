@@ -196,6 +196,14 @@ jobs:
           path: dist/
 
       - name: Upload release assets
-        run: gh release upload ${{ github.ref_name }} dist/*
+        shell: bash
         env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Release tag has an invalid format: $RELEASE_TAG" >&2
+            exit 1
+          fi
+          gh release upload "$RELEASE_TAG" dist/*

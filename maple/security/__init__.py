@@ -22,6 +22,7 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 # Security module for MAPLE providing authentication, authorization, and encryption.
 
 import time
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from ..core.result import Result
@@ -29,6 +30,7 @@ from ..core.result import Result
 try:
     from .authentication import (
         AuthCredentials,
+        AuthenticationConfig,
         AuthenticationManager,
         AuthMethod,
         AuthToken,
@@ -85,10 +87,16 @@ except ImportError as e:  # pragma: no cover
                 return False
             return time.time() > self.expires_at
 
+    @dataclass(frozen=True)
+    class AuthenticationConfig:  # type: ignore[no-redef]
+        jwt_secret: Optional[str] = field(default=None, repr=False)
+        jwt_algorithm: str = "HS256"
+        jwt_expiry_seconds: int = 3600
+
     class AuthenticationManager:  # type: ignore[no-redef]
         def __init__(self, config: Any = None) -> None:
             self.active_tokens: Dict[str, AuthToken] = {}
-            self.jwt_secret = "test-secret"
+            self.jwt_secret = None
             self.jwt_expiry = 3600
 
         def generate_jwt(
@@ -97,20 +105,12 @@ except ImportError as e:  # pragma: no cover
             permissions: Optional[List[str]] = None,
             expires_in: Optional[float] = None,
         ) -> Result[str, Dict[str, Any]]:
-            token = f"test-jwt-{principal}-{int(time.time())}"
-            expires_in = expires_in or self.jwt_expiry
-
-            auth_token = AuthToken(
-                token=token,
-                principal=principal,
-                method=AuthMethod.JWT,
-                issued_at=time.time(),
-                expires_at=time.time() + expires_in,
-                permissions=permissions or [],
+            return Result.err(
+                {
+                    "errorType": "JWT_SECRET_NOT_CONFIGURED",
+                    "message": "JWT generation is disabled without an explicit secret",
+                }
             )
-
-            self.active_tokens[token] = auth_token
-            return Result.ok(token)
 
         def verify_token(self, token: str) -> Result[Any, Dict[str, Any]]:
             if token in self.active_tokens:
@@ -231,6 +231,7 @@ except ImportError:  # pragma: no cover
 
 __all__ = [
     "AuthenticationManager",
+    "AuthenticationConfig",
     "AuthMethod",
     "AuthCredentials",
     "AuthToken",

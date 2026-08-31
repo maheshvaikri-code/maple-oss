@@ -13,6 +13,14 @@
 ### CI and release hardening
 
 - Promoted the MAPLE package metadata and public documentation to `2.0.0`.
+- Restored Python 3.8 runtime compatibility and added Python 3.8 coverage to
+  the release test matrix.
+- Removed the shared JWT signing-key fallback; JWT operations now fail closed
+  unless the host supplies an explicit secret with at least 32 UTF-8 bytes.
+- Added revoked-token enforcement to JWT authentication and removed raw token
+  prefixes from revocation logs.
+- Validated release-tag shape and passed release tags to GitHub CLI through
+  quoted environment variables.
 - Resolved all strict CI line-length findings and added the existing MAPLE
   author notice to every `maple/**/*.py` module without weakening the checks.
 - Reformatted Protocol stubs and bounded source literals so the exact CI

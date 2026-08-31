@@ -33,6 +33,9 @@ def test_release_workflow_is_tag_driven_and_does_not_mutate_main():
     assert "GITHUB_REF_NAME#v" in workflow
     assert "maple.__version__" in workflow
     assert 'Path("CHANGELOG.md")' in workflow
+    assert 'gh release create "$RELEASE_TAG"' in workflow
+    assert 'gh release create "${{ github.ref_name }}"' not in workflow
+    assert "Release tag has an invalid format" in workflow
 
 
 def test_publish_workflow_requires_confirmation_for_testpypi():
@@ -43,6 +46,15 @@ def test_publish_workflow_requires_confirmation_for_testpypi():
     assert "github.event_name == 'release'" in workflow
     assert "github.event.inputs.target == 'pypi'" not in workflow
     assert "Verify release tag matches package and changelog" in workflow
+
+
+def test_release_asset_upload_treats_release_tag_as_quoted_data():
+    workflow = _workflow("publish.yml")
+
+    assert "RELEASE_TAG: ${{ github.event.release.tag_name }}" in workflow
+    assert 'gh release upload "$RELEASE_TAG" dist/*' in workflow
+    assert "gh release upload ${{ github.ref_name }} dist/*" not in workflow
+    assert "Release tag has an invalid format" in workflow
 
 
 def test_ci_summary_does_not_advertise_stale_version():
