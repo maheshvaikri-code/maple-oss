@@ -8,6 +8,13 @@
 
 ## Unreleased
 
+### CI and release workflow
+
+- Restored an explicitly authorized manual PyPI publication target while
+  keeping Test PyPI available for pre-release validation.
+- Added a direct reusable-workflow handoff from tag releases to PyPI so
+  publication does not depend on a release event emitted by `GITHUB_TOKEN`.
+
 ## 2.0.0 - 2026-08-29
 
 ### CI and release hardening

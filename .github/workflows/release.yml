@@ -106,3 +106,14 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ github.ref_name }}
+
+  publish-to-pypi:
+    name: Publish tagged release to PyPI
+    needs: release-from-tag
+    uses: ./.github/workflows/publish.yml
+    with:
+      target: pypi
+      confirmation: "I AUTHORIZE THIS PUBLISH"
+      release_tag: ${{ github.ref_name }}
+      source_ref: ${{ github.ref_name }}
+    secrets: inherit

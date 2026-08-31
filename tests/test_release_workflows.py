@@ -17,7 +17,11 @@ def _action_refs():
     refs = []
     for workflow in (REPO / ".github" / "workflows").glob("*.yml"):
         refs.extend(
-            re.findall(r"uses:\s+([^#\s]+)", workflow.read_text(encoding="utf-8"))
+            ref
+            for ref in re.findall(
+                r"uses:\s+([^#\s]+)", workflow.read_text(encoding="utf-8")
+            )
+            if not ref.startswith("./")
         )
     return refs
 
@@ -38,13 +42,34 @@ def test_release_workflow_is_tag_driven_and_does_not_mutate_main():
     assert "Release tag has an invalid format" in workflow
 
 
-def test_publish_workflow_requires_confirmation_for_testpypi():
+def test_release_workflow_hands_off_to_publish_workflow():
+    workflow = _workflow("release.yml")
+
+    assert "publish-to-pypi:" in workflow
+    assert "needs: release-from-tag" in workflow
+    assert "uses: ./.github/workflows/publish.yml" in workflow
+    assert "target: pypi" in workflow
+    assert 'confirmation: "I AUTHORIZE THIS PUBLISH"' in workflow
+    assert "release_tag: ${{ github.ref_name }}" in workflow
+    assert "source_ref: ${{ github.ref_name }}" in workflow
+    assert "secrets: inherit" in workflow
+
+
+def test_publish_workflow_supports_explicit_pypi_dispatch():
     workflow = _workflow("publish.yml")
 
-    assert "github.event.inputs.confirmation == 'I AUTHORIZE THIS PUBLISH'" in workflow
+    assert "- testpypi" in workflow
+    assert "- pypi" in workflow
+    assert "inputs.confirmation == 'I AUTHORIZE THIS PUBLISH'" in workflow
     assert "environment: testpypi" in workflow
+    assert "environment: pypi" in workflow
     assert "github.event_name == 'release'" in workflow
-    assert "github.event.inputs.target == 'pypi'" not in workflow
+    assert "github.event_name == 'workflow_dispatch'" in workflow
+    assert "github.event_name == 'workflow_call'" in workflow
+    assert "inputs.target == 'pypi'" in workflow
+    assert "release_tag:" in workflow
+    assert "source_ref:" in workflow
+    assert "Manual PyPI publication must run from main" in workflow
     assert "Verify release tag matches package and changelog" in workflow
 
 
