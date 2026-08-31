@@ -183,7 +183,7 @@ python -c "import maple; print(maple.__version__)"
 python -m maple.cli doctor --json
 ~~~
 
-## Quick start
+## Quick Start
 
 ### Typed agent messaging
 
