@@ -11,7 +11,7 @@ autonomous agent execution with typed messaging, resource-aware coordination,
 durable local state, security boundaries, interoperability, and evaluation
 tools.
 
-- Release: 2.0.0 local release candidate (not published)
+- Release: 2.0.0 GitHub release; PyPI publication pending
 - Python package: maple-oss
 - License: [AGPL-3.0-only](LICENSE), with a [commercial license](COMMERCIAL_LICENSE.md) available
 - Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
@@ -691,8 +691,8 @@ publishing; no evidence in this README authorizes publication. See the
 
 ## Release and website status
 
-MAPLE 2.0.0 is a local, untagged, unpublished candidate. No release tag,
-registry upload, cloud call, or website deployment has been performed.
+MAPLE 2.0.0 is tagged and available as a GitHub Release with source and wheel
+artifacts. PyPI publication remains pending; no PyPI upload has been performed.
 
 The website is intentionally **in standing**: tracked static assets are held
 for a later copy/link/accessibility pass and deployment decision. See
