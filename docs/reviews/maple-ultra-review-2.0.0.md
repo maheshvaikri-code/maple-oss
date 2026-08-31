@@ -157,8 +157,9 @@ dependency policy and pip-audit result.
 
 The final hosted release workflows recorded for the preceding implementation
 closure are all green: Security Scan 33341517061, Code Quality 33341517056,
-Tests 33341517046, and CI 33341517051. The exact current documentation commit
-is 67c988f; pushing it will require the normal hosted CI rerun.
+Tests 33341517046, and CI 33341517051. The documentation closure was reviewed
+at 67c988f; the later provenance alignment is docs-only and the final report
+commit requires the normal hosted CI rerun.
 
 The branch was clean before the documentation commit, and the documentation
 commit contains no source behavior changes. The website assets, cloud state,
