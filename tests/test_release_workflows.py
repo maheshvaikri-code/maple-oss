@@ -104,3 +104,10 @@ def test_core_distribution_manifest_scope_and_version_are_explicit():
     assert "recursive-include tests" in manifest
     assert "demo_package" not in manifest
     assert "n8n-integration" not in manifest
+
+
+def test_project_license_uses_a_setuptools_compatible_file_form():
+    pyproject = (REPO / "pyproject.toml").read_text(encoding="utf-8")
+
+    assert 'license = {file = "LICENSE"}' in pyproject
+    assert (REPO / "LICENSE").is_file()

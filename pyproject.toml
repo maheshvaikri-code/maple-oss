@@ -11,7 +11,7 @@ authors = [
 maintainers = [
     {name = "Mahesh Vaikri", email = "mahesh@mapleagent.org"}
 ]
-license = "AGPL-3.0-only"
+license = {file = "LICENSE"}
 readme = "README.md"
 keywords = [
     "multi-agent",

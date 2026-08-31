@@ -13,6 +13,9 @@
 ### CI and release hardening
 
 - Promoted the MAPLE package metadata and public documentation to `2.0.0`.
+- Switched the PEP 621 license declaration to a setuptools-compatible
+  `LICENSE` file reference so Python 3.8 editable installs pass metadata
+  validation.
 - Restored Python 3.8 runtime compatibility and added Python 3.8 coverage to
   the release test matrix.
 - Removed the shared JWT signing-key fallback; JWT operations now fail closed
