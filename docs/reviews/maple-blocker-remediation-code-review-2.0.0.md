@@ -43,8 +43,9 @@ Python syntax and local links.
 
 ## Verdict
 
-**Local G4 review: Pass — zero open code blockers.** Two fresh independent
-reviewer sessions were attempted through the available reviewer tool, but both
-timed out without returning a report and were closed. Their absence is an open
-process gate, not a fabricated sign-off; this artifact records the limitation
+**Local G4 review: Pass — zero open code blockers.** Four fresh independent
+reviewer sessions were attempted through the available reviewer tool (two
+code-review attempts, one security attempt, and one QA attempt), but each timed
+out without returning a report and was closed. Their absence is an open process
+gate, not a fabricated sign-off; this artifact records the limitation
 explicitly.

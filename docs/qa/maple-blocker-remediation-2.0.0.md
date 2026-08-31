@@ -69,7 +69,8 @@ also passed.
 **Security verdict:** SIGN-OFF for the implemented remediation slice.
 **QA verdict:** pass for local acceptance criteria.
 
-Fresh independent reviewer sessions were attempted but timed out twice before
-returning a report. No independent-session sign-off is claimed; protected
-branch configuration and all external website/cloud/registry actions remain
-human/external gates.
+Four fresh independent reviewer sessions were attempted through the reviewer
+tool (two code-review attempts, one security attempt, and one QA attempt), but
+each timed out before returning a report. No independent-session sign-off is
+claimed; protected branch configuration and all external website/cloud/registry
+actions remain human/external gates.
