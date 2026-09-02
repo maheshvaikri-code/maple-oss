@@ -784,6 +784,10 @@ checklist.
 - [Type system](docs/type-system.md)
 - [Best practices](docs/best-practices.md)
 - [Troubleshooting](docs/troubleshooting.md)
+- [Roadmap](docs/roadmap.md) - the consolidated backlog: what is Native,
+  what is Preview and why, and what is deliberately not built
+- [Framework parity ledger](docs/agent-framework-parity.md) - per-capability
+  evidence behind each status
 - [Changelog](CHANGELOG.md)
 - [Architecture decisions](docs/adr/) - 161 records, including the 2.1.0
   delivery contract ([157](docs/adr/157-broker-configuration-fidelity-and-fail-closed-transport.md),
