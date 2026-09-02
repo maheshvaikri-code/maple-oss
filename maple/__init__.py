@@ -318,6 +318,12 @@ from .monitoring.health_monitor import (
     ComponentHealthMetrics,
     ComponentHealthMonitor,
 )
+from .monitoring.metrics import (
+    MetricsRegistry,
+    MetricType,
+    Sample,
+    render_prometheus,
+)
 from .resources.lease import Lease, LeaseManager
 from .resources.manager import (
     DEFAULT_LIFECYCLES,
@@ -379,6 +385,10 @@ __all__ = [
     "UnwrapError",
     "ComponentHealthMonitor",
     "ComponentHealthMetrics",
+    "MetricsRegistry",
+    "MetricType",
+    "Sample",
+    "render_prometheus",
     "retry",
     "RetryOptions",
     "exponential_backoff",

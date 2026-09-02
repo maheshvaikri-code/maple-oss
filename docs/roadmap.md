@@ -1,6 +1,6 @@
 # MAPLE Roadmap
 
-**As of 2.1.0 · 2026-09-02**
+**As of 2.1.0 · 2026-09-02** · last updated 2026-09-02
 
 One consolidated backlog. Until now the outstanding work lived in three
 unconnected places: the capability matrix in
@@ -65,15 +65,19 @@ than any feature would.
 
 ### 1.2 Metrics export
 
-**Status:** not started
+**Status:** done ([ADR-162](adr/162-metrics-export-without-a-dependency.md))
 
-About a dozen components implement `get_statistics()` and none of it leaves the
-process — no Prometheus endpoint, no OpenTelemetry, no statsd. 2.1.0 made this
-sharper: `refused` is now a number an operator genuinely needs to alert on, and
-there is no way to reach it without writing glue.
+`maple.monitoring.metrics` renders any `get_statistics()`-style callable in the
+Prometheus text exposition format, with no runtime dependency added. Types are
+declared rather than inferred, non-numeric statistics are skipped rather than
+coerced, and a source that raises is counted in `maple_metrics_source_errors`
+instead of vanishing silently.
 
-The smallest useful version is an exposition endpoint over the counters that
-already exist. Highest value per line of code on this list.
+MAPLE renders; the host serves. No port is bound — that stays on the deployment
+side of the operational boundary.
+
+**What remains:** correlation across hops and hosted trace search, which are
+part of Tier 4's tracing row rather than this one, and depend on 1.1.
 
 ---
 
@@ -148,10 +152,10 @@ any implementation.
 
 ## Recommended order
 
-1. **Metrics export** (Tier 1.2) — smallest change, largest operator benefit,
-   and 2.1.0's new counters have nowhere to go.
+1. ~~**Metrics export** (Tier 1.2)~~ — **done.** Smallest change, largest
+   operator benefit; 2.1.0's counters now have somewhere to go.
 2. **Drain on shutdown and monotonic clocks** (Tier 2) — small, bounded, each
-   removes a class of hard-to-diagnose failure.
+   removes a class of hard-to-diagnose failure. **Next.**
 3. **`FileBroker`** (Tier 1.1, step one) — multi-process on one host, on a
    pattern already proven in this repository, and the first genuine proof the
    broker contract is implementable twice.
