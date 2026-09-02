@@ -191,6 +191,29 @@ def test_release_verifier_accepts_every_heading_form_in_use():
     assert not _changelog_heading_matches("## [2.0.0] - 2026-08-29", "2.1.0")
 
 
+def test_every_workflow_copy_of_the_verifier_accepts_bracketed_headings():
+    """The verifier is duplicated in release.yml and publish.yml.
+
+    Fixing only one left the tag-push path still failing on
+    `CHANGELOG.md has no heading for version 2.1.0` - the release workflow has
+    its own embedded copy. Any copy that parses `## ` headings must handle the
+    bracketed Keep a Changelog form.
+    """
+    copies = [
+        name
+        for name in ("release.yml", "publish.yml")
+        if "heading = line[3:]" in _workflow(name)
+    ]
+    assert copies, "expected at least one embedded changelog verifier"
+
+    for name in copies:
+        content = _workflow(name)
+        assert 'heading.startswith("[")' in content, (
+            f"{name} carries a changelog verifier that cannot parse "
+            "'## [x.y.z]' headings"
+        )
+
+
 def test_tag_push_grants_the_permissions_the_called_workflow_needs():
     """Regression: the tag-push publish path failed with `startup_failure`.
 
