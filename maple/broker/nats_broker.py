@@ -34,6 +34,7 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 from ..core.message import Message
 from ..core.result import Result
 from ..core.types import MessageID
+from .contract import BrokerCapabilities
 
 try:
     from nats.aio.client import Client as _NATS  # noqa: F401
@@ -89,6 +90,18 @@ class NATSBroker:
     # authorization. Declared so Agent construction refuses it rather than
     # silently dropping a guarantee the caller configured (ADR-161).
     ENFORCES_SECURITY_POLICY: bool = False
+
+    #: Honest declaration (ADR-161). This transport crosses processes and
+    #: hosts, and provides none of the delivery or security guarantees the
+    #: in-memory broker does. It does not yet satisfy the Broker contract.
+    CAPABILITIES = BrokerCapabilities(
+        enforces_security_policy=False,
+        applies_backpressure=False,
+        reports_undeliverable=False,
+        supports_routability_check=False,
+        durable=False,
+        cross_process=True,
+    )
 
     def __init__(
         self, config: Config, nats_config: Optional[NATSConfig] = None
@@ -423,6 +436,18 @@ class NATSBrokerSync:
     # authorization. Declared so Agent construction refuses it rather than
     # silently dropping a guarantee the caller configured (ADR-161).
     ENFORCES_SECURITY_POLICY: bool = False
+
+    #: Honest declaration (ADR-161). This transport crosses processes and
+    #: hosts, and provides none of the delivery or security guarantees the
+    #: in-memory broker does. It does not yet satisfy the Broker contract.
+    CAPABILITIES = BrokerCapabilities(
+        enforces_security_policy=False,
+        applies_backpressure=False,
+        reports_undeliverable=False,
+        supports_routability_check=False,
+        durable=False,
+        cross_process=True,
+    )
 
     def __init__(self, config: Config, nats_config: Optional[NATSConfig] = None):
         self.broker = NATSBroker(config, nats_config)

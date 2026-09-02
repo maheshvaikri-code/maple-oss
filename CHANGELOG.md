@@ -8,6 +8,51 @@
 
 ## [Unreleased]
 
+### Added — scope isolation and the broker contract (ADR-160, ADR-161)
+
+**AgentScope (ADR-160).** `broker_url` carries a namespace that was discarded:
+every URL returned the same process-wide broker, so `memory://tenant-a` and
+`memory://tenant-b` shared one bus, one set of handlers, and one discovery
+registry. Agents on deliberately separate buses enumerated each other.
+
+- `MessageBroker` instances are now keyed by scope, derived from `broker_url`.
+  An absent or empty URL resolves to the default scope, so callers that never
+  set one keep the single shared bus they have always had.
+- The five class-level state dicts move onto the instance. The singleton was
+  enforced twice — by `__new__` and by state living on the class — so removing
+  only the first would have changed nothing.
+- `AgentRegistry` belongs to the scope. This closes a cross-tenant discovery
+  leak: `tenant-a` previously saw `['tenant-a-worker', 'tenant-b-worker']`.
+- `MessageBroker.reset_scopes()` replaces the manual surgery test modules
+  performed — resetting `_instance` and clearing five class dicts by hand,
+  across 9 files.
+
+Ten characterization tests were written and verified green *before* the
+migration, pinning default-scope behaviour, and pass unchanged after it.
+
+**Broker contract (ADR-161).** The two shipped brokers shared no interface and
+had drifted six methods apart, two of them security and observability controls.
+
+- `maple/broker/contract.py` defines a `Broker` `Protocol` and a
+  `BrokerCapabilities` declaration, with delivery semantics stated per method
+  rather than implied.
+- A parameterised conformance suite holds every transport to the same
+  observable behaviour. `MessageBroker` passes all 23 tests.
+- The NATS transport is pinned as non-conformant by a test naming exactly the
+  five members it lacks, so the gap cannot be forgotten and closing it is a
+  deliberate edit.
+
+### Breaking changes
+
+- Agents constructed with **different** `broker_url` values now get different
+  brokers and cannot message each other. Previously every URL shared one bus.
+  No existing test relied on cross-URL messaging — verified before the change —
+  but external code that did will observe the difference.
+- `MessageBroker._agent_queues` and the other four state dicts are instance
+  attributes. Code reading them off the class breaks; use the broker instance
+  or `get_statistics()`.
+- `MessageBroker._instance` no longer exists. Use `reset_scopes()`.
+
 ## [2.1.0] - 2026-09-01
 
 ### Fixed — broker refuses instead of buffering or dropping (ADR-159)

@@ -1,7 +1,7 @@
 # ADR-161: The broker contract, and the path to multi-host
 
 **Date:** 2026-09-01
-**Status:** proposed — design agreed, implementation not started
+**Status:** accepted — contract and conformance suite implemented 2026-09-01; transports beyond the in-memory broker remain future work
 **Deciders:** Chief Architect + SRE
 
 ## Context
@@ -144,13 +144,28 @@ construction error instead of a silent gap; adding a transport is bounded work.
 
 Negative:
 
-- The contract will expose that the NATS broker does not currently satisfy it.
-  That is the finding, not a regression — but it means `nats://` should be
+- The contract exposed that the NATS broker does not satisfy it, naming five
+  missing members: `get_statistics`, `is_routable`, `set_separation_policy`,
+  `set_undeliverable_handler`, `unsubscribe`. That is the finding, not a
+  regression — but it means `nats://` should be
   documented as **experimental** until it conforms, and possibly refuse to
   construct when a separation policy is configured.
 - A conformance suite is real work before any user-visible feature ships.
 - Naming `Protocol` methods fixes them; changing them later is a breaking
   change. The contract should start minimal and grow, not start speculative.
+
+### Outcome of step 2
+
+The suite was expected to "find gaps in the implementation that defines it".
+It did not: `MessageBroker` passed all 23 conformance tests unmodified. The
+prediction was wrong, and the reason is worth recording — the ADR-159
+hardening had already brought the in-memory broker up to the standard the
+contract describes. The contract codified behavior that existed rather than
+demanding new behavior.
+
+The NATS transport, by contrast, is pinned as non-conformant by a test that
+asserts exactly which five members it lacks, so the gap cannot be forgotten
+and closing it is a deliberate edit.
 
 ## Recommended sequence
 
