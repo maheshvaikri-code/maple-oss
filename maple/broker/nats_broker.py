@@ -22,14 +22,15 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 # Production NATS Broker Implementation for MAPLE.
 # Provides enterprise-grade message routing with NATS backend.
 
+from __future__ import annotations
+
 import asyncio
 import json
 import logging
 import uuid
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 
-from ..agent.config import Config
 from ..core.message import Message
 from ..core.result import Result
 from ..core.types import MessageID
@@ -46,6 +47,11 @@ NATS: Any = globals().get("_NATS")
 ErrTimeout: Any = globals().get("_ErrTimeout", TimeoutError)
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    # Annotation-only; a runtime import here would re-close the
+    # agent <-> broker cycle broken in ADR-158.
+    from ..agent.config import Config
 
 
 @dataclass
@@ -77,6 +83,12 @@ class NATSBroker:
     - High throughput (100K+ messages/sec)
     - Persistent message delivery
     """
+
+    # This transport publishes straight to NATS and enforces none of the
+    # SecurityConfig controls - no link policy, no separation of duties, no
+    # authorization. Declared so Agent construction refuses it rather than
+    # silently dropping a guarantee the caller configured (ADR-161).
+    ENFORCES_SECURITY_POLICY: bool = False
 
     def __init__(
         self, config: Config, nats_config: Optional[NATSConfig] = None
@@ -405,6 +417,12 @@ class NATSBroker:
 # Synchronous wrapper for compatibility with existing code
 class NATSBrokerSync:
     """Synchronous wrapper around NATSBroker for easier integration."""
+
+    # This transport publishes straight to NATS and enforces none of the
+    # SecurityConfig controls - no link policy, no separation of duties, no
+    # authorization. Declared so Agent construction refuses it rather than
+    # silently dropping a guarantee the caller configured (ADR-161).
+    ENFORCES_SECURITY_POLICY: bool = False
 
     def __init__(self, config: Config, nats_config: Optional[NATSConfig] = None):
         self.broker = NATSBroker(config, nats_config)

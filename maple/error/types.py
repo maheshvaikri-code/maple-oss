@@ -107,3 +107,46 @@ class SecurityError(Exception):
     """Exception raised for security-related errors."""
 
     pass
+
+
+class BrokerOverflowError(Exception):
+    """Raised when the broker refuses a message rather than buffering it.
+
+    Backpressure, not failure: the caller is being told to slow down, shed, or
+    retry later. Carries a typed ``error`` payload so ``Agent.send`` can
+    surface it as a normal ``Result.err`` with a machine-readable
+    ``errorType`` (``QUEUE_FULL`` or ``MESSAGE_TOO_LARGE``).
+
+    Before ADR-159 neither condition existed: an over-capacity queue spilled
+    into an unbounded list and a message of any size was accepted, so overload
+    surfaced as an out-of-memory kill rather than a refusal.
+    """
+
+    def __init__(self, error: Dict[str, Any]) -> None:
+        self.error = error
+        super().__init__(
+            f"{error.get('errorType', 'BROKER_OVERFLOW')}: "
+            f"{error.get('message', 'broker refused the message')}"
+        )
+
+
+class BrokerUnavailableError(Exception):
+    """Raised when a configured broker transport cannot be constructed.
+
+    Carries the typed error from the broker factory so the caller keeps the
+    cause (for example a missing driver package) rather than a bare string.
+
+    This is deliberately fatal at construction: a ``nats://`` or ``s2://``
+    agent used to fall back to the in-memory broker, so a deployment missing
+    its driver kept reporting successful sends that never left the process.
+    See ADR-157.
+    """
+
+    def __init__(self, broker_url: str, error: Dict[str, Any]) -> None:
+        self.broker_url = broker_url
+        self.error = error
+        error_type = error.get("errorType", "BROKER_UNAVAILABLE")
+        message = error.get("message", "broker could not be created")
+        super().__init__(
+            f"Cannot create broker for {broker_url!r}: {error_type}: {message}"
+        )

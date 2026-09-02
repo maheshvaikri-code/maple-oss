@@ -21,12 +21,22 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 
 from .circuit_breaker import CircuitBreaker
 from .recovery import RetryOptions, exponential_backoff, retry
-from .types import Error, ErrorType, Severity
+from .types import (
+    BrokerOverflowError,
+    BrokerUnavailableError,
+    Error,
+    ErrorType,
+    SecurityError,
+    Severity,
+)
 
 __all__ = [
     "Error",
     "Severity",
     "ErrorType",
+    "SecurityError",
+    "BrokerUnavailableError",
+    "BrokerOverflowError",
     "retry",
     "RetryOptions",
     "exponential_backoff",

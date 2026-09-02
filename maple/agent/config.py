@@ -57,6 +57,10 @@ class PerformanceConfig:
 
     connection_pool_size: int = 10
     max_concurrent_requests: int = 50
+    # Broker admission limits (ADR-159). Process-wide: the in-memory broker is
+    # a process-wide singleton, so these bound the process, not one agent.
+    max_queue_size: int = 10000
+    max_message_bytes: int = 1_048_576  # matches core/serialization.py limits
     serialization_format: str = "json"
     batch_size: int = 10
     batch_timeout: str = "100ms"

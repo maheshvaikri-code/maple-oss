@@ -19,25 +19,37 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 # mapl/broker/broker.py
 # Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
 
+from __future__ import annotations
+
+import json
 import logging
 import threading
 import time
 import uuid
-from typing import Any, Callable, Dict, List, Optional, cast
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, cast
 
-from ..agent.config import Config
 from ..core.message import Message
 from ..core.types import MessageID
+
+# SecurityError is defined once, in ..error.types. It used to be declared here
+# as well, so `except maple.error.types.SecurityError` would not catch what the
+# broker raised. Re-exported rather than redefined so both historical import
+# paths name the same class (ADR-157).
+from ..error.types import BrokerOverflowError, SecurityError
 
 # NOTE: a LIBRARY must not configure the root logger (that hijacks the host's logging
 # and emits INFO noise). Use a module logger; the host owns logging config.
 logger = logging.getLogger(__name__)
 
+if TYPE_CHECKING:
+    # Import-time only. maple.agent.agent imports MessageBroker at module level,
+    # so importing Config here at runtime would close an agent <-> broker cycle
+    # that only happens to work because agent.config imports neither. Config is
+    # used solely in annotations, so the type-checking guard costs nothing and
+    # removes the fragility (ADR-158).
+    from ..agent.config import Config
 
-class SecurityError(Exception):
-    """Exception raised for security-related errors."""
-
-    pass
+__all__ = ["MessageBroker", "SecurityError", "BrokerOverflowError"]
 
 
 class MessageBroker:
@@ -48,6 +60,12 @@ class MessageBroker:
     Production implementations would use more robust messaging systems
     like RabbitMQ, Kafka, or NATS.
     """
+
+    # Whether this broker actually enforces the security controls a
+    # SecurityConfig can request (link policy, separation of duties,
+    # authorization). Agent construction refuses a transport that cannot,
+    # rather than accepting the configuration and ignoring it (ADR-161).
+    ENFORCES_SECURITY_POLICY: bool = True
 
     # Class-level storage for the broker
     _instance: Optional["MessageBroker"] = None
@@ -72,12 +90,12 @@ class MessageBroker:
     def __init__(self, config: Config) -> None:
         """Initialize the broker."""
         # Only initialize once. The broker is a process-wide singleton, so
-        # every Agent constructs it with its own Config. Honor a newly
-        # supplied separation-of-duties policy even on re-init, otherwise the
-        # guarantee would depend on construction order (only the first
-        # agent's config would ever attach one).
+        # every Agent constructs it with its own Config. Adopt a newly supplied
+        # security context even on re-init, otherwise the guarantee would
+        # depend on construction order and only the first agent's config would
+        # ever attach one. See ADR-157.
         if self._initialized:
-            self._refresh_separation_policy(config)
+            self._refresh_security_context(config)
             return
 
         self.config = config
@@ -90,24 +108,34 @@ class MessageBroker:
         self._separation_policy = getattr(
             self.security_config, "separation_policy", None
         )
-        # Initialize link manager if security is enabled
-        self.link_manager = None
-        if self.security_config:
-            try:
-                from ..security.link import LinkManager
+        self.link_manager: Optional[Any] = None
+        self._auth_manager: Optional[Any] = None
+        self._build_security_components()
 
-                self.link_manager = LinkManager()
-            except ImportError:
-                logger.warning(
-                    "Link manager not available - security features disabled"
-                )
+        # Admission limits (ADR-159). Process-wide, because the broker is a
+        # process-wide singleton and these bound the process's memory.
+        perf = getattr(config, "performance", None)
+        self.max_queue_size: int = getattr(perf, "max_queue_size", 10000) or 10000
+        self.max_message_bytes: int = (
+            getattr(perf, "max_message_bytes", 1_048_576) or 1_048_576
+        )
+
+        # Delivery accounting. A message delivered to zero handlers used to
+        # vanish silently; it is now counted, logged once per receiver, and
+        # optionally handed to a dead-letter callback.
+        self._delivered_count = 0
+        self._undeliverable_count = 0
+        self._refused_count = 0
+        self._undeliverable_seen: set = set()
+        self._undeliverable_handler: Optional[Callable[[str, Message], None]] = None
+
         # Initialize MessageQueue for priority-based delivery
         self._message_queue = None
         try:
             from .queue import MessageQueue, QueueType
 
             self._message_queue = MessageQueue(
-                queue_type=QueueType.PRIORITY, max_size=10000
+                queue_type=QueueType.PRIORITY, max_size=self.max_queue_size
             )
         except Exception:
             logger.debug("MessageQueue not available, using basic queue")
@@ -121,9 +149,31 @@ class MessageBroker:
         except Exception:
             logger.debug("MessageRouter not available, using direct routing")
 
-        # Initialize AuthorizationManager for message authorization
-        self._auth_manager = None
-        if self.security_config:
+        self._initialized = True
+        logger.info("MessageBroker initialized")
+
+    def _build_security_components(self) -> None:
+        """Construct the managers implied by the current ``security_config``.
+
+        Idempotent — only builds what is missing — so adopting a security
+        config on an already-initialized singleton never discards live state.
+        """
+        if not self.security_config:
+            return
+
+        if self.link_manager is None:
+            try:
+                from ..security.link import LinkManager
+
+                self.link_manager = LinkManager()
+            except ImportError:
+                # Not a silent downgrade: send() refuses when require_links is
+                # set and this is still None (see the fail-closed guard there).
+                logger.warning(
+                    "Link manager unavailable - link-enforced sends will be refused"
+                )
+
+        if self._auth_manager is None:
             try:
                 from ..security.authorization import AuthorizationManager
 
@@ -131,8 +181,25 @@ class MessageBroker:
             except Exception:
                 logger.debug("AuthorizationManager not available")
 
-        self._initialized = True
-        logger.info("MessageBroker initialized")
+    def _refresh_security_context(self, config: Config) -> None:
+        """Adopt a security context from a later config on the singleton.
+
+        Only ever *adds* or *replaces* with a non-None config; never clears an
+        existing one (a security-less config must not silently disable an
+        active guarantee). Without this, the process-wide singleton would keep
+        whichever config happened to construct it first and discard every
+        later agent's ``SecurityConfig``. See ADR-157.
+        """
+        new_security = getattr(config, "security", None)
+        if new_security is not None and new_security is not self.security_config:
+            if self.security_config is not None:
+                logger.warning(
+                    "Replacing security configuration on shared broker singleton"
+                )
+            self.security_config = new_security
+            self._build_security_components()
+
+        self._refresh_separation_policy(config)
 
     def _refresh_separation_policy(self, config: Config) -> None:
         """Adopt a separation policy from a later config on the singleton.
@@ -191,11 +258,64 @@ class MessageBroker:
         with self._lock:
             return bool(self._agent_handlers.get(agent_id))
 
+    def _enforce_message_size(self, message: Message) -> None:
+        """Refuse a payload larger than ``max_message_bytes``.
+
+        This is admission control, not validation. The size is an *estimate*
+        from a compact JSON encoding with ``default=str``, so values the JSON
+        encoder cannot represent natively are measured by their string form
+        rather than rejected outright - the goal is to stop one payload
+        exhausting memory, not to duplicate what the serializer checks later.
+
+        A payload that cannot be encoded even with that fallback is allowed
+        through unmeasured; ``core/serialization.py`` still enforces its own
+        1 MiB limits when the message is actually encoded.
+        """
+        try:
+            size = len(
+                json.dumps(message.payload, default=str, separators=(",", ":")).encode(
+                    "utf-8"
+                )
+            )
+        except (TypeError, ValueError):
+            return
+
+        if size > self.max_message_bytes:
+            self._refused_count += 1
+            raise BrokerOverflowError(
+                {
+                    "errorType": "MESSAGE_TOO_LARGE",
+                    "message": (
+                        f"Payload is {size} bytes, over the "
+                        f"{self.max_message_bytes} byte limit."
+                    ),
+                    "details": {
+                        "payloadBytes": size,
+                        "maxMessageBytes": self.max_message_bytes,
+                    },
+                }
+            )
+
+    def set_undeliverable_handler(
+        self, handler: Optional[Callable[[str, Message], None]]
+    ) -> None:
+        """Register a dead-letter callback for messages nobody handled.
+
+        Called with ``(receiver, message)`` on the delivery thread whenever a
+        message reaches zero handlers. Keep it fast and non-blocking: it runs
+        in the delivery path. Pass ``None`` to clear.
+        """
+        self._undeliverable_handler = handler
+
     def send(self, message: Message) -> str:
         """Send a message to a specific agent with optional link validation."""
         logger.debug(
             f"Sending message of type {message.message_type} to {message.receiver}"
         )
+
+        # Reject oversized payloads at the edge (ADR-159). A bounded queue
+        # count is no protection if one message can be arbitrarily large.
+        self._enforce_message_size(message)
 
         # Ensure the message has an ID
         if not message.message_id:
@@ -213,45 +333,51 @@ class MessageBroker:
         if self.security_config and getattr(
             self.security_config, "require_links", False
         ):
-            if self.link_manager:
-                link_id = message.get_link_id()
+            # Fail closed. This whole block used to be nested under
+            # `if self.link_manager:`, so a broker without a link manager
+            # skipped enforcement entirely and the send proceeded — a security
+            # control silently disabling itself. A control that cannot run
+            # must refuse, not wave the message through. See ADR-157.
+            if self.link_manager is None:
+                raise SecurityError(
+                    "Link enforcement is required but no link manager is "
+                    "available; refusing to send"
+                )
 
-                # If no link ID is provided, check if there's an existing link
-                if not link_id:
-                    links_result = self.link_manager.get_links_for_agent(
-                        cast(str, message.sender)
-                    )
-                    if links_result.is_ok():
-                        links = links_result.unwrap()
-                        for link in links:
-                            if (
-                                link.agent_a == message.receiver
-                                or link.agent_b == message.receiver
-                            ):
-                                # Use existing link
-                                message = message.with_link(link.link_id)
-                                link_id = link.link_id
-                                break
+            link_id = message.get_link_id()
 
-                # If still no link ID and strict policy, reject message
-                if not link_id and getattr(
-                    self.security_config, "strict_link_policy", False
-                ):
-                    raise SecurityError(
-                        "No valid link exists between sender and receiver"
-                    )
+            # If no link ID is provided, check if there's an existing link
+            if not link_id:
+                links_result = self.link_manager.get_links_for_agent(
+                    cast(str, message.sender)
+                )
+                if links_result.is_ok():
+                    links = links_result.unwrap()
+                    for link in links:
+                        if (
+                            link.agent_a == message.receiver
+                            or link.agent_b == message.receiver
+                        ):
+                            # Use existing link
+                            message = message.with_link(link.link_id)
+                            link_id = link.link_id
+                            break
 
-                # Validate the link if one is provided
-                if link_id:
-                    link_result = self.link_manager.validate_link(
-                        link_id, cast(str, message.sender), cast(str, message.receiver)
-                    )
+            # If still no link ID and strict policy, reject message
+            if not link_id and getattr(
+                self.security_config, "strict_link_policy", False
+            ):
+                raise SecurityError("No valid link exists between sender and receiver")
 
-                    if link_result.is_err():
-                        error = link_result.unwrap_err()
-                        raise SecurityError(
-                            f"Link validation failed: {error['message']}"
-                        )
+            # Validate the link if one is provided
+            if link_id:
+                link_result = self.link_manager.validate_link(
+                    link_id, cast(str, message.sender), cast(str, message.receiver)
+                )
+
+                if link_result.is_err():
+                    error = link_result.unwrap_err()
+                    raise SecurityError(f"Link validation failed: {error['message']}")
 
         # Authorization check
         if self._auth_manager:
@@ -274,11 +400,31 @@ class MessageBroker:
             enq_result = self._message_queue.enqueue(message, priority=message.priority)
             enqueued = enq_result.is_ok()
         if not enqueued:
+            # Backpressure, not buffering (ADR-159). This path previously
+            # appended to an unbounded list, so a full queue silently became a
+            # memory leak and the caller was told the send had succeeded.
             with self._lock:
                 receiver = cast(str, message.receiver)
-                if receiver not in self._agent_queues:
-                    self._agent_queues[receiver] = []
-                self._agent_queues[receiver].append(message)
+                pending = self._agent_queues.setdefault(receiver, [])
+                if (
+                    self._message_queue is not None
+                    or len(pending) >= self.max_queue_size
+                ):
+                    self._refused_count += 1
+                    raise BrokerOverflowError(
+                        {
+                            "errorType": "QUEUE_FULL",
+                            "message": (
+                                "Broker queue is at capacity; refusing the "
+                                "message rather than buffering without a bound."
+                            ),
+                            "details": {
+                                "receiver": receiver,
+                                "maxQueueSize": self.max_queue_size,
+                            },
+                        }
+                    )
+                pending.append(message)
 
         logger.debug(
             f"Message {message.message_id} queued for delivery to {message.receiver}"
@@ -507,36 +653,104 @@ class MessageBroker:
                 time.sleep(0.1)  # Avoid spinning on errors
 
     def _deliver_message(self, agent_id: str, message: Message) -> None:
-        """Deliver a message to an agent."""
+        """Deliver a message to an agent, counting what nobody handled.
+
+        Handler tables are snapshotted under ``self._lock`` and invoked after
+        it is released (ADR-159). ``subscribe`` mutates those tables under the
+        lock while this runs on the delivery thread, so reading them unlocked
+        was a race; holding the lock across handler invocation would instead
+        let one slow handler stall every subscribe and every other delivery.
+        """
         logger.debug(f"Delivering message {message.message_id} to agent {agent_id}")
 
-        try:
-            # Deliver to temporary handlers first
-            temp_handlers = self._temp_handlers.get(agent_id, [])
-            for handler in temp_handlers:
-                try:
-                    handler(message)
-                except Exception as e:
-                    logger.error(f"Error in temporary handler: {str(e)}")
+        topic = message.metadata.get("topic") if message.metadata else None
 
-            # Then deliver to regular handlers
-            handlers = self._agent_handlers.get(agent_id, [])
-            for handler in handlers:
-                try:
-                    handler(message)
-                except Exception as e:
-                    logger.error(f"Error in handler: {str(e)}")
+        with self._lock:
+            temp_handlers = list(self._temp_handlers.get(agent_id, []))
+            handlers = list(self._agent_handlers.get(agent_id, []))
+            topic_handler = None
+            if topic is not None:
+                topic_handler = self._topic_handlers.get(topic, {}).get(agent_id)
 
-            # Check if this is a topic message
-            if "topic" in message.metadata:
-                topic = message.metadata["topic"]
-                if (
-                    topic in self._topic_handlers
-                    and agent_id in self._topic_handlers[topic]
-                ):
-                    try:
-                        self._topic_handlers[topic][agent_id](topic, message)
-                    except Exception as e:
-                        logger.error(f"Error in topic handler: {str(e)}")
-        except Exception as e:
-            logger.error(f"Error delivering message: {str(e)}")
+        invoked = 0
+
+        for handler in temp_handlers:
+            try:
+                handler(message)
+                invoked += 1
+            except Exception as e:
+                invoked += 1  # it ran; it raised. That is not "undelivered".
+                logger.error(f"Error in temporary handler: {str(e)}")
+
+        for handler in handlers:
+            try:
+                handler(message)
+                invoked += 1
+            except Exception as e:
+                invoked += 1
+                logger.error(f"Error in handler: {str(e)}")
+
+        if topic_handler is not None:
+            try:
+                topic_handler(cast(str, topic), message)
+                invoked += 1
+            except Exception as e:
+                invoked += 1
+                logger.error(f"Error in topic handler: {str(e)}")
+
+        if invoked:
+            with self._lock:
+                self._delivered_count += 1
+            return
+
+        self._record_undeliverable(agent_id, message)
+
+    def _record_undeliverable(self, agent_id: str, message: Message) -> None:
+        """Account for a message that reached no handler.
+
+        Before ADR-159 this path was silent: the message was dequeued,
+        delivered to nobody, and discarded with no error, counter or log.
+        """
+        with self._lock:
+            self._undeliverable_count += 1
+            first_time = agent_id not in self._undeliverable_seen
+            if first_time:
+                self._undeliverable_seen.add(agent_id)
+            handler = self._undeliverable_handler
+
+        # Log once per receiver: a hot loop addressing an absent agent must
+        # not be able to flood the log.
+        if first_time:
+            logger.warning(
+                "No handler for receiver %r - message %s was not delivered. "
+                "Further undeliverable messages for this receiver are counted "
+                "in get_statistics() but not logged.",
+                agent_id,
+                message.message_id,
+            )
+
+        if handler is not None:
+            try:
+                handler(agent_id, message)
+            except Exception as e:
+                logger.error(f"Error in undeliverable handler: {str(e)}")
+
+    def get_statistics(self) -> Dict[str, Any]:
+        """Delivery accounting for operators (ADR-159).
+
+        ``undeliverable`` counts messages that reached zero handlers - the
+        loss that used to be invisible. ``refused`` counts messages the broker
+        declined to accept as backpressure.
+        """
+        with self._lock:
+            pending = sum(len(q) for q in self._agent_queues.values())
+            return {
+                "delivered": self._delivered_count,
+                "undeliverable": self._undeliverable_count,
+                "undeliverableReceivers": len(self._undeliverable_seen),
+                "refused": self._refused_count,
+                "pendingFallback": pending,
+                "maxQueueSize": self.max_queue_size,
+                "maxMessageBytes": self.max_message_bytes,
+                "subscribedAgents": len(self._agent_handlers),
+            }
