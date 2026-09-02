@@ -59,18 +59,56 @@ class TestBrokenRefCaught(unittest.TestCase):
 
 
 class TestVersionSync(unittest.TestCase):
-    def test_desync_caught(self):
+    @staticmethod
+    def _repo(tmp: str, *, source_repo: bool) -> Path:
+        """A minimal repo root with a doctrine header and a CHANGELOG.
+
+        ``source_repo`` marks it as the doctrine's OWN repo the same way
+        check_plugin_parity detects it: the plugin ships from there only.
+        """
+        root = Path(tmp)
+        (root / ".Doctrine.md").write_text(
+            "# Doctrine v9.9.9\n", encoding="utf-8")
+        (root / "CHANGELOG.md").write_text(
+            "# Changelog\n\n## [0.1.0] - 2026-01-01\n", encoding="utf-8")
+        if source_repo:
+            (root / "plugin").mkdir()
+        return root
+
+    def test_desync_caught_in_the_doctrine_source_repo(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            (root / ".Doctrine.md").write_text(
-                "# Doctrine v9.9.9\n", encoding="utf-8")
-            (root / "CHANGELOG.md").write_text(
-                "# Changelog\n\n## [0.1.0] - 2026-01-01\n",
-                encoding="utf-8")
+            root = self._repo(tmp, source_repo=True)
             findings: list[str] = []
             dl.check_version(root, findings)
             self.assertEqual(len(findings), 1)
             self.assertIn("desync", findings[0])
+
+    def test_consumer_repo_product_carriers_are_not_compared(self):
+        """A consumer's CHANGELOG describes the consumer, not the doctrine.
+
+        Regression guard: this check was dormant in consumer repos only
+        because their CHANGELOG headings happened not to match Keep a
+        Changelog's ``## [x.y.z]``. Normalizing the headings woke it, and it
+        reported MAPLE 2.0.0 as desynced from Engineering Doctrine v0.6.12 --
+        two unrelated artifacts that will never share a version.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._repo(tmp, source_repo=False)
+            findings: list[str] = []
+            dl.check_version(root, findings)
+            self.assertEqual(findings, [])
+
+    def test_doctrine_owned_carrier_compared_even_in_a_consumer_repo(self):
+        """doctrine_mcp.py ships WITH the doctrine, so it tracks it anywhere."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._repo(tmp, source_repo=False)
+            (root / "tools").mkdir()
+            (root / "tools" / "doctrine_mcp.py").write_text(
+                '"version": "1.2.3"\n', encoding="utf-8")
+            findings: list[str] = []
+            dl.check_version(root, findings)
+            self.assertEqual(len(findings), 1)
+            self.assertIn("doctrine_mcp.py", findings[0])
 
 
 if __name__ == "__main__":

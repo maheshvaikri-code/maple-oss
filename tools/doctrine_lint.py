@@ -22,7 +22,10 @@ Checks (all mechanical, all cheap):
   3. Skills: '# Skill:' heading OR frontmatter name (integration shims).
   4. Every .claude/agents/<n>.md has a matching .Doctrine/roles/<n>.md.
   5. Numeric claims match reality (role cards, playbooks, subagents).
-  6. .Doctrine.md header version == newest CHANGELOG release.
+  6. .Doctrine.md header version == the doctrine's own version
+     carriers. Product-owned carriers (CHANGELOG, pyproject, README
+     badge) are compared only in the doctrine's source repo — in a
+     consumer repo they describe that consumer's product.
   7. Templates carry their gate tag comment (<!-- G<n> artifact ... -->).
   8. state-plane examples validate against their schemas AND are
      byte-canonical per the pack-wide canonicalization rules.
@@ -114,6 +117,20 @@ def check_counts(root: Path, findings: list[str]) -> None:
                                     f"filesystem has {real}")
 
 
+def _is_doctrine_source_repo(root: Path) -> bool:
+    """Whether this repo's *product* is the doctrine, or merely vendors it.
+
+    Same signal check_plugin_parity uses: the plugin ships from the source
+    repo only. It matters here because CHANGELOG.md, pyproject.toml and the
+    README badge are owned by whatever the repo ships. In the doctrine's own
+    repo that is the doctrine, so they must match .Doctrine.md. In a consumer
+    repo they describe the consumer's product (MAPLE 2.0.0, say) and have no
+    reason whatsoever to equal the doctrine's version — comparing them is a
+    category error that fires as a false desync.
+    """
+    return (root / "plugin").exists() or (root / ".claude-plugin").exists()
+
+
 def check_version(root: Path, findings: list[str]) -> None:
     doctrine = root / ".Doctrine.md"
     if not doctrine.exists():
@@ -125,31 +142,32 @@ def check_version(root: Path, findings: list[str]) -> None:
         findings.append("version: no vX.Y.Z in the .Doctrine.md header")
         return
     version = m_doc.group(1)
-    # CHANGELOG sync — only when the repo keeps one (consumers may not yet)
-    changelog = root / "CHANGELOG.md"
-    if changelog.exists():
-        m_log = re.search(r"^## \[(\d+\.\d+\.\d+)\]",
-                          changelog.read_text("utf-8"), re.MULTILINE)
-        if m_log and m_log.group(1) != version:
-            findings.append(f"version desync: .Doctrine.md v{version} "
-                            f"!= CHANGELOG {m_log.group(1)}")
-    # packaging manifests sync (05-packaging versioning rule) — each
-    # checked only where present (source repo has them, consumers may not)
+
+    # Doctrine-owned carriers: these ship WITH the doctrine, so they must
+    # track its version in every repo that has them.
     carriers = [
         (root / "plugin" / ".claude-plugin" / "plugin.json",
          r'"version":\s*"(\d+\.\d+\.\d+)"'),
-        (root / "pyproject.toml", r'version = "(\d+\.\d+\.\d+)"'),
         (root / "tools" / "doctrine_mcp.py",
          r'"version":\s*"(\d+\.\d+\.\d+)"'),
-        # the README's static version badge (dynamic shields can't see a
-        # private repo, so the badge is static and lint-enforced instead)
-        (root / "README.md",
-         r'shields\.io/badge/version-v(\d+\.\d+\.\d+)-'),
     ]
+
+    # Product-owned carriers: only meaningful where the product IS the
+    # doctrine (05-packaging versioning rule).
+    if _is_doctrine_source_repo(root):
+        carriers += [
+            (root / "CHANGELOG.md", r"^## \[(\d+\.\d+\.\d+)\]"),
+            (root / "pyproject.toml", r'version = "(\d+\.\d+\.\d+)"'),
+            # the README's static version badge (dynamic shields can't see a
+            # private repo, so the badge is static and lint-enforced instead)
+            (root / "README.md",
+             r"shields\.io/badge/version-v(\d+\.\d+\.\d+)-"),
+        ]
+
     for path, pattern in carriers:
         if not path.exists():
             continue
-        m = re.search(pattern, path.read_text("utf-8"))
+        m = re.search(pattern, path.read_text("utf-8"), re.MULTILINE)
         if m and m.group(1) != version:
             findings.append(f"version desync: {path.name} {m.group(1)} "
                             f"!= .Doctrine.md v{version}")

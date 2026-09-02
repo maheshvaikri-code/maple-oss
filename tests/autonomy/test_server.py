@@ -71,6 +71,14 @@ def _approval_request(approval_id="remote-approval"):
     )
 
 
+# These tests drive a real loopback HTTP server on a daemon thread. The former
+# 2-second timeout was tight enough to flake under full-suite load with
+# coverage tracing on every line (observed once in CI-equivalent local runs).
+# The value only bounds a hang - a healthy loopback request returns in
+# milliseconds - so a generous ceiling costs nothing and removes the flake.
+_REQUEST_TIMEOUT_SECONDS = 30
+
+
 def _request(url, *, method="GET", payload=None, headers=None):
     data = None
     request_headers = dict(headers or {})
@@ -81,7 +89,9 @@ def _request(url, *, method="GET", payload=None, headers=None):
         url, data=data, headers=request_headers, method=method
     )
     try:
-        with urllib.request.urlopen(request, timeout=2) as response:
+        with urllib.request.urlopen(
+            request, timeout=_REQUEST_TIMEOUT_SECONDS
+        ) as response:
             return response.status, json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         return exc.code, json.loads(exc.read().decode("utf-8"))
@@ -409,9 +419,10 @@ def test_remote_task_heartbeat_enforces_owner_state_scope_and_monotonicity():
     assert running.unwrap()["task"]["status"] == "running"
     assert running.unwrap()["task"]["heartbeat_at"] >= assigned_timestamp
     assert inspected.is_ok()
-    assert inspected.unwrap()["task"]["heartbeat_at"] == running.unwrap()[
-        "task"
-    ]["heartbeat_at"]
+    assert (
+        inspected.unwrap()["task"]["heartbeat_at"]
+        == running.unwrap()["task"]["heartbeat_at"]
+    )
     assert completed.is_ok()
     assert terminal.is_err()
     assert terminal.unwrap_err()["errorType"] == "TASK_CONFLICT"
@@ -677,7 +688,7 @@ def test_run_server_rejects_non_loopback_host_and_malformed_json():
 
     try:
         with pytest.raises(urllib.error.HTTPError) as error:
-            urllib.request.urlopen(request, timeout=2)
+            urllib.request.urlopen(request, timeout=_REQUEST_TIMEOUT_SECONDS)
         payload = json.loads(error.value.read().decode("utf-8"))
     finally:
         server.close()
