@@ -6,7 +6,7 @@ These examples are small starting points for the supported Python runtime.
   autonomous agent and its model provider.
 - [Multi-agent team](multi_agent_team.py): form a team with a supervisor and
   workers.
-- [Core hello world](../example/helloworld.py): basic MAPLE messaging.
+- [Core hello world](helloworld.py): basic MAPLE messaging.
 
 Install from the repository root:
 
