@@ -22,7 +22,7 @@ import threading
 from dataclasses import replace
 from typing import Any, Callable, Dict, Iterable, Mapping, Optional
 
-from ..autonomy.execution import (
+from ..core.execution import (
     CancellationToken,
     ExecutionPolicy,
     TrustedLocalExecutor,

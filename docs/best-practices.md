@@ -111,6 +111,29 @@ else:
     print(f"Link establishment failed: {link_result.unwrap_err()}")
 ```
 
+Link enforcement fails closed: if the broker cannot build a link manager, a
+`require_links` send raises `SecurityError` instead of proceeding unenforced.
+Treat that exception as a refusal — the message is not enqueued.
+
+### Name the transport you actually have
+
+A `nats://` or `s2://` `broker_url` is a promise about the transport. If the
+driver is missing, `Agent(...)` raises `BrokerUnavailableError` at
+construction rather than substituting the in-memory broker:
+
+```python
+from maple import Agent, Config, BrokerUnavailableError
+
+try:
+    agent = Agent(Config(agent_id="worker", broker_url="nats://cluster:4222"))
+except BrokerUnavailableError as exc:
+    # exc.error carries the typed cause, e.g. BROKER_DEPENDENCY_MISSING
+    raise SystemExit(f"transport unavailable: {exc}")
+```
+
+Fail the deploy here. An agent that falls back to an in-memory bus reports
+successful sends that never leave the process.
+
 ## Error Handling Patterns
 
 ### 1. Structured Error Responses

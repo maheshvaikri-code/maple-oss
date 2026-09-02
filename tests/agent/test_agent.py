@@ -1,20 +1,16 @@
 """Tests for maple.agent.agent - Agent class."""
 
 import pytest
+
 from maple.agent.agent import Agent
 from maple.agent.config import Config
-from maple.core.message import Message
 from maple.broker.broker import MessageBroker
+from maple.core.message import Message
 
 
 def _reset_broker_singleton():
     """Reset the MessageBroker singleton for test isolation."""
-    MessageBroker._instance = None
-    MessageBroker._agent_queues = {}
-    MessageBroker._agent_handlers = {}
-    MessageBroker._temp_handlers = {}
-    MessageBroker._topic_subscribers = {}
-    MessageBroker._topic_handlers = {}
+    MessageBroker.reset_scopes()
 
 
 @pytest.fixture(autouse=True)
@@ -68,20 +64,14 @@ class TestSendMessage:
 
     def test_send_returns_ok(self, agent):
         msg = Message(
-            message_type="TEST",
-            receiver="other_agent",
-            payload={"data": "hello"}
+            message_type="TEST", receiver="other_agent", payload={"data": "hello"}
         )
         result = agent.send(msg)
         assert result.is_ok()
         assert isinstance(result.unwrap(), str)
 
     def test_send_sets_sender(self, agent):
-        msg = Message(
-            message_type="TEST",
-            receiver="other_agent",
-            payload={}
-        )
+        msg = Message(message_type="TEST", receiver="other_agent", payload={})
         agent.send(msg)
         assert msg.sender == "test_agent"
 
@@ -90,7 +80,7 @@ class TestSendMessage:
             message_type="TEST",
             receiver="other_agent",
             sender="custom_sender",
-            payload={}
+            payload={},
         )
         agent.send(msg)
         assert msg.sender == "custom_sender"
@@ -100,10 +90,7 @@ class TestBroadcast:
     """Test broadcast messaging."""
 
     def test_broadcast_to_multiple(self, agent):
-        msg = Message(
-            message_type="ALERT",
-            payload={"alert": "test"}
-        )
+        msg = Message(message_type="ALERT", payload={"alert": "test"})
         results = agent.broadcast(["a1", "a2", "a3"], msg)
         assert len(results) == 3
         for recipient, result in results.items():
@@ -114,10 +101,7 @@ class TestPublish:
     """Test pub/sub."""
 
     def test_publish(self, agent):
-        msg = Message(
-            message_type="EVENT",
-            payload={"event": "test"}
-        )
+        msg = Message(message_type="EVENT", payload={"event": "test"})
         result = agent.publish("test_topic", msg)
         assert result.is_ok()
 
@@ -128,18 +112,21 @@ class TestHandlerRegistration:
     def test_register_handler(self, agent):
         def my_handler(msg):
             pass
+
         agent.register_handler("MY_TYPE", my_handler)
         assert "MY_TYPE" in agent.message_handlers
 
     def test_register_topic_handler(self, agent):
         def my_handler(msg):
             pass
+
         agent.register_topic_handler("my_topic", my_handler)
         assert "my_topic" in agent.topic_handlers
 
     def test_register_stream_handler(self, agent):
         def my_handler(msg):
             pass
+
         agent.register_stream_handler("my_stream", my_handler)
         assert "my_stream" in agent.stream_handlers
 
@@ -182,14 +169,14 @@ class TestReceive:
     def test_receive_timeout(self, agent):
         result = agent.receive(timeout="0.1s")
         assert result.is_err()
-        assert result.unwrap_err()['errorType'] == 'TIMEOUT'
+        assert result.unwrap_err()["errorType"] == "TIMEOUT"
 
     def test_receive_message(self, agent):
         msg = Message(
             message_type="TEST",
             sender="other",
             receiver="test_agent",
-            payload={"data": "hello"}
+            payload={"data": "hello"},
         )
         agent.message_queue.put(msg)
         result = agent.receive(timeout="1s")
@@ -202,22 +189,17 @@ class TestReceiveFiltered:
 
     def test_receive_filtered_timeout(self, agent):
         result = agent.receive_filtered(
-            lambda m: m.message_type == "SPECIFIC",
-            timeout="0.1s"
+            lambda m: m.message_type == "SPECIFIC", timeout="0.1s"
         )
         assert result.is_err()
 
     def test_receive_filtered_match(self, agent):
         msg = Message(
-            message_type="WANTED",
-            sender="other",
-            receiver="test_agent",
-            payload={}
+            message_type="WANTED", sender="other", receiver="test_agent", payload={}
         )
         agent.message_queue.put(msg)
         result = agent.receive_filtered(
-            lambda m: m.message_type == "WANTED",
-            timeout="1s"
+            lambda m: m.message_type == "WANTED", timeout="1s"
         )
         assert result.is_ok()
         assert result.unwrap().message_type == "WANTED"
@@ -252,7 +234,7 @@ class TestEstablishLink:
         a.start()
         result = a.establish_link("other_agent")
         assert result.is_err()
-        assert result.unwrap_err()['errorType'] == 'NO_SECURITY_CONFIG'
+        assert result.unwrap_err()["errorType"] == "NO_SECURITY_CONFIG"
         a.stop()
 
 
@@ -273,7 +255,9 @@ class TestHandlerKeyNormalization:
     def test_lowercase_handler_fires_for_uppercase_message(self, config):
         a = Agent(config)
         seen = []
-        a.register_handler("work.package", lambda m: seen.append(m.message_type) or None)
+        a.register_handler(
+            "work.package", lambda m: seen.append(m.message_type) or None
+        )
         # Message upper-cases the type; dispatch must still find the handler.
         a._process_message(
             Message(message_type="work.package", sender="x", receiver="test_agent")
@@ -319,7 +303,9 @@ class TestRequireRoutable:
     def test_send_to_unsubscribed_is_unroutable(self, config):
         a = Agent(config)
         a.start()
-        res = a.send(Message(message_type="PING", receiver="ghost"), require_routable=True)
+        res = a.send(
+            Message(message_type="PING", receiver="ghost"), require_routable=True
+        )
         assert res.is_err()
         assert res.unwrap_err()["errorType"] == "UNROUTABLE"
         a.stop()
@@ -329,7 +315,9 @@ class TestRequireRoutable:
         b = Agent(Config(agent_id="peer", broker_url="memory://local"))
         a.start()
         b.start()
-        res = a.send(Message(message_type="PING", receiver="peer"), require_routable=True)
+        res = a.send(
+            Message(message_type="PING", receiver="peer"), require_routable=True
+        )
         assert res.is_ok()
         a.stop()
         b.stop()

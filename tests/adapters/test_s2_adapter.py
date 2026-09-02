@@ -26,12 +26,13 @@ class TestBrokerTypeS2(unittest.TestCase):
     def test_create_s2_broker_without_sdk(self):
         """Test creating S2 broker fails gracefully without streamstore."""
         from maple.agent.config import Config
+
         config = Config(agent_id="test", broker_url="s2://my-basin")
         result = ProductionBrokerManager.create_broker(config, BrokerType.S2)
         self.assertTrue(result.is_err())
         error = result.unwrap_err()
-        self.assertEqual(error['errorType'], 'BROKER_DEPENDENCY_MISSING')
-        self.assertIn('streamstore', error['message'])
+        self.assertEqual(error["errorType"], "BROKER_DEPENDENCY_MISSING")
+        self.assertIn("streamstore", error["message"])
 
 
 class TestS2Config(unittest.TestCase):
@@ -40,8 +41,9 @@ class TestS2Config(unittest.TestCase):
     def test_s2_config_defaults(self):
         """Test S2Config has correct defaults."""
         # Import with mocked streamstore
-        with patch.dict('sys.modules', {'streamstore': MagicMock()}):
+        with patch.dict("sys.modules", {"streamstore": MagicMock()}):
             from maple.adapters.s2_adapter import S2Config
+
             config = S2Config(access_token="test-token")
             self.assertEqual(config.access_token, "test-token")
             self.assertEqual(config.basin_name, "maple-agents")
@@ -54,8 +56,9 @@ class TestS2Config(unittest.TestCase):
 
     def test_s2_config_custom_values(self):
         """Test S2Config with custom values."""
-        with patch.dict('sys.modules', {'streamstore': MagicMock()}):
+        with patch.dict("sys.modules", {"streamstore": MagicMock()}):
             from maple.adapters.s2_adapter import S2Config
+
             config = S2Config(
                 access_token="my-token",
                 basin_name="custom-basin",
@@ -69,6 +72,23 @@ class TestS2Config(unittest.TestCase):
             self.assertEqual(config.basin_name, "custom-basin")
             self.assertEqual(config.endpoint, "https://custom.s2.dev")
             self.assertTrue(config.enable_compression)
+
+
+def _restore_s2_adapter():
+    """Reload ``s2_adapter`` with the streamstore mock gone from sys.modules.
+
+    ``_make_broker`` / ``_make_backend`` reload the module *inside* a
+    ``patch.dict('sys.modules', ...)``, which re-executes its import guard with
+    the mock present and leaves ``S2_AVAILABLE = True``. ``patch.dict`` restores
+    ``sys.modules`` but not the module it already reloaded, so without this the
+    flag stays True for the rest of the session and leaks into unrelated tests
+    (it made ``S2Broker(...)`` construct successfully with no SDK installed).
+    """
+    import importlib
+
+    from maple.adapters import s2_adapter
+
+    importlib.reload(s2_adapter)
 
 
 class TestS2BrokerUnit(unittest.TestCase):
@@ -85,10 +105,14 @@ class TestS2BrokerUnit(unittest.TestCase):
         mock_s2_module.StreamConfig = MagicMock
         mock_s2_module.BasinConfig = MagicMock
 
-        with patch.dict('sys.modules', {'streamstore': mock_s2_module}):
+        # The reload below mutates module-level state; undo it after the test.
+        self.addCleanup(_restore_s2_adapter)
+        with patch.dict("sys.modules", {"streamstore": mock_s2_module}):
             # Re-import to pick up the mock
             import importlib
+
             from maple.adapters import s2_adapter
+
             importlib.reload(s2_adapter)
             from maple.adapters.s2_adapter import S2Broker, S2Config
 
@@ -108,8 +132,8 @@ class TestS2BrokerUnit(unittest.TestCase):
         """Test to_maple_config returns correct dict."""
         broker = self._make_broker()
         config = broker.to_maple_config()
-        self.assertIn('s2_broker', config)
-        self.assertEqual(config['s2_broker']['basin'], 'test-basin')
+        self.assertIn("s2_broker", config)
+        self.assertEqual(config["s2_broker"]["basin"], "test-basin")
 
 
 class TestS2StateBackendUnit(unittest.TestCase):
@@ -126,11 +150,15 @@ class TestS2StateBackendUnit(unittest.TestCase):
         mock_s2_module.StreamConfig = MagicMock
         mock_s2_module.BasinConfig = MagicMock
 
-        with patch.dict('sys.modules', {'streamstore': mock_s2_module}):
+        # The reload below mutates module-level state; undo it after the test.
+        self.addCleanup(_restore_s2_adapter)
+        with patch.dict("sys.modules", {"streamstore": mock_s2_module}):
             import importlib
+
             from maple.adapters import s2_adapter
+
             importlib.reload(s2_adapter)
-            from maple.adapters.s2_adapter import S2StateBackend, S2Config
+            from maple.adapters.s2_adapter import S2Config, S2StateBackend
 
             config = S2Config(access_token="test-token", basin_name="test-state")
             backend = S2StateBackend(config)
@@ -147,6 +175,7 @@ class TestS2StateBackendUnit(unittest.TestCase):
     def test_backend_get_empty(self):
         """Test get on empty cache returns None."""
         import asyncio
+
         backend = self._make_backend()
         result = asyncio.run(backend.get("nonexistent"))
         self.assertTrue(result.is_ok())
@@ -155,6 +184,7 @@ class TestS2StateBackendUnit(unittest.TestCase):
     def test_backend_list_keys_empty(self):
         """Test list_keys on empty cache returns empty list."""
         import asyncio
+
         backend = self._make_backend()
         result = asyncio.run(backend.list_keys())
         self.assertTrue(result.is_ok())
@@ -163,6 +193,7 @@ class TestS2StateBackendUnit(unittest.TestCase):
     def test_backend_list_keys_with_prefix(self):
         """Test list_keys filters by prefix."""
         import asyncio
+
         backend = self._make_backend()
         # Manually populate cache
         backend._state_cache = {
@@ -183,10 +214,10 @@ class TestS2StateBackendUnit(unittest.TestCase):
         backend._state_cache = {"key1": {}, "key2": {}}
         backend._version_counter = 5
         stats = backend.get_statistics()
-        self.assertEqual(stats['backend'], 's2')
-        self.assertEqual(stats['basin'], 'test-state')
-        self.assertEqual(stats['keys_count'], 2)
-        self.assertEqual(stats['version_counter'], 5)
+        self.assertEqual(stats["backend"], "s2")
+        self.assertEqual(stats["basin"], "test-state")
+        self.assertEqual(stats["keys_count"], 2)
+        self.assertEqual(stats["version_counter"], 5)
 
     def test_backend_add_listener(self):
         """Test listener registration."""
@@ -201,19 +232,33 @@ class TestAgentS2URLDetection(unittest.TestCase):
     """Test Agent auto-detects s2:// broker URLs."""
 
     def test_s2_url_triggers_s2_broker_path(self):
-        """Test that s2:// URL triggers S2 broker creation path."""
-        from maple.agent.config import Config
+        """An s2:// URL yields an S2 broker, or refuses - never in-memory.
+
+        This assertion was tightened in ADR-157. It previously accepted
+        ``(S2Broker, MessageBroker)``, which encoded the very defect being
+        fixed: without ``streamstore`` the agent silently fell back to the
+        in-memory broker and reported successful sends that never left the
+        process. The fallback is now a typed construction failure.
+        """
+        from maple.adapters.s2_adapter import S2_AVAILABLE, S2Broker
         from maple.agent.agent import Agent
-        from maple.broker.broker import MessageBroker
+        from maple.agent.config import Config
+        from maple.error.types import BrokerUnavailableError
 
         config = Config(agent_id="test_s2", broker_url="s2://my-basin")
-        agent = Agent(config)
-        # If streamstore is installed, broker is S2Broker; otherwise fallback to MessageBroker
-        try:
-            from maple.adapters.s2_adapter import S2Broker
-            self.assertIsInstance(agent.broker, (S2Broker, MessageBroker))
-        except ImportError:
-            self.assertIsInstance(agent.broker, MessageBroker)
+
+        # S2_AVAILABLE, not an import probe: the module imports cleanly without
+        # the SDK and only S2Broker.__init__ refuses, so importing the name
+        # says nothing about whether a broker can actually be built.
+        if S2_AVAILABLE:
+            agent = Agent(config)
+            self.assertIsInstance(agent.broker, S2Broker)
+        else:
+            with self.assertRaises(BrokerUnavailableError) as ctx:
+                Agent(config)
+            self.assertEqual(
+                ctx.exception.error["errorType"], "BROKER_DEPENDENCY_MISSING"
+            )
 
 
 class TestAdaptersInit(unittest.TestCase):
@@ -222,13 +267,15 @@ class TestAdaptersInit(unittest.TestCase):
     def test_adapters_import(self):
         """Test that maple.adapters can be imported."""
         import maple.adapters
+
         self.assertIsNotNone(maple.adapters)
 
     def test_s2_available_flag_is_bool(self):
         """Test S2_AVAILABLE flag is a boolean reflecting streamstore availability."""
         from maple.adapters import S2_AVAILABLE
+
         self.assertIsInstance(S2_AVAILABLE, bool)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

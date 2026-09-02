@@ -1,7 +1,9 @@
 """Tests for enhanced broker features (MessageQueue, MessageRouter, Authorization wiring)."""
 
-import pytest
 import time
+
+import pytest
+
 from maple.agent.config import Config, SecurityConfig
 from maple.broker.broker import MessageBroker
 from maple.core.message import Message
@@ -10,19 +12,9 @@ from maple.core.message import Message
 @pytest.fixture(autouse=True)
 def reset_broker():
     """Reset the singleton broker between tests."""
-    MessageBroker._instance = None
-    MessageBroker._agent_queues = {}
-    MessageBroker._agent_handlers = {}
-    MessageBroker._temp_handlers = {}
-    MessageBroker._topic_subscribers = {}
-    MessageBroker._topic_handlers = {}
+    MessageBroker.reset_scopes()
     yield
-    MessageBroker._instance = None
-    MessageBroker._agent_queues = {}
-    MessageBroker._agent_handlers = {}
-    MessageBroker._temp_handlers = {}
-    MessageBroker._topic_subscribers = {}
-    MessageBroker._topic_handlers = {}
+    MessageBroker.reset_scopes()
 
 
 class TestBrokerMessageQueueIntegration:
@@ -51,7 +43,7 @@ class TestBrokerMessageQueueIntegration:
         # would deliver the message twice.
         assert broker._message_queue is not None
         assert broker._message_queue.size() == 1
-        assert len(MessageBroker._agent_queues.get("b", [])) == 0
+        assert len(broker._agent_queues.get("b", [])) == 0
 
 
 class TestBrokerAuthorizationIntegration:
@@ -90,7 +82,7 @@ class TestBrokerAuthorizationIntegration:
 
         broker.subscribe("agent-1", dummy_handler)
         # Should not raise, role assignment is best-effort
-        assert "agent-1" in MessageBroker._agent_handlers
+        assert "agent-1" in broker._agent_handlers
 
 
 class TestBrokerDeliveryWithQueue:

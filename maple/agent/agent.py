@@ -41,6 +41,7 @@ from ..broker.broker import MessageBroker
 from ..core.message import Message
 from ..core.result import Result
 from ..core.types import Priority
+from ..error.types import BrokerOverflowError, BrokerUnavailableError
 from .config import Config
 
 if TYPE_CHECKING:
@@ -73,26 +74,8 @@ class Agent:
         # Auto-detect broker type from broker_url
         if broker:
             self.broker = broker
-        elif (
-            hasattr(config, "broker_url")
-            and config.broker_url
-            and config.broker_url.startswith("nats://")
-        ):
-            from ..broker.production_broker import BrokerType, ProductionBrokerManager
-
-            result = ProductionBrokerManager.create_broker(config, BrokerType.NATS)
-            self.broker = result.unwrap() if result.is_ok() else MessageBroker(config)
-        elif (
-            hasattr(config, "broker_url")
-            and config.broker_url
-            and config.broker_url.startswith("s2://")
-        ):
-            from ..broker.production_broker import BrokerType, ProductionBrokerManager
-
-            result = ProductionBrokerManager.create_broker(config, BrokerType.S2)
-            self.broker = result.unwrap() if result.is_ok() else MessageBroker(config)
         else:
-            self.broker = MessageBroker(config)
+            self.broker = self._create_broker(config)
 
         self.running = False
         self.message_queue: queue.Queue[Message] = queue.Queue()
@@ -106,6 +89,83 @@ class Agent:
         self.messages_sent = 0
         self.messages_received = 0
         self.messages_failed = 0
+
+    @staticmethod
+    def _create_broker(config: Config) -> Any:
+        """Build the broker the config asks for, or refuse.
+
+        A scheme this method recognises is a promise about the transport. If
+        the driver for it is missing, that promise cannot be kept, so it raises
+        ``BrokerUnavailableError`` rather than substituting the in-memory
+        broker. The previous fallback made a ``nats://`` agent with no
+        ``nats-py`` installed look healthy while every send stayed in-process
+        (ADR-157).
+        """
+        from ..broker.production_broker import BrokerType, ProductionBrokerManager
+
+        broker_url = getattr(config, "broker_url", None) or ""
+        schemes = {"nats://": BrokerType.NATS, "s2://": BrokerType.S2}
+
+        for scheme, broker_type in schemes.items():
+            if broker_url.startswith(scheme):
+                result = ProductionBrokerManager.create_broker(config, broker_type)
+                if result.is_err():
+                    raise BrokerUnavailableError(broker_url, result.unwrap_err())
+                broker = result.unwrap()
+                Agent._require_security_enforcement(config, broker, broker_url)
+                return broker
+
+        return MessageBroker(config)
+
+    @staticmethod
+    def _require_security_enforcement(
+        config: Config, broker: Any, broker_url: str
+    ) -> None:
+        """Refuse a transport that cannot honor the configured security controls.
+
+        The NATS transport publishes straight to NATS and enforces none of
+        ``SecurityConfig`` - no link policy, no separation of duties, no
+        authorization. Accepting such a config and ignoring it is the same
+        fail-open shape ADR-157 removed from the in-memory broker, so it is
+        refused here instead (ADR-161).
+
+        A transport that declares no opinion is treated as non-enforcing.
+        """
+        security = getattr(config, "security", None)
+        if security is None:
+            return
+
+        requested = [
+            name
+            for name, value in (
+                ("separation_policy", getattr(security, "separation_policy", None)),
+                ("require_links", getattr(security, "require_links", False)),
+                ("strict_link_policy", getattr(security, "strict_link_policy", False)),
+            )
+            if value
+        ]
+        if not requested:
+            return
+
+        if getattr(broker, "ENFORCES_SECURITY_POLICY", False):
+            return
+
+        raise BrokerUnavailableError(
+            broker_url,
+            {
+                "errorType": "BROKER_CANNOT_ENFORCE_SECURITY",
+                "message": (
+                    f"{type(broker).__name__} does not enforce "
+                    f"{', '.join(requested)}. Refusing to construct an agent "
+                    "whose configured security controls would be silently "
+                    "ignored."
+                ),
+                "details": {
+                    "broker": type(broker).__name__,
+                    "unenforcedControls": requested,
+                },
+            },
+        )
 
     def start(self) -> None:
         """Start the agent."""
@@ -127,9 +187,15 @@ class Agent:
         try:
             from ..discovery.registry import AgentRegistry
 
-            if Agent._shared_registry is None:
-                Agent._shared_registry = AgentRegistry()
-            self.registry = Agent._shared_registry
+            # Prefer the scope's registry so discovery cannot see across
+            # broker boundaries (ADR-160). Transports that predate scoping
+            # fall back to the process-wide registry.
+            if hasattr(self.broker, "get_registry"):
+                self.registry = self.broker.get_registry()
+            else:
+                if Agent._shared_registry is None:
+                    Agent._shared_registry = AgentRegistry()
+                self.registry = Agent._shared_registry
             result = self.registry.register_agent(
                 agent_id=self.agent_id,
                 name=self.agent_id,
@@ -199,6 +265,20 @@ class Agent:
             message_id = self.broker.send(message)
             self.messages_sent += 1
             return Result.ok(message_id)
+        except BrokerOverflowError as e:
+            # Backpressure, not a failure. Surface the broker's typed error
+            # unchanged so callers can branch on QUEUE_FULL vs
+            # MESSAGE_TOO_LARGE instead of parsing a message string (ADR-159).
+            self.messages_failed += 1
+            refusal: Dict[str, Any] = dict(e.error)
+            refusal_details: Dict[str, Any] = dict(
+                cast(Dict[str, Any], refusal.get("details") or {})
+            )
+            refusal_details["messageType"] = message.message_type
+            refusal_details["receiver"] = message.receiver
+            refusal["details"] = refusal_details
+            logger.warning(f"Broker refused message: {refusal}")
+            return Result.err(refusal)
         except Exception as e:
             self.messages_failed += 1
             error = {

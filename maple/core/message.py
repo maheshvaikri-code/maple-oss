@@ -30,7 +30,6 @@ from .types import AgentID, MessageID, Priority, TypeValidator
 class Message:
     """
     MAPLE message with standardized structure.
-    Core to achieving 32/32 test validation.
     """
 
     def __init__(

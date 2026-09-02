@@ -2,25 +2,25 @@
 
 import pytest
 
-from maple.core.message import Message
+from maple.adapters.doctrine_adapter import (
+    GATE_VERDICTS,
+    DoctrineAdapter,
+    build_gate_result,
+    build_work_package,
+    validate_gate_result,
+    validate_gate_result_payload,
+    validate_work_package,
+    validate_work_package_payload,
+)
 from maple.agent.agent import Agent
 from maple.agent.config import Config
 from maple.broker.broker import MessageBroker
+from maple.core.message import Message
 from maple.security.separation import (
+    GATE_RESULT,
+    WORK_PACKAGE,
     ArtifactRef,
     fresh_context_verifier_preset,
-    WORK_PACKAGE,
-    GATE_RESULT,
-)
-from maple.adapters.doctrine_adapter import (
-    DoctrineAdapter,
-    build_work_package,
-    build_gate_result,
-    validate_work_package,
-    validate_gate_result,
-    validate_work_package_payload,
-    validate_gate_result_payload,
-    GATE_VERDICTS,
 )
 
 
@@ -29,12 +29,7 @@ def _ref(path="docs/brief.md", content=b"brief bytes"):
 
 
 def _reset_broker_singleton():
-    MessageBroker._instance = None
-    MessageBroker._agent_queues = {}
-    MessageBroker._agent_handlers = {}
-    MessageBroker._temp_handlers = {}
-    MessageBroker._topic_subscribers = {}
-    MessageBroker._topic_handlers = {}
+    MessageBroker.reset_scopes()
 
 
 @pytest.fixture(autouse=True)
@@ -62,9 +57,7 @@ class TestWorkPackage:
         assert msg.payload["brief"] == _ref().to_dict()
 
     def test_build_accepts_ref_dict(self):
-        result = build_work_package(
-            "pkg", "role", ["a.py"], _ref().to_dict()
-        )
+        result = build_work_package("pkg", "role", ["a.py"], _ref().to_dict())
         assert result.is_ok()
 
     def test_build_rejects_empty_package_id(self):
@@ -148,8 +141,12 @@ class TestSatisfiesSeparationPolicy:
     def test_work_package_passes_separation(self):
         policy = fresh_context_verifier_preset("orch", ["backend"], ["reviewer"])
         msg = build_work_package(
-            "pkg", "backend", ["maple/foo.py"], _ref(),
-            sender="orch", receiver="backend",
+            "pkg",
+            "backend",
+            ["maple/foo.py"],
+            _ref(),
+            sender="orch",
+            receiver="backend",
         ).unwrap()
         # orchestrator -> builder is allowed AND the payload is artifact-ref-only
         assert policy.authorize_send(msg).is_ok()
@@ -157,8 +154,11 @@ class TestSatisfiesSeparationPolicy:
     def test_gate_result_passes_separation(self):
         policy = fresh_context_verifier_preset("orch", ["backend"], ["reviewer"])
         msg = build_gate_result(
-            "G5", "PASS", _ref("docs/qa.md"),
-            sender="reviewer", receiver="orch",
+            "G5",
+            "PASS",
+            _ref("docs/qa.md"),
+            sender="reviewer",
+            receiver="orch",
         ).unwrap()
         assert policy.authorize_send(msg).is_ok()
 
@@ -174,7 +174,11 @@ class TestDoctrineAdapter:
         worker.start()
         adapter = DoctrineAdapter(orch)
         result = adapter.send_work_package(
-            "backend", "pkg-1", "backend", ["maple/foo.py"], _ref(),
+            "backend",
+            "pkg-1",
+            "backend",
+            ["maple/foo.py"],
+            _ref(),
             require_routable=True,
         )
         assert result.is_ok()
@@ -186,7 +190,11 @@ class TestDoctrineAdapter:
         orch.start()
         adapter = DoctrineAdapter(orch)
         result = adapter.send_work_package(
-            "ghost", "pkg-1", "backend", ["maple/foo.py"], _ref(),
+            "ghost",
+            "pkg-1",
+            "backend",
+            ["maple/foo.py"],
+            _ref(),
             require_routable=True,
         )
         assert result.is_err()
@@ -210,7 +218,11 @@ class TestDoctrineAdapter:
         orch.start()
         adapter = DoctrineAdapter(reviewer)
         result = adapter.send_gate_result(
-            "orch", "G5", "PASS", _ref("docs/qa.md"), evidence="ok",
+            "orch",
+            "G5",
+            "PASS",
+            _ref("docs/qa.md"),
+            evidence="ok",
             require_routable=True,
         )
         assert result.is_ok()
@@ -227,7 +239,12 @@ class TestValidatorEdges:
 
     def test_wp_payload_bad_file_scope_type(self):
         r = validate_work_package_payload(
-            {"package_id": "p", "role": "r", "file_scope": "notalist", "brief": _ref().to_dict()}
+            {
+                "package_id": "p",
+                "role": "r",
+                "file_scope": "notalist",
+                "brief": _ref().to_dict(),
+            }
         )
         assert r.is_err()
 
@@ -257,7 +274,9 @@ class TestBuildBadReceiver:
     """A bad agent id must surface as a Result.err, not a raised exception."""
 
     def test_work_package_bad_receiver(self):
-        r = build_work_package("p", "r", ["a.py"], _ref(), receiver="bad id with spaces")
+        r = build_work_package(
+            "p", "r", ["a.py"], _ref(), receiver="bad id with spaces"
+        )
         assert r.is_err()
         assert r.unwrap_err()["errorType"] == "INVALID_WORK_PACKAGE"
 
@@ -284,7 +303,12 @@ class TestFileScopeGenerator:
     def test_non_string_element_in_populated_scope(self):
         # Forces the all(...) generator to evaluate a non-string element.
         r = validate_work_package_payload(
-            {"package_id": "p", "role": "r", "file_scope": ["ok.py", 5], "brief": _ref().to_dict()}
+            {
+                "package_id": "p",
+                "role": "r",
+                "file_scope": ["ok.py", 5],
+                "brief": _ref().to_dict(),
+            }
         )
         assert r.is_err()
 
@@ -294,7 +318,12 @@ class TestValidatorBriefBranch:
         # Reaches the validator's brief check (an incoming message whose
         # package_id/role/file_scope are fine but brief is malformed).
         r = validate_work_package_payload(
-            {"package_id": "p", "role": "r", "file_scope": ["a.py"], "brief": {"path": "x"}}
+            {
+                "package_id": "p",
+                "role": "r",
+                "file_scope": ["a.py"],
+                "brief": {"path": "x"},
+            }
         )
         assert r.is_err()
         assert r.unwrap_err()["errorType"] == "INVALID_WORK_PACKAGE"

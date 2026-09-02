@@ -22,7 +22,7 @@ Test package for MAPLE Multi Agent Protocol Language Engine.
 Contains comprehensive tests for all MAPLE components.
 """
 
-__version__ = "2.0.0"
+__version__ = "2.1.0"
 __author__ = "Mahesh Vaikri"
 
 # Test imports will be added here as needed

@@ -31,15 +31,30 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
+      - name: Code formatting check
+        run: black --check --diff maple/
+
+      - name: Import sorting check
+        run: isort --check-only --diff maple/
+
+      # F401 (unused import), F811 (redefinition) and F841 (unused variable)
+      # are real defect detectors and the tree is clean without them, so they
+      # are NOT suppressed here. Only cosmetic rules that fight black are.
       - name: Lint with flake8
         run: |
-          flake8 maple/ --max-line-length=88 --extend-ignore=E203,W503,W291,W293,E302,E402,F401,F811,F841 --count --statistics
+          flake8 maple/ --max-line-length=88 --extend-ignore=E203,W503,W291,W293,E302,E402 --count --statistics
 
       - name: Type check with mypy
         run: mypy maple/ --ignore-missing-imports
 
       - name: Security check with bandit
         run: bandit -r maple/ -ll -q
+
+      - name: License header check
+        run: python tools/check_license_headers.py
+
+      - name: Documentation check
+        run: python tools/check_readme_sections.py
 
   runtime-quality:
     name: MAPLE runtime release preflight
@@ -79,7 +94,7 @@ jobs:
             maple/llm/capabilities.py \
             maple/cli.py \
             --max-line-length=88 \
-            --extend-ignore=E203,W503,W291,W293,E302,E402,F401,F811,F841 \
+            --extend-ignore=E203,W503,W291,W293,E302,E402 \
             --count --statistics
 
       - name: Run focused runtime regression
@@ -208,3 +223,16 @@ jobs:
           echo "| Lint & Type Check | ${{ needs.lint.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Tests (multi-OS, multi-Python) | ${{ needs.test.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Build & Package | ${{ needs.build.result }} |" >> $GITHUB_STEP_SUMMARY
+
+      # This job runs with `if: always()` so the table is written even when an
+      # upstream job fails. Without the gate below it would then report success
+      # regardless, and any branch protection requiring "CI Summary" would pass
+      # over a red build. Fail explicitly on anything that is not success.
+      - name: Fail if any required job did not succeed
+        if: >-
+          needs.lint.result != 'success' ||
+          needs.test.result != 'success' ||
+          needs.build.result != 'success'
+        run: |
+          echo "::error::CI gate failed - lint=${{ needs.lint.result }} test=${{ needs.test.result }} build=${{ needs.build.result }}"
+          exit 1

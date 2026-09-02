@@ -1,20 +1,17 @@
 """Tests for maple.broker.broker - MessageBroker."""
 
-import pytest
 import time
-from maple.broker.broker import MessageBroker
+
+import pytest
+
 from maple.agent.config import Config
+from maple.broker.broker import MessageBroker
 from maple.core.message import Message
 
 
 def _reset_broker_singleton():
     """Reset the MessageBroker singleton for test isolation."""
-    MessageBroker._instance = None
-    MessageBroker._agent_queues = {}
-    MessageBroker._agent_handlers = {}
-    MessageBroker._temp_handlers = {}
-    MessageBroker._topic_subscribers = {}
-    MessageBroker._topic_handlers = {}
+    MessageBroker.reset_scopes()
 
 
 @pytest.fixture(autouse=True)
@@ -67,7 +64,7 @@ class TestSend:
             message_type="TEST",
             sender="agent_a",
             receiver="agent_b",
-            payload={"data": "hello"}
+            payload={"data": "hello"},
         )
         msg_id = broker.send(msg)
         assert isinstance(msg_id, str)
@@ -75,10 +72,7 @@ class TestSend:
 
     def test_send_generates_message_id(self, broker):
         msg = Message(
-            message_type="TEST",
-            sender="agent_a",
-            receiver="agent_b",
-            payload={}
+            message_type="TEST", sender="agent_a", receiver="agent_b", payload={}
         )
         msg.message_id = None
         msg_id = broker.send(msg)
@@ -86,17 +80,14 @@ class TestSend:
 
     def test_send_queues_message(self, broker):
         msg = Message(
-            message_type="TEST",
-            sender="agent_a",
-            receiver="agent_b",
-            payload={}
+            message_type="TEST", sender="agent_a", receiver="agent_b", payload={}
         )
         broker.send(msg)
         # Enqueued exactly once (in the priority queue), not duplicated into
         # the basic queue — otherwise the delivery loop delivers it twice.
         assert broker._message_queue is not None
         assert broker._message_queue.size() == 1
-        assert len(MessageBroker._agent_queues.get("agent_b", [])) == 0
+        assert len(broker._agent_queues.get("agent_b", [])) == 0
 
     def test_direct_message_delivered_exactly_once(self):
         """Regression: a direct send fires the receiver's handler once, not twice."""
@@ -107,7 +98,9 @@ class TestSend:
         broker.subscribe("agent_b", lambda m: calls.append(m.message_id))
         broker.connect()
         try:
-            broker.send(Message(message_type="TEST", sender="agent_a", receiver="agent_b"))
+            broker.send(
+                Message(message_type="TEST", sender="agent_a", receiver="agent_b")
+            )
             deadline = time.time() + 2.0
             while not calls and time.time() < deadline:
                 time.sleep(0.02)
@@ -126,8 +119,8 @@ class TestSubscribe:
             pass
 
         broker.subscribe("agent_x", handler)
-        assert "agent_x" in MessageBroker._agent_queues
-        assert "agent_x" in MessageBroker._agent_handlers
+        assert "agent_x" in broker._agent_queues
+        assert "agent_x" in broker._agent_handlers
 
     def test_unsubscribe(self, broker):
         def handler(msg):
@@ -135,8 +128,8 @@ class TestSubscribe:
 
         broker.subscribe("agent_x", handler)
         broker.unsubscribe("agent_x")
-        assert "agent_x" not in MessageBroker._agent_handlers
-        assert "agent_x" not in MessageBroker._agent_queues
+        assert "agent_x" not in broker._agent_handlers
+        assert "agent_x" not in broker._agent_queues
 
     def test_subscribe_multiple_handlers(self, broker):
         def h1(msg):
@@ -147,7 +140,7 @@ class TestSubscribe:
 
         broker.subscribe("agent_x", h1)
         broker.subscribe("agent_x", h2)
-        assert len(MessageBroker._agent_handlers["agent_x"]) == 2
+        assert len(broker._agent_handlers["agent_x"]) == 2
 
 
 class TestTemporaryHandlers:
@@ -158,8 +151,8 @@ class TestTemporaryHandlers:
             pass
 
         broker.subscribe_temporary("agent_x", handler)
-        assert "agent_x" in MessageBroker._temp_handlers
-        assert handler in MessageBroker._temp_handlers["agent_x"]
+        assert "agent_x" in broker._temp_handlers
+        assert handler in broker._temp_handlers["agent_x"]
 
     def test_unsubscribe_temporary(self, broker):
         def handler(msg):
@@ -167,7 +160,7 @@ class TestTemporaryHandlers:
 
         broker.subscribe_temporary("agent_x", handler)
         broker.unsubscribe_temporary("agent_x", handler)
-        assert handler not in MessageBroker._temp_handlers.get("agent_x", [])
+        assert handler not in broker._temp_handlers.get("agent_x", [])
 
     def test_unsubscribe_nonexistent_temporary(self, broker):
         def handler(msg):
@@ -181,9 +174,7 @@ class TestPublish:
 
     def test_publish_returns_message_id(self, broker):
         msg = Message(
-            message_type="EVENT",
-            sender="publisher",
-            payload={"event": "test"}
+            message_type="EVENT", sender="publisher", payload={"event": "test"}
         )
         msg_id = broker.publish("test_topic", msg)
         assert isinstance(msg_id, str)
@@ -196,25 +187,19 @@ class TestPublish:
         broker.subscribe_topic("alerts", handler, agent_id="agent_x")
 
         msg = Message(
-            message_type="ALERT",
-            sender="publisher",
-            payload={"alert": "fire"}
+            message_type="ALERT", sender="publisher", payload={"alert": "fire"}
         )
         broker.publish("alerts", msg)
 
         # Check that the message was queued for agent_x
-        assert "agent_x" in MessageBroker._agent_queues
-        assert len(MessageBroker._agent_queues["agent_x"]) == 1
-        queued_msg = MessageBroker._agent_queues["agent_x"][0]
+        assert "agent_x" in broker._agent_queues
+        assert len(broker._agent_queues["agent_x"]) == 1
+        queued_msg = broker._agent_queues["agent_x"][0]
         assert queued_msg.receiver == "agent_x"
         assert queued_msg.metadata.get("topic") == "alerts"
 
     def test_publish_no_subscribers(self, broker):
-        msg = Message(
-            message_type="EVENT",
-            sender="publisher",
-            payload={}
-        )
+        msg = Message(message_type="EVENT", sender="publisher", payload={})
         msg_id = broker.publish("empty_topic", msg)
         assert msg_id is not None
 
@@ -227,7 +212,7 @@ class TestTopicSubscription:
             pass
 
         broker.subscribe_topic("news", handler, agent_id="agent_1")
-        assert "agent_1" in MessageBroker._topic_subscribers.get("news", [])
+        assert "agent_1" in broker._topic_subscribers.get("news", [])
 
     def test_subscribe_topic_idempotent(self, broker):
         def handler(topic, message):
@@ -235,7 +220,7 @@ class TestTopicSubscription:
 
         broker.subscribe_topic("news", handler, agent_id="agent_1")
         broker.subscribe_topic("news", handler, agent_id="agent_1")
-        assert MessageBroker._topic_subscribers["news"].count("agent_1") == 1
+        assert broker._topic_subscribers["news"].count("agent_1") == 1
 
     def test_unsubscribe_topic(self, broker):
         def handler(topic, message):
@@ -243,7 +228,7 @@ class TestTopicSubscription:
 
         broker.subscribe_topic("news", handler, agent_id="agent_1")
         broker.unsubscribe_topic("news", "agent_1")
-        assert "agent_1" not in MessageBroker._topic_subscribers.get("news", [])
+        assert "agent_1" not in broker._topic_subscribers.get("news", [])
 
     def test_unsubscribe_nonexistent_topic(self, broker):
         broker.unsubscribe_topic("nonexistent", "agent_1")  # Should not raise
@@ -265,14 +250,14 @@ class TestMessageDelivery:
             message_type="TEST",
             sender="agent_a",
             receiver="agent_x",
-            payload={"data": "hello"}
+            payload={"data": "hello"},
         )
         broker.send(msg)
 
         # Wait for delivery
         time.sleep(0.2)
         assert len(received) >= 1
-        assert received[0].payload['data'] == "hello"
+        assert received[0].payload["data"] == "hello"
 
     def test_delivery_to_temp_handler(self, broker):
         received = []
@@ -284,10 +269,7 @@ class TestMessageDelivery:
         broker.connect()
 
         msg = Message(
-            message_type="TEST",
-            sender="agent_a",
-            receiver="agent_x",
-            payload={}
+            message_type="TEST", sender="agent_a", receiver="agent_x", payload={}
         )
         broker.send(msg)
 
@@ -304,9 +286,7 @@ class TestMessageDelivery:
         broker.connect()
 
         msg = Message(
-            message_type="EVENT",
-            sender="publisher",
-            payload={"event": "test"}
+            message_type="EVENT", sender="publisher", payload={"event": "test"}
         )
         broker.publish("events", msg)
 

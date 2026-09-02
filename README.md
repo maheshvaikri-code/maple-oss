@@ -6,17 +6,7 @@
 
 **Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)**
 
-MAPLE is a Python multi-agent runtime and protocol layer. It combines
-autonomous agent execution with typed messaging, resource-aware coordination,
-durable local state, security boundaries, interoperability, and evaluation
-tools.
-
-- Release: 2.0.0 GitHub release; PyPI publication pending
-- Python package: maple-oss
-- License: [AGPL-3.0-only](LICENSE), with a [commercial license](COMMERCIAL_LICENSE.md) available
-- Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
-
-[![Version](https://img.shields.io/badge/version-2.0.0-brightgreen)](VERSION)
+[![Version](https://img.shields.io/badge/version-2.1.0-brightgreen)](VERSION)
 [![Python](https://img.shields.io/badge/Python-3.8%20%7C%203.9%20%7C%203.10%20%7C%203.11%20%7C%203.12-blue)](pyproject.toml)
 [![CI](https://github.com/maheshvaikri-code/maple-oss/actions/workflows/ci.yml/badge.svg)](https://github.com/maheshvaikri-code/maple-oss/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-AGPL%203.0-blue.svg)](LICENSE)
@@ -24,47 +14,99 @@ tools.
 
 > An agent can be clever and still be unreliable. MAPLE gives that agent a
 > typed message, a bounded tool, a resource budget, a durable checkpoint, and
-> an explainable result—so the host can decide what happens next.
+> an explainable result — so the host can decide what happens next.
 
-MAPLE is the runtime beneath that story: a Python protocol layer for agents
-that need to communicate, reason, recover, and remain governable. Version
-2.0.0 brings the autonomy loop and the operational boundary into one coherent
-local package while keeping hosted services and external side effects under
-host control.
+## The problem
 
-## Why MAPLE
+Multi-agent systems fail quietly.
 
-An agent begins with a goal, but a dependable system begins with boundaries.
-MAPLE connects those boundaries around the loop that turns intent into work:
+An agent sends a message to a peer that never started. The send returns
+success. A queue fills; the framework buffers past its own limit until the
+process is killed. A security control is configured, the transport does not
+implement it, and nothing says so. Each of these looks identical to working
+software right up until it does not.
+
+The failures are not exotic. They are the ordinary consequence of a system that
+reports what it *attempted* instead of what *happened*.
+
+## What MAPLE does about it
+
+MAPLE is a Python multi-agent runtime and protocol layer. Its organising
+principle is that **every outcome is legible**: a message is delivered, refused
+with a typed error, or counted as undeliverable. There is no fourth case where
+it simply vanishes.
+
+```python
+from maple import Agent, Config, Message
+
+agent = Agent(Config(agent_id="planner", broker_url="memory://team"))
+agent.start()
+
+result = agent.send(Message(message_type="PLAN", receiver="coder", payload={"task": "..."}))
+
+if result.is_err():
+    error = result.unwrap_err()
+    if error["errorType"] == "QUEUE_FULL":
+        ...    # the consumer is behind - shed, slow down, or retry
+    elif error["errorType"] == "UNROUTABLE":
+        ...    # nobody is listening on that name
+```
+
+Failure arrives as a value with a machine-readable type, not as a silence you
+discover in production. That same discipline runs through the rest of the
+system: tools are approved before they execute, resources are negotiated
+against a budget, runs checkpoint so they can resume, and a control that cannot
+be enforced refuses rather than pretending.
+
+## The loop
+
+An agent begins with a goal. A dependable system begins with boundaries. MAPLE
+connects those boundaries around the loop that turns intent into work:
 
 `goal → model decision → validated tool → typed result → event/checkpoint`
 
+Every transition is inspectable. A host can approve a tool before it runs,
+return a failure as data, checkpoint a run, redact an event, or cancel a
+cooperative operation. Credentials, deployment, tenancy, and external side
+effects remain the host's — MAPLE makes the local contract explicit and
+testable.
+
 That loop is useful on a laptop, inside a service, or as a building block in a
-larger platform. The host still owns credentials, deployment, tenancy, and
-external side effects; MAPLE makes the local contract explicit and testable.
+larger platform.
 
-The package provides:
+## Three layers
 
-- Result[T, E] values for explicit success and failure paths.
-- Resource negotiation, lifecycle-aware budgets, priority routing, leases, and
-  fencing tokens.
-- Agent discovery, health monitoring, circuit breakers, retries, and task
-  scheduling.
-- Cryptographic link identification, authentication, authorization, bounded
-  serialization, and redaction.
-- Autonomous agents, typed tools, guardrails, memory, retrieval, workflows,
-  sessions, durable local runs, events, and evaluation.
-
-MAPLE has three related layers:
-
-1. **Protocol:** typed messages, resource requirements, priorities, errors, and
-   interoperability formats.
-2. **Runtime:** brokers, discovery, state, leases, security, scheduling, and
+1. **Protocol** — typed messages, resource requirements, priorities, errors,
+   and interoperability formats.
+2. **Runtime** — brokers, discovery, state, leases, security, scheduling, and
    observability.
-3. **Autonomy SDK:** ReAct agents, tools, model providers, workflows, memory,
+3. **Autonomy SDK** — ReAct agents, tools, model providers, workflows, memory,
    retrieval, approvals, handoffs, sessions, and evaluations.
 
-## MAPLE 2.0.0 capability surface
+You can use the protocol without the autonomy layer, and the runtime without
+either. The layers are separable on purpose.
+
+## What is new in 2.1.0
+
+2.1.0 is a correctness release. Every change closes a case where a control
+silently did nothing.
+
+| Change | Before | Now |
+| --- | --- | --- |
+| **Backpressure** | A "bounded" queue overflowed into an unbounded list; 25,000 sends were all accepted with 15,000 held in memory | `send()` refuses with `QUEUE_FULL` and the caller can act |
+| **Undeliverable messages** | Delivered to zero handlers and discarded with no error, counter, or log | Counted in `get_statistics()`, logged once per receiver, and available through a dead-letter hook |
+| **Transport security** | A `nats://` agent accepted `require_links` and enforced nothing | Construction refuses a transport that cannot honor the configured controls |
+| **Broker configuration** | `import maple` pinned the broker to a throwaway config; every later `SecurityConfig` was discarded | Configuration reaches the broker; importing has no side effects |
+| **Scoped runtimes** | Every `broker_url` returned the same process-wide bus, so separate tenants saw each other in discovery | `memory://tenant-a` and `memory://tenant-b` are isolated buses and registries |
+| **Transport contract** | The two brokers shared no interface and had drifted six methods apart | A `Broker` protocol with a conformance suite every transport must pass |
+
+**2.1.0 changes behavior.** These are corrections to controls that did nothing,
+not new restrictions — but code that relied on the previous behavior will
+notice. A `send()` that always succeeded can now fail, and agents on different
+`broker_url` values no longer share a bus. See the
+[changelog](CHANGELOG.md) for the migration notes.
+
+## Capability surface
 
 The following is the shipped and tested local surface. **Preview** means a
 bounded or opt-in contract that is ready for local integration and still
@@ -624,6 +666,23 @@ Keeping this boundary visible is part of using MAPLE correctly. Local
 durability is useful without pretending to be a hosted service, and an adapter
 is useful without silently changing who owns identity or side effects.
 
+### Configuration is honored or refused
+
+Two rules follow from the same principle — a configuration MAPLE cannot
+honor is reported, never quietly substituted
+([ADR-157](docs/adr/157-broker-configuration-fidelity-and-fail-closed-transport.md)):
+
+- A `nats://` or `s2://` `broker_url` whose driver is not installed raises
+  `BrokerUnavailableError` at agent construction. It does not fall back to the
+  in-memory broker, because an agent that reports successful sends into a
+  process-local bus is worse than one that fails to start.
+- `require_links=True` is enforced. If the broker cannot build a link manager,
+  link-enforced sends raise `SecurityError` rather than proceeding
+  unenforced — a security control that cannot run refuses.
+
+`import maple` has no global side effects; it does not construct an agent or a
+broker.
+
 ## n8n companion integration
 
 The repository also contains a separate TypeScript integration for visual
@@ -656,7 +715,6 @@ Python runtime.
 ## Examples and companion integrations
 
 - [Examples](examples/README.md) - small core and autonomy examples.
-- [Legacy hello-world example](example/README.md) - compatibility example.
 - [External demo package](demo_package/README.md) - interactive demos; not
   included in the core wheel or sdist.
 - [n8n integration](n8n-integration/README.md) - TypeScript nodes and sample
@@ -680,24 +738,42 @@ python -m compileall -q maple
 python -m maple.cli doctor --json
 ~~~
 
-The final local release-equivalent run completed with **1,912 passed and 1
-skipped**. The full suite is the release gate; focused suites are useful while
-iterating on a boundary. The offline doctor checks core, evaluation, events,
-execution, interop, retrieval, server, and session readiness without making a
-network request. Re-run the commands above on the exact checkout before
-publishing; no evidence in this README authorizes publication. See the
-[release QA record](docs/qa/maple-agent-runtime-release-2.0.0.md) and
-[ultra-review record](docs/reviews/maple-ultra-review-2.0.0.md).
+**The full suite is the release gate.** Focused suites are useful while
+iterating on a boundary, but nothing ships on a subset.
 
-## Release and website status
+The most recent release-equivalent run, on the 2.1.0 tree, completed with
+**2,040 passed, 1 skipped** at 79% statement coverage. That figure is a dated
+measurement rather than a standing claim — it moves with every commit, so
+re-run the suite on your exact checkout rather than trusting a number in a
+README. Nothing written here authorizes publication.
 
-MAPLE 2.0.0 is tagged and available as a GitHub Release with source and wheel
-artifacts. PyPI publication remains pending; no PyPI upload has been performed.
+The offline doctor (`python -m maple.cli doctor --json`) checks core,
+evaluation, events, execution, interop, retrieval, server, and session
+readiness without making a network request.
 
-The website is intentionally **in standing**: tracked static assets are held
-for a later copy/link/accessibility pass and deployment decision. See
-[website/README.md](website/README.md) and the
-[external-phase plan](docs/plans/maple-publication-website-cloud-registry.md).
+QA and review records live under [docs/qa/](docs/qa/) and
+[docs/reviews/](docs/reviews/); architecture decisions under
+[docs/adr/](docs/adr/).
+
+## Release status
+
+| Version | State |
+| --- | --- |
+| **2.1.0** | Prepared. Documentation, changelog, and website content are complete and staged; the package builds and passes `twine check`. Not yet published. |
+| **2.0.0** | Published on PyPI as `maple_oss-2.0.0` (uploaded 2026-08-31) and tagged as a GitHub Release with source and wheel artifacts. |
+
+Documentation ships with the release, not after it. Every public claim in this
+README, the docs, and the website is reconciled against the 2.1.0 tree before a
+tag is cut.
+
+**If you are on 2.0.0**, note that 2.1.0 fixes controls that silently did
+nothing — a `send()` that always succeeded can now fail, and a transport that
+accepted security configuration it ignored now refuses. The
+[changelog](CHANGELOG.md) carries the migration notes.
+
+Website source lives in `website/public_html/` and is not tracked by Git; see
+[website/README.md](website/README.md) for its status and the deployment
+checklist.
 
 ## Documentation map
 
@@ -709,6 +785,11 @@ for a later copy/link/accessibility pass and deployment decision. See
 - [Best practices](docs/best-practices.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Changelog](CHANGELOG.md)
+- [Architecture decisions](docs/adr/) - 161 records, including the 2.1.0
+  delivery contract ([157](docs/adr/157-broker-configuration-fidelity-and-fail-closed-transport.md),
+  [159](docs/adr/159-backpressure-observable-delivery-and-a-race-free-delivery-path.md)),
+  scoping ([160](docs/adr/160-agent-scope-and-runtime-lifetimes.md)), and the
+  broker contract ([161](docs/adr/161-broker-contract-and-the-path-to-multi-host.md))
 - [2.0.0 release checklist](docs/releases/v2.0.0.md)
 
 ## Project structure

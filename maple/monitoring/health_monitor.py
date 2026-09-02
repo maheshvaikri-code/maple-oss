@@ -30,7 +30,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 
 @dataclass
-class HealthMetrics:
+class ComponentHealthMetrics:
     """Health metrics for an agent or broker."""
 
     agent_id: str
@@ -44,18 +44,23 @@ class HealthMetrics:
     connection_status: str
 
 
-class HealthMonitor:
-    """
-    Monitors health and performance of MAPLE components.
+class ComponentHealthMonitor:
+    """Samples one component's own health: CPU, memory, throughput, errors.
+
+    Distinct from :class:`maple.discovery.health_monitor.HealthMonitor`, which
+    watches *other* agents via registry heartbeats. This one is self-reporting
+    and takes a ``component_id``; that one is registry-wide and takes an
+    ``AgentRegistry``. They carried the same class name until ADR-158, so an
+    import of "HealthMonitor" was ambiguous at a glance.
     """
 
     def __init__(self, component_id: str, collection_interval: float = 5.0) -> None:
         self.component_id = component_id
         self.collection_interval = collection_interval
-        self.metrics_history: deque[HealthMetrics] = deque(maxlen=100)
+        self.metrics_history: deque[ComponentHealthMetrics] = deque(maxlen=100)
         self.running = False
         self.monitor_thread: Optional[threading.Thread] = None
-        self.callbacks: List[Callable[[HealthMetrics], None]] = []
+        self.callbacks: List[Callable[[ComponentHealthMetrics], None]] = []
 
         # Performance tracking
         self.message_count = 0
@@ -86,11 +91,11 @@ class HealthMonitor:
         """Record an error."""
         self.error_count += 1
 
-    def add_callback(self, callback: Callable[[HealthMetrics], None]) -> None:
+    def add_callback(self, callback: Callable[[ComponentHealthMetrics], None]) -> None:
         """Add a callback for health metric updates."""
         self.callbacks.append(callback)
 
-    def get_current_metrics(self) -> HealthMetrics:
+    def get_current_metrics(self) -> ComponentHealthMetrics:
         """Get current health metrics."""
         try:
             import os
@@ -115,7 +120,7 @@ class HealthMonitor:
         else:
             response_time_avg = 0.0
 
-        return HealthMetrics(
+        return ComponentHealthMetrics(
             agent_id=self.component_id,
             timestamp=time.time(),
             cpu_usage=cpu_usage,
@@ -146,7 +151,7 @@ class HealthMonitor:
                 print(f"Health monitor error: {e}")
                 time.sleep(1.0)
 
-    def _summarize(self, latest: HealthMetrics) -> Dict[str, Any]:
+    def _summarize(self, latest: ComponentHealthMetrics) -> Dict[str, Any]:
         """Build a health-summary dict from a metrics record (sampled or on-demand)."""
         # Determine health status
         if latest.error_rate > 0.1:  # More than 10% error rate
@@ -189,3 +194,17 @@ class HealthMonitor:
             else self.get_current_metrics()
         )
         return self._summarize(latest)
+
+
+# Backwards compatibility: these names were reachable via the deep import path
+# ``maple.monitoring.health_monitor`` before the module was exported under
+# unambiguous names (ADR-158). Kept so existing callers do not break.
+HealthMonitor = ComponentHealthMonitor
+HealthMetrics = ComponentHealthMetrics
+
+__all__ = [
+    "ComponentHealthMonitor",
+    "ComponentHealthMetrics",
+    "HealthMonitor",
+    "HealthMetrics",
+]
