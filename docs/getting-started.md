@@ -144,6 +144,20 @@ if link_result.is_ok():
     agent.send_with_link(secure_msg, "partner_agent")
 ```
 
+`require_links=True` is enforced, and it fails closed. A send with no valid
+link raises `SecurityError` when `strict_link_policy` is set, and a broker
+that cannot build a link manager at all refuses every link-enforced send
+rather than passing the message through. Catch it from the package root:
+
+```python
+from maple import SecurityError
+
+try:
+    agent.send(secure_msg)
+except SecurityError as exc:
+    ...  # no link: the message was not enqueued
+```
+
 ## Next Steps
 
 1. **Explore Examples**:

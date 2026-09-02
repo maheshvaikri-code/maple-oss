@@ -11,12 +11,12 @@ autonomous agent execution with typed messaging, resource-aware coordination,
 durable local state, security boundaries, interoperability, and evaluation
 tools.
 
-- Release: 2.0.0 GitHub release; PyPI publication pending
+- Release: 2.1.0; 2.0.0 is published on PyPI
 - Python package: maple-oss
 - License: [AGPL-3.0-only](LICENSE), with a [commercial license](COMMERCIAL_LICENSE.md) available
 - Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
 
-[![Version](https://img.shields.io/badge/version-2.0.0-brightgreen)](VERSION)
+[![Version](https://img.shields.io/badge/version-2.1.0-brightgreen)](VERSION)
 [![Python](https://img.shields.io/badge/Python-3.8%20%7C%203.9%20%7C%203.10%20%7C%203.11%20%7C%203.12-blue)](pyproject.toml)
 [![CI](https://github.com/maheshvaikri-code/maple-oss/actions/workflows/ci.yml/badge.svg)](https://github.com/maheshvaikri-code/maple-oss/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-AGPL%203.0-blue.svg)](LICENSE)
@@ -624,6 +624,23 @@ Keeping this boundary visible is part of using MAPLE correctly. Local
 durability is useful without pretending to be a hosted service, and an adapter
 is useful without silently changing who owns identity or side effects.
 
+### Configuration is honored or refused
+
+Two rules follow from the same principle — a configuration MAPLE cannot
+honor is reported, never quietly substituted
+([ADR-157](docs/adr/157-broker-configuration-fidelity-and-fail-closed-transport.md)):
+
+- A `nats://` or `s2://` `broker_url` whose driver is not installed raises
+  `BrokerUnavailableError` at agent construction. It does not fall back to the
+  in-memory broker, because an agent that reports successful sends into a
+  process-local bus is worse than one that fails to start.
+- `require_links=True` is enforced. If the broker cannot build a link manager,
+  link-enforced sends raise `SecurityError` rather than proceeding
+  unenforced — a security control that cannot run refuses.
+
+`import maple` has no global side effects; it does not construct an agent or a
+broker.
+
 ## n8n companion integration
 
 The repository also contains a separate TypeScript integration for visual
@@ -656,7 +673,6 @@ Python runtime.
 ## Examples and companion integrations
 
 - [Examples](examples/README.md) - small core and autonomy examples.
-- [Legacy hello-world example](example/README.md) - compatibility example.
 - [External demo package](demo_package/README.md) - interactive demos; not
   included in the core wheel or sdist.
 - [n8n integration](n8n-integration/README.md) - TypeScript nodes and sample
@@ -680,7 +696,7 @@ python -m compileall -q maple
 python -m maple.cli doctor --json
 ~~~
 
-The final local release-equivalent run completed with **1,912 passed and 1
+The final local release-equivalent run completed with **1,936 passed and 1
 skipped**. The full suite is the release gate; focused suites are useful while
 iterating on a boundary. The offline doctor checks core, evaluation, events,
 execution, interop, retrieval, server, and session readiness without making a
@@ -691,8 +707,9 @@ publishing; no evidence in this README authorizes publication. See the
 
 ## Release and website status
 
-MAPLE 2.0.0 is tagged and available as a GitHub Release with source and wheel
-artifacts. PyPI publication remains pending; no PyPI upload has been performed.
+MAPLE 2.0.0 is published on PyPI (`maple_oss-2.0.0`, uploaded 2026-08-31) and
+tagged as a GitHub Release with source and wheel artifacts. 2.1.0 is prepared
+but not yet published; see the changelog for its behavior-breaking fixes.
 
 The website is intentionally **in standing**: tracked static assets are held
 for a later copy/link/accessibility pass and deployment decision. See

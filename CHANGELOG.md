@@ -6,7 +6,182 @@
 
 **Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)**
 
-## Unreleased
+## [Unreleased]
+
+## [2.1.0] - 2026-09-01
+
+### Fixed — broker refuses instead of buffering or dropping (ADR-159)
+
+Measured against a stalled consumer: 25,000 sends were all accepted, 10,000 held
+in the "bounded" queue and 15,000 in an unbounded list. The bound was decorative.
+
+- **Backpressure.** A full queue now raises `BrokerOverflowError`, surfaced as
+  `Result.err({"errorType": "QUEUE_FULL"})` with the limit in `details`. The
+  unbounded spill path is removed; there is no longer any path that buffers
+  without a limit.
+- **Undeliverable messages are observable.** A message reaching zero handlers
+  was previously discarded with no error, counter or log. It is now counted in
+  `broker.get_statistics()`, logged once per receiver (rate-limited), and
+  available through a new `set_undeliverable_handler()` dead-letter hook.
+- **The delivery path is race-free.** `subscribe()` wrote the handler tables
+  under the lock while `_deliver_message()` read them on the delivery thread
+  without it. Handlers are now snapshotted under the lock and invoked outside
+  it — closing the race without letting one slow handler stall every
+  `subscribe()`.
+- **Message size is bounded.** `send()` refuses a payload over
+  `max_message_bytes` (default 1 MiB, matching `core/serialization.py`) with a
+  distinct `MESSAGE_TOO_LARGE` error type.
+- `PerformanceConfig` gains `max_queue_size` and `max_message_bytes`. Both are
+  process-wide, because the in-memory broker is a process-wide singleton.
+
+### Fixed — a transport that cannot enforce security now refuses (ADR-161)
+
+- `Agent(Config(broker_url="nats://...", security=...))` constructed
+  successfully while the NATS transport enforced **none** of `SecurityConfig` —
+  no link policy, no separation of duties, no authorization. Construction now
+  raises `BrokerUnavailableError` with `BROKER_CANNOT_ENFORCE_SECURITY` rather
+  than accepting controls it will ignore. Brokers declare
+  `ENFORCES_SECURITY_POLICY`; a transport that declares nothing is treated as
+  non-enforcing.
+
+### Changed
+
+- `VERSION` and `__version__` to 2.1.0; README version badge updated.
+- `make format` runs `black maple/` and `isort maple/` — the same tools and
+  paths CI checks. The Makefile previously had no formatting target.
+
+### Documentation
+
+- Corrected the README's release status. It stated "PyPI publication remains
+  pending; no PyPI upload has been performed"; `maple_oss-2.0.0` was in fact
+  uploaded to PyPI on 2026-08-31.
+
+### Added — design records, not yet implemented
+
+- [ADR-160](docs/adr/160-agent-scope-and-runtime-lifetimes.md): `AgentScope`,
+  covering the three process-global runtime singletons (`MessageBroker`,
+  `Agent._shared_registry`, `LLMProviderRegistry`) and the lifetime model.
+- [ADR-161](docs/adr/161-broker-contract-and-the-path-to-multi-host.md): the
+  broker `Protocol`, a conformance suite, and the sequence to multi-host.
+
+### Note on versioning
+
+2.1.0 carries behavior-breaking fixes. They are corrections to controls that
+silently did nothing, not new restrictions, but code relying on the previous
+behavior will observe changes — see the Breaking changes sections below.
+
+### Changed — module boundaries, public surface, and CI (ADR-158)
+
+- **No module-level import cycles remain.** `broker/broker.py` and
+  `broker/nats_broker.py` imported `Config` at runtime but used it only in
+  annotations; both now import it under `TYPE_CHECKING`. `autonomy/execution.py`
+  moved to `core/execution.py` so `task_management/worker.py` no longer imports
+  upward into `autonomy` — `maple.autonomy.execution` remains a re-export shim,
+  so every existing import path still works.
+- **`maple/monitoring/` is wired into the public API.** It shipped in the wheel
+  while being unreachable from any other module and absent from `__all__`, and
+  its `HealthMonitor`/`HealthMetrics` names collided with `maple.discovery`'s
+  unrelated classes. Renamed to `ComponentHealthMonitor` /
+  `ComponentHealthMetrics`, exported from the package root; the old names remain
+  as aliases.
+- **`Result.unwrap()` and `unwrap_err()` raise `UnwrapError`** instead of a bare
+  `Exception`, so a caller contract violation is distinguishable from a domain
+  failure. It subclasses `Exception` (existing `except Exception` is unaffected)
+  and carries the wrapped value on `.value`.
+- **One CI workflow is the gate, and it can fail.** The `CI Summary` job ran
+  `if: always()` and only echoed job results, so branch protection requiring it
+  would pass over a red build; it now fails explicitly. `test.yml` and
+  `quality.yml` duplicated `ci.yml`'s triggers and matrix — their unique checks
+  (black, isort, license headers, README sections) moved into `ci.yml` and the
+  two workflows were removed.
+- **flake8 no longer suppresses `F401`, `F811`, `F841`** in CI. They detect real
+  defects and the tree is clean without them.
+- The two inline `python -c` CI checks are now
+  `tools/check_license_headers.py` and `tools/check_readme_sections.py`, which
+  can be linted, typechecked, and run locally.
+
+### Fixed — doctrine tooling
+
+- `tools/doctrine_lint.py` no longer compares the Engineering Doctrine's
+  version against a consumer repo's product version. Its version carriers are
+  split by ownership: doctrine-owned files (`doctrine_mcp.py`, the plugin
+  manifest) are checked wherever they exist, while product-owned files
+  (`CHANGELOG.md`, `pyproject.toml`, the README badge) are checked only in the
+  doctrine's own repository. The check had been dormant here purely because
+  MAPLE's changelog headings did not match Keep a Changelog format; fixing the
+  headings surfaced it as a false `v0.6.12 != 2.0.0` desync.
+
+### Fixed — repository and test hygiene
+
+- `example/` merged into `examples/`; `example/helloworld.py` is now
+  `examples/helloworld.py`.
+- Removed four one-off formatting scripts from the repository root
+  (`fix_formatting.py`, `format_all_files.py`, `formatting_status.py`,
+  `commit_formatting_fixes.py`). Two wrapped `black`/`isort`, one printed a
+  cheat sheet, and `format_all_files.py` was a regex-based partial
+  reimplementation of black that would produce diffs the real formatter
+  rejects. `ci.yml` runs `black --check` and `isort --check-only` directly.
+- Raised the loopback request timeout in `tests/autonomy/test_server.py` from 2
+  to 30 seconds. Two seconds flaked under full-suite load with coverage
+  tracing; the value only bounds a hang.
+- Removed unsubstantiated "32/32 test validation" claims from `core/message.py`,
+  `core/result.py`, and `core/types.py` docstrings.
+- Corrected the test count in the README (1,912 → 1,936).
+- Normalized `CHANGELOG.md` version headings to Keep a Changelog's `[version]`
+  form. Recorded dates are preserved verbatim; no day precision was invented.
+
+### Added
+
+- `tests/core/test_result.py` — the `Result[T, E]` contract had no dedicated
+  test module despite being the type every fallible API returns. Coverage of
+  `core/result.py` goes from 68% to 100%.
+- Contract tests in `tests/test_ci_workflows.py` covering the summary-job gate,
+  the absorbed quality checks, and the un-suppressed lint rules.
+
+### Fixed — broker configuration fidelity (ADR-157)
+
+Three defects that shared one root cause: `MessageBroker` is a process-wide
+singleton that froze its configuration at first construction, and `import
+maple` performed that first construction itself.
+
+- `import maple` no longer constructs an `Agent`. `validate_installation()`
+  ran automatically under `if __debug__:` — true in every ordinary
+  interpreter — and built an agent with a throwaway `memory://test` config,
+  pinning the broker singleton before any user code ran. Every agent's
+  `broker_url` was silently discarded from then on. The function remains
+  public and callable, and is now free of side effects.
+- A `SecurityConfig` supplied by any agent after the first now reaches the
+  broker. `security_config`, `link_manager`, and `_auth_manager` were frozen
+  at first construction, so — because of the defect above — every user
+  security configuration was dropped. Adoption follows the existing
+  separation-policy rule: only ever add or replace with a non-`None` value,
+  never clear.
+- `require_links` now fails closed. The enforcement block was nested inside
+  `if self.link_manager:`, so a broker without a link manager skipped the
+  check entirely and the send proceeded. It now raises `SecurityError`.
+- `SecurityError` is defined once. It existed as two unrelated classes in
+  `maple.broker.broker` and `maple.error.types`, so catching one missed the
+  other. Both import paths now name the same class, and it is exported from
+  the package root along with the new `BrokerUnavailableError`.
+
+### Breaking changes
+
+- `Agent(Config(broker_url="nats://..."))` without `nats-py` installed now
+  raises `BrokerUnavailableError` instead of silently returning an agent
+  backed by the in-memory broker. Same for `s2://` without `streamstore`.
+  The previous behavior made a misconfigured deployment look healthy while
+  every send stayed in-process. The exception carries the underlying typed
+  error on its `.error` attribute.
+- `send()` on an agent configured with `require_links=True` now raises
+  `SecurityError` when no link manager is available, where it previously
+  succeeded.
+- Because security configuration now reaches the broker, `AuthorizationManager`
+  is live for security-configured agents. It checks both sender and receiver,
+  so a secure agent cannot send to a peer that has never subscribed. Agents
+  subscribe on `start()`; this affects callers that send before starting the
+  receiver.
+- `validate_installation()` no longer constructs an `Agent`, so it validates
+  imports and core types only. Its return shape is unchanged.
 
 ### CI and release workflow
 
@@ -15,7 +190,7 @@
 - Added a direct reusable-workflow handoff from tag releases to PyPI so
   publication does not depend on a release event emitted by `GITHUB_TOKEN`.
 
-## 2.0.0 - 2026-08-29
+## [2.0.0] - 2026-08-29
 
 ### CI and release hardening
 
@@ -1476,7 +1651,7 @@
   strict versioned JSON adapter envelopes and a network-free machine-readable
   runtime readiness report.
 
-## Version 1.1.3 - Downstream integration improvements (August 2026)
+## [1.1.3] - August 2026 - Downstream integration improvements
 
 Hardening and extensibility surfaced by integrating MAPLE into a governed
 downstream host. All backward-compatible except two intentional behavior
@@ -1519,7 +1694,7 @@ changes (noted below). Full suite: 1002 passed.
 
 ---
 
-## Version 1.1.2 - Doctrine wishlist + broker/task fixes (July 2026)
+## [1.1.2] - July 2026 - Doctrine wishlist + broker/task fixes
 
 ### Fixes
 
@@ -1598,7 +1773,7 @@ changes (noted below). Full suite: 1002 passed.
 
 ---
 
-## Version 1.1.1 - S2.dev Integration (March 2026)
+## [1.1.1] - March 2026 - S2.dev integration
 
 ### Additions
 
@@ -1616,7 +1791,7 @@ s2 = ["streamstore>=5.0.0"]
 
 ---
 
-## Version 1.1.0 - Autonomous Agentic AI (March 2026)
+## [1.1.0] - March 2026 - Autonomous agentic AI
 
 ### Major Additions
 
@@ -1655,7 +1830,7 @@ s2 = ["streamstore>=5.0.0"]
 
 ---
 
-## Version 1.0.0 - Initial Release (December 2024)
+## [1.0.0] - December 2024 - Initial release
 
 ### Major Changes
 - **Protocol**: MAPLE (Multi Agent Protocol Language Engine) Multi Agent Communication Protocol
