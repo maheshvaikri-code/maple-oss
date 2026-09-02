@@ -36,6 +36,7 @@ from ..core.types import MessageID
 # broker raised. Re-exported rather than redefined so both historical import
 # paths name the same class (ADR-157).
 from ..error.types import BrokerOverflowError, SecurityError
+from .contract import BrokerCapabilities
 
 # NOTE: a LIBRARY must not configure the root logger (that hijacks the host's logging
 # and emits INFO noise). Use a module logger; the host owns logging config.
@@ -67,25 +68,62 @@ class MessageBroker:
     # rather than accepting the configuration and ignoring it (ADR-161).
     ENFORCES_SECURITY_POLICY: bool = True
 
-    # Class-level storage for the broker
-    _instance: Optional["MessageBroker"] = None
-    _lock = threading.Lock()
-    _initialized: bool = False
+    #: What this transport guarantees (ADR-161). The in-memory broker is the
+    #: reference implementation of the contract, and is deliberately honest
+    #: about what it is not: single-process and non-durable.
+    CAPABILITIES = BrokerCapabilities(
+        enforces_security_policy=True,
+        applies_backpressure=True,
+        reports_undeliverable=True,
+        supports_routability_check=True,
+        durable=False,
+        cross_process=False,
+    )
 
-    # Shared broker state
-    _agent_queues: Dict[str, List[Message]] = {}
-    _agent_handlers: Dict[str, List[Callable[[Message], None]]] = {}
-    _temp_handlers: Dict[str, List[Callable[[Message], None]]] = {}
-    _topic_subscribers: Dict[str, List[str]] = {}
-    _topic_handlers: Dict[str, Dict[str, Callable[[str, Message], None]]] = {}
+    # One broker per scope. The scope key is the broker_url, which already
+    # carries a namespace that used to be discarded: every URL returned the
+    # same process-wide instance, so memory://tenant-a and memory://tenant-b
+    # shared one bus and one set of handlers (ADR-160).
+    _scopes: Dict[str, "MessageBroker"] = {}
+    _scopes_lock = threading.Lock()
+
+    # Declared for the type checker; set in __new__ before __init__ runs.
+    _initialized: bool
+    _scope_key: str
+
+    @staticmethod
+    def scope_key(broker_url: Optional[str]) -> str:
+        """Normalise a broker_url into the scope it addresses.
+
+        An absent or empty URL resolves to the default scope, so callers that
+        never set one keep the single shared bus they have always had.
+        """
+        if not broker_url or not str(broker_url).strip():
+            return "default"
+        return str(broker_url).strip()
+
+    @classmethod
+    def reset_scopes(cls) -> None:
+        """Drop every scope and its state. Test isolation helper.
+
+        Replaces the manual surgery — resetting ``_instance`` and clearing five
+        class-level dicts — that test modules previously had to perform,
+        because that state now lives on the instance.
+        """
+        with cls._scopes_lock:
+            cls._scopes.clear()
 
     def __new__(cls, config: Config) -> "MessageBroker":
-        """Create or return a singleton instance."""
-        with cls._lock:
-            if cls._instance is None:
-                cls._instance = super(MessageBroker, cls).__new__(cls)
-                cls._instance._initialized = False
-            return cls._instance
+        """Return the broker for this config's scope, creating it if needed."""
+        key = cls.scope_key(getattr(config, "broker_url", None))
+        with cls._scopes_lock:
+            instance = cls._scopes.get(key)
+            if instance is None:
+                instance = super(MessageBroker, cls).__new__(cls)
+                instance._initialized = False
+                instance._scope_key = key
+                cls._scopes[key] = instance
+            return instance
 
     def __init__(self, config: Config) -> None:
         """Initialize the broker."""
@@ -97,6 +135,17 @@ class MessageBroker:
         if self._initialized:
             self._refresh_security_context(config)
             return
+
+        # Per-scope state. These were class attributes, which meant every
+        # instance shared one set of queues and handlers regardless of the
+        # URL it was constructed with (ADR-160).
+        self._lock = threading.Lock()
+        self._agent_queues: Dict[str, List[Message]] = {}
+        self._agent_handlers: Dict[str, List[Callable[[Message], None]]] = {}
+        self._temp_handlers: Dict[str, List[Callable[[Message], None]]] = {}
+        self._topic_subscribers: Dict[str, List[str]] = {}
+        self._topic_handlers: Dict[str, Dict[str, Callable[[str, Message], None]]] = {}
+        self._registry: Optional[Any] = None
 
         self.config = config
         self.running = False
@@ -151,6 +200,21 @@ class MessageBroker:
 
         self._initialized = True
         logger.info("MessageBroker initialized")
+
+    def get_registry(self) -> Any:
+        """The AgentRegistry for this scope, created on first use.
+
+        Discovery used to be a single process-wide registry held on
+        ``Agent._shared_registry``, so agents on deliberately separate buses
+        enumerated each other and capability matching selected across the
+        boundary. The registry now belongs to the scope (ADR-160).
+        """
+        with self._lock:
+            if self._registry is None:
+                from ..discovery.registry import AgentRegistry
+
+                self._registry = AgentRegistry()
+            return self._registry
 
     def _build_security_components(self) -> None:
         """Construct the managers implied by the current ``security_config``.

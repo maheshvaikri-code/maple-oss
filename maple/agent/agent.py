@@ -187,9 +187,15 @@ class Agent:
         try:
             from ..discovery.registry import AgentRegistry
 
-            if Agent._shared_registry is None:
-                Agent._shared_registry = AgentRegistry()
-            self.registry = Agent._shared_registry
+            # Prefer the scope's registry so discovery cannot see across
+            # broker boundaries (ADR-160). Transports that predate scoping
+            # fall back to the process-wide registry.
+            if hasattr(self.broker, "get_registry"):
+                self.registry = self.broker.get_registry()
+            else:
+                if Agent._shared_registry is None:
+                    Agent._shared_registry = AgentRegistry()
+                self.registry = Agent._shared_registry
             result = self.registry.register_agent(
                 agent_id=self.agent_id,
                 name=self.agent_id,

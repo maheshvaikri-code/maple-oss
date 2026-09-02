@@ -11,18 +11,18 @@ import hashlib
 
 import pytest
 
-from maple.core.message import Message
 from maple.agent.config import Config, SecurityConfig
 from maple.broker.broker import MessageBroker, SecurityError
+from maple.core.message import Message
 from maple.security.separation import (
+    _MAX_PAYLOAD_DEPTH,
+    GATE_RESULT,
+    WORK_PACKAGE,
     ArtifactRef,
     SeparationOfDutiesPolicy,
-    fresh_context_verifier_preset,
     attach_to_config,
+    fresh_context_verifier_preset,
     is_artifact_ref,
-    WORK_PACKAGE,
-    GATE_RESULT,
-    _MAX_PAYLOAD_DEPTH,
 )
 
 
@@ -334,12 +334,7 @@ class TestAttachToConfig:
 # Broker integration — enforcement as a runtime guarantee
 # --------------------------------------------------------------------------- #
 def _reset_broker_singleton():
-    MessageBroker._instance = None
-    MessageBroker._agent_queues = {}
-    MessageBroker._agent_handlers = {}
-    MessageBroker._temp_handlers = {}
-    MessageBroker._topic_subscribers = {}
-    MessageBroker._topic_handlers = {}
+    MessageBroker.reset_scopes()
 
 
 @pytest.fixture(autouse=True)
@@ -405,9 +400,7 @@ class TestBrokerEnforcement:
         broker = MessageBroker(config)
         broker.subscribe("verifier", lambda m: None)
         broker.subscribe("builder", lambda m: None)
-        msg = Message(
-            message_type=GATE_RESULT, sender="verifier", receiver="builder"
-        )
+        msg = Message(message_type=GATE_RESULT, sender="verifier", receiver="builder")
         assert isinstance(broker.send(msg), str)
 
 
@@ -470,9 +463,7 @@ class TestReviewRegressions:
             broker.send(msg)
 
     def test_set_separation_policy_explicit(self):
-        broker = MessageBroker(
-            Config(agent_id="plain2", broker_url="memory://local")
-        )
+        broker = MessageBroker(Config(agent_id="plain2", broker_url="memory://local"))
         assert broker._separation_policy is None
         policy = fresh_context_verifier_preset("orch", ["builder"], ["verifier"])
         broker.set_separation_policy(policy)

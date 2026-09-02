@@ -24,12 +24,7 @@ from maple.error.types import BrokerUnavailableError
 
 def _reset_broker_singleton():
     """Reset the MessageBroker singleton for test isolation."""
-    MessageBroker._instance = None
-    MessageBroker._agent_queues = {}
-    MessageBroker._agent_handlers = {}
-    MessageBroker._temp_handlers = {}
-    MessageBroker._topic_subscribers = {}
-    MessageBroker._topic_handlers = {}
+    MessageBroker.reset_scopes()
 
 
 @pytest.fixture(autouse=True)
@@ -49,25 +44,25 @@ class TestImportHasNoBrokerSideEffect:
         code = (
             "import maple\n"
             "from maple.broker.broker import MessageBroker\n"
-            "print(MessageBroker._instance)\n"
+            "print(len(MessageBroker._scopes))\n"
         )
         out = subprocess.run(
             [sys.executable, "-c", code], capture_output=True, text=True, timeout=120
         )
         assert out.returncode == 0, out.stderr
-        assert out.stdout.strip() == "None", (
-            "importing maple constructed a broker; the singleton is now pinned "
+        assert out.stdout.strip() == "0", (
+            "importing maple constructed a broker; its scope would be pinned "
             "to the import-time config"
         )
 
     def test_validate_installation_has_no_broker_side_effect(self):
         import maple
 
-        assert MessageBroker._instance is None
+        assert MessageBroker._scopes == {}
         result = maple.validate_installation()
 
         assert result["status"] == "SUCCESS"
-        assert MessageBroker._instance is None
+        assert MessageBroker._scopes == {}
 
     def test_user_broker_url_is_not_overridden_by_package_import(self):
         agent = Agent(Config(agent_id="first", broker_url="memory://mine"))
@@ -79,8 +74,8 @@ class TestSecurityConfigAdoption:
 
     def test_security_config_adopted_by_initialized_singleton(self):
         # First agent has no security at all - it used to pin the broker.
-        Agent(Config(agent_id="plain", broker_url="memory://local"))
-        assert MessageBroker._instance.security_config is None
+        first = Agent(Config(agent_id="plain", broker_url="memory://local"))
+        assert first.broker.security_config is None
 
         sec = SecurityConfig("jwt", {"token": "t"})
         second = Agent(
@@ -90,8 +85,8 @@ class TestSecurityConfigAdoption:
         assert second.broker.security_config is sec
 
     def test_link_manager_built_when_security_adopted(self):
-        Agent(Config(agent_id="plain", broker_url="memory://local"))
-        assert MessageBroker._instance.link_manager is None
+        first = Agent(Config(agent_id="plain", broker_url="memory://local"))
+        assert first.broker.link_manager is None
 
         sec = SecurityConfig("jwt", {"token": "t"})
         second = Agent(
@@ -167,7 +162,7 @@ class TestLinkEnforcementFailsClosed:
         with pytest.raises(SecurityError):
             broker.send(message)
 
-        assert MessageBroker._agent_queues.get("mallory", []) == []
+        assert broker._agent_queues.get("mallory", []) == []
 
     def test_existing_link_is_reused_for_an_unlinked_message(self):
         """Cover the link-reuse path that the fail-closed change re-indented.

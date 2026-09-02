@@ -4,33 +4,28 @@ Shared pytest fixtures for MAPLE test suites.
 
 import pytest
 
+from maple.agent.agent import Agent
+from maple.agent.config import Config, SecurityConfig
+from maple.broker.broker import MessageBroker
 from maple.core.message import Message
 from maple.core.types import Priority
-from maple.agent.config import Config, SecurityConfig
-from maple.agent.agent import Agent
-from maple.broker.broker import MessageBroker
-from maple.state.store import StateStore, StorageBackend, ConsistencyLevel
-from maple.security.link import LinkManager
+from maple.resources.specification import ResourceRange, ResourceRequest, TimeConstraint
 from maple.security.encryption import EncryptionManager
-from maple.resources.specification import ResourceRequest, ResourceRange, TimeConstraint
+from maple.security.link import LinkManager
+from maple.state.store import ConsistencyLevel, StateStore, StorageBackend
 
 
 @pytest.fixture
 def agent_config():
     """Basic agent Config with memory broker."""
-    return Config(
-        agent_id="test_agent",
-        broker_url="memory://local"
-    )
+    return Config(agent_id="test_agent", broker_url="memory://local")
 
 
 @pytest.fixture
 def security_config():
     """SecurityConfig for testing."""
     return SecurityConfig(
-        auth_type="token",
-        credentials="test_token_secret",
-        require_links=False
+        auth_type="token", credentials="test_token_secret", require_links=False
     )
 
 
@@ -40,7 +35,7 @@ def secure_agent_config(security_config):
     return Config(
         agent_id="secure_test_agent",
         broker_url="memory://local",
-        security=security_config
+        security=security_config,
     )
 
 
@@ -63,8 +58,7 @@ def broker():
 def state_store():
     """StateStore with memory backend."""
     return StateStore(
-        backend=StorageBackend.MEMORY,
-        consistency=ConsistencyLevel.EVENTUAL
+        backend=StorageBackend.MEMORY, consistency=ConsistencyLevel.EVENTUAL
     )
 
 
@@ -83,18 +77,20 @@ def encryption_manager(agent_config):
 @pytest.fixture
 def sample_message():
     """Factory fixture for creating test messages."""
+
     def _make(
         message_type="TEST",
         receiver="other_agent",
         priority=Priority.MEDIUM,
-        payload=None
+        payload=None,
     ):
         return Message(
             message_type=message_type,
             receiver=receiver,
             priority=priority,
-            payload=payload or {"data": "test"}
+            payload=payload or {"data": "test"},
         )
+
     return _make
 
 
@@ -105,5 +101,5 @@ def resource_request():
         compute=ResourceRange(min=4, preferred=8, max=16),
         memory=ResourceRange(min="8GB", preferred="16GB"),
         time=TimeConstraint(timeout="120s"),
-        priority="HIGH"
+        priority="HIGH",
     )

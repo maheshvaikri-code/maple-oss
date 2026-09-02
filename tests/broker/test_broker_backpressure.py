@@ -23,12 +23,7 @@ from maple.core.message import Message
 
 
 def _reset_broker_singleton():
-    MessageBroker._instance = None
-    MessageBroker._agent_queues = {}
-    MessageBroker._agent_handlers = {}
-    MessageBroker._temp_handlers = {}
-    MessageBroker._topic_subscribers = {}
-    MessageBroker._topic_handlers = {}
+    MessageBroker.reset_scopes()
 
 
 @pytest.fixture(autouse=True)
@@ -85,7 +80,7 @@ class TestBackpressure:
         for i in range(200):
             agent.send(Message(message_type="X", receiver="stalled", payload={"i": i}))
 
-        pending = sum(len(q) for q in MessageBroker._agent_queues.values())
+        pending = sum(len(q) for q in agent.broker._agent_queues.values())
         assert pending == 0
 
     def test_broker_send_raises_the_typed_exception(self):

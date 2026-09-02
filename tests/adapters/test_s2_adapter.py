@@ -110,6 +110,7 @@ class TestS2BrokerUnit(unittest.TestCase):
         with patch.dict("sys.modules", {"streamstore": mock_s2_module}):
             # Re-import to pick up the mock
             import importlib
+
             from maple.adapters import s2_adapter
 
             importlib.reload(s2_adapter)
@@ -153,10 +154,11 @@ class TestS2StateBackendUnit(unittest.TestCase):
         self.addCleanup(_restore_s2_adapter)
         with patch.dict("sys.modules", {"streamstore": mock_s2_module}):
             import importlib
+
             from maple.adapters import s2_adapter
 
             importlib.reload(s2_adapter)
-            from maple.adapters.s2_adapter import S2StateBackend, S2Config
+            from maple.adapters.s2_adapter import S2Config, S2StateBackend
 
             config = S2Config(access_token="test-token", basin_name="test-state")
             backend = S2StateBackend(config)

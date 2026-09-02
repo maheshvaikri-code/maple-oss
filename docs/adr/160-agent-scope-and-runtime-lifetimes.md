@@ -1,7 +1,7 @@
 # ADR-160: AgentScope — runtime lifetimes and in-process isolation
 
 **Date:** 2026-09-01
-**Status:** proposed — design agreed, implementation not started
+**Status:** accepted — implemented 2026-09-01
 **Deciders:** Chief Architect
 
 ## Context
