@@ -8,52 +8,51 @@
 
 ## [Unreleased]
 
-### Added — scope isolation and the broker contract (ADR-160, ADR-161)
+### Added — metrics leave the process (ADR-162)
 
-**AgentScope (ADR-160).** `broker_url` carries a namespace that was discarded:
-every URL returned the same process-wide broker, so `memory://tenant-a` and
-`memory://tenant-b` shared one bus, one set of handlers, and one discovery
-registry. Agents on deliberately separate buses enumerated each other.
+Thirteen modules implement `get_statistics()` and none of it left the process:
+no Prometheus endpoint, no OpenTelemetry, no statsd. 2.1.0 sharpened this by
+adding `refused`, the earliest honest signal that producers are outrunning
+consumers — and the number an operator most needs to alert on.
 
-- `MessageBroker` instances are now keyed by scope, derived from `broker_url`.
-  An absent or empty URL resolves to the default scope, so callers that never
-  set one keep the single shared bus they have always had.
-- The five class-level state dicts move onto the instance. The singleton was
-  enforced twice — by `__new__` and by state living on the class — so removing
-  only the first would have changed nothing.
-- `AgentRegistry` belongs to the scope. This closes a cross-tenant discovery
-  leak: `tenant-a` previously saw `['tenant-a-worker', 'tenant-b-worker']`.
-- `MessageBroker.reset_scopes()` replaces the manual surgery test modules
-  performed — resetting `_instance` and clearing five class dicts by hand,
-  across 9 files.
+- `maple.monitoring.metrics` renders any `get_statistics()`-style callable in
+  the Prometheus text exposition format, using **only the standard library**.
+  No runtime dependency is added, per `standards/dependency-policy.md`.
+- `MetricsRegistry` takes callables rather than snapshots, so collection stays
+  correct as state changes. `collect()` returns plain `Sample` objects with no
+  MAPLE types in them, so forwarding to OpenTelemetry, statsd or JSON is a
+  short function rather than an integration.
+- `render_prometheus()` returns a **string**. MAPLE binds no port and starts no
+  server: serving is deployment, which the operational boundary assigns to the
+  host — the same line that keeps TLS and credentials outside the library.
+- Counter/gauge types are **declared, not inferred**. A counter mislabelled as
+  a gauge breaks `rate()` silently, so unknown keys default to gauge, which is
+  the safe direction. A test asserts every key the broker emits is declared, so
+  an omission surfaces in CI rather than in a dashboard.
+- Names are normalised (`maxQueueSize` → `maple_broker_max_queue_size`), and
+  non-numeric statistics such as `queue_type` and `supported_methods` are
+  skipped rather than coerced. Booleans export as `1`/`0`.
+- A source that raises is skipped so metrics can never be the reason a process
+  fails — and the failure is **counted** as `maple_metrics_source_errors` and
+  logged, because a subsystem whose metrics silently vanish is indistinguishable
+  from one that was never registered.
+- Duplicate series are collapsed to the first. Prometheus rejects an entire
+  scrape containing the same series twice, so two registrations of one subsystem
+  with no distinguishing labels would have taken down every metric rather than
+  the ambiguous one. Collisions are warned about once and counted in
+  `maple_metrics_duplicate_series`.
 
-Ten characterization tests were written and verified green *before* the
-migration, pinning default-scope behaviour, and pass unchanged after it.
+Both health counters export zeros for healthy registries — a counter that
+appears only after its first failure cannot be alerted on before it. A registry
+with nothing registered still renders nothing.
 
-**Broker contract (ADR-161).** The two shipped brokers shared no interface and
-had drifted six methods apart, two of them security and observability controls.
+Values are rendered without loss. The obvious `%g` formatting was rejected
+during implementation: at six significant digits it exports 1048576 as
+`1.04858e+06`, which reads back as 1048580.
 
-- `maple/broker/contract.py` defines a `Broker` `Protocol` and a
-  `BrokerCapabilities` declaration, with delivery semantics stated per method
-  rather than implied.
-- A parameterised conformance suite holds every transport to the same
-  observable behaviour. `MessageBroker` passes all 23 tests.
-- The NATS transport is pinned as non-conformant by a test naming exactly the
-  five members it lacks, so the gap cannot be forgotten and closing it is a
-  deliberate edit.
+96 tests; the module is at 100% statement coverage.
 
-### Breaking changes
-
-- Agents constructed with **different** `broker_url` values now get different
-  brokers and cannot message each other. Previously every URL shared one bus.
-  No existing test relied on cross-URL messaging — verified before the change —
-  but external code that did will observe the difference.
-- `MessageBroker._agent_queues` and the other four state dicts are instance
-  attributes. Code reading them off the class breaks; use the broker instance
-  or `get_statistics()`.
-- `MessageBroker._instance` no longer exists. Use `reset_scopes()`.
-
-## [2.1.0] - 2026-09-01
+## [2.1.0] - 2026-09-02
 
 ### Fixed — broker refuses instead of buffering or dropping (ADR-159)
 
@@ -101,13 +100,39 @@ in the "bounded" queue and 15,000 in an unbounded list. The bound was decorative
   pending; no PyPI upload has been performed"; `maple_oss-2.0.0` was in fact
   uploaded to PyPI on 2026-08-31.
 
-### Added — design records, not yet implemented
+### Added — scope isolation and the broker contract (ADR-160, ADR-161)
 
-- [ADR-160](docs/adr/160-agent-scope-and-runtime-lifetimes.md): `AgentScope`,
-  covering the three process-global runtime singletons (`MessageBroker`,
-  `Agent._shared_registry`, `LLMProviderRegistry`) and the lifetime model.
-- [ADR-161](docs/adr/161-broker-contract-and-the-path-to-multi-host.md): the
-  broker `Protocol`, a conformance suite, and the sequence to multi-host.
+**AgentScope (ADR-160).** `broker_url` carries a namespace that was discarded:
+every URL returned the same process-wide broker, so `memory://tenant-a` and
+`memory://tenant-b` shared one bus, one set of handlers, and one discovery
+registry. Agents on deliberately separate buses enumerated each other.
+
+- `MessageBroker` instances are now keyed by scope, derived from `broker_url`.
+  An absent or empty URL resolves to the default scope, so callers that never
+  set one keep the single shared bus they have always had.
+- The five class-level state dicts move onto the instance. The singleton was
+  enforced twice — by `__new__` and by state living on the class — so removing
+  only the first would have changed nothing.
+- `AgentRegistry` belongs to the scope. This closes a cross-tenant discovery
+  leak: `tenant-a` previously saw `['tenant-a-worker', 'tenant-b-worker']`.
+- `MessageBroker.reset_scopes()` replaces the manual surgery test modules
+  performed — resetting `_instance` and clearing five class dicts by hand,
+  across 9 files.
+
+Ten characterization tests were written and verified green *before* the
+migration, pinning default-scope behaviour, and pass unchanged after it.
+
+**Broker contract (ADR-161).** The two shipped brokers shared no interface and
+had drifted six methods apart, two of them security and observability controls.
+
+- `maple/broker/contract.py` defines a `Broker` `Protocol` and a
+  `BrokerCapabilities` declaration, with delivery semantics stated per method
+  rather than implied.
+- A parameterised conformance suite holds every transport to the same
+  observable behaviour. `MessageBroker` passes all 23 tests.
+- The NATS transport is pinned as non-conformant by a test naming exactly the
+  five members it lacks, so the gap cannot be forgotten and closing it is a
+  deliberate edit.
 
 ### Note on versioning
 
@@ -210,6 +235,15 @@ maple` performed that first construction itself.
   the package root along with the new `BrokerUnavailableError`.
 
 ### Breaking changes
+
+- Agents constructed with **different** `broker_url` values now get different
+  brokers and cannot message each other. Previously every URL shared one bus.
+  No existing test relied on cross-URL messaging — verified before the change —
+  but external code that did will observe the difference.
+- `MessageBroker._agent_queues` and the other four state dicts are instance
+  attributes. Code reading them off the class breaks; use the broker instance
+  or `get_statistics()`.
+- `MessageBroker._instance` no longer exists. Use `reset_scopes()`.
 
 - `Agent(Config(broker_url="nats://..."))` without `nats-py` installed now
   raises `BrokerUnavailableError` instead of silently returning an agent

@@ -27,8 +27,20 @@ from .health_monitor import (
     HealthMetrics,
     HealthMonitor,
 )
+from .metrics import (
+    MetricsRegistry,
+    MetricType,
+    Sample,
+    normalize_name,
+    render_prometheus,
+)
 
 __all__ = [
+    "MetricsRegistry",
+    "MetricType",
+    "Sample",
+    "render_prometheus",
+    "normalize_name",
     "ComponentHealthMonitor",
     "ComponentHealthMetrics",
     # Legacy aliases; ambiguous with maple.discovery's HealthMonitor.

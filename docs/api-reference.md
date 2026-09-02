@@ -509,6 +509,138 @@ class Config:
     tracing: Optional[TracingConfig] = None
 ```
 
+## Metrics and Monitoring
+
+### MetricsRegistry and render_prometheus
+
+Thirteen components implement `get_statistics()`. `maple.monitoring` carries
+those numbers out of the process in the Prometheus text exposition format,
+using only the standard library — no metrics dependency is added to your
+install.
+
+```python
+from maple.monitoring import MetricsRegistry, render_prometheus
+
+registry = MetricsRegistry()                       # namespace="maple"
+registry.register("broker", agent.broker.get_statistics,
+                  labels={"scope": "memory://prod"})
+
+text = render_prometheus(registry)                 # serve this at /metrics
+samples = registry.collect()                       # or forward them anywhere
+```
+
+Output:
+
+```text
+# HELP maple_broker_refused Messages the broker declined as backpressure.
+# TYPE maple_broker_refused counter
+maple_broker_refused{scope="memory://prod"} 25
+# TYPE maple_broker_subscribed_agents gauge
+maple_broker_subscribed_agents{scope="memory://prod"} 2
+# HELP maple_metrics_source_errors Times a registered statistics source raised or returned a non-mapping during collection.
+# TYPE maple_metrics_source_errors counter
+maple_metrics_source_errors{scope="memory://prod",subsystem="broker"} 0
+```
+
+**MAPLE renders; the host serves.** `render_prometheus()` returns a string.
+No port is bound and no server is started — serving is deployment, which the
+operational boundary assigns to the host (see
+[ADR-162](adr/162-metrics-export-without-a-dependency.md)).
+
+#### MetricsRegistry
+
+| Method | Description |
+| --- | --- |
+| `register(subsystem, source, labels=None)` | Register a `get_statistics`-style **callable**. Metrics are named `<namespace>_<subsystem>_<key>`; `labels` attach to every sample from this source. Raises `TypeError` if given a snapshot rather than a callable. |
+| `unregister(subsystem)` | Remove every source under a subsystem. Idempotent. |
+| `clear()` | Remove all sources and reset the error ledger. |
+| `subsystems` | Registered subsystem names, normalised. |
+| `collect()` | Call every source and return `List[Sample]`. Never raises. |
+
+A source is a callable, not a snapshot, so the registry cannot go stale.
+
+#### Sample
+
+A frozen dataclass with `name`, `value`, `metric_type`, `labels` and
+`help_text`. Plain data with no MAPLE types in it, so forwarding to
+OpenTelemetry, statsd or JSON is a short function rather than an integration:
+
+```python
+import json
+
+payload = json.dumps([
+    {"name": s.name, "value": s.value, "type": s.metric_type, **s.labels}
+    for s in registry.collect()
+])
+```
+
+The same loop feeds an OpenTelemetry meter or a statsd client — nothing in a
+`Sample` needs converting first.
+
+#### Conversion rules
+
+| Input | Result |
+| --- | --- |
+| `maxQueueSize` | `maple_broker_max_queue_size` — camelCase is normalised |
+| `12`, `0.5` | Exported as-is, exactly; large integers never fall to scientific notation |
+| `True` / `False` | `1` / `0` — on/off is a real signal |
+| `"priority"`, `["jwt"]` | **Skipped.** A label or a cardinality explosion dressed as a measurement helps nobody |
+| A key MAPLE declares | Typed as counter or gauge from a declared table |
+| Any other numeric key | Gauge. A gauge on a counter is less useful; a counter on a gauge breaks `rate()` |
+
+#### When a source breaks
+
+A statistics call that raises is skipped, so metrics can never be the reason a
+process fails. It is also **counted**, because a subsystem whose metrics
+silently disappear is indistinguishable from one that was never registered:
+
+```python
+maple_metrics_source_errors{subsystem="broker"} 3
+```
+
+The counter is exported as zero for healthy sources too — an absent series
+cannot be alerted on before its first failure. Failures are logged at DEBUG on
+`maple.monitoring.metrics` with the traceback.
+
+#### When two sources collide
+
+Prometheus rejects an entire scrape that contains the same series twice, so one
+careless double-registration would take down **every** metric rather than the
+ambiguous one:
+
+```python
+registry.register("broker", a.get_statistics)
+registry.register("broker", b.get_statistics)   # same name, no labels
+```
+
+The registry keeps the first, warns once (not per scrape), and counts the drop
+in `maple_metrics_duplicate_series`. Give each source distinct labels —
+`labels={"scope": ...}` — or register it once.
+
+Both health counters are emitted only when at least one source is registered; an
+empty registry renders nothing.
+
+#### Serving it
+
+```python
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+class Metrics(BaseHTTPRequestHandler):
+    def do_GET(self):
+        body = render_prometheus(registry).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain; version=0.0.4")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+HTTPServer(("127.0.0.1", 9095), Metrics).serve_forever()
+```
+
+Bind to a loopback or an internal interface. The statistics carry agent ids and
+receiver names, which is operational detail you probably do not want exposed
+publicly.
+
 ## Error Handling
 
 ### Error Types
