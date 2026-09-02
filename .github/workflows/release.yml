@@ -110,6 +110,14 @@ jobs:
   publish-to-pypi:
     name: Publish tagged release to PyPI
     needs: release-from-tag
+    # The repository's default workflow permission is `read`. publish.yml's
+    # release-assets job requests `contents: write`, and a called workflow
+    # cannot exceed what the calling job holds - GitHub rejects the whole run
+    # at startup, before any job is created. Granting it here is what makes the
+    # tag-push path work; without it the run fails with `startup_failure` and
+    # no log to explain why.
+    permissions:
+      contents: write
     uses: ./.github/workflows/publish.yml
     with:
       target: pypi

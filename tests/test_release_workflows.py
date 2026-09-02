@@ -136,3 +136,79 @@ def test_project_license_uses_a_setuptools_compatible_file_form():
 
     assert 'license = {file = "LICENSE"}' in pyproject
     assert (REPO / "LICENSE").is_file()
+
+
+def _changelog_heading_matches(heading_line: str, version: str) -> bool:
+    """Mirror of the verifier embedded in publish.yml.
+
+    Kept in step with that shell-embedded Python deliberately: the release
+    path is the one place a mismatch is only discovered at publish time, with
+    the tag already pushed.
+    """
+    heading = heading_line[3:].strip()
+    if heading.startswith("Version "):
+        heading = heading[8:]
+    if heading.startswith("["):
+        heading = heading[1:].replace("]", " ", 1)
+    heading = heading.strip()
+    return heading == version or heading.startswith(version + " ")
+
+
+def test_changelog_has_a_heading_the_release_verifier_accepts():
+    """Regression: normalising headings to Keep a Changelog broke publication.
+
+    `publish.yml` refuses to publish unless CHANGELOG.md carries a heading for
+    the version being released. Reformatting `## 2.1.0 - date` into
+    `## [2.1.0] - date` left the verifier unable to find it, and the failure
+    surfaced only after the tag had been pushed:
+
+        CHANGELOG.md has no heading for version 2.1.0
+    """
+    version = (REPO / "VERSION").read_text(encoding="utf-8").strip()
+    headings = [
+        line
+        for line in (REPO / "CHANGELOG.md").read_text(encoding="utf-8").splitlines()
+        if line.startswith("## ")
+    ]
+
+    assert any(_changelog_heading_matches(h, version) for h in headings), (
+        f"CHANGELOG.md has no heading publish.yml would accept for {version}. "
+        f"Headings present: {headings[:4]}"
+    )
+
+
+def test_release_verifier_accepts_every_heading_form_in_use():
+    for line, version in [
+        ("## [2.1.0] - 2026-09-01", "2.1.0"),
+        ("## 2.0.0 - 2026-08-29", "2.0.0"),
+        ("## Version 1.1.3 - Downstream integration improvements", "1.1.3"),
+        ("## [1.1.3] - August 2026 - Downstream integration improvements", "1.1.3"),
+    ]:
+        assert _changelog_heading_matches(line, version), line
+
+    # and must not match a different version or the unreleased section
+    assert not _changelog_heading_matches("## [Unreleased]", "2.1.0")
+    assert not _changelog_heading_matches("## [2.0.0] - 2026-08-29", "2.1.0")
+
+
+def test_tag_push_grants_the_permissions_the_called_workflow_needs():
+    """Regression: the tag-push publish path failed with `startup_failure`.
+
+    The repository's default workflow permission is `read`. publish.yml's
+    release-assets job requests `contents: write`, and a called workflow
+    cannot exceed what the calling job holds, so GitHub rejected the run
+    before creating any job - with no log explaining why.
+    """
+    release = _workflow("release.yml")
+    publish = _workflow("publish.yml")
+
+    assert "uses: ./.github/workflows/publish.yml" in release
+
+    caller = release.split("publish-to-pypi:", 1)[1].split("uses:", 1)[0]
+    assert "permissions:" in caller and "contents: write" in caller, (
+        "the publish-to-pypi job must grant contents: write, or the reusable "
+        "workflow call fails at startup"
+    )
+
+    # the grant has to cover what the called workflow actually asks for
+    assert "contents: write" in publish

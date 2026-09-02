@@ -109,9 +109,16 @@ jobs:
           for line in Path("CHANGELOG.md").read_text(encoding="utf-8").splitlines():
               if not line.startswith("## "):
                   continue
-              heading = line[3:]
+              heading = line[3:].strip()
+              # Accept every heading form this changelog has used:
+              #   "## 2.1.0 - 2026-09-01"        plain
+              #   "## Version 1.1.3 - ..."       historical
+              #   "## [2.1.0] - 2026-09-01"      Keep a Changelog
               if heading.startswith("Version "):
                   heading = heading[8:]
+              if heading.startswith("["):
+                  heading = heading[1:].replace("]", " ", 1)
+              heading = heading.strip()
               if heading == version or heading.startswith(version + " "):
                   break
           else:
