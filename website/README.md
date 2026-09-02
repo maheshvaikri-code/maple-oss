@@ -11,6 +11,46 @@ Documentation ships with a release, not after it: the site content is
 reconciled against the tree *before* a version is tagged, so the moment a
 release is published the site is already correct.
 
+## Documentation page
+
+`public_html/docs.html` is **generated**. Do not edit it:
+
+```bash
+python website/build_docs_page.py
+```
+
+It assembles 19 pages into seven sections and embeds them in the page, so the
+viewer needs no network call and works from `file://` as well as from a host.
+
+Content comes from two places, and the split is deliberate:
+
+- **Narrative pages** live in `website/docs-src/` - the introduction,
+  architecture, delivery guarantees, scopes, security, autonomy, and production
+  pages. These are written for the site.
+- **Reference pages** are read straight from the repository's own `docs/`
+  directory at build time - the API reference, type system, best practices,
+  troubleshooting, comparisons, and use cases. Each carries a "source of truth"
+  line pointing at the file it came from.
+
+Reference pages are pulled rather than copied because copies drift. The site
+previously carried its own abridged versions and ended up advertising a test
+count that was two releases out of date, alongside a 100-line "API reference"
+against the repository's 4,238-line one.
+
+The tree is defined in `TREE` at the top of the generator; add a page there.
+
+### Superseded files
+
+These remain in `public_html/docs/` but are no longer served - the viewer now
+reads their canonical counterparts from `docs/`:
+
+`api-reference.md`, `best-practices.md`, `details_Result_Type.md`,
+`getting-started.md`, `industry-applications.md`, `mapl-use-cases.md`,
+`protocol-comparison.md`, `troubleshooting.md`, `type-system.md`
+
+They are safe to delete. They are kept only because this directory is
+gitignored, so removing them is not recoverable from history.
+
 ## Source of truth
 
 The website's public content is consolidated in:
