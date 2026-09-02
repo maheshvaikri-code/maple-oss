@@ -61,6 +61,81 @@ else:
 agent.stop()
 ```
 
+## When a send fails
+
+`send()` returns a `Result`, and since 2.1.0 it genuinely can fail. The failure
+carries a machine-readable `errorType` so you can branch on the cause rather
+than parse a message string.
+
+```python
+result = agent.send(message)
+
+if result.is_err():
+    error = result.unwrap_err()
+
+    if error["errorType"] == "QUEUE_FULL":
+        # Backpressure. The consumer is behind and the broker is refusing
+        # rather than buffering without a limit. Slow down, shed, or retry.
+        ...
+    elif error["errorType"] == "MESSAGE_TOO_LARGE":
+        # Payload exceeded max_message_bytes. Split it or raise the limit.
+        ...
+    elif error["errorType"] == "UNROUTABLE":
+        # Only when you passed require_routable=True: nobody is subscribed.
+        ...
+```
+
+| `errorType` | Meaning |
+| --- | --- |
+| `QUEUE_FULL` | The broker is at capacity and refused the message |
+| `MESSAGE_TOO_LARGE` | The payload exceeded the configured limit |
+| `UNROUTABLE` | No live subscription for the receiver (opt-in check) |
+| `SEND_ERROR` | Anything else, with the cause in `message` |
+
+**Ignoring the `Result` loses messages.** That was true before 2.1.0 as well;
+the difference is that the loss is now reported rather than silent.
+
+### Messages nobody receives
+
+By default, sending to an agent that has not started is *accepted*. This is
+deliberate — you often send to a peer that starts moments later — so it is not
+an error. It is no longer invisible either:
+
+```python
+stats = agent.broker.get_statistics()
+print(stats["undeliverable"])   # messages that reached zero handlers
+print(stats["refused"])         # messages the broker declined
+
+# Or be told as it happens
+agent.broker.set_undeliverable_handler(
+    lambda receiver, message: audit.record(receiver, message.message_id)
+)
+```
+
+If you would rather fail fast than send into the void, ask for a routability
+check at send time:
+
+```python
+result = agent.send(message, require_routable=True)
+```
+
+## Isolating agents in one process
+
+`broker_url` names an isolation boundary. Agents sharing a URL share a bus and
+a discovery registry; agents on different URLs share nothing.
+
+```python
+tenant_a = Agent(Config(agent_id="worker", broker_url="memory://tenant-a"))
+tenant_b = Agent(Config(agent_id="worker", broker_url="memory://tenant-b"))
+# separate buses, separate registries, no cross-visibility
+```
+
+Leaving `broker_url` unset resolves to a single default scope, so simple
+programs need not think about this at all.
+
+Before 2.1.0 every URL returned the same process-wide bus. If you relied on
+agents with *different* URLs talking to each other, give them the same URL.
+
 ## Key Features
 
 ### Resource-Aware Communication

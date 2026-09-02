@@ -1,8 +1,17 @@
-# API Reference - MAPLE
+# API Reference - MAPLE 2.1.0
 
 **Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)**
 
 API reference for MAPLE (Multi Agent Protocol Language Engine).
+
+Sections marked **(preview)** are bounded, opt-in contracts: ready for local
+integration, and still requiring the host to supply policy, persistence,
+credentials, or operations. Everything else is the stable local surface.
+
+New in 2.1.0 — see [Delivery Guarantees and the Broker
+Contract](#delivery-guarantees-and-the-broker-contract), [Agent
+Scopes](#agent-scopes), [Result Failures](#result-failures--unwraperror), and
+[Component Health Monitoring](#component-health-monitoring).
 
 ## Core Classes
 
@@ -3917,6 +3926,249 @@ return `400` without mutating the record. The bearer token authenticates
 transport access but is not a per-agent identity provider. Retrieval is
 pull-based and the client performs no automatic retries, queueing,
 notifications, cancellation, scheduling, or exactly-once effect guarantee.
+
+## Delivery Guarantees and the Broker Contract
+
+New in 2.1.0. This section covers what happens to a message after you send it —
+when it is refused, when it is delivered, and when nobody was listening.
+
+The short version: **`send()` can now fail, and silence is no longer a possible
+outcome.** Every message is delivered, refused with a typed error, or counted as
+undeliverable. Code that ignores the returned `Result` will drop messages under
+load — the loss is now *reported*, but a caller who discards the report is no
+better off than before.
+
+### Backpressure — `BrokerOverflowError`
+
+The broker refuses a message rather than buffering it without a limit.
+
+```python
+from maple import Agent, Config, BrokerOverflowError
+from maple.agent.config import PerformanceConfig
+
+agent = Agent(Config(
+    agent_id="producer",
+    broker_url="memory://work",
+    performance=PerformanceConfig(
+        max_queue_size=10_000,        # messages held before refusing
+        max_message_bytes=1_048_576,  # per-payload ceiling
+    ),
+))
+
+result = agent.send(message)
+if result.is_err():
+    error = result.unwrap_err()
+    if error["errorType"] == "QUEUE_FULL":
+        # Backpressure: the consumer is behind. Slow down, shed, or retry.
+        ...
+    elif error["errorType"] == "MESSAGE_TOO_LARGE":
+        # The payload exceeded max_message_bytes. Split it or raise the limit.
+        ...
+```
+
+| `errorType` | Raised when | `details` carries |
+| --- | --- | --- |
+| `QUEUE_FULL` | The queue is at `max_queue_size` | `receiver`, `maxQueueSize` |
+| `MESSAGE_TOO_LARGE` | Payload exceeds `max_message_bytes` | `payloadBytes`, `maxMessageBytes` |
+
+Both surface as `Result.err` from `Agent.send`. Below that, `MessageBroker.send`
+raises `BrokerOverflowError`, whose `.error` attribute holds the same typed
+payload.
+
+Limits are **process-wide**: the in-memory broker is shared across a scope, and
+these bound the process's memory rather than one agent's.
+
+`max_message_bytes` is admission control, not validation. The size is estimated
+from a compact JSON encoding with `default=str`, so values JSON cannot represent
+natively are measured by their string form rather than waved through. The
+serializer enforces its own limits separately when the message is encoded.
+
+### Undeliverable messages
+
+A message addressed to an agent that never subscribed is accepted, drained, and
+delivered to nobody. That is a legitimate pattern — you may send to an agent
+that starts moments later — so it is not an error. It is, however, no longer
+invisible.
+
+```python
+# Count it
+stats = agent.broker.get_statistics()
+stats["undeliverable"]           # messages that reached zero handlers
+stats["undeliverableReceivers"]  # distinct receivers involved
+stats["delivered"]
+stats["refused"]                 # backpressure refusals
+
+# Or handle it
+def dead_letter(receiver, message):
+    audit.record(receiver, message.message_id)
+
+agent.broker.set_undeliverable_handler(dead_letter)
+agent.broker.set_undeliverable_handler(None)   # clear
+```
+
+The hook runs on the delivery thread — keep it fast and non-blocking. The broker
+also logs a warning the first time each receiver is seen undeliverable, then
+stays quiet for that receiver so a hot loop cannot flood the log.
+
+To refuse *before* sending instead, ask for routability:
+
+```python
+result = agent.send(message, require_routable=True)
+# -> Result.err({"errorType": "UNROUTABLE", ...}) if nobody is subscribed
+```
+
+Reachability is checked at send time. It is not a delivery acknowledgement — a
+receiver can unsubscribe between the check and the send.
+
+### `get_statistics()`
+
+```python
+{
+    "delivered": 1284,
+    "undeliverable": 3,
+    "undeliverableReceivers": 1,
+    "refused": 0,
+    "pendingFallback": 0,
+    "maxQueueSize": 10000,
+    "maxMessageBytes": 1048576,
+    "subscribedAgents": 7,
+}
+```
+
+`refused` is the number worth alerting on: sustained non-zero means producers
+are outrunning consumers.
+
+### The `Broker` protocol
+
+`maple.broker.contract` defines what a transport must provide. Any
+implementation must satisfy it and pass the conformance suite in
+`tests/broker/test_broker_conformance.py`.
+
+```python
+from maple.broker.contract import Broker, BrokerCapabilities, describe_conformance
+
+describe_conformance(MyBroker)
+# {"broker": "MyBroker", "conforms": True, "missingMembers": [], ...}
+```
+
+Required members: `connect`, `disconnect`, `send`, `publish`, `subscribe`,
+`unsubscribe`, `is_routable`, `get_statistics`, `set_undeliverable_handler`,
+`set_separation_policy`.
+
+`BrokerCapabilities` states what a transport actually guarantees:
+
+| Flag | Meaning |
+| --- | --- |
+| `enforces_security_policy` | Applies link policy, separation of duties, authorization |
+| `applies_backpressure` | Refuses rather than buffering without bound |
+| `reports_undeliverable` | Counts and reports messages nobody handled |
+| `supports_routability_check` | `is_routable` reflects live subscriptions |
+| `durable` | Messages survive a process restart |
+| `cross_process` | Reaches agents in other processes |
+
+A transport that cannot honor a control must refuse construction rather than
+accept the configuration and ignore it. Configure `require_links`,
+`strict_link_policy`, or a separation policy on a non-enforcing transport and
+`Agent(...)` raises `BrokerUnavailableError`.
+
+Two failure orders are possible, and the `errorType` tells you which:
+
+- `BROKER_DEPENDENCY_MISSING` — the transport's driver is not installed, so it
+  could not be constructed at all. This is checked first.
+- `BROKER_CANNOT_ENFORCE_SECURITY` — the transport was constructed but does not
+  enforce the controls you configured. `details.unenforcedControls` names each
+  one.
+
+Current implementations:
+
+| Transport | Conforms | Notes |
+| --- | --- | --- |
+| `MessageBroker` (`memory://`) | Yes | Reference implementation. Single-process, non-durable. |
+| `NATSBroker` (`nats://`) | **No** | Cross-process, but enforces no security controls and provides no delivery accounting. Missing five contract members. |
+
+## Agent Scopes
+
+New in 2.1.0. `broker_url` names an isolation boundary. Agents sharing a URL
+share a bus, a discovery registry, and a security context; agents on different
+URLs share nothing.
+
+```python
+tenant_a = Agent(Config(agent_id="worker", broker_url="memory://tenant-a"))
+tenant_b = Agent(Config(agent_id="worker", broker_url="memory://tenant-b"))
+
+tenant_a.broker is tenant_b.broker      # False
+tenant_a.registry is tenant_b.registry  # False
+# tenant_a's discovery lists only tenant-a's agents
+```
+
+An absent or empty `broker_url` resolves to the default scope, so code that
+never set one is unaffected.
+
+```python
+MessageBroker.scope_key("memory://tenant-a")  # "memory://tenant-a"
+MessageBroker.scope_key(None)                 # "default"
+MessageBroker.reset_scopes()                  # drop every scope (tests)
+```
+
+**Before 2.1.0** every URL returned the same process-wide broker. Two agents on
+deliberately separate buses shared handlers and enumerated each other in
+discovery. If you relied on cross-URL messaging, give those agents the same URL.
+
+Scoping is **within one process**. It does not provide multi-process or
+multi-host isolation.
+
+## Result Failures — `UnwrapError`
+
+`unwrap()` and `unwrap_err()` raise `UnwrapError` rather than a bare
+`Exception`, so a caller contract violation is distinguishable from a domain
+failure.
+
+```python
+from maple import UnwrapError
+
+try:
+    value = result.unwrap()
+except UnwrapError as exc:
+    exc.value   # the error you failed to unwrap, unparsed
+```
+
+`UnwrapError` subclasses `Exception`, so existing `except Exception` handlers
+are unaffected. Prefer `is_ok()` / `unwrap_or()` over catching it — a raised
+`UnwrapError` means the code asked for the wrong variant.
+
+## Component Health Monitoring
+
+`ComponentHealthMonitor` samples one component's own health: CPU, memory,
+throughput, error rate, uptime.
+
+```python
+from maple import ComponentHealthMonitor
+
+monitor = ComponentHealthMonitor("ingest-worker", collection_interval=5.0)
+monitor.start()
+monitor.record_message(processing_time=0.012)
+monitor.record_error()
+monitor.get_health_summary()
+monitor.stop()
+```
+
+Distinct from `maple.discovery.health_monitor.HealthMonitor`, which watches
+*other* agents through registry heartbeats. This one is self-reporting and takes
+a `component_id`; that one is registry-wide and takes an `AgentRegistry`. They
+shared a class name until 2.1.0.
+
+## Exception Reference
+
+| Exception | Raised when | Import |
+| --- | --- | --- |
+| `UnwrapError` | `unwrap`/`unwrap_err` called on the wrong variant | `from maple import UnwrapError` |
+| `SecurityError` | A configured security control denies an operation | `from maple import SecurityError` |
+| `BrokerOverflowError` | The broker refuses a message (backpressure) | `from maple import BrokerOverflowError` |
+| `BrokerUnavailableError` | A transport cannot be constructed or cannot enforce configured controls | `from maple import BrokerUnavailableError` |
+
+`SecurityError` is one class. It was previously defined twice — in
+`maple.broker.broker` and `maple.error.types` — so catching one missed the
+other. Both import paths now name the same type.
 
 ## Usage Example
 
