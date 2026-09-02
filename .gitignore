@@ -196,3 +196,8 @@ Thumbs.db
 
 # Doctrine framework source is part of the repository contract; machine-local
 # state remains ignored above.
+
+# Release scratch: notes assembled per release, and artifacts downloaded from
+# PyPI to attach to a GitHub Release. Both are regenerated, never edited.
+/release_notes_v*.md
+/release-assets/
