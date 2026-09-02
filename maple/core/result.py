@@ -30,10 +30,29 @@ U = TypeVar("U")
 F = TypeVar("F")
 
 
+class UnwrapError(Exception):
+    """Raised when ``unwrap``/``unwrap_err`` is called on the wrong variant.
+
+    A contract violation by the caller, not a domain failure: the value was
+    already known to be the other variant. Subclasses ``Exception`` so existing
+    ``except Exception`` handlers keep working, while callers that want to tell
+    a bad ``unwrap`` apart from a real error can catch this specifically.
+
+    The wrapped value is kept on ``.value`` so a handler can inspect the error
+    it failed to unwrap without parsing the message.
+    """
+
+    def __init__(self, message: str, value: Any) -> None:
+        super().__init__(message)
+        self.value = value
+
+
 class Result(Generic[T, E]):
     """
     A type that represents either success (Ok) or failure (Err).
-    Core to MAPLE's perfect error handling that contributes to 32/32 test success.
+
+    Every fallible MAPLE API returns one of these rather than raising, so
+    callers handle failure explicitly instead of by convention.
     """
 
     def __init__(self, is_ok: bool, value: Union[T, E]):
@@ -60,14 +79,14 @@ class Result(Generic[T, E]):
 
     def unwrap(self) -> T:
         """
-        Extract the success value or raise an exception.
+        Extract the success value or raise.
 
         Raises:
-            Exception: If the result is Err.
+            UnwrapError: If the result is Err. The error value is on ``.value``.
         """
         if self._is_ok:
             return cast(T, self._value)
-        raise Exception(f"Called unwrap on an Err value: {self._value}")
+        raise UnwrapError(f"Called unwrap on an Err value: {self._value}", self._value)
 
     def unwrap_or(self, default: T) -> T:
         """Extract the success value or return a default."""
@@ -77,14 +96,16 @@ class Result(Generic[T, E]):
 
     def unwrap_err(self) -> E:
         """
-        Extract the error value or raise an exception.
+        Extract the error value or raise.
 
         Raises:
-            Exception: If the result is Ok.
+            UnwrapError: If the result is Ok. The success value is on ``.value``.
         """
         if not self._is_ok:
             return cast(E, self._value)
-        raise Exception(f"Called unwrap_err on an Ok value: {self._value}")
+        raise UnwrapError(
+            f"Called unwrap_err on an Ok value: {self._value}", self._value
+        )
 
     def map(self, f: Callable[[T], U]) -> "Result[U, E]":
         """Apply a function to the success value."""

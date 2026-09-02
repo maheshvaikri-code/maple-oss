@@ -21,6 +21,17 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 
 # Monitoring and observability components for MAPLE.
 
-from .health_monitor import HealthMetrics, HealthMonitor
+from .health_monitor import (
+    ComponentHealthMetrics,
+    ComponentHealthMonitor,
+    HealthMetrics,
+    HealthMonitor,
+)
 
-__all__ = ["HealthMonitor", "HealthMetrics"]
+__all__ = [
+    "ComponentHealthMonitor",
+    "ComponentHealthMetrics",
+    # Legacy aliases; ambiguous with maple.discovery's HealthMonitor.
+    "HealthMonitor",
+    "HealthMetrics",
+]

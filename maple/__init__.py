@@ -22,7 +22,6 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 # type-safe Result<T,E> error handling, link identification security, and
 # multi-agent communication.
 
-import warnings
 from typing import Any, Dict
 
 from .agent.agent import Agent
@@ -285,11 +284,18 @@ from .autonomy.workflow import (
 from .broker.broker import MessageBroker
 from .communication.streaming import Stream, StreamOptions
 from .core.message import Message, Priority
-from .core.result import Result
+from .core.result import Result, UnwrapError
 from .core.types import AgentID, Duration, MessageID, Size
 from .error.circuit_breaker import CircuitBreaker
 from .error.recovery import RetryOptions, exponential_backoff, retry
-from .error.types import Error, ErrorType, Severity
+from .error.types import (
+    BrokerOverflowError,
+    BrokerUnavailableError,
+    Error,
+    ErrorType,
+    SecurityError,
+    Severity,
+)
 from .llm.capabilities import (
     FallbackLLMProvider,
     ProviderCapabilities,
@@ -308,6 +314,10 @@ from .llm.types import (
     ModelRetryPolicy,
     validate_chat_content,
 )
+from .monitoring.health_monitor import (
+    ComponentHealthMetrics,
+    ComponentHealthMonitor,
+)
 from .resources.lease import Lease, LeaseManager
 from .resources.manager import (
     DEFAULT_LIFECYCLES,
@@ -324,7 +334,7 @@ try:
 except ImportError:  # pragma: no cover
     pass
 
-__version__ = "2.0.0"
+__version__ = "2.1.0"
 __author__ = "Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)"
 __email__ = "mahesh@mapleagent.org"
 __license__ = "AGPL 3.0"
@@ -363,6 +373,12 @@ __all__ = [
     "Error",
     "Severity",
     "ErrorType",
+    "SecurityError",
+    "BrokerUnavailableError",
+    "BrokerOverflowError",
+    "UnwrapError",
+    "ComponentHealthMonitor",
+    "ComponentHealthMetrics",
     "retry",
     "RetryOptions",
     "exponential_backoff",
@@ -624,17 +640,34 @@ __all__ = [
 ]
 
 
-# Validation that our perfect test score is maintained
 def validate_installation() -> Dict[str, Any]:
-    """Validate that MAPLE is properly installed and ready to use."""
+    """Check that MAPLE's core types are importable and usable.
+
+    Deliberately free of side effects: it does **not** construct an ``Agent``.
+    ``MessageBroker`` is a process-wide singleton that freezes its
+    configuration at first construction, so building an agent here would pin
+    the broker to this function's throwaway config and silently discard the
+    configuration of every agent the caller creates afterwards. See ADR-157.
+    """
     try:
-        # Test core functionality
         config = Config(agent_id="validation_test", broker_url="memory://test")
-        Agent(config)
+        message = Message(message_type="VALIDATION_TEST", payload={"test": True})
 
-        Message(message_type="VALIDATION_TEST", payload={"test": True})
+        # Exercise the pieces that carry the protocol: typed config, a
+        # round-trippable message, and the Result contract every API returns.
+        checked = (
+            config.agent_id == "validation_test"
+            and message.message_type == "VALIDATION_TEST"
+            and Result.ok(True).unwrap() is True
+            and Result.err("e").is_err()
+        )
+        if not checked:
+            return {
+                "status": "ERROR",
+                "error": "core type invariants did not hold",
+                "ready": False,
+            }
 
-        # Basic validation passed
         return {
             "status": "SUCCESS",
             "version": __version__,
@@ -643,17 +676,6 @@ def validate_installation() -> Dict[str, Any]:
 
     except Exception as e:
         return {"status": "ERROR", "error": str(e), "ready": False}
-
-
-# Auto-validation on import (optional)
-if __debug__:
-    # Only run validation in debug mode to avoid import overhead in production
-    _validation_result = validate_installation()
-    if _validation_result["status"] != "SUCCESS":
-        warnings.warn(
-            "MAPLE validation failed: "
-            + str(_validation_result.get("error", "Unknown error"))
-        )
 
 
 # Package banner for CLI tools

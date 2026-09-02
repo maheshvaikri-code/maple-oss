@@ -17,7 +17,7 @@
 MAPLE Core Types
 Created by: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
 
-Type system for MAPLE's 32/32 perfect validation.
+Type system for MAPLE messages: identifiers, priorities, and payload types.
 """
 
 import re
