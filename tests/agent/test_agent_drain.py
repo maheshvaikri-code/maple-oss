@@ -109,7 +109,8 @@ class TestDrainOnStop:
                 undrained = w.worker.stop(drain_timeout=0.2)
             if undrained:
                 assert any(
-                    "still queued" in record.getMessage() for record in caplog.records
+                    "still outstanding" in record.getMessage()
+                    for record in caplog.records
                 ), "messages were dropped without a warning"
         finally:
             w.close()
@@ -151,8 +152,9 @@ class TestDrainOnStop:
         finally:
             w.close()
 
-    def test_intake_closes_before_the_drain(self):
-        """The drain must chase a queue that cannot grow."""
+    def test_sends_after_stop_do_not_reach_the_agent(self):
+        """Intake closes at the end of the drain, but it does close: work
+        arriving after stop() returns is not this agent's problem."""
         w = Workload("memory://drain-7", handler_seconds=0.02)
         try:
             w.send(10)
@@ -222,8 +224,14 @@ class TestStoppingOneAgentDoesNotTearDownItsPeers:
             b.stop(drain_timeout=0)
             sender.stop(drain_timeout=0)
 
-    def test_stop_closes_intake_without_disconnecting(self):
-        """Comments mention disconnect(); only executable lines are checked."""
+    def test_nothing_tears_down_the_broker_before_the_drain(self):
+        """Neither unsubscribe() nor disconnect() may precede the drain.
+
+        disconnect() stops the shared delivery thread for the whole scope.
+        unsubscribe() is narrower but still strands whatever the broker has
+        already accepted for this agent, because the delivery loop polls.
+        Both wait until the drain is done.
+        """
         import inspect
 
         source = inspect.getsource(Agent.stop)
@@ -233,15 +241,24 @@ class TestStoppingOneAgentDoesNotTearDownItsPeers:
             for line in before_drain.splitlines()
             if line.strip() and not line.strip().startswith("#")
         )
-        # drop the docstring, which names disconnect() in prose
+        # drop the docstring, which names both calls in prose
         if code.count('"""') >= 2:
             code = code.split('"""')[-1]
 
-        assert "unsubscribe" in code, "intake is never closed before the drain"
         assert "disconnect" not in code, (
             "disconnect() before the drain stops the shared delivery thread "
             "for every agent in the scope"
         )
+        assert "unsubscribe" not in code, (
+            "unsubscribing before the drain strands messages the broker has "
+            "already accepted for this agent"
+        )
+
+    def test_intake_is_closed_by_the_time_stop_returns(self):
+        import inspect
+
+        source = inspect.getsource(Agent.stop)
+        assert "unsubscribe" in source, "the agent never leaves the broker"
 
     def test_the_broker_survives_until_its_last_subscriber_leaves(self):
         """A single-agent process must still clean up after itself."""
@@ -251,6 +268,70 @@ class TestStoppingOneAgentDoesNotTearDownItsPeers:
         assert broker.running is True
         agent.stop()
         assert broker.running is False, "the last subscriber left it connected"
+
+
+class TestTheDrainCoversWorkStillUpstream:
+    """The broker's delivery loop polls, so a message accepted moments before
+    stop() is still in the broker's queue, not the agent's.
+
+    Measured with the first implementation, sending 25 then stopping at once:
+    0 delivered, stop() reporting a clean drain, and the broker counting 25
+    undeliverable. Draining only the local queue reports success over work
+    that was stranded upstream.
+    """
+
+    def test_messages_sent_immediately_before_stop_still_run(self):
+        w = Workload("memory://upstream-1", handler_seconds=0.01)
+        try:
+            w.send(25)
+            undrained = w.worker.stop()  # no sleep: all 25 are still upstream
+            assert undrained == 0
+            assert len(w.finished) == 25, (
+                f"only {len(w.finished)} of 25 ran; the rest were stranded in "
+                "the broker's queue"
+            )
+        finally:
+            w.close()
+
+    def test_none_are_counted_undeliverable(self):
+        w = Workload("memory://upstream-2", handler_seconds=0.01)
+        try:
+            w.send(20)
+            w.worker.stop()
+            stats = w.worker.broker.get_statistics()
+            assert (
+                stats["undeliverable"] == 0
+            ), "messages were dropped after the agent unsubscribed"
+        finally:
+            w.close()
+
+    def test_an_empty_system_still_stops_promptly(self):
+        """Requiring consecutive quiet polls must not make idle stops slow."""
+        agent = Agent(Config(agent_id="idle2", broker_url="memory://upstream-3"))
+        agent.start()
+        started = time.perf_counter()
+        assert agent.stop() == 0
+        assert time.perf_counter() - started < 1.0
+
+    def test_upstream_pending_is_counted_when_the_deadline_passes(self):
+        w = Workload("memory://upstream-4", handler_seconds=0.3)
+        try:
+            w.send(40)
+            undrained = w.worker.stop(drain_timeout=0.3)
+            assert undrained > 0
+            assert w.worker.messages_undrained == undrained
+        finally:
+            w.close()
+
+    def test_pending_upstream_is_defensive_about_the_broker(self):
+        """A transport without these internals must not break shutdown."""
+        agent = Agent(Config(agent_id="odd", broker_url="memory://upstream-5"))
+        agent.start()
+        try:
+            agent.broker = object()  # no _message_queue, no _agent_queues
+            assert agent._pending_upstream() == 0
+        finally:
+            MessageBroker.reset_scopes()
 
 
 class TestDrainDeadlineUsesAStableClock:

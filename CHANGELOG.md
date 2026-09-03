@@ -88,8 +88,12 @@ agent with a 250 ms handler, `stop()` discarded **38** with no error, no
 counter and no log, returning in 0.11 s — every one accepted with an `Ok`
 result that promised nothing.
 
-- `stop(drain_timeout=None)` closes intake, then processes queued work until
-  the queue drains or the deadline passes. An empty queue returns immediately.
+- `stop(drain_timeout=None)` processes accepted work until it drains or the
+  deadline passes, then closes intake. The drain waits on **both** the agent's
+  queue and whatever the broker still holds for it: the delivery loop polls, so
+  a message accepted moments before `stop()` is upstream, not local. Draining
+  only the local queue reported a clean shutdown while 25 accepted messages
+  were stranded. An idle agent returns immediately.
 - It returns the number of messages it could **not** drain, also recorded on
   `agent.messages_undrained` and logged at WARNING. Losing work on shutdown can
   be an acceptable trade; losing it silently is not.

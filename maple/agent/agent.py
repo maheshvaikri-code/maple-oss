@@ -240,23 +240,28 @@ class Agent:
         """
         logger.info(f"Stopping agent {self.agent_id}")
 
-        # Close intake first, so the drain chases a queue that cannot grow —
-        # but by unsubscribing *this* agent, not by disconnecting. Brokers are
-        # scoped and shared (ADR-160), so disconnect() stops the delivery
-        # thread for every agent on the same broker_url; calling it here would
-        # tear down peers mid-flight. disconnect() keeps its position at the
-        # end of this method, unchanged.
+        deadline = (
+            self.DEFAULT_DRAIN_TIMEOUT if drain_timeout is None else drain_timeout
+        )
+        # The subscription stays open *through* the drain. Unsubscribing first
+        # looks like the way to close intake, and it silently strands whatever
+        # the broker already accepted for this agent: the delivery loop polls,
+        # so a message sent moments earlier is still in the broker's queue and
+        # never reaches this agent's. Measured, sending 25 then stopping
+        # immediately: 0 delivered, and stop() reported a clean drain while the
+        # broker counted 25 undeliverable.
+        undrained = self._drain(deadline)
+        self.messages_undrained = undrained
+
+        # Intake closes once the drain is done, by unsubscribing *this* agent
+        # rather than disconnecting. Brokers are scoped and shared (ADR-160),
+        # so disconnect() would stop the delivery thread for every agent on the
+        # same broker_url.
         if hasattr(self.broker, "unsubscribe"):
             try:
                 self.broker.unsubscribe(self.agent_id)
             except Exception:  # pragma: no cover - intake closure is best effort
                 logger.debug("Could not unsubscribe %s cleanly", self.agent_id)
-
-        deadline = (
-            self.DEFAULT_DRAIN_TIMEOUT if drain_timeout is None else drain_timeout
-        )
-        undrained = self._drain(deadline)
-        self.messages_undrained = undrained
 
         self.running = False
         if self.handler_thread:
@@ -296,26 +301,67 @@ class Agent:
             return
         self.broker.disconnect()
 
-    def _drain(self, timeout: float) -> int:
-        """Let the handler loop finish queued work, bounded by a deadline.
+    #: Consecutive idle polls required before a drain is called complete.
+    #: The broker's delivery loop polls on its own interval, so an empty agent
+    #: queue can simply mean "not handed over yet". One quiet sample is not
+    #: evidence of an empty system.
+    _DRAIN_QUIET_POLLS = 4
+    _DRAIN_POLL_SECONDS = 0.005
 
-        Returns the number of messages still queued when it gave up.
+    def _pending_upstream(self) -> int:
+        """Messages the broker still holds that could be destined here.
+
+        Best effort and deliberately conservative: the shared priority queue
+        is not per-agent, so anything in it is treated as possibly ours. Being
+        wrong here costs a few extra milliseconds of draining; being wrong the
+        other way strands accepted work.
+        """
+        total = 0
+        try:
+            queue_obj = getattr(self.broker, "_message_queue", None)
+            if queue_obj is not None:
+                size = getattr(queue_obj, "size", None)
+                total += size() if callable(size) else int(size or 0)
+        except Exception:  # pragma: no cover - defensive
+            pass
+        try:
+            pending = getattr(self.broker, "_agent_queues", {}).get(self.agent_id)
+            total += len(pending or [])
+        except Exception:  # pragma: no cover - defensive
+            pass
+        return total
+
+    def _drain(self, timeout: float) -> int:
+        """Let the handler loop finish accepted work, bounded by a deadline.
+
+        Waits on both queues: this agent's, and whatever the broker still holds
+        for it. Draining only the local one reports success while in-flight
+        messages are stranded upstream.
+
+        Returns the number of messages still outstanding when it gave up.
         """
         if timeout <= 0 or not self.running or self.handler_thread is None:
-            return self.message_queue.qsize()
+            return self.message_queue.qsize() + self._pending_upstream()
 
         # A duration, so it is measured on a clock that cannot step (ADR-163).
         end = time.perf_counter() + timeout
+        quiet = 0
         while time.perf_counter() < end:
-            if self.message_queue.empty() and not self._handling:
+            idle = (
+                self.message_queue.empty()
+                and not self._handling
+                and self._pending_upstream() == 0
+            )
+            quiet = quiet + 1 if idle else 0
+            if quiet >= self._DRAIN_QUIET_POLLS:
                 return 0
-            time.sleep(0.005)
+            time.sleep(self._DRAIN_POLL_SECONDS)
 
-        remaining = self.message_queue.qsize()
+        remaining = self.message_queue.qsize() + self._pending_upstream()
         if remaining:
             logger.warning(
-                "Agent %s stopped with %d message(s) still queued after a %.1fs "
-                "drain; they are discarded. Raise drain_timeout, or stop "
+                "Agent %s stopped with %d message(s) still outstanding after a "
+                "%.1fs drain; they are discarded. Raise drain_timeout, or stop "
                 "accepting work sooner.",
                 self.agent_id,
                 remaining,
