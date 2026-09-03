@@ -80,6 +80,11 @@ class Agent:
         self.message_queue: queue.Queue[Message] = queue.Queue()
         self.handler_thread: Optional[threading.Thread] = None
         self._handling = False
+        #: Set by stop(). A parked receive() checks it between slices, so
+        #: shutting down wakes waiters instead of stranding them
+        #: (ADR-165). Never set at construction: an agent that has not
+        #: started yet still blocks exactly as it always did.
+        self._shutdown = threading.Event()
         #: Messages discarded by the most recent stop() because the drain
         #: deadline passed. Reported rather than silently lost.
         self.messages_undrained = 0
@@ -246,6 +251,9 @@ class Agent:
             acceptable trade; losing it silently never is.
         """
         logger.info(f"Stopping agent {self.agent_id}")
+        # Wake anything parked in receive() before the drain, so a caller
+        # blocked on this agent learns it is going away (ADR-165).
+        self._shutdown.set()
 
         deadline = (
             self.DEFAULT_DRAIN_TIMEOUT if drain_timeout is None else drain_timeout
@@ -498,6 +506,39 @@ class Agent:
             # Unsubscribe the temporary handler
             self.broker.unsubscribe_temporary(self.agent_id, response_handler)
 
+    #: How long a parked receive() sleeps between shutdown checks. Not a
+    #: deadline - the call still blocks indefinitely while the agent runs.
+    _WAIT_SLICE_SECONDS = 0.05
+
+    def _get_until_shutdown(self) -> Optional[Message]:
+        """Block for a message until one arrives or the agent stops.
+
+        Returns ``None`` when the agent stopped first. Before this existed a
+        parked ``receive()`` never woke: stop() returned cleanly in 0.13s and
+        left the thread wedged with no error and no way to learn why
+        (ADR-165).
+        """
+        while True:
+            try:
+                return self.message_queue.get(timeout=self._WAIT_SLICE_SECONDS)
+            except queue.Empty:
+                if self._shutdown.is_set():
+                    # One last look: a message may have landed in the same
+                    # slice the stop did, and it should not be lost to a race.
+                    try:
+                        return self.message_queue.get_nowait()
+                    except queue.Empty:
+                        return None
+
+    def _stopped_error(self) -> Dict[str, Any]:
+        return {
+            "errorType": "AGENT_STOPPED",
+            "message": (
+                f"Agent '{self.agent_id}' stopped while waiting for a message."
+            ),
+            "details": {"agentId": self.agent_id},
+        }
+
     def receive(self, timeout: Optional[str] = None) -> Result[Message, Dict[str, Any]]:
         """Receive a message from the queue."""
         try:
@@ -507,7 +548,10 @@ class Agent:
                 timeout_seconds = Duration.parse(timeout)
                 message = self.message_queue.get(timeout=timeout_seconds)
             else:
-                message = self.message_queue.get()
+                pending = self._get_until_shutdown()
+                if pending is None:
+                    return Result.err(self._stopped_error())
+                message = pending
 
             return Result.ok(message)
         except queue.Empty:
@@ -542,7 +586,10 @@ class Agent:
                 if remaining_time:
                     message = self.message_queue.get(timeout=remaining_time)
                 else:
-                    message = self.message_queue.get()
+                    pending = self._get_until_shutdown()
+                    if pending is None:
+                        return Result.err(self._stopped_error())
+                    message = pending
 
                 if filter(message):
                     return Result.ok(message)

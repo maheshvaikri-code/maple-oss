@@ -83,15 +83,18 @@ part of Tier 4's tracing row rather than this one, and depend on 1.1.
 
 ## Tier 2 — Correctness under adverse conditions
 
-Small, bounded, and each prevents a class of bug that is painful to diagnose
-after the fact.
+**All four items are now done.** Each was measured before being designed, and
+in three cases the measurement corrected the entry: the shutdown defect was
+about accepted-but-unstarted work rather than executing work, the thread-count
+claim was 5.5× overstated, and one of the four "unbounded waits" was already
+correct.
 
 | Item | Detail |
 | --- | --- |
 | ~~**Drain on shutdown**~~ | **Done** ([ADR-163](adr/163-two-clocks-and-a-drain-phase.md)). Measured: 38 of 40 messages discarded silently, `stop()` returning in 0.11s. It now drains queued work up to a deadline and reports what it could not. |
 | ~~**Monotonic clocks**~~ | **Done** ([ADR-163](adr/163-two-clocks-and-a-drain-phase.md)). Durations moved to `time.perf_counter()`; records and JWT claims stay on the wall clock. A guard test fails CI on a new wall-clock duration. |
 | ~~**Config validation**~~ | **Done** ([ADR-164](adr/164-configuration-is-validated-at-construction.md)). Nine invalid configurations were accepted; `agent_id=""` gave `Ok` sends that delivered nothing, and `max_queue_size=-5` failed every send with `QUEUE_FULL`. It also closed a hole in ADR-157: `NATS://` and `nats:/` silently fell back to the in-process broker. |
-| **Unbounded waits** | Four sites wait without a timeout. Daemon threads let the process exit, but a parked thread cannot observe a shutdown flag — which is how a clean stop becomes a five-second timeout. |
+| ~~**Unbounded waits**~~ | **Done** ([ADR-165](adr/165-waits-end-when-the-thing-they-wait-for-does.md)), and the count was wrong. Three of the four were real: `Agent.receive()` and `Stream.receive()` never woke at all (`stop()` returned in 0.13s and left the thread wedged permanently), and an unbounded join on an LLM stream collector hung the caller for as long as a provider stalled. The fourth — `TaskQueue` — is **correct**: `stop()` calls `notify_all()` and a parked caller wakes in 0.00s. It matched a text search for a wait with no timeout argument, not a defect. |
 
 ---
 
@@ -160,10 +163,9 @@ any implementation.
 
 1. ~~**Metrics export** (Tier 1.2)~~ — **done.** Smallest change, largest
    operator benefit; 2.1.0's counters now have somewhere to go.
-2. ~~**Drain on shutdown, monotonic clocks, config validation** (Tier 2)~~ —
-   **done.** Each was measured before being designed, which corrected the
-   description of every one. **Unbounded waits** is the last Tier 2 item.
-   **Next.**
+2. ~~**Tier 2 in full**~~ — **done**: drain on shutdown, monotonic clocks,
+   config validation, and bounded waits. Every entry was measured before being
+   designed, and three of the four descriptions were wrong in the process.
 3. **`FileBroker`** (Tier 1.1, step one) — multi-process on one host, on a
    pattern already proven in this repository, and the first genuine proof the
    broker contract is implementable twice.

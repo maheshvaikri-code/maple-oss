@@ -52,6 +52,52 @@ during implementation: at six significant digits it exports 1048576 as
 
 96 tests; the module is at 100% statement coverage.
 
+### Fixed — waits end when the thing they wait for does (ADR-165)
+
+The last Tier 2 item. Four sites waited without a timeout; three were real
+defects and the count itself was wrong.
+
+**`Agent.receive()` never woke.** A thread parked with no timeout stayed parked
+forever:
+
+```text
+receiver parked      : True
+stop() took          : 0.13s
+receiver still parked: True   (after stop + 2s)
+outcome              : never returned
+```
+
+`stop()` returned cleanly and left the thread wedged — no error, no exception,
+no way to learn the agent was gone. It now wakes in ~0.05s with
+`Result.err(AGENT_STOPPED)`.
+
+**`Stream.receive()` had the same defect on `close()`.** `close()` set a flag,
+messaged subscribers and unregistered the handler, but never touched the buffer
+a local reader was blocked on. It now wakes with `STREAM_CLOSED`.
+
+**An unbounded join on an LLM stream collector** hung the calling thread for as
+long as a provider stalled. It is now bounded by `LLMConfig.timeout` — the
+tolerance the caller already declared — plus a grace margin, so the provider's
+own timeout fires first and MAPLE's join is a backstop for one that does not
+honour it. Expiry returns `LLM_STREAM_TIMEOUT`.
+
+**`TaskQueue` was never a defect.** Its unbounded `_condition.wait()` is woken
+by `stop()` calling `notify_all()`; a parked caller returns in 0.00s. It
+matched a text search for a wait with no timeout argument. Left alone, with a
+test so nobody converts a correct condition variable into a polling loop later.
+
+Timeouts were **not** added to these waits. A caller passing no timeout is
+asking to wait until the message arrives, and turning that into "wait N seconds
+then fail" would break a legitimate pattern to paper over a different bug. An
+indefinite wait stays indefinite while its subject is alive; it now ends when
+its subject does. Shutdown is signalled with an `Event` rather than a sentinel
+value, because a sentinel needs one per parked waiter and a miscount leaves
+someone wedged.
+
+Only shutdown changes behaviour: the event is set by `stop()` and `close()`,
+never at construction, so an agent that has not started yet blocks exactly as
+before.
+
 ### Fixed — configuration is validated at construction (ADR-164)
 
 `Config` had no `__post_init__` and no `validate()`. Nine invalid
