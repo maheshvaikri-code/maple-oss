@@ -150,6 +150,15 @@ class MessageBroker:
         self.config = config
         self.running = False
         self.delivery_thread: Optional[threading.Thread] = None
+        #: Wakes the delivery loop when something is enqueued (ADR-166).
+        #: Its own lock, not self._lock: the drain holds self._lock while
+        #: copying queues, and mixing the two would tie waiting semantics to
+        #: the drain's locking.
+        self._wake = threading.Condition()
+        #: Condition.notify() only wakes current waiters, so a message
+        #: enqueued between the drain and the next wait() would be signalled
+        #: to nobody. This flag carries that signal across the gap.
+        self._wake_pending = False
         self.security_config = getattr(config, "security", None)
         # Separation-of-duties policy (fresh-context verifier preset), if any.
         # When set, send() enforces its sender allowlist + artifact-ref-only
@@ -303,6 +312,9 @@ class MessageBroker:
         """Disconnect from the broker."""
         logger.info("Disconnecting from broker")
         self.running = False
+        # Wake the loop out of its wait, or shutdown would take up to the
+        # fallback interval - slower than the poll this replaced (ADR-166).
+        self._signal_delivery()
         if self.delivery_thread:
             self.delivery_thread.join(timeout=5.0)
         logger.info("Disconnected from broker")
@@ -463,6 +475,8 @@ class MessageBroker:
         if self._message_queue is not None:
             enq_result = self._message_queue.enqueue(message, priority=message.priority)
             enqueued = enq_result.is_ok()
+            if enqueued:
+                self._signal_delivery()
         if not enqueued:
             # Backpressure, not buffering (ADR-159). This path previously
             # appended to an unbounded list, so a full queue silently became a
@@ -489,6 +503,7 @@ class MessageBroker:
                         }
                     )
                 pending.append(message)
+        self._signal_delivery()
 
         logger.debug(
             f"Message {message.message_id} queued for delivery to {message.receiver}"
@@ -539,6 +554,9 @@ class MessageBroker:
                 if subscriber not in self._agent_queues:
                     self._agent_queues[subscriber] = []
                 self._agent_queues[subscriber].append(subscriber_message)
+
+        if subscribers:
+            self._signal_delivery()
 
         logger.debug(
             f"Message {message.message_id} published to topic {topic} with "
@@ -674,14 +692,37 @@ class MessageBroker:
 
         logger.debug(f"Agent {agent_id} unsubscribed from topic {topic}")
 
+    #: How long the delivery loop sleeps with no signal. Not the delivery
+    #: path - insurance against an enqueue path that forgets to signal, which
+    #: then costs latency rather than stalling (ADR-166).
+    _IDLE_WAIT_SECONDS = 0.5
+
+    def _signal_delivery(self) -> None:
+        """Tell the delivery loop there is something to do."""
+        with self._wake:
+            self._wake_pending = True
+            self._wake.notify_all()
+
+    def _await_work(self) -> None:
+        """Block until something is enqueued, shutdown, or the fallback."""
+        with self._wake:
+            if not self._wake_pending:
+                self._wake.wait(timeout=self._IDLE_WAIT_SECONDS)
+            self._wake_pending = False
+
     def _message_delivery_loop(self) -> None:
         """Background thread for delivering messages."""
         logger.info("Message delivery loop started")
 
         while self.running:
             try:
-                # Sleep briefly to avoid spinning
-                time.sleep(0.01)
+                # Wait for an enqueue rather than polling. The previous
+                # time.sleep(0.01) cost every message half a poll on average:
+                # measured p50 4.8ms, p95 10.0ms, max 16.6ms, paid per hop
+                # (ADR-166).
+                self._await_work()
+                if not self.running:
+                    break
 
                 # Drain from MessageQueue first (priority-ordered)
                 if self._message_queue:
