@@ -3522,6 +3522,23 @@ Instructions:
             if delay > 0:
                 time.sleep(delay)
 
+    #: Multiplier on the provider's own timeout for the collector join. The
+    #: provider should time out first; this join is the backstop for one that
+    #: does not honour its own deadline (ADR-165).
+    _STREAM_JOIN_GRACE = 1.5
+
+    def _stream_join_deadline(self) -> float:
+        """How long to wait on the stream collector.
+
+        Derived from ``LLMConfig.timeout`` - the caller has already stated how
+        long they will wait for this provider, and asking the same question
+        twice invites the two answers to disagree.
+        """
+        configured = getattr(getattr(self.llm, "config", None), "timeout", None)
+        if not isinstance(configured, (int, float)) or configured <= 0:
+            configured = 120.0
+        return float(configured) * self._STREAM_JOIN_GRACE
+
     def _complete_model_once(
         self,
         messages: List[ChatMessage],
@@ -3563,7 +3580,24 @@ Instructions:
 
         worker = threading.Thread(target=run_collector, daemon=True)
         worker.start()
-        worker.join()
+        worker.join(timeout=self._stream_join_deadline())
+        if worker.is_alive():
+            # The provider is past its own configured timeout and still has
+            # not returned. Unbounded, this join hung the calling thread for
+            # as long as the stall lasted (ADR-165). The thread is a daemon,
+            # so it cannot hold the process open.
+            return Result.err(
+                {
+                    "errorType": "LLM_STREAM_TIMEOUT",
+                    "message": (
+                        "stream collector did not finish within the "
+                        "configured provider timeout."
+                    ),
+                    "details": {
+                        "timeoutSeconds": self._stream_join_deadline(),
+                    },
+                }
+            )
         if "error" in result_holder:
             return Result.err(result_holder["error"])
         result = result_holder.get("result")

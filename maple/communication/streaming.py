@@ -21,6 +21,7 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 
 import logging
 import queue
+import threading
 import time
 import uuid
 from typing import Any, Dict, List, Optional, cast
@@ -31,6 +32,11 @@ from ..core.types import Priority
 
 # NOTE: a LIBRARY must not configure the root logger (that hijacks the host's logging
 # and emits INFO noise). Use a module logger; the host owns logging config.
+#: Returned by the internal wait when the stream closed rather than
+#: delivering data. A private object so it can never collide with a
+#: legitimate payload, including None.
+_CLOSED = object()
+
 logger = logging.getLogger(__name__)
 
 
@@ -69,6 +75,11 @@ class Stream:
         self.options = options or StreamOptions()
         self.stream_id = str(uuid.uuid4())
         self.closed = False
+        #: Set by close(). A parked receive() checks it between slices so
+        #: closing a stream wakes its readers: close() touches the
+        #: subscribers and the handler, never the buffer a local reader is
+        #: blocked on, so they used to wait forever (ADR-165).
+        self._closed_event = threading.Event()
         self.buffer: queue.Queue[Any] = queue.Queue()
         self.subscribers: List[str] = []
 
@@ -151,6 +162,26 @@ class Stream:
 
         return Result.ok(None)
 
+    #: How long a parked receive() sleeps between close checks. Not a
+    #: deadline - the call still blocks indefinitely while the stream is open.
+    _WAIT_SLICE_SECONDS = 0.05
+
+    def _get_until_closed(self) -> Any:
+        """Block for data until some arrives or the stream closes.
+
+        Returns the ``_CLOSED`` sentinel when the stream closed first.
+        """
+        while True:
+            try:
+                return self.buffer.get(timeout=self._WAIT_SLICE_SECONDS)
+            except queue.Empty:
+                if self._closed_event.is_set():
+                    # Data may have landed in the same slice as the close.
+                    try:
+                        return self.buffer.get_nowait()
+                    except queue.Empty:
+                        return _CLOSED
+
     def receive(self, timeout: Optional[float] = None) -> Result[Any, Dict[str, Any]]:
         """
         Receive data from the stream.
@@ -165,7 +196,20 @@ class Stream:
             if timeout is not None:
                 data = self.buffer.get(timeout=timeout)
             else:
-                data = self.buffer.get()
+                data = self._get_until_closed()
+                if data is _CLOSED:
+                    return Result.err(
+                        {
+                            "errorType": "STREAM_CLOSED",
+                            "message": (
+                                f"Stream '{self.name}' closed while waiting " "for data"
+                            ),
+                            "details": {
+                                "stream_name": self.name,
+                                "stream_id": self.stream_id,
+                            },
+                        }
+                    )
 
             return Result.ok(data)
         except queue.Empty:
@@ -192,6 +236,8 @@ class Stream:
             return Result.ok(None)  # Already closed
 
         self.closed = True
+        # Wake readers parked on the buffer before doing anything else.
+        self._closed_event.set()
 
         # Send a close message to all subscribers
         close_message = Message(
