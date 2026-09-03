@@ -108,8 +108,15 @@ class Agent:
         broker_url = getattr(config, "broker_url", None) or ""
         schemes = {"nats://": BrokerType.NATS, "s2://": BrokerType.S2}
 
+        # Matched case-insensitively: URI schemes are case-insensitive per
+        # RFC 3986, and a case-sensitive startswith let "NATS://prod" miss this
+        # dispatch entirely and fall back to the in-process broker - the exact
+        # silent downgrade ADR-157 refuses, reachable by holding shift
+        # (ADR-164).
+        normalized = broker_url.lower()
+
         for scheme, broker_type in schemes.items():
-            if broker_url.startswith(scheme):
+            if normalized.startswith(scheme):
                 result = ProductionBrokerManager.create_broker(config, broker_type)
                 if result.is_err():
                     raise BrokerUnavailableError(broker_url, result.unwrap_err())

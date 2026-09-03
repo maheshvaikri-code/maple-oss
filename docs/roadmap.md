@@ -90,7 +90,7 @@ after the fact.
 | --- | --- |
 | ~~**Drain on shutdown**~~ | **Done** ([ADR-163](adr/163-two-clocks-and-a-drain-phase.md)). Measured: 38 of 40 messages discarded silently, `stop()` returning in 0.11s. It now drains queued work up to a deadline and reports what it could not. |
 | ~~**Monotonic clocks**~~ | **Done** ([ADR-163](adr/163-two-clocks-and-a-drain-phase.md)). Durations moved to `time.perf_counter()`; records and JWT claims stay on the wall clock. A guard test fails CI on a new wall-clock duration. |
-| **Config validation** | `Config` has no `__post_init__` or `validate()`. A negative timeout or malformed URL is accepted at construction and surfaces later as a different symptom. |
+| ~~**Config validation**~~ | **Done** ([ADR-164](adr/164-configuration-is-validated-at-construction.md)). Nine invalid configurations were accepted; `agent_id=""` gave `Ok` sends that delivered nothing, and `max_queue_size=-5` failed every send with `QUEUE_FULL`. It also closed a hole in ADR-157: `NATS://` and `nats:/` silently fell back to the in-process broker. |
 | **Unbounded waits** | Four sites wait without a timeout. Daemon threads let the process exit, but a parked thread cannot observe a shutdown flag — which is how a clean stop becomes a five-second timeout. |
 
 ---
@@ -160,9 +160,10 @@ any implementation.
 
 1. ~~**Metrics export** (Tier 1.2)~~ — **done.** Smallest change, largest
    operator benefit; 2.1.0's counters now have somewhere to go.
-2. ~~**Drain on shutdown and monotonic clocks** (Tier 2)~~ — **done.** Both
-   were measured before being designed, which corrected the description of
-   each. Config validation and unbounded waits remain in Tier 2. **Next.**
+2. ~~**Drain on shutdown, monotonic clocks, config validation** (Tier 2)~~ —
+   **done.** Each was measured before being designed, which corrected the
+   description of every one. **Unbounded waits** is the last Tier 2 item.
+   **Next.**
 3. **`FileBroker`** (Tier 1.1, step one) — multi-process on one host, on a
    pattern already proven in this repository, and the first genuine proof the
    broker contract is implementable twice.

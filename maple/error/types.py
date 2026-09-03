@@ -20,7 +20,7 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 # Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)
 
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, cast
 
 
 class ErrorType(Enum):
@@ -107,6 +107,27 @@ class SecurityError(Exception):
     """Exception raised for security-related errors."""
 
     pass
+
+
+class ConfigurationError(ValueError):
+    """A configuration value cannot produce a working agent (ADR-164).
+
+    Raised at construction so the error arrives where the mistake was made.
+    Subclasses ``ValueError`` because that is what callers already catch for a
+    bad argument, and carries ``.error`` like MAPLE's other typed errors.
+    """
+
+    def __init__(self, field: str, message: str, **details: Any) -> None:
+        self.error: Dict[str, Any] = {
+            "errorType": "INVALID_CONFIGURATION",
+            "message": message,
+            "details": {"field": field, **details},
+        }
+        super().__init__(message)
+
+    @property
+    def field(self) -> str:
+        return cast(str, self.error["details"]["field"])
 
 
 class BrokerOverflowError(Exception):
