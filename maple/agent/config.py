@@ -22,6 +22,8 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+from ..error.types import ConfigurationError
+
 
 @dataclass
 class LinkConfig:
@@ -96,3 +98,120 @@ class Config:
     performance: Optional[PerformanceConfig] = None
     metrics: Optional[MetricsConfig] = None
     tracing: Optional[TracingConfig] = None
+
+    #: Transports MAPLE can actually build, lowercased. Kept beside the
+    #: validation that uses it; a test pins it against the schemes
+    #: ``Agent._create_broker`` dispatches on, so the two cannot drift.
+    KNOWN_SCHEMES = ("memory", "nats", "s2")
+
+    #: Bounds that must be positive integers. A non-positive value here does
+    #: not degrade behaviour, it removes it: max_queue_size=-5 makes every
+    #: send fail QUEUE_FULL (ADR-164).
+    _POSITIVE_INTS = (
+        "connection_pool_size",
+        "max_concurrent_requests",
+        "max_queue_size",
+        "max_message_bytes",
+        "batch_size",
+    )
+
+    def __post_init__(self) -> None:
+        self.validate()
+
+    def validate(self) -> None:
+        """Refuse configuration that cannot produce a working agent.
+
+        Raises ``ConfigurationError`` (a ``ValueError``) at construction, so
+        the mistake is reported where it was made rather than surfacing later
+        as an unrelated symptom — an ``Ok`` send that never arrives, or a
+        ``QUEUE_FULL`` with no full queue (ADR-164).
+        """
+        self._validate_agent_id()
+        self._validate_broker_url()
+        self._validate_performance()
+
+    def _validate_agent_id(self) -> None:
+        if not isinstance(self.agent_id, str):
+            raise ConfigurationError(
+                "agent_id",
+                "agent_id must be a string, not " f"{type(self.agent_id).__name__}.",
+                received=repr(self.agent_id),
+            )
+        if not self.agent_id.strip():
+            raise ConfigurationError(
+                "agent_id",
+                "agent_id must not be empty: an agent with no id is "
+                "unroutable, so every send to it returns Ok and delivers "
+                "nothing.",
+                received=repr(self.agent_id),
+            )
+
+    def _validate_broker_url(self) -> None:
+        if not isinstance(self.broker_url, str):
+            raise ConfigurationError(
+                "broker_url",
+                "broker_url must be a string, not "
+                f"{type(self.broker_url).__name__}.",
+                received=repr(self.broker_url),
+            )
+        url = self.broker_url.strip()
+        if not url:
+            raise ConfigurationError(
+                "broker_url",
+                "broker_url must not be empty. Use 'memory://<scope>' for the "
+                "in-process broker.",
+                supportedSchemes=list(self.KNOWN_SCHEMES),
+            )
+
+        prefix = url.split(":", 1)[0].lower() if ":" in url else ""
+
+        # 1. A name MAPLE recognises must be spelled as a URL. Matching is
+        #    case-insensitive because _create_broker's startswith("nats://")
+        #    misses NATS:// entirely and falls back to in-process - which is
+        #    precisely the silent downgrade ADR-157 refuses.
+        if prefix in self.KNOWN_SCHEMES:
+            if not url.lower().startswith(prefix + "://"):
+                raise ConfigurationError(
+                    "broker_url",
+                    f"broker_url names the {prefix!r} transport but is not a "
+                    f"URL. Use '{prefix}://<host>'. As written it would fall "
+                    "back to the in-process broker and every message would "
+                    "stay local.",
+                    received=self.broker_url,
+                )
+            return
+
+        # 2. Scheme-shaped, but not a transport MAPLE has.
+        if "://" in url:
+            raise ConfigurationError(
+                "broker_url",
+                f"Unsupported broker scheme {prefix!r}. MAPLE would fall back "
+                "to the in-process broker and every message would stay local.",
+                received=self.broker_url,
+                supportedSchemes=list(self.KNOWN_SCHEMES),
+            )
+
+        # 3. No scheme at all - in-process, exactly as before. 'localhost:8080'
+        #    and bare names keep working; nobody types those believing they
+        #    configured a cluster.
+
+    def _validate_performance(self) -> None:
+        if self.performance is None:
+            return
+        for name in self._POSITIVE_INTS:
+            value = getattr(self.performance, name, None)
+            if value is None:
+                continue
+            if isinstance(value, bool) or not isinstance(value, int):
+                raise ConfigurationError(
+                    f"performance.{name}",
+                    f"{name} must be an integer, not " f"{type(value).__name__}.",
+                    received=repr(value),
+                )
+            if value < 1:
+                raise ConfigurationError(
+                    f"performance.{name}",
+                    f"{name} must be at least 1; {value} does not limit "
+                    "anything, it disables it.",
+                    received=value,
+                )

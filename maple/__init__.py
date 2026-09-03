@@ -291,6 +291,7 @@ from .error.recovery import RetryOptions, exponential_backoff, retry
 from .error.types import (
     BrokerOverflowError,
     BrokerUnavailableError,
+    ConfigurationError,
     Error,
     ErrorType,
     SecurityError,
@@ -381,6 +382,7 @@ __all__ = [
     "ErrorType",
     "SecurityError",
     "BrokerUnavailableError",
+    "ConfigurationError",
     "BrokerOverflowError",
     "UnwrapError",
     "ComponentHealthMonitor",

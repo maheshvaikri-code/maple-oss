@@ -110,10 +110,13 @@ class TestRefusal:
             pass
 
         security = SecurityConfig("jwt", {"token": "t"}, require_links=True)
-        config = Config(agent_id="a", broker_url="x://h", security=security)
+        # The URL is incidental here - what is under test is a broker that
+        # declares nothing. It uses a real scheme because Config now refuses
+        # unsupported ones (ADR-164).
+        config = Config(agent_id="a", broker_url="nats://h", security=security)
 
         with pytest.raises(BrokerUnavailableError):
-            Agent._require_security_enforcement(config, _Silent(), "x://h")
+            Agent._require_security_enforcement(config, _Silent(), "nats://h")
 
     def test_all_requested_controls_are_named_in_the_error(self):
         security = SecurityConfig(

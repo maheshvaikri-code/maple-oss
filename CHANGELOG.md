@@ -52,6 +52,52 @@ during implementation: at six significant digits it exports 1048576 as
 
 96 tests; the module is at 100% statement coverage.
 
+### Fixed — configuration is validated at construction (ADR-164)
+
+`Config` had no `__post_init__` and no `validate()`. Nine invalid
+configurations were all accepted, each surfacing later as something else:
+
+- `agent_id=""` or `None` produced an agent that started fine, whose every
+  `send()` returned **`Ok`** and delivered **nothing**.
+- `max_queue_size=-5` made every send fail **`QUEUE_FULL`** — an operator
+  hunting a slow consumer that does not exist.
+- `max_queue_size=0` delivered anyway; the bound meant nothing.
+
+**A typo defeated ADR-157.** That ADR made a transport which cannot honour
+`SecurityConfig` refuse at construction, so a `nats://` deployment can never
+silently run in-process. The dispatch matched with
+`broker_url.startswith("nats://")`, so:
+
+```text
+nats://host:4222     -> refused (working as designed)
+nats:/host:4222      -> in-process, silently   (one slash)
+NATS://host          -> in-process, silently   (wrong case)
+natss://host         -> in-process, silently   (typo)
+redis://host         -> in-process, silently   (unsupported transport)
+```
+
+Deploy with `NATS://prod-cluster` and every message stays local while the
+deployment reports healthy — the exact failure ADR-157 exists to prevent,
+reachable by holding shift.
+
+- `Config.__post_init__` now validates and raises `ConfigurationError` (a
+  `ValueError` carrying MAPLE's usual `.error` dict). `Config.validate()` is
+  public for callers assembling configuration dynamically.
+- `agent_id` must be a non-empty string; `broker_url` must be a non-empty
+  string with a recognised scheme; the performance bounds must be integers
+  ≥ 1 — checked as integers, so `1.5` is refused rather than truncated later.
+- Broker scheme matching is **case-insensitive** in both validation and
+  `_create_broker`, per RFC 3986.
+- A URL naming a transport MAPLE knows must be spelled `scheme://`;
+  `nats:/host` is refused with the correct form rather than falling back.
+- **Scheme-less values still work.** `localhost:8080` appears in 8 places
+  including `examples/helloworld.py`, and nobody types that believing they
+  configured a cluster. Refusing it would break the flagship example to
+  prevent a mistake with no failure mode.
+- A test pins `Config.KNOWN_SCHEMES` against the schemes `_create_broker`
+  actually dispatches on, so a new transport cannot be added to one and not
+  the other.
+
 ### Fixed — two clocks, and a drain phase on shutdown (ADR-163)
 
 Two Tier 2 roadmap items, both measured before being designed. The
