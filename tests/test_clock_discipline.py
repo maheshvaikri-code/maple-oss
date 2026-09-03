@@ -37,6 +37,7 @@ DURATION_MODULES = [
     "error/circuit_breaker.py",
     "security/link.py",
     "task_management/fault_tolerance.py",
+    "broker/file_broker.py",
 ]
 
 #: Wall-clock arithmetic that is correct, with the reason it is correct.
@@ -47,6 +48,18 @@ ALLOWED_WALL_CLOCK_ARITHMETIC = {
         "broker/queue.py",
         "else time.time() - queued_msg.timestamp",
     ): "Fallback for a QueuedMessage built without a monotonic reading.",
+    (
+        "broker/file_broker.py",
+        "age = time.time() - path.stat().st_mtime",
+    ): (
+        "Compared against a file mtime, which is wall clock. A monotonic "
+        "reading has no relationship to it, and the value must also mean the "
+        "same thing in another process (ADR-167)."
+    ),
+    (
+        "broker/file_broker.py",
+        "age = now - path.stat().st_mtime",
+    ): "Same: message age is measured against a wall-clock file mtime.",
 }
 
 _DURATION = re.compile(r"time\.time\(\)\s*-|-\s*time\.time\(\)")

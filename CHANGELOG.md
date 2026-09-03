@@ -52,6 +52,59 @@ during implementation: at six significant digits it exports 1048576 as
 
 96 tests; the module is at 100% statement coverage.
 
+### Added — FileBroker: multi-process on one host (ADR-167)
+
+**MAPLE is no longer a single-process runtime.** `FileBroker` is the second
+implementation of the `Broker` contract, which is what turns ADR-161's protocol
+from a description of one class into a contract.
+
+```python
+Agent(Config(agent_id="w", broker_url="file:///var/run/maple/spool"))
+```
+
+It passes the conformance suite **unchanged** — 43 passed, 1 skipped — and
+delivers across real process boundaries. The test that matters: **3 consumer
+processes, 60 messages, each delivered exactly once, 0 duplicates.**
+
+**Exclusion is by lock, not by rename.** Claim-by-`os.rename` is the obvious
+primitive and it was measured misbehaving across processes on a supported
+platform:
+
+```text
+races: 200
+exactly one winner : 8
+BOTH won           : 192
+```
+
+Both racers were told they had won, 96% of the time, so a transport built on it
+would deliver most messages twice. The behaviour is unexplained, and unexplained
+is disqualifying for an exclusion primitive. The spool instead uses MAPLE's
+existing `_InterProcessFileLock` (`msvcrt.locking` / `fcntl.flock`), which
+already backs `FileTaskQueue` and measured 4 processes × 150 increments with
+zero lost updates.
+
+- One file per message, fsynced and moved into place, so a partial write cannot
+  corrupt another message and the pending count is a directory listing.
+- **Presence files make "undeliverable" decidable across processes.** An empty
+  inbox cannot distinguish *nobody is listening* from *nobody has looked yet*. A
+  subscriber refreshes a presence file; a receiver with none is dead-lettered
+  and counted. A crashed process's presence expires by age, so a crash degrades
+  to undeliverable rather than to an inbox nobody drains.
+- **Latency is a poll interval, not a signal.** ADR-166's condition variable
+  does not cross processes. On one host the in-memory broker remains the right
+  choice; this one trades latency for reach, and the capability flags say which
+  is which.
+- `durable=False` is declared deliberately: messages are files and outlive a
+  process, but there is no replication, no ordering across agents, and no
+  exactly-once claim — a capability flag is a promise.
+- `ENFORCES_SECURITY_POLICY = False`, so ADR-157 refuses it a
+  security-configured agent rather than accepting controls it would ignore.
+- `file://` is added to `Config.KNOWN_SCHEMES` and the broker dispatch together,
+  which the ADR-164 drift test requires.
+
+**Still outstanding: NATS to conformance.** That is what makes MAPLE
+multi-*host* rather than multi-process.
+
 ### Changed — delivery starts on a signal, not a tick (ADR-166)
 
 The last Tier 3 item, and the roadmap named the wrong cost. It described the
