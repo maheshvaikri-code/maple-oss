@@ -97,6 +97,11 @@ accepted work is precisely the class of defect 2.1.0 existed to close: a
 mechanism that looks like it succeeded and did not. An opt-in flag would leave
 the bad behaviour as what everyone gets.
 
+The drain covers **everything already accepted**, which includes work the
+broker holds but has not yet handed over. Draining only the agent's own queue
+reports success over stranded messages — see *Discovered during
+implementation*.
+
 Bounded, because an unbounded drain turns a shutdown into a hang. The deadline
 is a parameter, and the drain reports what it achieved rather than claiming
 success:
@@ -167,12 +172,47 @@ thing changed is not the same as verifying what depends on it.
 
 Two corrections:
 
-- Intake closes with `broker.unsubscribe(agent_id)`, which affects only the
-  stopping agent.
 - `disconnect()` runs only when **no subscriber remains** on that broker, so a
   single-agent process still cleans up and a multi-agent one is left alone.
+- Intake closes with `broker.unsubscribe(agent_id)`, which affects only the
+  stopping agent — and it happens **after** the drain, for the reason below.
 
 After the fix the same probe delivers 3 times in 3.
+
+### Closing intake first strands the work it was meant to save
+
+The second draft unsubscribed before draining, which is narrower than
+`disconnect()` and still wrong. The broker's delivery loop **polls**, so a
+message accepted moments before `stop()` is sitting in the *broker's* queue,
+not the agent's. Unsubscribing strands exactly that message.
+
+Measured, sending 25 and stopping immediately:
+
+```text
+sends accepted (Ok)      : 25
+agent queue size at stop : 0     <-- nothing local to drain
+completed                : 0
+stop() reported undrained: 0     <-- a clean drain, it claimed
+broker undeliverable     : 25
+```
+
+`stop()` returned **0 outstanding while 25 accepted messages were lost**. The
+loss itself predates this ADR — ADR-159's `undeliverable` counter caught it —
+but a shutdown that reports a clean drain over stranded work is precisely the
+over-claim this ADR exists to prevent, and it was introduced by the fix.
+
+Every test missed it because they all slept before stopping, which let delivery
+happen. It surfaced in a post-merge smoke test.
+
+The subscription now stays open **through** the drain, which waits on both
+queues: this agent's, and what the broker still holds. Because the shared
+priority queue is not per-agent, anything in it is conservatively treated as
+possibly ours — being wrong costs milliseconds of draining, while being wrong
+the other way strands accepted work. Completion requires several *consecutive*
+idle polls, since one quiet sample only means the broker has not handed over
+yet. Intake closes once that finishes.
+
+Same probe after the fix: **25 of 25 completed, 0 undeliverable**, in 0.37s.
 
 ### The clock choice changed under measurement
 
