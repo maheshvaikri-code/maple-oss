@@ -52,6 +52,44 @@ during implementation: at six significant digits it exports 1048576 as
 
 96 tests; the module is at 100% statement coverage.
 
+### Changed — delivery starts on a signal, not a tick (ADR-166)
+
+The last Tier 3 item, and the roadmap named the wrong cost. It described the
+broker's `time.sleep(0.01)` loop as a wakeup problem — *"wakes 100 times a
+second whether or not anything is moving"*. Measured, idling is nearly free:
+
+```text
+1 idle broker : 0.0 ms CPU over 3.0s  (below the measurement floor)
+10 idle scopes: 31.2 ms CPU over 3.0s (1.04% of a core)
+```
+
+What the poll actually cost was **latency on every hop**: a message waits on
+average half a poll to be noticed.
+
+| | p50 | p95 | max |
+| --- | ---: | ---: | ---: |
+| 10 ms poll | 4.8 ms | 10.0 ms | 16.6 ms |
+| **signalled** | **0.33 ms** | **0.62 ms** | **0.85 ms** |
+
+Paid per hop, so a five-step agent chain spent ~25 ms in sleep alone.
+
+- The delivery loop now waits on a `threading.Condition` that every enqueue
+  path signals — `send()`, the fallback queue, and `publish()`.
+- The condition has **its own lock**, not the broker's: the drain holds
+  `self._lock` while copying queues, and mixing them would tie waiting
+  semantics to the drain's locking.
+- A pending flag carries a signal across the gap between the drain and the
+  next `wait()`. `Condition.notify()` wakes current waiters only, so without
+  it a message enqueued in that window would be signalled to nobody.
+- A 500 ms fallback wait remains as insurance against a future enqueue path
+  that forgets to signal — such a path then costs latency rather than
+  stalling. Fifty times less often than the poll it replaces.
+- `disconnect()` signals too. Without that a 500 ms wait would make shutdown
+  *slower* than the 10 ms poll, undoing ADR-163 and ADR-165.
+
+Idle CPU falls below the measurement floor as a side effect rather than as the
+point.
+
 ### Fixed — waits end when the thing they wait for does (ADR-165)
 
 The last Tier 2 item. Four sites waited without a timeout; three were real

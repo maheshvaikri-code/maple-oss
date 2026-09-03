@@ -98,10 +98,10 @@ correct.
 
 ---
 
-## Tier 3 — Scale within one process
+## Tier 3 — Scale within one process — **done**
 
-While single-process is the supported shape, these set its ceiling — one of
-the two entries here turned out not to be a ceiling at all.
+Both entries were measured, and **both descriptions were wrong**: one ceiling
+did not exist, and the other was real but for a different reason than stated.
 
 - ~~**~11 threads per agent.**~~ **This claim was wrong**, and measuring it
   was the cheapest thing on this page. Each `Agent` did construct a
@@ -111,9 +111,14 @@ the two entries here turned out not to be a ceiling at all.
   agents is roughly two hundred threads, not eleven hundred. The dead pool is
   removed in [ADR-163](adr/163-two-clocks-and-a-drain-phase.md); the ceiling it
   was supposed to justify does not exist.
-- **10 ms delivery poll.** The broker's loop wakes 100 times a second whether
-  or not anything is moving. A condition variable signalled by `send()` would
-  idle at zero. **Now the only item in this tier.**
+- ~~**10 ms delivery poll.**~~ **Done**
+  ([ADR-166](adr/166-deliver-on-a-signal-not-a-poll.md)) — and this entry named
+  the wrong cost. Idling was nearly free: one broker's CPU was below the
+  measurement floor, and ten scopes together cost 1% of a core. What the poll
+  actually cost was **latency on every hop** — measured p50 4.8 ms, p95
+  10.0 ms, max 16.6 ms. Delivery now waits on a condition signalled by the
+  enqueue: **p50 0.33 ms, p95 0.62 ms, max 0.85 ms**, and idle CPU drops below
+  the floor as a side effect rather than as the point.
 
 ---
 
@@ -166,7 +171,7 @@ any implementation.
 2. ~~**Tier 2 in full**~~ — **done**: drain on shutdown, monotonic clocks,
    config validation, and bounded waits. Every entry was measured before being
    designed, and three of the four descriptions were wrong in the process.
-3. **`FileBroker`** (Tier 1.1, step one) — multi-process on one host, on a
+3. **`FileBroker`** (Tier 1.1, step one) — **next.** Multi-process on one host, on a
    pattern already proven in this repository, and the first genuine proof the
    broker contract is implementable twice.
 4. **NATS to conformance** (Tier 1.1, step two) — the 3.0.0 anchor. Converts
