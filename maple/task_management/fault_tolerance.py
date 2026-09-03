@@ -115,7 +115,18 @@ class CircuitBreakerState:
 
     @property
     def next_attempt_time(self) -> float:
+        """Wall-clock instant the window is expected to end.
+
+        A readable record only. Comparing it against ``time.time()`` reproduces
+        the NTP sensitivity the breaker no longer has, so decisions use
+        ``reset_window_elapsed`` instead (ADR-163).
+        """
         return self._cb.last_failure_time + self._cb.reset_timeout
+
+    @property
+    def reset_window_elapsed(self) -> bool:
+        """Whether the reset window has passed, measured monotonically."""
+        return self._cb.reset_window_elapsed()
 
 
 class FaultTolerantExecutor:
@@ -612,15 +623,12 @@ class FaultTolerantExecutor:
 
         while self._running:
             try:
-                current_time = time.time()
-
                 with self._lock:
-                    # Check circuit breakers for half-open transitions
+                    # Check circuit breakers for half-open transitions. The
+                    # breaker measures its own window on a clock that cannot
+                    # step; re-deriving it here from wall time would undo that.
                     for cb_state in self.agent_circuit_breakers.values():
-                        if (
-                            cb_state.state == "open"
-                            and current_time >= cb_state.next_attempt_time
-                        ):
+                        if cb_state.state == "open" and cb_state.reset_window_elapsed:
                             cb_state.state = "half_open"
 
                 time.sleep(10)  # Check every 10 seconds

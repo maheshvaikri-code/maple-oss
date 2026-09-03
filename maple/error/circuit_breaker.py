@@ -23,7 +23,7 @@ import logging
 import threading
 import time
 from enum import Enum
-from typing import Callable, Generic, TypeVar, cast
+from typing import Callable, Generic, Optional, TypeVar, cast
 
 from ..core.result import Result
 
@@ -72,10 +72,33 @@ class CircuitBreaker(Generic[T, E]):
 
         self.state = CircuitState.CLOSED
         self.failure_count: int = 0
+        #: Wall-clock instant of the last failure. Observable: exposed as a
+        #: property by FailureDetector and fault_tolerance, and reported in
+        #: get_statistics(), so an operator reading it expects an epoch.
+        #: It is a record, never the input to a duration (ADR-163).
         self.last_failure_time: float = 0.0
+        #: Monotonic companion, used for every "has the window elapsed"
+        #: question. time.time() can step under NTP: measured, a +1h step
+        #: skipped a 30s window entirely and a -1h step held the circuit open
+        #: for 3599.8s against a 1s reset.
+        #:
+        #: perf_counter rather than monotonic: both are monotonic and
+        #: unadjustable, but monotonic resolves to 15.6ms on Windows where
+        #: perf_counter resolves to 100ns (ADR-163).
+        self._last_failure_elapsed: Optional[float] = None
         self.half_open_calls: int = 0
 
         self._lock = threading.RLock()
+
+    def _since_last_failure(self) -> float:
+        """Seconds elapsed since the last failure, on a clock that cannot step.
+
+        Returns infinity when no failure has been recorded, so a window check
+        reads as "long since elapsed" rather than measuring from epoch zero.
+        """
+        if self._last_failure_elapsed is None:
+            return float("inf")
+        return time.perf_counter() - self._last_failure_elapsed
 
     def execute(self, func: Callable[[], Result[T, E]]) -> Result[T, E]:
         """
@@ -91,14 +114,14 @@ class CircuitBreaker(Generic[T, E]):
             # Check if the circuit is open
             if self.state == CircuitState.OPEN:
                 # Check if it's time to try half-open
-                if time.time() - self.last_failure_time >= self.reset_timeout:
+                if self._since_last_failure() >= self.reset_timeout:
                     logger.info("Circuit half-open, testing service")
                     self.state = CircuitState.HALF_OPEN
                     self.half_open_calls = 0
                 else:
                     logger.debug(
                         "Circuit open, blocking request (reset in {:.1f}s)".format(
-                            self.reset_timeout - (time.time() - self.last_failure_time)
+                            self.reset_timeout - self._since_last_failure()
                         )
                     )
                     return Result.err(
@@ -110,7 +133,7 @@ class CircuitBreaker(Generic[T, E]):
                                 "details": {
                                     "resetTimeout": self.reset_timeout,
                                     "timeRemaining": self.reset_timeout
-                                    - (time.time() - self.last_failure_time),
+                                    - self._since_last_failure(),
                                 },
                             },
                         )
@@ -156,6 +179,7 @@ class CircuitBreaker(Generic[T, E]):
                 # Failure, increment failure count
                 self.failure_count += 1
                 self.last_failure_time = time.time()
+                self._last_failure_elapsed = time.perf_counter()
 
                 # If we've reached the threshold, open the circuit
                 if (
@@ -175,6 +199,17 @@ class CircuitBreaker(Generic[T, E]):
 
         return result
 
+    def reset_window_elapsed(self) -> bool:
+        """Whether the reset window has passed, measured monotonically.
+
+        Exists so callers stop re-deriving the window from wall-clock fields.
+        ``next_attempt_time`` (last_failure_time + reset_timeout) is a readable
+        record, not a decision input: computed from the wall clock, it inherits
+        exactly the NTP sensitivity this class no longer has (ADR-163).
+        """
+        with self._lock:
+            return self._since_last_failure() >= self.reset_timeout
+
     def is_open(self) -> bool:
         """Check if the circuit is open."""
         return self.state == CircuitState.OPEN
@@ -192,6 +227,7 @@ class CircuitBreaker(Generic[T, E]):
         with self._lock:
             self.failure_count += 1
             self.last_failure_time = time.time()
+            self._last_failure_elapsed = time.perf_counter()
             if (
                 self.state == CircuitState.CLOSED
                 and self.failure_count >= self.failure_threshold
@@ -220,7 +256,7 @@ class CircuitBreaker(Generic[T, E]):
             if self.state == CircuitState.CLOSED:
                 return True
             elif self.state == CircuitState.OPEN:
-                if time.time() - self.last_failure_time >= self.reset_timeout:
+                if self._since_last_failure() >= self.reset_timeout:
                     self.state = CircuitState.HALF_OPEN
                     self.half_open_calls = (
                         1  # This transition counts as the first allowed call
@@ -241,4 +277,5 @@ class CircuitBreaker(Generic[T, E]):
             self.state = CircuitState.CLOSED
             self.failure_count = 0
             self.last_failure_time = 0
+            self._last_failure_elapsed = None
             self.half_open_calls = 0

@@ -52,8 +52,13 @@ class Link:
         self.agent_b = agent_b
         self.link_id = link_id or f"link_{uuid.uuid4()}"
         self.state = LinkState.INITIATING
+        #: Wall-clock instants, kept as records for anyone reading them.
         self.established_at: Optional[float] = None
         self.expires_at: Optional[float] = None
+        #: Monotonic deadline, and the one enforced. A backwards NTP step must
+        #: not keep a dead link alive, nor a forwards step kill a live one
+        #: mid-session (ADR-163).
+        self._expires_elapsed: Optional[float] = None
         self.encryption_params: Dict[str, Any] = {}
         self.last_activity = time.time()
 
@@ -68,9 +73,16 @@ class Link:
         self.state = LinkState.ESTABLISHED
         self.established_at = time.time()
         self.expires_at = self.established_at + lifetime_seconds
+        self._expires_elapsed = time.perf_counter() + lifetime_seconds
 
     def is_expired(self) -> bool:
-        """Check if the link has expired."""
+        """Check if the link has expired.
+
+        Measured on the monotonic clock when the link was established through
+        ``establish()``; the wall-clock field remains the readable record.
+        """
+        if self._expires_elapsed is not None:
+            return time.perf_counter() > self._expires_elapsed
         if self.expires_at is None:
             return False
         return time.time() > self.expires_at

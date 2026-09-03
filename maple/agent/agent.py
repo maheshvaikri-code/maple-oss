@@ -25,7 +25,6 @@ import queue
 import threading
 import time
 import uuid
-from concurrent.futures import ThreadPoolExecutor
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -80,10 +79,13 @@ class Agent:
         self.running = False
         self.message_queue: queue.Queue[Message] = queue.Queue()
         self.handler_thread: Optional[threading.Thread] = None
+        self._handling = False
+        #: Messages discarded by the most recent stop() because the drain
+        #: deadline passed. Reported rather than silently lost.
+        self.messages_undrained = 0
         self.message_handlers: Dict[str, Callable[[Message], Optional[Message]]] = {}
         self.topic_handlers: Dict[str, Callable[[Message], Optional[Message]]] = {}
         self.stream_handlers: Dict[str, Callable[[Message], None]] = {}
-        self.executor = ThreadPoolExecutor(max_workers=10)
 
         # Agent metrics
         self.messages_sent = 0
@@ -211,9 +213,51 @@ class Agent:
         except Exception as e:
             logger.debug(f"Auto-registration skipped: {e}")
 
-    def stop(self) -> None:
-        """Stop the agent."""
+    #: Default seconds ``stop()`` will spend draining queued work.
+    DEFAULT_DRAIN_TIMEOUT = 5.0
+
+    def stop(self, drain_timeout: Optional[float] = None) -> int:
+        """Stop the agent, draining queued work first.
+
+        Measured before this existed: of 40 messages sent to an agent with a
+        250ms handler, ``stop()`` discarded **38** with no error, no counter
+        and no log, returning in 0.11s. Those messages had been accepted with
+        an ``Ok`` result that promised nothing (ADR-163).
+
+        Intake is closed first, then whatever is already queued is processed
+        until the queue drains or ``drain_timeout`` elapses. An empty queue
+        returns immediately, so the ordinary case costs nothing.
+
+        Args:
+            drain_timeout: Seconds to spend draining. ``None`` uses
+                ``DEFAULT_DRAIN_TIMEOUT``. ``0`` skips the drain entirely,
+                which is the pre-ADR-163 behaviour, chosen explicitly.
+
+        Returns:
+            The number of messages still queued when the deadline passed —
+            ``0`` for a complete drain. Losing work on shutdown may be an
+            acceptable trade; losing it silently never is.
+        """
         logger.info(f"Stopping agent {self.agent_id}")
+
+        # Close intake first, so the drain chases a queue that cannot grow —
+        # but by unsubscribing *this* agent, not by disconnecting. Brokers are
+        # scoped and shared (ADR-160), so disconnect() stops the delivery
+        # thread for every agent on the same broker_url; calling it here would
+        # tear down peers mid-flight. disconnect() keeps its position at the
+        # end of this method, unchanged.
+        if hasattr(self.broker, "unsubscribe"):
+            try:
+                self.broker.unsubscribe(self.agent_id)
+            except Exception:  # pragma: no cover - intake closure is best effort
+                logger.debug("Could not unsubscribe %s cleanly", self.agent_id)
+
+        deadline = (
+            self.DEFAULT_DRAIN_TIMEOUT if drain_timeout is None else drain_timeout
+        )
+        undrained = self._drain(deadline)
+        self.messages_undrained = undrained
+
         self.running = False
         if self.handler_thread:
             self.handler_thread.join(timeout=5.0)
@@ -223,9 +267,61 @@ class Agent:
                 self.registry.deregister_agent(self.agent_id)
             except Exception:
                 pass
-        self.broker.disconnect()
-        self.executor.shutdown(wait=False)
+        self._disconnect_if_last_subscriber()
         logger.info(f"Agent {self.agent_id} stopped")
+        return undrained
+
+    def _disconnect_if_last_subscriber(self) -> None:
+        """Tear the broker down only when nobody else is using it.
+
+        Brokers are keyed by ``broker_url`` and shared across every agent in
+        that scope (ADR-160), while ``disconnect()`` stops the scope's single
+        delivery thread. Calling it unconditionally meant stopping **one**
+        agent silently broke delivery for all of its peers.
+
+        Measured on the unmodified tree, a peer receiving a message after an
+        unrelated agent stopped: delivered in 1 run out of 3. Flaky rather
+        than absent, which is why it went unnoticed.
+        """
+        try:
+            remaining = len(getattr(self.broker, "_agent_handlers", {}))
+        except Exception:  # pragma: no cover - defensive
+            remaining = 0
+
+        if remaining:
+            logger.debug(
+                "Leaving broker connected for %d remaining subscriber(s)",
+                remaining,
+            )
+            return
+        self.broker.disconnect()
+
+    def _drain(self, timeout: float) -> int:
+        """Let the handler loop finish queued work, bounded by a deadline.
+
+        Returns the number of messages still queued when it gave up.
+        """
+        if timeout <= 0 or not self.running or self.handler_thread is None:
+            return self.message_queue.qsize()
+
+        # A duration, so it is measured on a clock that cannot step (ADR-163).
+        end = time.perf_counter() + timeout
+        while time.perf_counter() < end:
+            if self.message_queue.empty() and not self._handling:
+                return 0
+            time.sleep(0.005)
+
+        remaining = self.message_queue.qsize()
+        if remaining:
+            logger.warning(
+                "Agent %s stopped with %d message(s) still queued after a %.1fs "
+                "drain; they are discarded. Raise drain_timeout, or stop "
+                "accepting work sooner.",
+                self.agent_id,
+                remaining,
+                timeout,
+            )
+        return remaining
 
     def send(
         self, message: Message, require_routable: bool = False
@@ -379,12 +475,15 @@ class Agent:
             from ..core.types import Duration
 
             timeout_seconds = Duration.parse(timeout)
-            end_time = time.time() + timeout_seconds
+            # A receive deadline is a duration, so it is measured on the
+            # monotonic clock: an NTP correction must not cut the wait short
+            # or extend it by an hour (ADR-163).
+            end_time = time.perf_counter() + timeout_seconds
         else:
             end_time = None
 
-        while end_time is None or time.time() < end_time:
-            remaining_time = end_time - time.time() if end_time else None
+        while end_time is None or time.perf_counter() < end_time:
+            remaining_time = end_time - time.perf_counter() if end_time else None
 
             try:
                 if remaining_time:
@@ -772,8 +871,14 @@ class Agent:
                 except queue.Empty:
                     continue
 
-                # Process the message
-                self._process_message(message)
+                # Process the message. The flag lets stop() distinguish an
+                # empty queue from an empty queue with a handler still running,
+                # so a drain does not declare victory mid-message (ADR-163).
+                self._handling = True
+                try:
+                    self._process_message(message)
+                finally:
+                    self._handling = False
 
                 # Mark the message as processed
                 self.message_queue.task_done()
