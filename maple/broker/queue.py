@@ -51,10 +51,18 @@ class QueuedMessage:
 
     message: Message
     priority: int  # Lower number = higher priority
+    #: Wall-clock instant the message was queued. A record, and the tie-break
+    #: for priority ordering (ADR-163).
     timestamp: float
     retry_count: int = 0
     max_retries: int = 3
+    #: Wall-clock expiry, retained because it is the value a reader expects.
     expires_at: Optional[float] = None
+    #: Monotonic deadline, and the one actually enforced. An NTP correction
+    #: must not expire a message early or keep a dead one alive.
+    expires_elapsed: Optional[float] = None
+    #: Monotonic reading at enqueue, so queue wait time is a real duration.
+    queued_elapsed: Optional[float] = None
 
     def __lt__(self, other: "QueuedMessage") -> bool:
         """For priority queue ordering."""
@@ -64,7 +72,13 @@ class QueuedMessage:
         return self.timestamp < other.timestamp
 
     def is_expired(self) -> bool:
-        """Check if the message has expired."""
+        """Check if the message has expired.
+
+        Measured on the monotonic clock when one was recorded, falling back to
+        the wall clock only for a message built without it.
+        """
+        if self.expires_elapsed is not None:
+            return time.perf_counter() > self.expires_elapsed
         if self.expires_at is None:
             return False
         return time.time() > self.expires_at
@@ -169,9 +183,11 @@ class MessageQueue:
 
                 # Calculate expiration time
                 expires_at = None
+                expires_elapsed = None
                 effective_ttl = ttl or self.default_ttl
                 if effective_ttl:
                     expires_at = time.time() + effective_ttl
+                    expires_elapsed = time.perf_counter() + effective_ttl
 
                 # Create queued message
                 queued_msg = QueuedMessage(
@@ -180,6 +196,8 @@ class MessageQueue:
                     timestamp=time.time(),
                     max_retries=max_retries,
                     expires_at=expires_at,
+                    expires_elapsed=expires_elapsed,
+                    queued_elapsed=time.perf_counter(),
                 )
 
                 # Add to priority queue
@@ -216,7 +234,7 @@ class MessageQueue:
         Returns:
             Result containing the message or error
         """
-        start_time = time.time()
+        start_time = time.perf_counter()
 
         while True:
             try:
@@ -235,7 +253,7 @@ class MessageQueue:
                             )
 
                         # Check timeout
-                        if time.time() - start_time >= timeout:
+                        if time.perf_counter() - start_time >= timeout:
                             return Result.err(
                                 {
                                     "errorType": "QUEUE_TIMEOUT",
@@ -256,7 +274,11 @@ class MessageQueue:
                     self._total_dequeued += 1
 
                 # Update statistics
-                wait_time = time.time() - queued_msg.timestamp
+                wait_time = (
+                    time.perf_counter() - queued_msg.queued_elapsed
+                    if queued_msg.queued_elapsed is not None
+                    else time.time() - queued_msg.timestamp
+                )
                 with self._stats_lock:
                     self._queue_stats["messages_dequeued"] += 1
                     # Update average wait time

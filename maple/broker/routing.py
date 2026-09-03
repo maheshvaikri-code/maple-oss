@@ -127,6 +127,7 @@ class MessageRouter:
                     self.agent_health[agent] = {
                         "healthy": True,
                         "last_seen": time.time(),
+                        "last_seen_elapsed": time.perf_counter(),
                         "message_count": 0,
                         "error_count": 0,
                     }
@@ -315,6 +316,7 @@ class MessageRouter:
                 if agent in self.agent_health:
                     self.agent_health[agent]["message_count"] += 1
                     self.agent_health[agent]["last_seen"] = time.time()
+                    self.agent_health[agent]["last_seen_elapsed"] = time.perf_counter()
 
     def update_agent_health(
         self, agent_id: str, healthy: bool, metadata: Optional[Dict[str, Any]] = None
@@ -332,6 +334,7 @@ class MessageRouter:
                 self.agent_health[agent_id] = {
                     "healthy": True,
                     "last_seen": time.time(),
+                    "last_seen_elapsed": time.perf_counter(),
                     "message_count": 0,
                     "error_count": 0,
                 }
@@ -339,6 +342,7 @@ class MessageRouter:
             health_info = self.agent_health[agent_id]
             health_info["healthy"] = healthy
             health_info["last_seen"] = time.time()
+            health_info["last_seen_elapsed"] = time.perf_counter()
 
             if not healthy:
                 health_info["error_count"] += 1
@@ -385,13 +389,19 @@ class MessageRouter:
         Returns:
             Number of agents cleaned up
         """
-        current_time = time.time()
+        # Staleness is a duration, so it is measured monotonically.
+        current_elapsed = time.perf_counter()
         cleaned_count = 0
 
         with self.health_lock:
             stale_agents = []
             for agent_id, health_info in self.agent_health.items():
-                if current_time - health_info["last_seen"] > timeout_seconds:
+                last_seen = health_info.get(
+                    "last_seen_elapsed", health_info.get("last_seen")
+                )
+                if last_seen is None:
+                    continue
+                if current_elapsed - last_seen > timeout_seconds:
                     stale_agents.append(agent_id)
 
             for agent_id in stale_agents:

@@ -88,8 +88,8 @@ after the fact.
 
 | Item | Detail |
 | --- | --- |
-| **Drain on shutdown** | `stop()` discards in-flight messages and abandons submitted executor work. A process restarting on deploy loses whatever was in flight, silently. Needs a drain phase with a caller-supplied deadline. |
-| **Monotonic clocks** | Link expiry and circuit-breaker windows use `time.time()`. An NTP correction can expire a link early or hold a breaker open. `time.monotonic` is used six times in `autonomy/` and **zero** times in `broker/`, `security/` or `error/` — an inconsistency, not a missing capability. |
+| ~~**Drain on shutdown**~~ | **Done** ([ADR-163](adr/163-two-clocks-and-a-drain-phase.md)). Measured: 38 of 40 messages discarded silently, `stop()` returning in 0.11s. It now drains queued work up to a deadline and reports what it could not. |
+| ~~**Monotonic clocks**~~ | **Done** ([ADR-163](adr/163-two-clocks-and-a-drain-phase.md)). Durations moved to `time.perf_counter()`; records and JWT claims stay on the wall clock. A guard test fails CI on a new wall-clock duration. |
 | **Config validation** | `Config` has no `__post_init__` or `validate()`. A negative timeout or malformed URL is accepted at construction and surfaces later as a different symptom. |
 | **Unbounded waits** | Four sites wait without a timeout. Daemon threads let the process exit, but a parked thread cannot observe a shutdown flag — which is how a clean stop becomes a five-second timeout. |
 
@@ -97,14 +97,20 @@ after the fact.
 
 ## Tier 3 — Scale within one process
 
-While single-process is the supported shape, these set its ceiling.
+While single-process is the supported shape, these set its ceiling — one of
+the two entries here turned out not to be a ceiling at all.
 
-- **~11 threads per agent.** Each `Agent` constructs its own
-  `ThreadPoolExecutor(max_workers=10)` plus a handler thread. A hundred agents
-  is roughly eleven hundred threads, with no pooling across agents.
+- ~~**~11 threads per agent.**~~ **This claim was wrong**, and measuring it
+  was the cheapest thing on this page. Each `Agent` did construct a
+  `ThreadPoolExecutor(max_workers=10)` — but nothing was ever submitted to it,
+  and `ThreadPoolExecutor` spawns workers lazily, so it cost **zero** threads.
+  Measured at 1, 5 and 10 agents: **2.0 threads per agent**, flat. A hundred
+  agents is roughly two hundred threads, not eleven hundred. The dead pool is
+  removed in [ADR-163](adr/163-two-clocks-and-a-drain-phase.md); the ceiling it
+  was supposed to justify does not exist.
 - **10 ms delivery poll.** The broker's loop wakes 100 times a second whether
   or not anything is moving. A condition variable signalled by `send()` would
-  idle at zero.
+  idle at zero. **Now the only item in this tier.**
 
 ---
 
@@ -154,8 +160,9 @@ any implementation.
 
 1. ~~**Metrics export** (Tier 1.2)~~ — **done.** Smallest change, largest
    operator benefit; 2.1.0's counters now have somewhere to go.
-2. **Drain on shutdown and monotonic clocks** (Tier 2) — small, bounded, each
-   removes a class of hard-to-diagnose failure. **Next.**
+2. ~~**Drain on shutdown and monotonic clocks** (Tier 2)~~ — **done.** Both
+   were measured before being designed, which corrected the description of
+   each. Config validation and unbounded waits remain in Tier 2. **Next.**
 3. **`FileBroker`** (Tier 1.1, step one) — multi-process on one host, on a
    pattern already proven in this repository, and the first genuine proof the
    broker contract is implementable twice.

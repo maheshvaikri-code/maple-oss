@@ -52,6 +52,71 @@ during implementation: at six significant digits it exports 1048576 as
 
 96 tests; the module is at 100% statement coverage.
 
+### Fixed — two clocks, and a drain phase on shutdown (ADR-163)
+
+Two Tier 2 roadmap items, both measured before being designed. The
+measurements corrected the description of each.
+
+**Durations no longer ride the wall clock.** `time.time()` steps under NTP.
+With a 30-second circuit-breaker window, a **+1h step skipped the window
+entirely** — handing out the very call it was blocking — and a **-1h step held
+the circuit open for 3599.8 seconds** against a configured 1 second, a figure
+the breaker reported itself.
+
+- Reset windows, message TTLs, the queue dequeue deadline, link expiry, routing
+  staleness and the agent receive deadline now measure with
+  `time.perf_counter()`.
+- **This is not a blanket replacement.** JWT `iat`/`exp` are RFC 7519
+  NumericDate — epoch seconds verified by other parties — and audit entries
+  record when something happened in the world. Those stay on the wall clock.
+  Where a field is both a record and an input to arithmetic
+  (`last_failure_time`, `Link.established_at`, queue `timestamp`), the
+  observable field is unchanged and a monotonic companion was added, so
+  ADR-162's exported metrics keep meaning what they say.
+- `perf_counter` rather than `monotonic`: both are unadjustable, but
+  `monotonic` resolves to **15.6 ms on Windows** — measured advancing over a
+  10 ms sleep only 13 times in 20 — against `perf_counter`'s 100 ns.
+- `CircuitBreaker.reset_window_elapsed()` is new, because
+  `fault_tolerance`'s executor loop was re-deriving the window from
+  `last_failure_time + reset_timeout` on the wall clock and would have kept the
+  bug alive one layer up.
+- `tests/test_clock_discipline.py` fails CI on a new wall-clock duration in the
+  timing modules, and equally on a blanket replacement in the record modules.
+
+**`stop()` drains instead of discarding.** Measured: of 40 messages sent to an
+agent with a 250 ms handler, `stop()` discarded **38** with no error, no
+counter and no log, returning in 0.11 s — every one accepted with an `Ok`
+result that promised nothing.
+
+- `stop(drain_timeout=None)` closes intake, then processes queued work until
+  the queue drains or the deadline passes. An empty queue returns immediately.
+- It returns the number of messages it could **not** drain, also recorded on
+  `agent.messages_undrained` and logged at WARNING. Losing work on shutdown can
+  be an acceptable trade; losing it silently is not.
+- `stop(drain_timeout=0)` is the previous behaviour, chosen explicitly.
+
+**Stopping one agent no longer breaks its peers.** Brokers are shared across a
+scope (ADR-160) while `disconnect()` stops that scope's delivery thread, so
+`agent.stop()` tore down delivery for every other agent on the same bus.
+Measured on the unmodified tree, a peer received a message after an unrelated
+stop in **1 run out of 3** — flaky rather than absent, which is why it went
+unnoticed. `stop()` now unsubscribes itself and disconnects only when no
+subscriber remains. The same probe now passes 3 in 3.
+
+**The unused per-agent thread pool is removed.** Every `Agent` constructed
+`ThreadPoolExecutor(max_workers=10)` and shut it down without ever submitting
+to it. The roadmap cited it as "~11 threads per agent"; measured at 1, 5 and 10
+agents, the real figure is **2.0 per agent, flat**, because pool workers spawn
+lazily. The claim was overstated 5.5× and is corrected in `docs/roadmap.md`.
+
+### Breaking changes
+
+- **`stop()` can now take longer**, bounded by `drain_timeout` (default 5s) and
+  instant on an idle agent. `stop(drain_timeout=0)` restores the old timing.
+- **`stop()` returns `int`** rather than `None`. Callers ignoring the return
+  are unaffected.
+- **`Agent.executor` no longer exists.** Nothing in the tree referenced it.
+
 ## [2.1.0] - 2026-09-02
 
 ### Fixed — broker refuses instead of buffering or dropping (ADR-159)

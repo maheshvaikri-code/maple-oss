@@ -39,9 +39,40 @@ class Agent:
 def start(self) -> None:
     """Start the agent and establish broker connections."""
 
-def stop(self) -> None:
-    """Stop the agent and clean up connections."""
+def stop(self, drain_timeout: Optional[float] = None) -> int:
+    """Stop the agent, draining queued work first.
 
+    Closes intake, then processes whatever is already queued until the queue
+    drains or `drain_timeout` elapses (default `Agent.DEFAULT_DRAIN_TIMEOUT`,
+    5 seconds). An idle agent returns immediately.
+
+    Returns the number of messages still queued when the deadline passed —
+    0 for a complete drain. Also recorded on `agent.messages_undrained` and
+    logged at WARNING.
+
+    Pass `drain_timeout=0` to skip the drain, which is the pre-2.2 behaviour.
+    """
+
+```
+
+**Draining on shutdown.** Before this existed, `stop()` discarded queued
+messages silently: measured at 38 of 40 lost, with `stop()` returning in 0.11 s
+and reporting nothing. Every one had been accepted with an `Ok` result.
+
+```python
+undrained = agent.stop()              # drain up to 5s
+undrained = agent.stop(drain_timeout=30.0)   # a deployment with more patience
+undrained = agent.stop(drain_timeout=0)      # skip the drain, explicitly
+
+if undrained:
+    logger.warning("%d messages discarded on shutdown", undrained)
+```
+
+Losing work on shutdown may be an acceptable trade for your deployment; losing
+it without being told is not. See
+[ADR-163](adr/163-two-clocks-and-a-drain-phase.md).
+
+```python
 def send(self, message: Message) -> Result[str, Dict[str, Any]]:
     """
     Send a message with Result<T,E> error handling.
