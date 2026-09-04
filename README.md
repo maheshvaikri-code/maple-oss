@@ -106,6 +106,45 @@ notice. A `send()` that always succeeded can now fail, and agents on different
 `broker_url` values no longer share a bus. See the
 [changelog](CHANGELOG.md) for the migration notes.
 
+## On `main` since 2.1.0 — not yet released
+
+`pip install maple-oss` gives you **2.1.0**. The work below is merged on `main`
+and is *not* in that package. It is listed because one item changes what MAPLE
+is, and a README that only described the last tag would be quietly out of date.
+
+| Change | What it means |
+| --- | --- |
+| **Metrics leave the process** ([ADR-162](docs/adr/162-metrics-export-without-a-dependency.md)) | Thirteen components implement `get_statistics()` and none of it escaped. `maple.monitoring` renders Prometheus text using only the standard library — no new dependency. MAPLE renders; the host serves. |
+| **Two clocks, and a drain on shutdown** ([ADR-163](docs/adr/163-two-clocks-and-a-drain-phase.md)) | Durations no longer ride the wall clock, so an NTP step cannot skip a circuit-breaker window or hold one open. `stop()` drains queued work to a deadline and *reports* what it could not. |
+| **Configuration is validated** ([ADR-164](docs/adr/164-configuration-is-validated-at-construction.md)) | Nine invalid configurations were accepted silently. It also closed a hole in ADR-157: `NATS://` and `nats:/` fell back to the in-process broker, so a typo defeated a fail-closed guarantee. |
+| **Waits end when their subject does** ([ADR-165](docs/adr/165-waits-end-when-the-thing-they-wait-for-does.md)) | A thread parked in `receive()` never woke after `stop()`. It now returns `AGENT_STOPPED`. |
+| **Delivery on a signal** ([ADR-166](docs/adr/166-deliver-on-a-signal-not-a-poll.md)) | The broker's 10 ms poll cost latency on every hop — p50 4.8 ms, now 0.33 ms. |
+| **`FileBroker`** ([ADR-167](docs/adr/167-file-broker-multi-process-on-one-host.md)) | **MAPLE is no longer a single-process runtime on `main`.** A file-backed transport carries messages between processes on one host, and it passes the broker conformance suite unchanged. |
+
+### What this does and does not change about the deployment shape
+
+**2.1.0, the released package, is an embedded single-process runtime.** Scopes
+isolate agent groups *within* one process; the in-memory broker does not survive
+a restart.
+
+On `main`, `FileBroker` adds **multi-process on one host** — and nothing more.
+It is not a network transport, its latency is a poll interval rather than a
+signal, and it makes no durability, ordering, or exactly-once claim. Multi-*host*
+operation still needs a transport that satisfies the broker contract, which the
+bundled NATS adapter does not meet.
+
+It now provides every contract *member*, but that is not conformance. The
+remaining gap is capability-shaped rather than method-shaped: a NATS publish is
+fire-and-forget, so backpressure, undeliverable reporting and routability have to
+be **built** over it. Until they are, NATS stays out of the conformance
+factories — because passing that suite is the only thing that counts as
+conforming, and the suite names what is missing so the day it conforms is a
+deliberate edit rather than a silent one.
+
+Two of those members refuse rather than pretend: a separation-of-duties policy
+this transport cannot enforce is **rejected** instead of accepted and ignored,
+and a dead-letter hook it can never call is accepted with a warning saying so.
+
 ## Capability surface
 
 The following is the shipped and tested local surface. **Preview** means a
@@ -741,11 +780,20 @@ python -m maple.cli doctor --json
 **The full suite is the release gate.** Focused suites are useful while
 iterating on a boundary, but nothing ships on a subset.
 
-The most recent release-equivalent run, on the 2.1.0 tree, completed with
-**2,040 passed, 1 skipped** at 79% statement coverage. That figure is a dated
-measurement rather than a standing claim — it moves with every commit, so
-re-run the suite on your exact checkout rather than trusting a number in a
-README. Nothing written here authorizes publication.
+On the **2.1.0 tag** the release run completed with **2,040 passed, 1 skipped**
+at 79% statement coverage. On **`main`** at the time of writing: **2,348 passed,
+2 skipped** at 80% statement coverage, both from the same run.
+
+Both are dated measurements rather than standing claims — they move with every
+commit, so re-run the suite on your exact checkout rather than trusting a number
+in a README. Nothing written here authorizes publication.
+
+One caveat stated rather than hidden: a small group of autonomy tests that start
+a real loopback HTTP server flake intermittently under full-suite load on
+Windows (`ConnectionAbortedError`), a different one each run. It reproduces on
+an unmodified tree, passes in isolation, and is tracked as its own defect — so a
+run of `main` may show one such failure that is not a regression in what you
+changed.
 
 The offline doctor (`python -m maple.cli doctor --json`) checks core,
 evaluation, events, execution, interop, retrieval, server, and session
@@ -759,12 +807,12 @@ QA and review records live under [docs/qa/](docs/qa/) and
 
 | Version | State |
 | --- | --- |
-| **2.1.0** | Prepared. Documentation, changelog, and website content are complete and staged; the package builds and passes `twine check`. Not yet published. |
+| **2.1.0** | **Published** on PyPI as `maple_oss-2.1.0` (2026-09-02) and tagged as a GitHub Release. The release assets are byte-identical to the PyPI artifacts, verified by SHA-256, and a fresh-virtualenv install was checked before the tag was announced. |
 | **2.0.0** | Published on PyPI as `maple_oss-2.0.0` (uploaded 2026-08-31) and tagged as a GitHub Release with source and wheel artifacts. |
 
 Documentation ships with the release, not after it. Every public claim in this
-README, the docs, and the website is reconciled against the 2.1.0 tree before a
-tag is cut.
+README, the docs, and the website is reconciled against the tree before a tag is
+cut.
 
 **If you are on 2.0.0**, note that 2.1.0 fixes controls that silently did
 nothing — a `send()` that always succeeded can now fail, and a transport that
@@ -789,7 +837,7 @@ checklist.
 - [Framework parity ledger](docs/agent-framework-parity.md) - per-capability
   evidence behind each status
 - [Changelog](CHANGELOG.md)
-- [Architecture decisions](docs/adr/) - 161 records, including the 2.1.0
+- [Architecture decisions](docs/adr/) - 167 records, including the 2.1.0
   delivery contract ([157](docs/adr/157-broker-configuration-fidelity-and-fail-closed-transport.md),
   [159](docs/adr/159-backpressure-observable-delivery-and-a-race-free-delivery-path.md)),
   scoping ([160](docs/adr/160-agent-scope-and-runtime-lifetimes.md)), and the
