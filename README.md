@@ -131,11 +131,19 @@ On `main`, `FileBroker` adds **multi-process on one host** — and nothing more.
 It is not a network transport, its latency is a poll interval rather than a
 signal, and it makes no durability, ordering, or exactly-once claim. Multi-*host*
 operation still needs a transport that satisfies the broker contract, which the
-bundled NATS adapter does not meet. That gap is capability-shaped rather than
-method-shaped: a NATS publish is fire-and-forget, so backpressure, undeliverable
-reporting and routability have to be *built* over it. The conformance suite
-names what is missing, so the day it conforms is a deliberate edit rather than a
-silent one.
+bundled NATS adapter does not meet.
+
+It now provides every contract *member*, but that is not conformance. The
+remaining gap is capability-shaped rather than method-shaped: a NATS publish is
+fire-and-forget, so backpressure, undeliverable reporting and routability have to
+be **built** over it. Until they are, NATS stays out of the conformance
+factories — because passing that suite is the only thing that counts as
+conforming, and the suite names what is missing so the day it conforms is a
+deliberate edit rather than a silent one.
+
+Two of those members refuse rather than pretend: a separation-of-duties policy
+this transport cannot enforce is **rejected** instead of accepted and ignored,
+and a dead-letter hook it can never call is accepted with a warning saying so.
 
 ## Capability surface
 
@@ -773,8 +781,8 @@ python -m maple.cli doctor --json
 iterating on a boundary, but nothing ships on a subset.
 
 On the **2.1.0 tag** the release run completed with **2,040 passed, 1 skipped**
-at 79% statement coverage. On **`main`** at the time of writing the suite is
-**2,341 tests** and 80% statement coverage.
+at 79% statement coverage. On **`main`** at the time of writing: **2,348 passed,
+2 skipped** at 80% statement coverage, both from the same run.
 
 Both are dated measurements rather than standing claims — they move with every
 commit, so re-run the suite on your exact checkout rather than trusting a number
