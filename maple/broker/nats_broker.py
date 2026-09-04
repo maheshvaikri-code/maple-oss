@@ -34,6 +34,7 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 from ..core.message import Message
 from ..core.result import Result
 from ..core.types import MessageID
+from ..error.types import SecurityError
 from .contract import BrokerCapabilities
 
 try:
@@ -115,6 +116,10 @@ class NATSBroker:
         self.nats_config = nats_config or NATSConfig()
         self.nc: Optional[Any] = None
         self.subscriptions: Dict[str, Any] = {}
+        self._undeliverable_handler: Optional[Callable[[str, Message], None]] = None
+        self._separation_policy: Any = None
+        self._published = 0
+        self._refused = 0
         self.running = False
 
         # Message handlers
@@ -164,6 +169,77 @@ class NATSBroker:
             await self.nc.close()
             logger.info("Disconnected from NATS cluster")
 
+    def unsubscribe_local(self, agent_id: str) -> None:
+        """Forget an agent's subscription record.
+
+        The NATS-side unsubscribe is awaited by ``NATSBrokerSync.unsubscribe``;
+        this is the bookkeeping half, kept separate so it is callable without
+        an event loop.
+        """
+        self.subscriptions.pop(agent_id, None)
+
+    def is_routable(self, agent_id: str) -> bool:
+        """Whether this broker knows of a subscription for ``agent_id``.
+
+        **Only local subscriptions are visible.** A NATS publish is
+        fire-and-forget: the client cannot see who is subscribed elsewhere on
+        the cluster, so a remote agent reads as not routable even when it is.
+
+        That is why ``CAPABILITIES.supports_routability_check`` is ``False``,
+        and why callers must consult the flag rather than the method
+        (ADR-161). Returning a confident answer this transport cannot know
+        would be worse than declaring the limit.
+        """
+        if not agent_id or not str(agent_id).strip():
+            return False
+        return str(agent_id) in self.subscriptions
+
+    def set_undeliverable_handler(
+        self, handler: Optional[Callable[[str, Message], None]]
+    ) -> None:
+        """Record a dead-letter hook this transport cannot yet call.
+
+        NATS publishes into a subject; nobody reports back that no subscriber
+        existed. The hook is stored so the member exists and the contract is
+        satisfied structurally, and a warning is logged because a hook that
+        silently never fires is precisely the class of defect ADR-159 and
+        ADR-162 exist to close.
+        """
+        self._undeliverable_handler = handler
+        if handler is not None:
+            logger.warning(
+                "NATS transport accepted an undeliverable handler but reports "
+                "no undeliverable messages (CAPABILITIES."
+                "reports_undeliverable is False); it will not be called."
+            )
+
+    def set_separation_policy(self, policy: Any) -> None:
+        """Refuse a separation-of-duties policy this transport cannot enforce.
+
+        Accepting it would be the exact pattern ADR-157 forbids: a security
+        control taken and then ignored, leaving a caller believing a boundary
+        exists. A control that cannot run must refuse.
+        """
+        if policy is None:
+            self._separation_policy = None
+            return
+        raise SecurityError(
+            "The NATS transport cannot enforce a separation-of-duties policy. "
+            "Refusing it rather than accepting a control that would be "
+            "silently ignored."
+        )
+
+    def get_statistics(self) -> Dict[str, Any]:
+        """Local counters. ``delivered`` counts what this client handed to
+        NATS, not what any subscriber received - NATS does not tell us."""
+        return {
+            "delivered": self._published,
+            "undeliverable": 0,
+            "refused": self._refused,
+            "subscribedAgents": len(self.subscriptions),
+            "connected": bool(self.nc and getattr(self.nc, "is_connected", False)),
+        }
+
     async def send(self, message: Message) -> Result[str, Dict[str, Any]]:
         """Send a message to a specific agent via NATS."""
         if not self.nc or not self.nc.is_connected:
@@ -192,6 +268,7 @@ class NATSBroker:
             else:
                 await self.nc.publish(subject, payload)
 
+            self._published += 1
             logger.debug(f"Message {message.message_id} sent to {subject}")
             return Result.ok(str(message.message_id))
 
@@ -483,6 +560,36 @@ class NATSBrokerSync:
     ) -> Result[None, Dict[str, Any]]:
         """Subscribe synchronously."""
         return self.loop.run_until_complete(self.broker.subscribe(agent_id, handler))
+
+    def unsubscribe(self, agent_id: str) -> None:
+        """Stop receiving for an agent. Idempotent."""
+        subscription = self.broker.subscriptions.get(agent_id)
+        self.broker.unsubscribe_local(agent_id)
+        if subscription is not None and hasattr(subscription, "unsubscribe"):
+            try:
+                self.loop.run_until_complete(subscription.unsubscribe())
+            except Exception:  # noqa: BLE001 - teardown is best effort
+                logger.debug("NATS unsubscribe for %s did not complete", agent_id)
+
+    def is_routable(self, agent_id: str) -> bool:
+        """Local subscriptions only - see ``NATSBroker.is_routable``.
+
+        ``CAPABILITIES.supports_routability_check`` is ``False``; callers must
+        consult the flag rather than trusting this answer.
+        """
+        return self.broker.is_routable(agent_id)
+
+    def set_undeliverable_handler(
+        self, handler: Optional[Callable[[str, Message], None]]
+    ) -> None:
+        self.broker.set_undeliverable_handler(handler)
+
+    def set_separation_policy(self, policy: Any) -> None:
+        """Refuses a policy it cannot enforce - see ``NATSBroker``."""
+        self.broker.set_separation_policy(policy)
+
+    def get_statistics(self) -> Dict[str, Any]:
+        return self.broker.get_statistics()
 
     def request(
         self, message: Message, timeout: float = 30.0

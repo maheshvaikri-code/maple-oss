@@ -72,7 +72,13 @@ cannot use ADR-166's condition variable across processes, so its latency is a
 poll interval: on one host the in-memory broker remains the right choice.
 
 **Still outstanding: NATS to conformance.** That is what makes MAPLE
-multi-*host* rather than multi-process.
+multi-*host* rather than multi-process. The five missing members ADR-161 named
+now exist and the `nats` extra is declared, so `describe_conformance` reports
+structural conformance — but the remaining gap is **capability-shaped, not
+method-shaped**: NATS publish is fire-and-forget, so backpressure, undeliverable
+reporting and routability have to be built over a transport that does not
+provide them. None of it is verifiable without a live server, so the next step
+is CI with a NATS service container to establish ground truth.
 
 **This is the 3.0.0 anchor.** It converts more Preview/Partial rows to Native
 than any feature would.

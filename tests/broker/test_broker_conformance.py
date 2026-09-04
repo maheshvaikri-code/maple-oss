@@ -283,27 +283,106 @@ class TestSecurityEnforcement:
             )
 
 
-class TestKnownNonConformance:
-    """The NATS transport does not satisfy the contract. Pinned, not ignored.
+def _nats_broker_without_a_server():
+    """A NATSBroker with its state set up but no nats-py and no server.
 
-    ADR-161 records that this transport is 458 lines against 35 lines of test,
-    excluded from coverage, with no declared extra. This test exists so the
-    gap stays visible and so the day it *does* conform is a deliberate change
-    to this file rather than a silent one.
+    ``NATSBroker.__init__`` raises ImportError without ``nats-py``, so the
+    members that are pure local bookkeeping are exercised on an instance built
+    around it. Anything touching the network is *not* covered here and is
+    honestly out of reach until CI runs a real server.
+    """
+    from maple.broker.nats_broker import NATSBroker
+
+    broker = object.__new__(NATSBroker)
+    broker.nc = None
+    broker.subscriptions = {}
+    broker._undeliverable_handler = None
+    broker._separation_policy = None
+    broker._published = 0
+    broker._refused = 0
+    return broker
+
+
+class TestKnownNonConformance:
+    """The NATS transport satisfies the contract *structurally* but not
+    *behaviourally*. Pinned, not ignored.
+
+    ADR-161 recorded five missing members; those now exist. What remains is
+    harder and is not a matter of adding methods: NATS publish is
+    fire-and-forget, so backpressure, undeliverable reporting and routability
+    are capabilities the transport does not natively provide. Until it does,
+    it stays out of ``BROKER_FACTORIES`` - because everything in that dict has
+    to pass the behavioural tests above, and passing is the only thing that
+    counts as conforming.
     """
 
-    def test_nats_is_not_yet_conformant(self):
+    def test_nats_now_provides_every_contract_member(self):
         from maple.broker.nats_broker import NATSBrokerSync
 
         report = describe_conformance(NATSBrokerSync)
-        assert report["conforms"] is False
-        assert set(report["missingMembers"]) == {
-            "get_statistics",
-            "is_routable",
-            "set_separation_policy",
-            "set_undeliverable_handler",
-            "unsubscribe",
-        }
+        assert report["missingMembers"] == []
+        assert report["conforms"] is True
+
+    def test_nats_is_not_in_the_conformance_factories(self):
+        """Structural conformance is not conformance. Adding it here must be
+        a deliberate edit made when it can actually pass."""
+        assert "nats" not in BROKER_FACTORIES
+
+    def test_the_remaining_gap_is_capability_shaped(self):
+        """The honest description of what is left."""
+        from maple.broker.nats_broker import NATSBrokerSync
+
+        caps = NATSBrokerSync.CAPABILITIES
+        assert caps.applies_backpressure is False
+        assert caps.reports_undeliverable is False
+        assert caps.supports_routability_check is False
+
+    def test_a_policy_it_cannot_enforce_is_refused_not_accepted(self):
+        """ADR-157: a control that cannot run must refuse. Accepting a
+        separation policy this transport ignores would leave a caller
+        believing a boundary exists."""
+        from maple.error.types import SecurityError
+
+        broker = _nats_broker_without_a_server()
+        with pytest.raises(SecurityError):
+            broker.set_separation_policy(object())
+
+        broker.set_separation_policy(None)  # clearing is always allowed
+
+    def test_routability_is_local_only(self):
+        """The NATS client sees its own subscriptions and nothing else, which
+        is why the capability flag says not to trust the answer."""
+        broker = _nats_broker_without_a_server()
+        broker.subscriptions = {"here": object()}
+
+        assert broker.is_routable("here") is True
+        assert broker.is_routable("elsewhere") is False
+        assert broker.is_routable("") is False
+
+    def test_an_undeliverable_hook_is_stored_but_warned_about(self, caplog):
+        """A hook that silently never fires is the defect ADR-159 and ADR-162
+        exist to close, so accepting one says so out loud."""
+        import logging
+
+        broker = _nats_broker_without_a_server()
+        with caplog.at_level(logging.WARNING, logger="maple.broker.nats_broker"):
+            broker.set_undeliverable_handler(lambda receiver, message: None)
+
+        assert any(
+            "will not be called" in record.getMessage() for record in caplog.records
+        )
+
+    def test_statistics_expose_the_required_keys(self):
+        broker = _nats_broker_without_a_server()
+        stats = broker.get_statistics()
+        assert {"delivered", "undeliverable", "refused"} <= set(stats)
+
+    def test_unsubscribe_is_idempotent_bookkeeping(self):
+        broker = _nats_broker_without_a_server()
+        broker.subscriptions = {"a": object()}
+        broker.unsubscribe_local("a")
+        broker.unsubscribe_local("a")
+        assert broker.subscriptions == {}
 
     def test_nats_declares_its_capabilities_honestly(self):
         from maple.broker.nats_broker import NATSBrokerSync
