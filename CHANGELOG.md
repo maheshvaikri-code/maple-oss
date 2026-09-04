@@ -52,6 +52,48 @@ during implementation: at six significant digits it exports 1048576 as
 
 96 tests; the module is at 100% statement coverage.
 
+### Changed — the NATS transport now satisfies the contract structurally
+
+ADR-161 pinned five members the NATS transport lacked — `get_statistics`,
+`is_routable`, `set_separation_policy`, `set_undeliverable_handler`,
+`unsubscribe`. They exist now, and `describe_conformance(NATSBrokerSync)`
+reports `conforms: True` with nothing missing.
+
+**It is still not conformant.** What remains is not a matter of adding methods:
+NATS publish is fire-and-forget, so **backpressure, undeliverable reporting and
+routability are capabilities the transport does not natively provide**. The
+capability flags stay `False` and it stays out of `BROKER_FACTORIES`, because
+everything in that dict has to pass the behavioural tests — and passing is the
+only thing that counts as conforming.
+
+Two of the new members refuse rather than pretend:
+
+- **`set_separation_policy` raises.** Accepting a separation-of-duties policy
+  this transport cannot enforce is the exact pattern ADR-157 forbids: a
+  security control taken and then ignored, leaving a caller believing a
+  boundary exists.
+- **`set_undeliverable_handler` warns.** The hook is stored so the member
+  exists, and a warning says it will never be called — a hook that silently
+  never fires is the defect ADR-159 and ADR-162 exist to close.
+
+`is_routable` answers from local subscriptions only, because a NATS client
+cannot see who is subscribed elsewhere on the cluster.
+
+**A regression that came with the improvement, and was closed.**
+`Agent.send(require_routable=True)` gated on `hasattr(broker, "is_routable")`.
+Gaining the method would therefore have turned every remote NATS agent into a
+false `UNROUTABLE` refusal. The check now consults
+`CAPABILITIES.supports_routability_check`, so a transport that declares it
+cannot answer is not allowed to veto the send.
+
+Packaging: a `nats` extra is declared (`pip install maple-oss[nats]`), which
+ADR-161 recorded as missing.
+
+**Not verifiable here.** `nats-py` is not installed and there is no NATS server
+in this environment, so the local-bookkeeping members are tested against an
+instance built without the import, and nothing touching the network is claimed
+to work. Behavioural conformance needs CI with a real server.
+
 ### Added — FileBroker: multi-process on one host (ADR-167)
 
 **MAPLE is no longer a single-process runtime.** `FileBroker` is the second
