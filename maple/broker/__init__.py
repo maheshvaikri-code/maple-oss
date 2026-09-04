@@ -23,6 +23,7 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 # Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri).
 
 from .broker import MessageBroker
+from .file_broker import FileBroker
 from .production_broker import (
     BrokerType,
     ProductionBrokerManager,
@@ -31,6 +32,7 @@ from .production_broker import (
 
 __all__ = [
     "MessageBroker",
+    "FileBroker",
     "ProductionBrokerManager",
     "BrokerType",
     "create_production_broker",

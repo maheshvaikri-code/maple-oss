@@ -51,14 +51,28 @@ adapter does not pass: the suite names exactly five missing members —
 `SecurityConfig`. It is 458 lines against 35 lines of test, excluded from
 coverage, with no declared package extra.
 
-Until this lands, MAPLE is a **single-process runtime**. Everything marked
-"local" below inherits that ceiling.
+MAPLE is no longer a single-process runtime: `FileBroker` crosses processes on
+one host. It is not yet multi-*host*, so the "local" rows below still inherit a
+ceiling — a lower one than before.
 
-Sequence from ADR-161: `FileBroker` for multi-process on one host first — the
-`FileTaskQueue` fencing pattern already proves it here and it is the first real
-test that the contract is implementable twice — then NATS to conformance with
-the extra declared, coverage restored, and integration tests against a live
-server.
+Sequence from ADR-161: `FileBroker` for multi-process on one host first, then
+NATS to conformance with the extra declared, coverage restored, and integration
+tests against a live server.
+
+**Step one is done** ([ADR-167](adr/167-file-broker-multi-process-on-one-host.md)).
+`FileBroker` passes the conformance suite unchanged and delivers across real
+process boundaries — 3 consumer processes, 60 messages, each exactly once. The
+contract is implementable twice, which is what makes it a contract.
+
+Two findings from building it. Claim-by-`os.rename` — the obvious exclusion
+primitive — was measured telling **both** racers they had won, 192 times in
+200, so the spool uses MAPLE's existing `_InterProcessFileLock` instead (4
+processes x 150 increments, zero lost updates). And a file-backed transport
+cannot use ADR-166's condition variable across processes, so its latency is a
+poll interval: on one host the in-memory broker remains the right choice.
+
+**Still outstanding: NATS to conformance.** That is what makes MAPLE
+multi-*host* rather than multi-process.
 
 **This is the 3.0.0 anchor.** It converts more Preview/Partial rows to Native
 than any feature would.
@@ -171,10 +185,11 @@ any implementation.
 2. ~~**Tier 2 in full**~~ — **done**: drain on shutdown, monotonic clocks,
    config validation, and bounded waits. Every entry was measured before being
    designed, and three of the four descriptions were wrong in the process.
-3. **`FileBroker`** (Tier 1.1, step one) — **next.** Multi-process on one host, on a
-   pattern already proven in this repository, and the first genuine proof the
-   broker contract is implementable twice.
-4. **NATS to conformance** (Tier 1.1, step two) — the 3.0.0 anchor. Converts
+3. ~~**`FileBroker`** (Tier 1.1, step one)~~ — **done.** Multi-process on one
+   host, and the first genuine proof the broker contract is implementable
+   twice.
+4. **NATS to conformance** (Tier 1.1, step two) — **next**, and the 3.0.0
+   anchor. Converts
    the "local" limit on nine Tier 4 rows into a real distributed story.
 5. **Everything else**, reordered once 3 and 4 reveal what they actually cost.
 

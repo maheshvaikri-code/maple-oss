@@ -13,13 +13,17 @@ A transport requiring external infrastructure should be added with a skip
 guard, never by weakening an assertion.
 """
 
+import shutil
+import tempfile
 import time
+from pathlib import Path
 
 import pytest
 
 from maple.agent.config import Config, PerformanceConfig, SecurityConfig
 from maple.broker.broker import MessageBroker
 from maple.broker.contract import Broker, BrokerCapabilities, describe_conformance
+from maple.broker.file_broker import FileBroker
 from maple.core.message import Message
 from maple.error.types import BrokerOverflowError, SecurityError
 
@@ -33,10 +37,32 @@ def _in_memory(**perf):
     return MessageBroker(config)
 
 
+def _file_backed(**perf):
+    """A file-backed broker on a fresh spool (ADR-167).
+
+    Needs no external infrastructure, so it belongs in this suite: proving the
+    contract is implementable twice is what makes it a contract.
+    """
+    root = Path(tempfile.mkdtemp(prefix="maple-spool-"))
+    _SPOOLS.append(root)
+    url = root.as_uri()
+    config = Config(
+        agent_id="conformance",
+        broker_url=url,
+        performance=PerformanceConfig(**perf) if perf else None,
+    )
+    return FileBroker(config)
+
+
+#: Spools created during the run, removed afterwards.
+_SPOOLS = []
+
+
 #: Every transport that can be constructed without external infrastructure.
 #: A new transport is added here and must pass everything below unchanged.
 BROKER_FACTORIES = {
     "in-memory": _in_memory,
+    "file": _file_backed,
 }
 
 
@@ -45,6 +71,8 @@ def reset_scopes():
     MessageBroker.reset_scopes()
     yield
     MessageBroker.reset_scopes()
+    while _SPOOLS:
+        shutil.rmtree(_SPOOLS.pop(), ignore_errors=True)
 
 
 @pytest.fixture(params=sorted(BROKER_FACTORIES))

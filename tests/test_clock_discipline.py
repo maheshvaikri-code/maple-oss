@@ -37,6 +37,7 @@ DURATION_MODULES = [
     "error/circuit_breaker.py",
     "security/link.py",
     "task_management/fault_tolerance.py",
+    "broker/file_broker.py",
 ]
 
 #: Wall-clock arithmetic that is correct, with the reason it is correct.
@@ -48,6 +49,14 @@ ALLOWED_WALL_CLOCK_ARITHMETIC = {
         "else time.time() - queued_msg.timestamp",
     ): "Fallback for a QueuedMessage built without a monotonic reading.",
 }
+
+#: Known blind spot: the pattern above only sees `time.time()` adjacent to a
+#: subtraction. A hoisted reading - `now = time.time()` used later as
+#: `now - other` - is not flagged. `file_broker.py` does exactly that, and
+#: correctly: it compares against file mtimes, which are wall clock and must
+#: mean the same thing in another process (ADR-167). Tightening the pattern
+#: would flag that legitimate case and every other hoisted timestamp, so the
+#: gap is recorded rather than papered over.
 
 _DURATION = re.compile(r"time\.time\(\)\s*-|-\s*time\.time\(\)")
 

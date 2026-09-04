@@ -102,7 +102,7 @@ class Config:
     #: Transports MAPLE can actually build, lowercased. Kept beside the
     #: validation that uses it; a test pins it against the schemes
     #: ``Agent._create_broker`` dispatches on, so the two cannot drift.
-    KNOWN_SCHEMES = ("memory", "nats", "s2")
+    KNOWN_SCHEMES = ("memory", "file", "nats", "s2")
 
     #: Bounds that must be positive integers. A non-positive value here does
     #: not degrade behaviour, it removes it: max_queue_size=-5 makes every

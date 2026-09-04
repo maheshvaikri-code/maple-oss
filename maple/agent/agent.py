@@ -120,6 +120,15 @@ class Agent:
         # (ADR-164).
         normalized = broker_url.lower()
 
+        if normalized.startswith("file://"):
+            # Multi-process on one host (ADR-167). No external infrastructure,
+            # so it needs no driver check - the spool is a directory.
+            from ..broker.file_broker import FileBroker
+
+            broker = FileBroker(config)
+            Agent._require_security_enforcement(config, broker, broker_url)
+            return broker
+
         for scheme, broker_type in schemes.items():
             if normalized.startswith(scheme):
                 result = ProductionBrokerManager.create_broker(config, broker_type)
