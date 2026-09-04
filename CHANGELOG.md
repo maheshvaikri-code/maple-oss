@@ -85,6 +85,11 @@ zero lost updates.
 
 - One file per message, fsynced and moved into place, so a partial write cannot
   corrupt another message and the pending count is a directory listing.
+- **Presence and topic files are per *instance*.** Several processes may serve
+  one agent, so a shared path means concurrent writers — and on Windows
+  `os.replace` onto a destination another process holds open fails with
+  `PermissionError`. A local run passed and CI on Python 3.9 / Windows did not;
+  publish de-duplicates so an agent served twice still receives one copy.
 - **Presence files make "undeliverable" decidable across processes.** An empty
   inbox cannot distinguish *nobody is listening* from *nobody has looked yet*. A
   subscriber refreshes a presence file; a receiver with none is dead-lettered

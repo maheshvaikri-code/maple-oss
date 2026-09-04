@@ -48,19 +48,15 @@ ALLOWED_WALL_CLOCK_ARITHMETIC = {
         "broker/queue.py",
         "else time.time() - queued_msg.timestamp",
     ): "Fallback for a QueuedMessage built without a monotonic reading.",
-    (
-        "broker/file_broker.py",
-        "age = time.time() - path.stat().st_mtime",
-    ): (
-        "Compared against a file mtime, which is wall clock. A monotonic "
-        "reading has no relationship to it, and the value must also mean the "
-        "same thing in another process (ADR-167)."
-    ),
-    (
-        "broker/file_broker.py",
-        "age = now - path.stat().st_mtime",
-    ): "Same: message age is measured against a wall-clock file mtime.",
 }
+
+#: Known blind spot: the pattern above only sees `time.time()` adjacent to a
+#: subtraction. A hoisted reading - `now = time.time()` used later as
+#: `now - other` - is not flagged. `file_broker.py` does exactly that, and
+#: correctly: it compares against file mtimes, which are wall clock and must
+#: mean the same thing in another process (ADR-167). Tightening the pattern
+#: would flag that legitimate case and every other hoisted timestamp, so the
+#: gap is recorded rather than papered over.
 
 _DURATION = re.compile(r"time\.time\(\)\s*-|-\s*time\.time\(\)")
 

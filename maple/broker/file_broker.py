@@ -155,7 +155,18 @@ class FileBroker:
     # --------------------------------------------------------------- presence
 
     def _presence_path(self, agent_id: str) -> Path:
-        return self.agents_dir / f"{_safe_name(agent_id)}.live"
+        """This process's presence file for an agent.
+
+        Per *instance*, not per agent: several processes may serve the same
+        agent id - that is the competing-consumers case this transport exists
+        for - and a shared path means concurrent writers. On Windows
+        ``os.replace`` onto a destination another process holds open fails
+        with ``PermissionError``, which CI caught and a local run did not.
+        """
+        return self.agents_dir / f"{_safe_name(agent_id)}.{self._instance}.live"
+
+    def _presence_glob(self, agent_id: str) -> str:
+        return f"{_safe_name(agent_id)}.*.live"
 
     def _touch_presence(self, agent_id: str) -> None:
         path = self._presence_path(agent_id)
@@ -169,12 +180,19 @@ class FileBroker:
         empty inbox cannot distinguish *nobody is listening* from *nobody has
         looked yet* (ADR-167).
         """
-        path = self._presence_path(agent_id)
+        now = time.time()
         try:
-            age = time.time() - path.stat().st_mtime
+            candidates = list(self.agents_dir.glob(self._presence_glob(agent_id)))
         except OSError:
             return False
-        return age <= self.PRESENCE_TTL_SECONDS
+        for path in candidates:
+            try:
+                age = now - path.stat().st_mtime
+            except OSError:
+                continue
+            if age <= self.PRESENCE_TTL_SECONDS:
+                return True
+        return False
 
     # ------------------------------------------------------------------ paths
 
@@ -241,7 +259,8 @@ class FileBroker:
         with self._local:
             self._topic_handlers.setdefault(topic, {})[name] = handler
         _atomic_write(
-            self.topics_dir / f"{_safe_name(topic)}__{_safe_name(name)}.sub",
+            self.topics_dir
+            / f"{_safe_name(topic)}__{_safe_name(name)}.{self._instance}.sub",
             json.dumps({"topic": topic, "agent": name}),
         )
         self._inbox(name).mkdir(parents=True, exist_ok=True)
@@ -250,7 +269,10 @@ class FileBroker:
     def unsubscribe_topic(self, topic: str, agent_id: str) -> None:
         with self._local:
             self._topic_handlers.get(topic, {}).pop(agent_id, None)
-        _remove(self.topics_dir / f"{_safe_name(topic)}__{_safe_name(agent_id)}.sub")
+        _remove(
+            self.topics_dir
+            / f"{_safe_name(topic)}__{_safe_name(agent_id)}.{self._instance}.sub"
+        )
 
     def is_routable(self, agent_id: str) -> bool:
         if not agent_id or not str(agent_id).strip():
@@ -304,12 +326,18 @@ class FileBroker:
 
         prefix = f"{_safe_name(topic)}__"
         with self._spool_lock():
+            seen = set()
             subscribers = []
             for path in self.topics_dir.glob(f"{prefix}*.sub"):
                 try:
-                    subscribers.append(json.loads(path.read_text("utf-8"))["agent"])
+                    agent = json.loads(path.read_text("utf-8"))["agent"]
                 except (OSError, ValueError, KeyError):
                     continue
+                # One agent may be served by several processes; it still gets
+                # the message once.
+                if agent not in seen:
+                    seen.add(agent)
+                    subscribers.append(agent)
             for agent_id in subscribers:
                 fanned = message.with_receiver(agent_id)
                 fanned.metadata = {**(message.metadata or {}), "topic": topic}

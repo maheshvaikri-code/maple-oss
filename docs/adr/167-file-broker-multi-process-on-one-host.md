@@ -189,6 +189,30 @@ reason the spool lock is used instead.
 **The contract is now implementable twice.** That is what turns ADR-161's
 `Broker` protocol from a description of one class into a contract.
 
+### A shared presence file was a concurrency bug, and CI found it
+
+The first cut wrote one presence file per agent: `agents/<agent>.live`. Several
+processes may serve the same agent — that is the competing-consumers case this
+transport exists for — so all of them refreshed the same path.
+
+On Windows, `os.replace` onto a destination another process holds open fails:
+
+```text
+PermissionError: [WinError 5] Access is denied:
+  '...agents\.shared.live.<uuid>.tmp' -> '...agents\shared.live'
+```
+
+Three consumer processes collided until the children died and wrote no result.
+**A local run passed; CI on Python 3.9 / Windows did not.** The
+cross-process test already covered the scenario — it simply did not lose the
+race on the development machine, which is what platform-matrix CI is for.
+
+Presence files are now per *instance* (`<agent>.<instance>.live`), so no two
+processes write the same path, and presence is the existence of any fresh file
+for that agent. Topic subscription files are per-instance for the same reason,
+with publish de-duplicating so an agent served by two processes still receives
+one copy.
+
 ## Invalidation triggers
 
 A cross-process signalling primitive that removes the poll; a requirement for

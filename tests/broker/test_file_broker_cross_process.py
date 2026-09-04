@@ -220,6 +220,84 @@ class TestExactlyOneConsumerTakesEachMessage:
         )
 
 
+class TestSeveralProcessesMayServeTheSameAgent:
+    """Competing consumers is the case this transport exists for, so two
+    brokers serving one agent id must not write the same files.
+
+    CI caught this and a local run did not: on Windows, ``os.replace`` onto a
+    destination another process holds open fails with PermissionError, and
+    three consumers refreshing one shared presence file collided until the
+    child processes died (ADR-167).
+    """
+
+    def test_presence_files_are_per_instance(self, spool):
+        first = broker_for(spool, "a")
+        second = broker_for(spool, "b")
+
+        assert first._presence_path("shared") != second._presence_path("shared"), (
+            "two brokers serving the same agent share a presence path, so "
+            "they will race os.replace on it"
+        )
+
+    def test_presence_written_by_one_is_seen_by_the_other(self, spool):
+        first = broker_for(spool, "a")
+        second = broker_for(spool, "b")
+
+        assert second.is_routable("shared") is False
+        first.subscribe("shared", lambda m: None)
+        assert second.is_routable("shared") is True
+
+    def test_one_leaving_does_not_unregister_the_other(self, spool):
+        first = broker_for(spool, "a")
+        second = broker_for(spool, "b")
+        first.subscribe("shared", lambda m: None)
+        second.subscribe("shared", lambda m: None)
+
+        first.unsubscribe("shared")
+        assert (
+            second.is_routable("shared") is True
+        ), "one consumer leaving removed presence for the others"
+
+    def test_concurrent_presence_refresh_does_not_raise(self, spool):
+        """The collision CI hit, driven hard in-process."""
+        import threading
+
+        brokers = [broker_for(spool, f"b{n}") for n in range(4)]
+        errors = []
+
+        def hammer(broker):
+            try:
+                for _ in range(60):
+                    broker._touch_presence("shared")
+            except Exception as exc:  # pragma: no cover - the failure path
+                errors.append(exc)
+
+        threads = [threading.Thread(target=hammer, args=(b,)) for b in brokers]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=30)
+
+        assert errors == [], f"presence refresh raised: {errors[:2]}"
+
+    def test_a_topic_subscriber_served_twice_receives_once(self, spool):
+        """Two processes serving one agent must not double the fan-out."""
+        from maple.core.message import Message
+
+        first = broker_for(spool, "a")
+        second = broker_for(spool, "b")
+        first.subscribe_topic("news", lambda t, m: None, agent_id="reader")
+        second.subscribe_topic("news", lambda t, m: None, agent_id="reader")
+
+        publisher = broker_for(spool, "pub")
+        publisher.publish(
+            "news", Message(message_type="NEWS", receiver="reader", payload={})
+        )
+
+        queued = list((spool / "inbox" / "reader").glob("*.json"))
+        assert len(queued) == 1, f"fanned out {len(queued)} copies to one agent"
+
+
 class TestSpoolUrlParsing:
     def test_a_posix_url(self):
         assert spool_path_from_url("file:///var/run/maple").name == "maple"
