@@ -13,6 +13,8 @@ import pytest
 from maple.agent.agent import Agent
 from maple.agent.config import Config, SecurityConfig
 from maple.broker.broker import MessageBroker
+from maple.broker.contract import BrokerCapabilities
+from maple.core.message import Message
 from maple.error.types import BrokerUnavailableError
 
 
@@ -143,3 +145,68 @@ class TestInMemoryPathUnaffected:
         )
         assert isinstance(agent.broker, MessageBroker)
         assert agent.broker.security_config is security
+
+
+class TestRoutabilityIsGatedOnTheCapability:
+    """A transport can provide is_routable() and still be unable to answer it.
+
+    The NATS client sees only its own subscriptions, so a remote agent reads
+    as unroutable even while it is serving. Gating ``require_routable`` on
+    ``hasattr`` would turn *gaining the method* into a source of false
+    refusals - a regression created by an improvement (ADR-161).
+    """
+
+    class _CannotAnswer:
+        CAPABILITIES = BrokerCapabilities(supports_routability_check=False)
+        ENFORCES_SECURITY_POLICY = True
+
+        def __init__(self):
+            self.sent = []
+
+        def is_routable(self, agent_id):
+            return False  # it genuinely cannot tell
+
+        def send(self, message):
+            self.sent.append(message)
+            return "id-1"
+
+    class _CanAnswer(_CannotAnswer):
+        CAPABILITIES = BrokerCapabilities(supports_routability_check=True)
+
+    def _agent(self, broker):
+        agent = object.__new__(Agent)
+        agent.agent_id = "sender"
+        agent.broker = broker
+        agent.messages_sent = 0
+        agent.messages_failed = 0
+        return agent
+
+    def test_a_transport_that_cannot_answer_is_not_consulted(self):
+        broker = self._CannotAnswer()
+        agent = self._agent(broker)
+
+        result = Agent.send(
+            agent,
+            Message(message_type="X", receiver="remote", payload={}),
+            require_routable=True,
+        )
+
+        assert result.is_ok(), (
+            "a transport that declares it cannot check routability must not "
+            "be allowed to veto the send"
+        )
+        assert len(broker.sent) == 1
+
+    def test_a_transport_that_can_answer_still_refuses(self):
+        broker = self._CanAnswer()
+        agent = self._agent(broker)
+
+        result = Agent.send(
+            agent,
+            Message(message_type="X", receiver="remote", payload={}),
+            require_routable=True,
+        )
+
+        assert result.is_err()
+        assert result.unwrap_err()["errorType"] == "UNROUTABLE"
+        assert broker.sent == []

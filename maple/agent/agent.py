@@ -410,7 +410,16 @@ class Agent:
         if not message.sender:
             message.sender = self.agent_id
 
-        if require_routable and hasattr(self.broker, "is_routable"):
+        # Gated on the capability, not on the method existing. A transport can
+        # provide is_routable() and still not be able to answer it: the NATS
+        # client sees only its own subscriptions, so a remote agent reads as
+        # unroutable even when it is serving. Trusting hasattr() would turn
+        # gaining the method into a source of false refusals (ADR-161).
+        if require_routable and getattr(
+            getattr(self.broker, "CAPABILITIES", None),
+            "supports_routability_check",
+            hasattr(self.broker, "is_routable"),
+        ):
             if not self.broker.is_routable(cast(str, message.receiver)):
                 self.messages_failed += 1
                 error = {
