@@ -141,7 +141,10 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "-v --cov=maple --cov-report=term-missing --cov-report=html"
+addopts = "-v --cov=maple --cov-report=term-missing --cov-report=html -m 'not nats'"
+markers = [
+    "nats: needs a live NATS server; run with -m nats and MAPLE_NATS_URL",
+]
 asyncio_mode = "auto"
 
 [tool.coverage.run]

@@ -52,6 +52,34 @@ during implementation: at six significant digits it exports 1048576 as
 
 96 tests; the module is at 100% statement coverage.
 
+### Added — CI measures the NATS transport against a real server
+
+NATS was the only part of MAPLE whose behaviour was **described rather than
+measured**. It needs `nats-py` and a live server, neither of which exists on a
+developer machine by default, so every claim about it came from reading the
+code — which is how ADR-161's five "missing members" turned out to understate a
+gap that is really capability-shaped.
+
+- A `nats` CI job runs a `nats:2.10-alpine` service container, installs
+  `.[nats,dev]`, waits for the port, and runs `tests/integration/test_nats_live.py`
+  against it.
+- **It is a required gate.** A job nothing gates on is decoration, so `CI
+  Summary` now fails if the NATS job does not succeed.
+- **A skipped run fails the job.** "No server reached" and "everything passed"
+  look identical otherwise, so the step parses the JUnit XML and exits non-zero
+  if anything skipped. Verified by feeding it both shapes.
+- The suite is marked `nats` and **deselected by default**, so local runs stay
+  hermetic and skip cleanly without the driver.
+
+Ten tests, in two halves. What the transport *does* — a message crossing the
+broker, statistics counting what was published, unsubscribe stopping delivery,
+a refused connection returning a typed error. And what it *does not*: **no
+backpressure, no MAPLE-side size admission, no undeliverable reporting, no
+remote routability**, each asserted as currently false so the day one changes,
+this file fails and the change is deliberate.
+
+Those are the measurements the conformance work has to be designed against.
+
 ### Changed — the NATS transport now satisfies the contract structurally
 
 ADR-161 pinned five members the NATS transport lacked — `get_statistics`,

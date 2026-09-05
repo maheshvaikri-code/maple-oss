@@ -77,8 +77,17 @@ now exist and the `nats` extra is declared, so `describe_conformance` reports
 structural conformance — but the remaining gap is **capability-shaped, not
 method-shaped**: NATS publish is fire-and-forget, so backpressure, undeliverable
 reporting and routability have to be built over a transport that does not
-provide them. None of it is verifiable without a live server, so the next step
-is CI with a NATS service container to establish ground truth.
+provide them. None of it was verifiable without a live server, so **CI now runs a NATS
+service container**: `tests/integration/test_nats_live.py` exercises the
+transport against a real server and is a required gate, with a guard that fails
+the job if the tests *skip* rather than run — because "no server reached" would
+otherwise look identical to "everything passed".
+
+That suite measures both halves. What the transport does (delivery, statistics,
+unsubscribe) and what it does not: **no backpressure, no undeliverable
+reporting, no remote routability**, each asserted as currently false so the day
+one changes is a deliberate edit. Those are the measurements the conformance
+work has to be designed against, rather than assumptions about NATS.
 
 **This is the 3.0.0 anchor.** It converts more Preview/Partial rows to Native
 than any feature would.

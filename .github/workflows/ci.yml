@@ -206,9 +206,71 @@ jobs:
           name: dist
           path: dist/
 
+  nats:
+    name: NATS transport (live server)
+    runs-on: ubuntu-latest
+
+    # The only place MAPLE's NATS code is actually executed. Everything else
+    # about this transport is inspected rather than run, because a developer
+    # machine has neither nats-py nor a server - which is exactly how it came
+    # to be described instead of measured (ADR-161).
+    services:
+      nats:
+        image: nats:2.10-alpine
+        ports:
+          - 4222:4222
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+
+      - name: Install MAPLE with the nats extra
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[nats,dev]"
+
+      - name: Wait for the server to accept connections
+        run: |
+          for i in $(seq 1 30); do
+            if python -c "import socket,sys; s=socket.create_connection(('127.0.0.1',4222),2); s.close()" 2>/dev/null; then
+              echo "NATS is up"; exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::NATS did not become reachable"; exit 1
+
+      # -m nats selects the suite that is deselected by default. A skip here
+      # would mean the server was unreachable, so --strict-markers plus the
+      # explicit count check below makes "silently skipped" fail rather than
+      # look green.
+      - name: Measure the NATS transport against the server
+        env:
+          MAPLE_NATS_URL: nats://127.0.0.1:4222
+        run: |
+          python -m pytest tests/integration -m nats -v --no-cov -p no:cacheprovider             --junitxml=nats-results.xml
+
+      - name: Fail if the suite skipped instead of running
+        run: |
+          python - <<'PY'
+          import sys, xml.etree.ElementTree as ET
+          root = ET.parse("nats-results.xml").getroot()
+          suite = root if root.tag == "testsuite" else root.find("testsuite")
+          total = int(suite.get("tests", 0))
+          skipped = int(suite.get("skipped", 0))
+          print(f"ran={total - skipped} skipped={skipped} of {total}")
+          if total == 0 or skipped:
+              print("::error::NATS tests skipped - the server was not reached, "
+                    "so nothing was measured")
+              sys.exit(1)
+          PY
+
   summary:
     name: CI Summary
-    needs: [lint, test, build]
+    needs: [lint, test, build, nats]
     runs-on: ubuntu-latest
     if: always()
 
@@ -223,6 +285,7 @@ jobs:
           echo "| Lint & Type Check | ${{ needs.lint.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Tests (multi-OS, multi-Python) | ${{ needs.test.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Build & Package | ${{ needs.build.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| NATS transport (live) | ${{ needs.nats.result }} |" >> $GITHUB_STEP_SUMMARY
 
       # This job runs with `if: always()` so the table is written even when an
       # upstream job fails. Without the gate below it would then report success
@@ -232,7 +295,8 @@ jobs:
         if: >-
           needs.lint.result != 'success' ||
           needs.test.result != 'success' ||
-          needs.build.result != 'success'
+          needs.build.result != 'success' ||
+          needs.nats.result != 'success'
         run: |
-          echo "::error::CI gate failed - lint=${{ needs.lint.result }} test=${{ needs.test.result }} build=${{ needs.build.result }}"
+          echo "::error::CI gate failed - lint=${{ needs.lint.result }} test=${{ needs.test.result }} build=${{ needs.build.result }} nats=${{ needs.nats.result }}"
           exit 1
