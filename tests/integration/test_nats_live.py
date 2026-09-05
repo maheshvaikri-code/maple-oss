@@ -140,6 +140,76 @@ class TestWeCallTheDriverCorrectly:
         )
 
 
+class TestConfigurationReachesTheClient:
+    """`broker_url` was ignored entirely.
+
+    `NATSConfig.servers` defaulted to localhost:4222 and nothing read
+    `config.broker_url`, so `Agent(Config(broker_url="nats://prod:4222"))`
+    connected to localhost and looked healthy. Found because a test that
+    pointed at a dead port reported success - it had never been pointing
+    there. Same defect class as ADR-157, in a transport nobody could execute.
+
+    Needs no server: it is about what the client is told.
+    """
+
+    def _broker(self, url, nats_config=None):
+        pytest.importorskip("nats")
+        from maple.broker.nats_broker import NATSBroker
+
+        return NATSBroker(
+            Config(agent_id="probe", broker_url=url), nats_config=nats_config
+        )
+
+    def test_the_configured_url_is_what_gets_used(self):
+        broker = self._broker("nats://prod-cluster:4222")
+        assert broker.nats_config.servers == [
+            "nats://prod-cluster:4222"
+        ], "broker_url did not reach the client; it would connect elsewhere"
+
+    def test_a_non_nats_url_falls_back_to_the_default(self):
+        broker = self._broker("memory://x")
+        assert broker.nats_config.servers == ["nats://localhost:4222"]
+
+    def test_an_explicit_nats_config_still_wins(self):
+        pytest.importorskip("nats")
+        from maple.broker.nats_broker import NATSConfig
+
+        explicit = NATSConfig(servers=["nats://explicit:4222"])
+        broker = self._broker("nats://ignored:4222", nats_config=explicit)
+        assert broker.nats_config.servers == [
+            "nats://explicit:4222"
+        ], "a caller who built a NATSConfig knows more than the URL does"
+
+
+class TestTheSyncWrapperKeepsItsLoopRunning:
+    """`run_until_complete` drives the loop only during one call.
+
+    A subscription registered by `subscribe()` therefore had nothing
+    dispatching its callbacks afterwards, and **no message was ever
+    delivered** - measured against a live server: the publish succeeded and
+    the subscriber never heard it. The wrapper now owns a loop thread.
+    """
+
+    def test_the_loop_runs_between_calls(self, nats_available):
+        broker = make_broker(nats_available, "loopcheck")
+        try:
+            assert broker.loop.is_running(), (
+                "the event loop is not running between calls, so nothing can "
+                "dispatch subscription callbacks"
+            )
+            assert broker._loop_thread.is_alive()
+        finally:
+            broker.disconnect()
+
+    def test_disconnect_stops_the_loop_thread(self, nats_available):
+        broker = make_broker(nats_available, "loopstop")
+        broker.connect()
+        thread = broker._loop_thread
+        broker.disconnect()
+        thread.join(timeout=10)
+        assert not thread.is_alive(), "the loop thread outlived disconnect()"
+
+
 class TestWhatTheTransportDoes:
     def test_a_message_crosses_the_broker(self, nats_available, subject):
         received = []
@@ -212,8 +282,14 @@ class TestWhatTheTransportDoes:
         broker = NATSBrokerSync(
             Config(agent_id="nowhere", broker_url="nats://127.0.0.1:4"),
         )
-        result = broker.connect()
-        assert result.is_err(), "connecting to a dead port reported success"
+        # Before broker_url was honoured this quietly connected to
+        # localhost:4222 and passed for the wrong reason.
+        assert broker.broker.nats_config.servers == ["nats://127.0.0.1:4"]
+        try:
+            result = broker.connect()
+            assert result.is_err(), "connecting to a dead port reported success"
+        finally:
+            broker._stop_loop()
 
 
 class TestWhatTheTransportDoesNotDo:

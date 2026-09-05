@@ -52,6 +52,32 @@ during implementation: at six significant digits it exports 1048576 as
 
 96 tests; the module is at 100% statement coverage.
 
+### Fixed — two more NATS defects the live server exposed
+
+With the connection fixed, the behavioural tests ran for the first time and
+found two more. Neither was visible by reading the code.
+
+**`broker_url` was ignored entirely.** `NATSConfig.servers` defaulted to
+`localhost:4222` and nothing read `config.broker_url`, so
+`Agent(Config(broker_url="nats://prod-cluster:4222"))` connected to **localhost**
+and reported success. This is the defect class ADR-157 exists to close —
+configuration accepted and discarded — in the one transport nobody could
+execute.
+
+It surfaced sideways: a test pointing at a dead port reported a successful
+connection. It had never been pointing at the dead port. `broker_url` now
+reaches the client, and an explicitly supplied `NATSConfig` still wins.
+
+**No message was ever delivered.** `NATSBrokerSync` drove its event loop with
+`run_until_complete`, which runs the loop only for the duration of one call. A
+subscription registered by `subscribe()` had nothing dispatching its callbacks
+afterwards. Measured against a live server: the publish succeeded and the
+subscriber never heard it.
+
+The wrapper now owns a private event loop on a background thread and submits
+work with `run_coroutine_threadsafe`, so the loop keeps running between calls.
+Handlers run on that thread. `disconnect()` stops it and joins.
+
 ### Fixed — the NATS transport could never connect
 
 The first CI run against a live server found it immediately:
