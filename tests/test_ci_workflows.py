@@ -2,7 +2,6 @@
 
 from pathlib import Path
 
-
 WORKFLOW_ROOT = Path(__file__).parents[1] / ".github" / "workflows"
 
 
@@ -83,3 +82,52 @@ def test_dependency_audit_is_gating_but_outdated_inventory_is_informational() ->
     assert "pip list --outdated --format=json > outdated.json || true" in content
     assert "pip-audit\n" in content
     assert "pip-audit || true" not in content
+
+
+class TestTheNatsGate:
+    """The NATS transport is the only part of MAPLE whose behaviour is not
+    exercised on a developer machine - no nats-py, no server. That is how it
+    came to be described rather than measured (ADR-161), so the one place it
+    runs has to be a real gate rather than an informational job.
+    """
+
+    def _ci(self):
+        import yaml
+
+        return yaml.safe_load(_workflow("ci.yml"))
+
+    def test_a_live_server_job_exists(self):
+        jobs = self._ci()["jobs"]
+        assert "nats" in jobs, "the only job that runs NATS code is gone"
+        assert "nats" in jobs["nats"].get("services", {}), (
+            "the job no longer starts a NATS service container, so it cannot "
+            "be measuring anything"
+        )
+
+    def test_the_summary_gates_on_it(self):
+        """A job nothing gates on is decoration."""
+        summary = self._ci()["jobs"]["summary"]
+        assert "nats" in summary["needs"]
+
+        condition = summary["steps"][-1]["if"]
+        assert (
+            "needs.nats.result != 'success'" in condition
+        ), "CI Summary would report success over a failed NATS job"
+
+    def test_a_skipped_run_is_treated_as_a_failure(self):
+        """Skipping is the failure mode that looks like success here: no
+        server means the tests pass by not running."""
+        steps = self._ci()["jobs"]["nats"]["steps"]
+        guard = [s for s in steps if "skipped" in str(s.get("name", "")).lower()]
+        assert guard, "nothing checks whether the NATS tests actually ran"
+        assert "junitxml" in " ".join(
+            str(s.get("run", "")) for s in steps
+        ), "without a machine-readable result the guard cannot count skips"
+
+    def test_the_marker_is_deselected_by_default(self):
+        """Local runs stay hermetic; the suite is opt-in via -m nats."""
+        pyproject = (WORKFLOW_ROOT.parents[1] / "pyproject.toml").read_text(
+            encoding="utf-8"
+        )
+        assert "not nats" in pyproject
+        assert "nats: needs a live NATS server" in pyproject

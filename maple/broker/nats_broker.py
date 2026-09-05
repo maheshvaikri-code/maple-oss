@@ -25,11 +25,22 @@ Language Engine. If not, see <https://www.gnu.org/licenses/>.
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import json
 import logging
+import threading
 import uuid
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Coroutine,
+    Dict,
+    List,
+    Optional,
+    TypeVar,
+)
 
 from ..core.message import Message
 from ..core.result import Result
@@ -49,6 +60,9 @@ NATS: Any = globals().get("_NATS")
 ErrTimeout: Any = globals().get("_ErrTimeout", TimeoutError)
 
 logger = logging.getLogger(__name__)
+
+#: Result type of a coroutine handed to NATSBrokerSync._await.
+_R = TypeVar("_R")
 
 if TYPE_CHECKING:
     # Annotation-only; a runtime import here would re-close the
@@ -113,7 +127,20 @@ class NATSBroker:
             )
 
         self.config = config
-        self.nats_config = nats_config or NATSConfig()
+        # broker_url has to reach the client. Without this, NATSConfig.servers
+        # defaulted to localhost:4222 and the URL the operator configured was
+        # discarded - so Agent(Config(broker_url="nats://prod:4222")) quietly
+        # connected somewhere else and looked healthy. That is the defect
+        # class ADR-157 exists to close, in a transport nobody could execute.
+        #
+        # An explicitly supplied NATSConfig still wins: a caller who built one
+        # knows more than the URL does.
+        if nats_config is not None:
+            self.nats_config = nats_config
+        else:
+            url = str(getattr(config, "broker_url", "") or "").strip()
+            servers = [url] if url.lower().startswith("nats://") else None
+            self.nats_config = NATSConfig(servers=servers)
         self.nc: Optional[Any] = None
         self.subscriptions: Dict[str, Any] = {}
         self._undeliverable_handler: Optional[Callable[[str, Message], None]] = None
@@ -133,16 +160,22 @@ class NATSBroker:
         try:
             self.nc = NATS()
 
+            # max_payload is NOT passed here. In NATS it is advertised by the
+            # *server* and read from the client; nats-py's connect() has no
+            # such parameter, so passing it raised TypeError and every single
+            # connection attempt failed. This transport could never connect,
+            # and nothing caught it because its code was inspected rather than
+            # executed until CI gained a live server.
             await self.nc.connect(
                 servers=self.nats_config.servers,
                 name=self.nats_config.client_id,
                 max_reconnect_attempts=self.nats_config.max_reconnect_attempts,
                 reconnect_time_wait=self.nats_config.reconnect_time_wait,
-                max_payload=self.nats_config.max_payload,
                 error_cb=self._error_callback,
                 disconnected_cb=self._disconnected_callback,
                 reconnected_cb=self._reconnected_callback,
             )
+            self._warn_if_server_payload_is_smaller()
 
             self.running = True
             logger.info(f"Connected to NATS cluster: {self.nc.connected_url}")
@@ -239,6 +272,27 @@ class NATSBroker:
             "subscribedAgents": len(self.subscriptions),
             "connected": bool(self.nc and getattr(self.nc, "is_connected", False)),
         }
+
+    def _warn_if_server_payload_is_smaller(self) -> None:
+        """Compare the configured payload ceiling against the server's.
+
+        ``NATSConfig.max_payload`` is a statement of intent MAPLE cannot
+        impose - the server decides. Rather than let the value sit unused,
+        say so when the server will refuse messages the configuration says
+        are fine.
+        """
+        server_limit = getattr(self.nc, "max_payload", None)
+        configured = getattr(self.nats_config, "max_payload", None)
+        if not isinstance(server_limit, int) or not isinstance(configured, int):
+            return
+        if configured > server_limit:
+            logger.warning(
+                "Configured max_payload (%d bytes) exceeds what this NATS "
+                "server accepts (%d bytes); larger messages will be rejected "
+                "by the server, not by MAPLE.",
+                configured,
+                server_limit,
+            )
 
     async def send(self, message: Message) -> Result[str, Dict[str, Any]]:
         """Send a message to a specific agent via NATS."""
@@ -531,35 +585,77 @@ class NATSBrokerSync:
         self.loop: asyncio.AbstractEventLoop
         self._setup_event_loop()
 
+    #: How long a synchronous call waits for its coroutine.
+    CALL_TIMEOUT_SECONDS = 30.0
+
     def _setup_event_loop(self) -> None:
-        """Set up the event loop for async operations."""
-        try:
-            self.loop = asyncio.get_event_loop()
-        except RuntimeError:
-            self.loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(self.loop)
+        """Run a private event loop in a background thread.
+
+        The loop has to keep running between calls. ``run_until_complete``
+        drives it only for the duration of one call, so a subscription
+        registered by ``subscribe()`` had nothing dispatching its callbacks
+        afterwards and **no message was ever delivered** - measured against a
+        live server: the publish succeeded and the subscriber never heard it.
+
+        Handlers therefore run on this thread, not the caller's.
+        """
+        self.loop = asyncio.new_event_loop()
+        self._loop_ready = threading.Event()
+        self._loop_thread = threading.Thread(
+            target=self._run_loop, name="maple-nats-loop", daemon=True
+        )
+        self._loop_thread.start()
+        if not self._loop_ready.wait(timeout=10):
+            raise RuntimeError("NATS event loop thread did not start")
+
+    def _run_loop(self) -> None:
+        asyncio.set_event_loop(self.loop)
+        self.loop.call_soon(self._loop_ready.set)
+        self.loop.run_forever()
+
+    def _await(
+        self, coro: Coroutine[Any, Any, _R], timeout: Optional[float] = None
+    ) -> _R:
+        """Run a coroutine on the loop thread and wait for its result.
+
+        Generic so the Result types of the wrapped calls survive.
+        """
+        future: "concurrent.futures.Future[_R]" = asyncio.run_coroutine_threadsafe(
+            coro, self.loop
+        )
+        return future.result(timeout=timeout or self.CALL_TIMEOUT_SECONDS)
+
+    def _stop_loop(self) -> None:
+        loop = getattr(self, "loop", None)
+        thread = getattr(self, "_loop_thread", None)
+        if loop is None or not loop.is_running():
+            return
+        loop.call_soon_threadsafe(loop.stop)
+        if thread is not None:
+            thread.join(timeout=5.0)
 
     def connect(self) -> Result[None, Dict[str, Any]]:
         """Connect to NATS cluster synchronously."""
-        return self.loop.run_until_complete(self.broker.connect())
+        return self._await(self.broker.connect())
 
     def disconnect(self) -> None:
         """Disconnect from NATS cluster synchronously."""
-        self.loop.run_until_complete(self.broker.disconnect())
+        self._await(self.broker.disconnect())
+        self._stop_loop()
 
     def send(self, message: Message) -> Result[str, Dict[str, Any]]:
         """Send a message synchronously."""
-        return self.loop.run_until_complete(self.broker.send(message))
+        return self._await(self.broker.send(message))
 
     def publish(self, topic: str, message: Message) -> Result[str, Dict[str, Any]]:
         """Publish a message synchronously."""
-        return self.loop.run_until_complete(self.broker.publish(topic, message))
+        return self._await(self.broker.publish(topic, message))
 
     def subscribe(
         self, agent_id: str, handler: Callable[[Message], None]
     ) -> Result[None, Dict[str, Any]]:
         """Subscribe synchronously."""
-        return self.loop.run_until_complete(self.broker.subscribe(agent_id, handler))
+        return self._await(self.broker.subscribe(agent_id, handler))
 
     def unsubscribe(self, agent_id: str) -> None:
         """Stop receiving for an agent. Idempotent."""
@@ -567,7 +663,7 @@ class NATSBrokerSync:
         self.broker.unsubscribe_local(agent_id)
         if subscription is not None and hasattr(subscription, "unsubscribe"):
             try:
-                self.loop.run_until_complete(subscription.unsubscribe())
+                self._await(subscription.unsubscribe())
             except Exception:  # noqa: BLE001 - teardown is best effort
                 logger.debug("NATS unsubscribe for %s did not complete", agent_id)
 
@@ -595,8 +691,8 @@ class NATSBrokerSync:
         self, message: Message, timeout: float = 30.0
     ) -> Result[Message, Dict[str, Any]]:
         """Send a request synchronously."""
-        return self.loop.run_until_complete(self.broker.request(message, timeout))
+        return self._await(self.broker.request(message, timeout), timeout=timeout + 5)
 
     def get_cluster_info(self) -> Dict[str, Any]:
         """Get cluster info synchronously."""
-        return self.loop.run_until_complete(self.broker.get_cluster_info())
+        return self._await(self.broker.get_cluster_info())

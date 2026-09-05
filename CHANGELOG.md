@@ -52,6 +52,87 @@ during implementation: at six significant digits it exports 1048576 as
 
 96 tests; the module is at 100% statement coverage.
 
+### Fixed — two more NATS defects the live server exposed
+
+With the connection fixed, the behavioural tests ran for the first time and
+found two more. Neither was visible by reading the code.
+
+**`broker_url` was ignored entirely.** `NATSConfig.servers` defaulted to
+`localhost:4222` and nothing read `config.broker_url`, so
+`Agent(Config(broker_url="nats://prod-cluster:4222"))` connected to **localhost**
+and reported success. This is the defect class ADR-157 exists to close —
+configuration accepted and discarded — in the one transport nobody could
+execute.
+
+It surfaced sideways: a test pointing at a dead port reported a successful
+connection. It had never been pointing at the dead port. `broker_url` now
+reaches the client, and an explicitly supplied `NATSConfig` still wins.
+
+**No message was ever delivered.** `NATSBrokerSync` drove its event loop with
+`run_until_complete`, which runs the loop only for the duration of one call. A
+subscription registered by `subscribe()` had nothing dispatching its callbacks
+afterwards. Measured against a live server: the publish succeeded and the
+subscriber never heard it.
+
+The wrapper now owns a private event loop on a background thread and submits
+work with `run_coroutine_threadsafe`, so the loop keeps running between calls.
+Handlers run on that thread. `disconnect()` stops it and joins.
+
+### Fixed — the NATS transport could never connect
+
+The first CI run against a live server found it immediately:
+
+```text
+Failed to connect to NATS: Client.connect() got an unexpected keyword
+argument 'max_payload'
+```
+
+`connect()` passed `max_payload` to `nats-py`'s `Client.connect()`, which does
+not accept it — in NATS that value is advertised by the **server** and read
+from the client. Every connection attempt raised `TypeError`, so **this
+transport had never worked**, with any version of the driver.
+
+Nothing caught it because its code was inspected rather than executed. ADR-161
+described the gap as five missing members; the transport could not open a
+connection.
+
+- The kwarg is removed.
+- `NATSConfig.max_payload` is now used for something real: after connecting,
+  MAPLE compares it with the limit the server advertises and warns when the
+  configuration promises more than the server will accept.
+- Two regression tests. One checks **every** kwarg `connect()` passes against
+  `Client.connect`'s actual signature, catching the whole class cheaply. The
+  other pins `max_payload` specifically, because it reads plausibly enough to
+  be added back — and it runs without the driver installed.
+
+### Added — CI measures the NATS transport against a real server
+
+NATS was the only part of MAPLE whose behaviour was **described rather than
+measured**. It needs `nats-py` and a live server, neither of which exists on a
+developer machine by default, so every claim about it came from reading the
+code — which is how ADR-161's five "missing members" turned out to understate a
+gap that is really capability-shaped.
+
+- A `nats` CI job runs a `nats:2.10-alpine` service container, installs
+  `.[nats,dev]`, waits for the port, and runs `tests/integration/test_nats_live.py`
+  against it.
+- **It is a required gate.** A job nothing gates on is decoration, so `CI
+  Summary` now fails if the NATS job does not succeed.
+- **A skipped run fails the job.** "No server reached" and "everything passed"
+  look identical otherwise, so the step parses the JUnit XML and exits non-zero
+  if anything skipped. Verified by feeding it both shapes.
+- The suite is marked `nats` and **deselected by default**, so local runs stay
+  hermetic and skip cleanly without the driver.
+
+Ten tests, in two halves. What the transport *does* — a message crossing the
+broker, statistics counting what was published, unsubscribe stopping delivery,
+a refused connection returning a typed error. And what it *does not*: **no
+backpressure, no MAPLE-side size admission, no undeliverable reporting, no
+remote routability**, each asserted as currently false so the day one changes,
+this file fails and the change is deliberate.
+
+Those are the measurements the conformance work has to be designed against.
+
 ### Changed — the NATS transport now satisfies the contract structurally
 
 ADR-161 pinned five members the NATS transport lacked — `get_statistics`,
