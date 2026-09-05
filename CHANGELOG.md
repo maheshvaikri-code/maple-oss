@@ -6,7 +6,7 @@
 
 **Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)**
 
-## [Unreleased]
+## [2.2.0] - 2026-09-05
 
 ### Added — metrics leave the process (ADR-162)
 
