@@ -133,16 +133,22 @@ class NATSBroker:
         try:
             self.nc = NATS()
 
+            # max_payload is NOT passed here. In NATS it is advertised by the
+            # *server* and read from the client; nats-py's connect() has no
+            # such parameter, so passing it raised TypeError and every single
+            # connection attempt failed. This transport could never connect,
+            # and nothing caught it because its code was inspected rather than
+            # executed until CI gained a live server.
             await self.nc.connect(
                 servers=self.nats_config.servers,
                 name=self.nats_config.client_id,
                 max_reconnect_attempts=self.nats_config.max_reconnect_attempts,
                 reconnect_time_wait=self.nats_config.reconnect_time_wait,
-                max_payload=self.nats_config.max_payload,
                 error_cb=self._error_callback,
                 disconnected_cb=self._disconnected_callback,
                 reconnected_cb=self._reconnected_callback,
             )
+            self._warn_if_server_payload_is_smaller()
 
             self.running = True
             logger.info(f"Connected to NATS cluster: {self.nc.connected_url}")
@@ -239,6 +245,27 @@ class NATSBroker:
             "subscribedAgents": len(self.subscriptions),
             "connected": bool(self.nc and getattr(self.nc, "is_connected", False)),
         }
+
+    def _warn_if_server_payload_is_smaller(self) -> None:
+        """Compare the configured payload ceiling against the server's.
+
+        ``NATSConfig.max_payload`` is a statement of intent MAPLE cannot
+        impose - the server decides. Rather than let the value sit unused,
+        say so when the server will refuse messages the configuration says
+        are fine.
+        """
+        server_limit = getattr(self.nc, "max_payload", None)
+        configured = getattr(self.nats_config, "max_payload", None)
+        if not isinstance(server_limit, int) or not isinstance(configured, int):
+            return
+        if configured > server_limit:
+            logger.warning(
+                "Configured max_payload (%d bytes) exceeds what this NATS "
+                "server accepts (%d bytes); larger messages will be rejected "
+                "by the server, not by MAPLE.",
+                configured,
+                server_limit,
+            )
 
     async def send(self, message: Message) -> Result[str, Dict[str, Any]]:
         """Send a message to a specific agent via NATS."""

@@ -52,6 +52,33 @@ during implementation: at six significant digits it exports 1048576 as
 
 96 tests; the module is at 100% statement coverage.
 
+### Fixed — the NATS transport could never connect
+
+The first CI run against a live server found it immediately:
+
+```text
+Failed to connect to NATS: Client.connect() got an unexpected keyword
+argument 'max_payload'
+```
+
+`connect()` passed `max_payload` to `nats-py`'s `Client.connect()`, which does
+not accept it — in NATS that value is advertised by the **server** and read
+from the client. Every connection attempt raised `TypeError`, so **this
+transport had never worked**, with any version of the driver.
+
+Nothing caught it because its code was inspected rather than executed. ADR-161
+described the gap as five missing members; the transport could not open a
+connection.
+
+- The kwarg is removed.
+- `NATSConfig.max_payload` is now used for something real: after connecting,
+  MAPLE compares it with the limit the server advertises and warns when the
+  configuration promises more than the server will accept.
+- Two regression tests. One checks **every** kwarg `connect()` passes against
+  `Client.connect`'s actual signature, catching the whole class cheaply. The
+  other pins `max_payload` specifically, because it reads plausibly enough to
+  be added back — and it runs without the driver installed.
+
 ### Added — CI measures the NATS transport against a real server
 
 NATS was the only part of MAPLE whose behaviour was **described rather than

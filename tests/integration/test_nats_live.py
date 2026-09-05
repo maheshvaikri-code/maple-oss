@@ -92,6 +92,54 @@ def subject():
     return f"probe-{uuid.uuid4().hex[:10]}"
 
 
+class TestWeCallTheDriverCorrectly:
+    """The first live run found that MAPLE could not connect to NATS at all.
+
+    ``connect()`` passed ``max_payload``, which nats-py's ``Client.connect``
+    does not accept - in NATS that value is advertised by the *server*. Every
+    connection attempt raised TypeError, so this transport had never worked,
+    and nothing caught it because the code was inspected rather than executed.
+
+    This test needs the driver but not a server, so it catches the whole class
+    of "we call the library wrongly" cheaply.
+    """
+
+    def test_every_connect_kwarg_exists_in_the_driver(self):
+        import inspect
+        import re
+
+        pytest.importorskip("nats")
+        from nats.aio.client import Client
+
+        from maple.broker import nats_broker
+
+        source = inspect.getsource(nats_broker.NATSBroker.connect)
+        call = source.split("self.nc.connect(", 1)[1].split(")", 1)[0]
+        passed = set(re.findall(r"(\w+)\s*=", call))
+
+        accepted = set(inspect.signature(Client.connect).parameters)
+        unknown = passed - accepted
+
+        assert not unknown, (
+            f"connect() passes {sorted(unknown)}, which nats-py does not "
+            "accept - every connection would raise TypeError"
+        )
+
+    def test_max_payload_is_not_passed_to_connect(self):
+        """Pinned specifically, because it is the one that was wrong and it
+        reads plausibly enough to be added back."""
+        import inspect
+
+        from maple.broker import nats_broker
+
+        source = inspect.getsource(nats_broker.NATSBroker.connect)
+        call = source.split("self.nc.connect(", 1)[1].split(")", 1)[0]
+        assert "max_payload" not in call, (
+            "max_payload is advertised by the NATS server, not set by the "
+            "client; passing it makes every connection fail"
+        )
+
+
 class TestWhatTheTransportDoes:
     def test_a_message_crosses_the_broker(self, nats_available, subject):
         received = []
