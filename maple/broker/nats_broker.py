@@ -29,6 +29,7 @@ import concurrent.futures
 import json
 import logging
 import threading
+import time
 import uuid
 from dataclasses import dataclass
 from typing import (
@@ -106,17 +107,28 @@ class NATSBroker:
     # silently dropping a guarantee the caller configured (ADR-161).
     ENFORCES_SECURITY_POLICY: bool = False
 
-    #: Honest declaration (ADR-161). This transport crosses processes and
-    #: hosts, and provides none of the delivery or security guarantees the
-    #: in-memory broker does. It does not yet satisfy the Broker contract.
+    #: Honest declaration (ADR-161, ADR-168). Routability and undeliverable
+    #: reporting are now real, built on presence. Backpressure is not: core
+    #: NATS publish holds no queue to be full, and the contract wants a raise
+    #: where this transport returns a Result - two decisions, neither about
+    #: presence. NATS therefore stays out of BROKER_FACTORIES.
     CAPABILITIES = BrokerCapabilities(
         enforces_security_policy=False,
         applies_backpressure=False,
-        reports_undeliverable=False,
-        supports_routability_check=False,
+        reports_undeliverable=True,
+        supports_routability_check=True,
         durable=False,
         cross_process=True,
     )
+
+    #: Subject prefix agents announce themselves on.
+    PRESENCE_PREFIX = "maple.presence"
+    #: How often a subscribed agent re-announces.
+    PRESENCE_HEARTBEAT_SECONDS = 1.0
+    #: How long a beacon stays valid. Several heartbeats wide on purpose: one
+    #: lost beacon must not evict a live agent, because a false eviction costs
+    #: a message counted undeliverable and *not sent* (ADR-168).
+    PRESENCE_TTL_SECONDS = 6.0
 
     def __init__(
         self, config: Config, nats_config: Optional[NATSConfig] = None
@@ -147,6 +159,13 @@ class NATSBroker:
         self._separation_policy: Any = None
         self._published = 0
         self._refused = 0
+        self._undeliverable = 0
+        #: agent_id -> monotonic reading of the last beacon heard (ADR-168).
+        #: perf_counter, not the wall clock: this is an elapsed-time question
+        #: and an NTP step must not evict a live agent (ADR-163).
+        self._presence: Dict[str, float] = {}
+        self._presence_sub: Any = None
+        self._heartbeat_task: Any = None
         self.running = False
 
         # Message handlers
@@ -178,6 +197,7 @@ class NATSBroker:
             self._warn_if_server_payload_is_smaller()
 
             self.running = True
+            await self._start_presence()
             logger.info(f"Connected to NATS cluster: {self.nc.connected_url}")
             return Result.ok(None)
 
@@ -194,6 +214,7 @@ class NATSBroker:
         """Disconnect from NATS cluster."""
         self.running = False
 
+        await self._stop_presence()
         if self.nc and self.nc.is_connected:
             # Close all subscriptions
             for subscription in self.subscriptions.values():
@@ -201,6 +222,98 @@ class NATSBroker:
 
             await self.nc.close()
             logger.info("Disconnected from NATS cluster")
+
+    # ------------------------------------------------------------ presence
+
+    async def _start_presence(self) -> None:
+        """Watch every agent's beacons and start announcing our own.
+
+        Presence rides the transport it describes: if NATS is reachable, so is
+        presence. No second piece of infrastructure to fail separately
+        (ADR-168).
+        """
+        if self.nc is None or self._presence_sub is not None:
+            return
+
+        async def _beacon(msg: Any) -> None:
+            agent_id = msg.subject.rsplit(".", 1)[-1]
+            if agent_id:
+                self._presence[agent_id] = time.perf_counter()
+
+        self._presence_sub = await self.nc.subscribe(
+            f"{self.PRESENCE_PREFIX}.>", cb=_beacon
+        )
+        self._heartbeat_task = asyncio.ensure_future(self._heartbeat_loop())
+
+    async def _heartbeat_loop(self) -> None:
+        try:
+            while self.running:
+                await self._announce_all()
+                await asyncio.sleep(self.PRESENCE_HEARTBEAT_SECONDS)
+        except asyncio.CancelledError:  # pragma: no cover - shutdown path
+            raise
+        except Exception:  # noqa: BLE001 - presence must not kill the client
+            logger.exception("NATS presence heartbeat stopped")
+
+    async def _announce_all(self) -> None:
+        for agent_id in list(self.subscriptions):
+            await self._announce(agent_id)
+
+    async def _announce(self, agent_id: str) -> None:
+        """Publish one beacon. Called on subscribe so an agent is visible as
+        soon as it exists, rather than at the next heartbeat."""
+        if self.nc is None or not self.nc.is_connected:
+            return
+        try:
+            await self.nc.publish(f"{self.PRESENCE_PREFIX}.{agent_id}", b"1")
+            # Our own presence is known without a round trip.
+            self._presence[agent_id] = time.perf_counter()
+        except Exception:  # noqa: BLE001 - a missed beacon is not fatal
+            logger.debug("Presence beacon for %s failed", agent_id)
+
+    async def _stop_presence(self) -> None:
+        task = self._heartbeat_task
+        self._heartbeat_task = None
+        if task is not None:
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                pass
+        sub = self._presence_sub
+        self._presence_sub = None
+        if sub is not None:
+            try:
+                await sub.unsubscribe()
+            except Exception:  # noqa: BLE001 - teardown is best effort
+                pass
+        self._presence.clear()
+
+    def _is_present(self, agent_id: str) -> bool:
+        """Whether any broker on the cluster is serving this agent.
+
+        An agent we serve ourselves is known directly - no cache lookup that
+        cannot fail, and no liveness window for the single-process case.
+        """
+        if agent_id in self.subscriptions:
+            return True
+        last_seen = self._presence.get(agent_id)
+        if last_seen is None:
+            return False
+        return (time.perf_counter() - last_seen) <= self.PRESENCE_TTL_SECONDS
+
+    def _report_undeliverable(self, receiver: str, message: Message) -> None:
+        self._undeliverable += 1
+        logger.warning(
+            "No agent is serving %r; message dead-lettered rather than " "published.",
+            receiver,
+        )
+        hook = self._undeliverable_handler
+        if hook is not None:
+            try:
+                hook(receiver, message)
+            except Exception:  # noqa: BLE001 - a bad hook is not fatal
+                logger.exception("Undeliverable handler raised")
 
     def unsubscribe_local(self, agent_id: str) -> None:
         """Forget an agent's subscription record.
@@ -212,39 +325,29 @@ class NATSBroker:
         self.subscriptions.pop(agent_id, None)
 
     def is_routable(self, agent_id: str) -> bool:
-        """Whether this broker knows of a subscription for ``agent_id``.
+        """Whether any broker on the cluster is serving ``agent_id``.
 
-        **Only local subscriptions are visible.** A NATS publish is
-        fire-and-forget: the client cannot see who is subscribed elsewhere on
-        the cluster, so a remote agent reads as not routable even when it is.
+        Answered from presence beacons (ADR-168), so this now sees remote
+        subscribers rather than only our own - which is why
+        ``CAPABILITIES.supports_routability_check`` is ``True`` and
+        ``Agent.send(require_routable=True)`` is meaningful over NATS.
 
-        That is why ``CAPABILITIES.supports_routability_check`` is ``False``,
-        and why callers must consult the flag rather than the method
-        (ADR-161). Returning a confident answer this transport cannot know
-        would be worse than declaring the limit.
+        Bounded by a liveness window: an agent that has just appeared, or
+        whose beacons were lost, reads as absent until its next beacon.
         """
         if not agent_id or not str(agent_id).strip():
             return False
-        return str(agent_id) in self.subscriptions
+        return self._is_present(str(agent_id))
 
     def set_undeliverable_handler(
         self, handler: Optional[Callable[[str, Message], None]]
     ) -> None:
-        """Record a dead-letter hook this transport cannot yet call.
+        """Register a dead-letter hook.
 
-        NATS publishes into a subject; nobody reports back that no subscriber
-        existed. The hook is stored so the member exists and the contract is
-        satisfied structurally, and a warning is logged because a hook that
-        silently never fires is precisely the class of defect ADR-159 and
-        ADR-162 exist to close.
+        It fires for real now: presence tells us when nobody serves a receiver,
+        and such a message is dead-lettered rather than published (ADR-168).
         """
         self._undeliverable_handler = handler
-        if handler is not None:
-            logger.warning(
-                "NATS transport accepted an undeliverable handler but reports "
-                "no undeliverable messages (CAPABILITIES."
-                "reports_undeliverable is False); it will not be called."
-            )
 
     def set_separation_policy(self, policy: Any) -> None:
         """Refuse a separation-of-duties policy this transport cannot enforce.
@@ -267,7 +370,7 @@ class NATSBroker:
         NATS, not what any subscriber received - NATS does not tell us."""
         return {
             "delivered": self._published,
-            "undeliverable": 0,
+            "undeliverable": self._undeliverable,
             "refused": self._refused,
             "subscribedAgents": len(self.subscriptions),
             "connected": bool(self.nc and getattr(self.nc, "is_connected", False)),
@@ -308,6 +411,15 @@ class NATSBroker:
             # Ensure message has ID
             if not message.message_id:
                 message.message_id = MessageID(str(uuid.uuid4()))
+
+            receiver = str(message.receiver or "")
+            if not self._is_present(receiver):
+                # Nobody is serving this receiver, so publishing would hand the
+                # message to no one and report success. Counted and
+                # dead-lettered instead - the same meaning "undeliverable" has
+                # on the in-memory broker: zero handlers (ADR-168).
+                self._report_undeliverable(receiver, message)
+                return Result.ok(str(message.message_id))
 
             # Create NATS subject for direct agent communication
             subject = f"maple.agent.{message.receiver}"
@@ -407,6 +519,9 @@ class NATSBroker:
             # Create subscription
             sub = await self.nc.subscribe(subject, cb=message_handler)
             self.subscriptions[agent_id] = sub
+            # Beacon immediately: an agent should be visible as soon as it
+            # exists, not at the next heartbeat (ADR-168).
+            await self._announce(agent_id)
 
             # Track handler
             if agent_id not in self.agent_handlers:
@@ -568,17 +683,11 @@ class NATSBrokerSync:
     # silently dropping a guarantee the caller configured (ADR-161).
     ENFORCES_SECURITY_POLICY: bool = False
 
-    #: Honest declaration (ADR-161). This transport crosses processes and
-    #: hosts, and provides none of the delivery or security guarantees the
-    #: in-memory broker does. It does not yet satisfy the Broker contract.
-    CAPABILITIES = BrokerCapabilities(
-        enforces_security_policy=False,
-        applies_backpressure=False,
-        reports_undeliverable=False,
-        supports_routability_check=False,
-        durable=False,
-        cross_process=True,
-    )
+    #: Mirrors NATSBroker.CAPABILITIES, which is the declaration that matters
+    #: - this class wraps it. Kept in sync deliberately: a wrapper that
+    #: advertises different capabilities from the thing it wraps is a lie in
+    #: the direction callers cannot check (ADR-161, ADR-168).
+    CAPABILITIES = NATSBroker.CAPABILITIES
 
     def __init__(self, config: Config, nats_config: Optional[NATSConfig] = None):
         self.broker = NATSBroker(config, nats_config)
