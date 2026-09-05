@@ -86,6 +86,16 @@ def make_broker(nats_available, agent_id, **perf):
     return NATSBrokerSync(config)
 
 
+def _wait_until(predicate, seconds):
+    """Poll until true or the deadline passes. Returns whether it became true."""
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.05)
+    return predicate()
+
+
 @pytest.fixture
 def subject():
     """A unique agent id, so tests cannot see each other's traffic."""
@@ -237,9 +247,20 @@ class TestWhatTheTransportDoes:
             producer.disconnect()
 
     def test_statistics_count_what_was_published(self, nats_available, subject):
+        """Counts sends that were actually published.
+
+        A receiver nobody serves is dead-lettered rather than published now
+        (ADR-168), so this subscribes first - otherwise it would be measuring
+        the undeliverable path and calling it delivery.
+        """
+        consumer = make_broker(nats_available, "consumer")
+        assert consumer.connect().is_ok()
         producer = make_broker(nats_available, "producer")
         assert producer.connect().is_ok()
         try:
+            consumer.subscribe(subject, lambda m: None)
+            _wait_until(lambda: producer.is_routable(subject), 15)
+
             before = producer.get_statistics()["delivered"]
             for i in range(5):
                 producer.send(
@@ -251,7 +272,9 @@ class TestWhatTheTransportDoes:
                 "delivered counts what this client handed to NATS; it moved by "
                 f"{after - before} for 5 sends"
             )
+            assert producer.get_statistics()["undeliverable"] == 0
         finally:
+            consumer.disconnect()
             producer.disconnect()
 
     def test_unsubscribe_stops_delivery(self, nats_available, subject):
@@ -357,8 +380,12 @@ class TestWhatTheTransportDoesNotDo:
         finally:
             producer.disconnect()
 
-    def test_nothing_is_reported_undeliverable(self, nats_available, subject):
-        """Publishing to a subject nobody subscribes to succeeds silently."""
+    def test_undeliverable_is_reported_now(self, nats_available, subject):
+        """Was asserted absent; presence made it real (ADR-168).
+
+        A receiver nobody serves is counted and dead-lettered rather than
+        published into a subject with no listener.
+        """
         dead = []
         producer = make_broker(nats_available, "producer")
         producer.set_undeliverable_handler(
@@ -366,42 +393,44 @@ class TestWhatTheTransportDoesNotDo:
         )
         assert producer.connect().is_ok()
         try:
+            before = producer.get_statistics()["undeliverable"]
             producer.send(Message(message_type="X", receiver=subject, payload={}))
-            time.sleep(2.0)
 
-            assert producer.get_statistics()["undeliverable"] == 0
-            assert dead == [], (
-                "the dead-letter hook fired - if undeliverable reporting now "
-                "works, update CAPABILITIES.reports_undeliverable"
-            )
+            assert producer.get_statistics()["undeliverable"] == before + 1
+            assert dead == [subject], "the dead-letter hook did not fire"
         finally:
             producer.disconnect()
 
-    def test_routability_cannot_see_a_remote_subscriber(self, nats_available, subject):
-        """The measurement behind `supports_routability_check=False`.
+    def test_routability_sees_a_remote_subscriber_now(self, nats_available, subject):
+        """Was asserted impossible; presence made it real (ADR-168).
 
-        One broker subscribes; a *different* broker cannot tell.
+        One broker subscribes and a *different* broker can tell - which is
+        what makes Agent.send(require_routable=True) meaningful over NATS.
         """
         consumer = make_broker(nats_available, "consumer")
         assert consumer.connect().is_ok()
         producer = make_broker(nats_available, "producer")
         assert producer.connect().is_ok()
         try:
-            consumer.subscribe(subject, lambda m: None)
-            time.sleep(0.5)
+            assert producer.is_routable(subject) is False
 
-            assert (
-                consumer.is_routable(subject) is True
-            ), "a broker cannot see its own subscription"
-            assert producer.is_routable(subject) is False, (
-                "remote routability appeared - if the client can now see "
-                "cluster subscriptions, update "
-                "CAPABILITIES.supports_routability_check and the gate in "
-                "Agent.send"
-            )
+            consumer.subscribe(subject, lambda m: None)
+            assert _wait_until(
+                lambda: producer.is_routable(subject), 15
+            ), "a subscription made on another broker never became visible"
         finally:
             consumer.disconnect()
             producer.disconnect()
+
+    def test_an_agent_we_serve_ourselves_needs_no_beacon(self, nats_available, subject):
+        """No liveness window for the local case."""
+        broker = make_broker(nats_available, "solo")
+        assert broker.connect().is_ok()
+        try:
+            broker.subscribe(subject, lambda m: None)
+            assert broker.is_routable(subject) is True
+        finally:
+            broker.disconnect()
 
     def test_a_separation_policy_is_refused(self, nats_available):
         """ADR-157: a control that cannot run must refuse."""
@@ -420,8 +449,11 @@ class TestTheCapabilityDeclarationMatchesReality:
         from maple.broker.nats_broker import NATSBrokerSync
 
         caps = NATSBrokerSync.CAPABILITIES
+        # Real now, built on presence (ADR-168).
+        assert caps.reports_undeliverable is True
+        assert caps.supports_routability_check is True
+        # Still absent: core NATS publish holds no queue to be full, and the
+        # contract wants a raise where this transport returns a Result.
         assert caps.applies_backpressure is False
-        assert caps.reports_undeliverable is False
-        assert caps.supports_routability_check is False
         assert caps.enforces_security_policy is False
         assert caps.cross_process is True

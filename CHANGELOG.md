@@ -52,6 +52,45 @@ during implementation: at six significant digits it exports 1048576 as
 
 96 tests; the module is at 100% statement coverage.
 
+### Added — presence over NATS (ADR-168)
+
+Two of the three capabilities NATS lacked are now real, built on one mechanism:
+subscribers announce themselves on `maple.presence.<agent_id>`, and every
+connected broker keeps a local cache of who was last heard from.
+
+- **`is_routable` answers for the cluster**, not just for one client's own
+  subscriptions — so `Agent.send(require_routable=True)` is meaningful over
+  NATS, and `supports_routability_check` is `True`.
+- **Undeliverable messages are counted and dead-lettered.** A receiver nobody
+  serves is *not* published into a subject with no listener; it is reported,
+  which is the same meaning "undeliverable" has on the in-memory broker.
+  `reports_undeliverable` is `True`.
+- A beacon is published **on subscribe**, not just on the heartbeat, so an
+  agent is visible as soon as it exists. The TTL is several heartbeats wide,
+  because a single lost beacon evicting a live agent would cost a message.
+- An agent a broker serves itself needs no beacon — no liveness window for the
+  single-process case.
+
+Presence rides the transport it describes: if NATS is reachable, so is
+presence. No second piece of infrastructure to fail separately.
+
+**The cost, stated plainly:** during the liveness window a real subscriber can
+look absent, and a message sent in that gap is refused rather than published.
+A partitioned broker will refuse messages for agents alive on the other side —
+the correct failure for a partition, but a change from "publish and hope".
+
+**Backpressure is still absent, and that is two decisions rather than work.**
+Core NATS publish holds no queue to be full, so MAPLE would need its own
+outbound queue or JetStream; and the conformance suite expects `send()` to
+*raise* where this transport returns a `Result`, so behavioural conformance
+needs a breaking change to its public API. NATS therefore stays out of
+`BROKER_FACTORIES`.
+
+Also: `NATSBrokerSync` duplicated the capability declaration and was updated in
+one place only — the "fixed one instance of a duplicated thing" mistake the
+2.1.0 retrospective named. It now derives it from `NATSBroker`, with a test
+asserting they are the same object.
+
 ### Fixed — two more NATS defects the live server exposed
 
 With the connection fixed, the behavioural tests ran for the first time and

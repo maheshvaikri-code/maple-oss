@@ -300,6 +300,10 @@ def _nats_broker_without_a_server():
     broker._separation_policy = None
     broker._published = 0
     broker._refused = 0
+    broker._undeliverable = 0
+    broker._presence = {}
+    broker._presence_sub = None
+    broker._heartbeat_task = None
     return broker
 
 
@@ -328,14 +332,17 @@ class TestKnownNonConformance:
         a deliberate edit made when it can actually pass."""
         assert "nats" not in BROKER_FACTORIES
 
-    def test_the_remaining_gap_is_capability_shaped(self):
-        """The honest description of what is left."""
+    def test_the_remaining_gap_is_backpressure(self):
+        """Presence closed two of the three (ADR-168). What is left needs a
+        MAPLE-side outbound queue or JetStream, *and* a breaking change to
+        send()'s signature - the contract wants a raise where this transport
+        returns a Result."""
         from maple.broker.nats_broker import NATSBrokerSync
 
         caps = NATSBrokerSync.CAPABILITIES
+        assert caps.reports_undeliverable is True
+        assert caps.supports_routability_check is True
         assert caps.applies_backpressure is False
-        assert caps.reports_undeliverable is False
-        assert caps.supports_routability_check is False
 
     def test_a_policy_it_cannot_enforce_is_refused_not_accepted(self):
         """ADR-157: a control that cannot run must refuse. Accepting a
@@ -349,28 +356,40 @@ class TestKnownNonConformance:
 
         broker.set_separation_policy(None)  # clearing is always allowed
 
-    def test_routability_is_local_only(self):
-        """The NATS client sees its own subscriptions and nothing else, which
-        is why the capability flag says not to trust the answer."""
+    def test_routability_answers_from_presence(self):
+        """Was local-only; presence made it cluster-wide (ADR-168).
+
+        An agent we serve ourselves needs no beacon; a remote one is known
+        from its beacon, and an expired beacon is not routable.
+        """
+        import time as _time
+
         broker = _nats_broker_without_a_server()
         broker.subscriptions = {"here": object()}
+        broker._presence = {
+            "remote": _time.perf_counter(),
+            "stale": _time.perf_counter() - (broker.PRESENCE_TTL_SECONDS + 5),
+        }
 
-        assert broker.is_routable("here") is True
-        assert broker.is_routable("elsewhere") is False
+        assert broker.is_routable("here") is True, "our own agent"
+        assert broker.is_routable("remote") is True, "a fresh beacon"
+        assert broker.is_routable("stale") is False, "an expired beacon"
+        assert broker.is_routable("unknown") is False
         assert broker.is_routable("") is False
 
-    def test_an_undeliverable_hook_is_stored_but_warned_about(self, caplog):
-        """A hook that silently never fires is the defect ADR-159 and ADR-162
-        exist to close, so accepting one says so out loud."""
-        import logging
-
+    def test_the_undeliverable_hook_is_live_now(self):
+        """It used to be stored with a warning that it would never fire.
+        Presence made it real (ADR-168), so the warning is gone and the hook
+        is called when nobody serves a receiver."""
+        dead = []
         broker = _nats_broker_without_a_server()
-        with caplog.at_level(logging.WARNING, logger="maple.broker.nats_broker"):
-            broker.set_undeliverable_handler(lambda receiver, message: None)
-
-        assert any(
-            "will not be called" in record.getMessage() for record in caplog.records
+        broker.set_undeliverable_handler(
+            lambda receiver, message: dead.append(receiver)
         )
+        broker._report_undeliverable("ghost", object())
+
+        assert dead == ["ghost"]
+        assert broker.get_statistics()["undeliverable"] == 1
 
     def test_statistics_expose_the_required_keys(self):
         broker = _nats_broker_without_a_server()
@@ -390,5 +409,13 @@ class TestKnownNonConformance:
         caps = NATSBrokerSync.CAPABILITIES
         assert caps.enforces_security_policy is False
         assert caps.applies_backpressure is False
-        assert caps.reports_undeliverable is False
+        assert caps.reports_undeliverable is True  # presence, ADR-168
         assert caps.cross_process is True
+
+    def test_the_wrapper_cannot_advertise_different_capabilities(self):
+        """The sync wrapper duplicated this declaration and was updated in one
+        place only - the exact "fixed one instance of a duplicated thing"
+        mistake the 2.1.0 retrospective named. It now derives it."""
+        from maple.broker.nats_broker import NATSBroker, NATSBrokerSync
+
+        assert NATSBrokerSync.CAPABILITIES is NATSBroker.CAPABILITIES

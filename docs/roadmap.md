@@ -83,11 +83,24 @@ transport against a real server and is a required gate, with a guard that fails
 the job if the tests *skip* rather than run — because "no server reached" would
 otherwise look identical to "everything passed".
 
-That suite measures both halves. What the transport does (delivery, statistics,
-unsubscribe) and what it does not: **no backpressure, no undeliverable
-reporting, no remote routability**, each asserted as currently false so the day
-one changes is a deliberate edit. Those are the measurements the conformance
-work has to be designed against, rather than assumptions about NATS.
+That suite measured both halves, and paid for itself immediately: the first
+three runs found the transport **could not connect at all**, **ignored
+`broker_url`** (connecting to localhost whatever you configured), and **never
+delivered a message** (the sync wrapper's event loop was not running between
+calls). All three were invisible to inspection.
+
+With it working, [ADR-168](adr/168-presence-over-nats.md) closed two of the
+three capability gaps by putting presence on the transport itself: subscribers
+beacon on `maple.presence.<agent_id>`, so **routability now answers for the
+cluster** and an **undeliverable message is counted and dead-lettered** rather
+than published into a subject with no listener.
+
+**What is left is backpressure, and it is two decisions rather than work.**
+Core NATS publish holds no queue to be full, so MAPLE would need its own
+outbound queue or JetStream; and `test_a_full_queue_refuses` expects `send()` to
+*raise*, where this transport returns a `Result` — behavioural conformance needs
+a breaking change to its public API. Until then NATS stays out of
+`BROKER_FACTORIES`.
 
 **This is the 3.0.0 anchor.** It converts more Preview/Partial rows to Native
 than any feature would.
