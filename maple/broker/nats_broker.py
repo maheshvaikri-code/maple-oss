@@ -46,7 +46,7 @@ from typing import (
 from ..core.message import Message
 from ..core.result import Result
 from ..core.types import MessageID
-from ..error.types import SecurityError
+from ..error.types import BrokerOverflowError, SecurityError
 from .contract import BrokerCapabilities
 
 try:
@@ -107,14 +107,14 @@ class NATSBroker:
     # silently dropping a guarantee the caller configured (ADR-161).
     ENFORCES_SECURITY_POLICY: bool = False
 
-    #: Honest declaration (ADR-161, ADR-168). Routability and undeliverable
-    #: reporting are now real, built on presence. Backpressure is not: core
-    #: NATS publish holds no queue to be full, and the contract wants a raise
-    #: where this transport returns a Result - two decisions, neither about
-    #: presence. NATS therefore stays out of BROKER_FACTORIES.
+    #: Honest declaration (ADR-161, ADR-168, ADR-170). Routability and
+    #: undeliverable reporting come from presence; backpressure comes from a
+    #: bounded outbound queue MAPLE owns, because core NATS publish has
+    #: nothing to be full. Security enforcement remains absent and is refused
+    #: rather than accepted.
     CAPABILITIES = BrokerCapabilities(
         enforces_security_policy=False,
-        applies_backpressure=False,
+        applies_backpressure=True,
         reports_undeliverable=True,
         supports_routability_check=True,
         durable=False,
@@ -166,6 +166,18 @@ class NATSBroker:
         self._presence: Dict[str, float] = {}
         self._presence_sub: Any = None
         self._heartbeat_task: Any = None
+        #: Bounded outbound queue (ADR-170). Core NATS publish has nothing to
+        #: be full, so the bound is MAPLE's own - it says the client is
+        #: producing faster than it can hand off, not anything about the
+        #: server's capacity.
+        self._outbound: List[Message] = []
+        performance = getattr(config, "performance", None)
+        self.max_queue_size = int(
+            getattr(performance, "max_queue_size", 10000) or 10000
+        )
+        self.max_message_bytes = int(
+            getattr(performance, "max_message_bytes", 1_048_576) or 1_048_576
+        )
         self.running = False
 
         # Message handlers
@@ -198,6 +210,8 @@ class NATSBroker:
 
             self.running = True
             await self._start_presence()
+            # Sends made before connect() were queued, not lost.
+            await self._drain_outbound()
             logger.info(f"Connected to NATS cluster: {self.nc.connected_url}")
             return Result.ok(None)
 
@@ -397,58 +411,120 @@ class NATSBroker:
                 server_limit,
             )
 
-    async def send(self, message: Message) -> Result[str, Dict[str, Any]]:
-        """Send a message to a specific agent via NATS."""
-        if not self.nc or not self.nc.is_connected:
-            return Result.err(
+    async def send(self, message: Message) -> str:
+        """Admit a message for delivery, or refuse it.
+
+        Returns the message id and **raises** on refusal, matching the
+        in-memory broker and what ``Agent.send()`` already expects. It used to
+        return ``Result``, which produced ``Result.ok(Result.ok(id))`` through
+        Agent and - worse - wrapped a failed send as a success (ADR-170).
+
+        Admission order is fixed: **size, then policy, then presence, then
+        capacity.** Too-large is refused whatever the queue depth, and a
+        message nobody can receive is dead-lettered rather than occupying a
+        slot.
+        """
+        self._enforce_message_size(message)
+
+        if not message.message_id:
+            message.message_id = MessageID(str(uuid.uuid4()))
+
+        if self._separation_policy is not None:
+            decision = self._separation_policy.authorize_send(message)
+            if decision.is_err():
+                raise SecurityError(
+                    f"Separation-of-duties denied: {decision.unwrap_err()['message']}"
+                )
+
+        receiver = str(message.receiver or "")
+        connected = bool(self.nc and getattr(self.nc, "is_connected", False))
+
+        # Presence is only meaningful once connected; before that nobody has
+        # had a chance to announce, so queue rather than dead-letter.
+        if connected and not self._is_present(receiver):
+            self._report_undeliverable(receiver, message)
+            return str(message.message_id)
+
+        if len(self._outbound) >= self.max_queue_size:
+            self._refused += 1
+            raise BrokerOverflowError(
                 {
-                    "errorType": "NATS_NOT_CONNECTED",
-                    "message": "NATS client is not connected",
+                    "errorType": "QUEUE_FULL",
+                    "message": (
+                        "Outbound queue is at capacity; refusing the message "
+                        "rather than buffering without a bound."
+                    ),
+                    "details": {
+                        "receiver": receiver,
+                        "maxQueueSize": self.max_queue_size,
+                        "pending": len(self._outbound),
+                    },
                 }
             )
 
+        self._outbound.append(message)
+        if connected:
+            await self._drain_outbound()
+        return str(message.message_id)
+
+    def _enforce_message_size(self, message: Message) -> None:
+        """Refuse an oversized payload at the edge, as ADR-159 does for the
+        in-memory broker: a bounded count is no protection if one message can
+        be arbitrarily large."""
         try:
-            # Ensure message has ID
-            if not message.message_id:
-                message.message_id = MessageID(str(uuid.uuid4()))
+            size = len(
+                json.dumps(message.payload, default=str, separators=(",", ":")).encode(
+                    "utf-8"
+                )
+            )
+        except (TypeError, ValueError):
+            return
+        if size > self.max_message_bytes:
+            self._refused += 1
+            raise BrokerOverflowError(
+                {
+                    "errorType": "MESSAGE_TOO_LARGE",
+                    "message": (
+                        f"Payload of {size} bytes exceeds the configured limit "
+                        f"of {self.max_message_bytes} bytes."
+                    ),
+                    "details": {
+                        "payloadBytes": size,
+                        "maxMessageBytes": self.max_message_bytes,
+                    },
+                }
+            )
 
-            receiver = str(message.receiver or "")
-            if not self._is_present(receiver):
-                # Nobody is serving this receiver, so publishing would hand the
-                # message to no one and report success. Counted and
-                # dead-lettered instead - the same meaning "undeliverable" has
-                # on the in-memory broker: zero handlers (ADR-168).
-                self._report_undeliverable(receiver, message)
-                return Result.ok(str(message.message_id))
+    async def _drain_outbound(self) -> None:
+        """Hand queued messages to NATS, oldest first.
 
-            # Create NATS subject for direct agent communication
-            subject = f"maple.agent.{message.receiver}"
-
-            # Serialize message
-            payload = json.dumps(message.to_dict()).encode("utf-8")
-
-            # Send with optional reply subject for responses
-            if message.message_type.endswith("_REQUEST"):
-                reply_subject = f"maple.reply.{message.message_id}"
-                await self.nc.publish(subject, payload, reply=reply_subject)
-            else:
-                await self.nc.publish(subject, payload)
-
+        A message that cannot be published stays at the head rather than being
+        dropped, so a transport hiccup costs latency instead of data.
+        """
+        while self._outbound:
+            if not (self.nc and getattr(self.nc, "is_connected", False)):
+                return
+            message = self._outbound[0]
+            try:
+                await self._publish_one(message)
+            except Exception:  # noqa: BLE001 - keep it queued and retry later
+                logger.debug("Deferring %s; publish failed", message.message_id)
+                return
+            self._outbound.pop(0)
             self._published += 1
-            logger.debug(f"Message {message.message_id} sent to {subject}")
-            return Result.ok(str(message.message_id))
 
-        except Exception as e:
-            error = {
-                "errorType": "NATS_SEND_ERROR",
-                "message": f"Failed to send message: {str(e)}",
-                "details": {
-                    "messageId": message.message_id,
-                    "receiver": message.receiver,
-                },
-            }
-            logger.error(f"NATS send error: {error}")
-            return Result.err(error)
+    async def _publish_one(self, message: Message) -> None:
+        client = self.nc
+        if client is None:  # pragma: no cover - guarded by the caller
+            raise RuntimeError("not connected")
+        subject = f"maple.agent.{message.receiver}"
+        payload = json.dumps(message.to_dict()).encode("utf-8")
+        if str(message.message_type).endswith("_REQUEST"):
+            await client.publish(
+                subject, payload, reply=f"maple.reply.{message.message_id}"
+            )
+        else:
+            await client.publish(subject, payload)
 
     async def publish(
         self, topic: str, message: Message
@@ -752,8 +828,8 @@ class NATSBrokerSync:
         self._await(self.broker.disconnect())
         self._stop_loop()
 
-    def send(self, message: Message) -> Result[str, Dict[str, Any]]:
-        """Send a message synchronously."""
+    def send(self, message: Message) -> str:
+        """Admit a message, returning its id or raising on refusal (ADR-170)."""
         return self._await(self.broker.send(message))
 
     def publish(self, topic: str, message: Message) -> Result[str, Dict[str, Any]]:

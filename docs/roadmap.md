@@ -95,12 +95,15 @@ beacon on `maple.presence.<agent_id>`, so **routability now answers for the
 cluster** and an **undeliverable message is counted and dead-lettered** rather
 than published into a subject with no listener.
 
-**What is left is backpressure, and it is two decisions rather than work.**
-Core NATS publish holds no queue to be full, so MAPLE would need its own
-outbound queue or JetStream; and `test_a_full_queue_refuses` expects `send()` to
-*raise*, where this transport returns a `Result` — behavioural conformance needs
-a breaking change to its public API. Until then NATS stays out of
-`BROKER_FACTORIES`.
+**Backpressure is closed too** ([ADR-170](adr/170-nats-backpressure-and-the-send-contract.md)).
+A bounded outbound queue gives MAPLE something that can be full, and `send()`
+now returns an id and raises — which also fixed a real defect: over NATS,
+`Agent.send()` was returning `Result.ok(Result.…)` and wrapping *failed* sends
+as successes.
+
+NATS now runs the conformance suite itself, parameterised under the `nats`
+marker against the live CI server. The remaining gap is **security
+enforcement**, which is refused rather than faked.
 
 **This is the 3.0.0 anchor.** It converts more Preview/Partial rows to Native
 than any feature would.

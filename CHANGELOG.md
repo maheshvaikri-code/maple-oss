@@ -8,6 +8,52 @@
 
 ## [Unreleased]
 
+### Fixed — `Agent.send()` over NATS reported failures as successes (ADR-170)
+
+`NATSBrokerSync.send()` returned `Result`, but `Agent.send()` does
+`message_id = self.broker.send(message); return Result.ok(message_id)`.
+
+Over NATS that produced **`Result.ok(Result.ok("id"))`** — `unwrap()` gave a
+`Result`, not a message id. And when the transport failed, `Result.err(...)`
+was wrapped as **`Result.ok(...)`**: a failed send reported as a success. The
+fail-open class this series exists to close, undetected in the one transport
+nobody could execute.
+
+`send()` now returns `str` and raises, matching the in-memory broker and what
+`Agent` already expected. **Breaking for direct callers** of that transport.
+
+### Added — backpressure over NATS (ADR-170)
+
+The last delivery capability. Core NATS publish hands the message to the client
+and returns, so there is nothing to be full; MAPLE now holds a **bounded
+outbound queue** and drains it.
+
+- `QUEUE_FULL` once `max_queue_size` is reached, `MESSAGE_TOO_LARGE` above
+  `max_message_bytes` — refusing rather than growing, as ADR-159 settled for
+  the in-memory broker.
+- Admission order is fixed: **size, then policy, then presence, then
+  capacity**. Too-large is refused whatever the depth; a message nobody can
+  receive is dead-lettered rather than taking a slot.
+- The queue answers something else the suite asks: `send()` **before
+  `connect()`** is now accepted and drained on connect, instead of failing.
+- A message that cannot be published stays at the head, so a hiccup costs
+  latency rather than data.
+
+**The bound is MAPLE's, not the transport's.** A full queue means this client
+is producing faster than it can hand off; it says nothing about the server.
+JetStream would make "outstanding" real through acknowledgement and is the
+better long-term answer, but it requires server features and provisioned
+streams — not a library's decision to impose.
+
+**NATS now runs the conformance suite itself.** Not a weaker parallel suite:
+the same tests, parameterised over a live NATS factory selected under the
+`nats` marker, which the CI job runs against a real server. It stays out of the
+default `BROKER_FACTORIES`, which must remain constructible without
+infrastructure.
+
+What is still absent is **security enforcement**, and it is *refused* rather
+than faked (ADR-157).
+
 ### Fixed — `receive()` no longer races the handler loop (ADR-169)
 
 `Agent.receive()` and the background handler loop read the **same** queue, so
