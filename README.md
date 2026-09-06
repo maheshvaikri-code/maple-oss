@@ -86,10 +86,11 @@ larger platform.
 You can use the protocol without the autonomy layer, and the runtime without
 either. The layers are separable on purpose.
 
-## What is new in 2.1.0
+## What was new in 2.1.0
 
-2.1.0 is a correctness release. Every change closes a case where a control
-silently did nothing.
+2.1.0 was a correctness release. Every change closed a case where a control
+silently did nothing. Kept here because the migration notes still apply to
+anyone coming from 2.0.0.
 
 | Change | Before | Now |
 | --- | --- | --- |
@@ -106,11 +107,16 @@ notice. A `send()` that always succeeded can now fail, and agents on different
 `broker_url` values no longer share a bus. See the
 [changelog](CHANGELOG.md) for the migration notes.
 
-## On `main` since 2.1.0 — not yet released
+## What is new in 2.2.0
 
-`pip install maple-oss` gives you **2.1.0**. The work below is merged on `main`
-and is *not* in that package. It is listed because one item changes what MAPLE
-is, and a README that only described the last tag would be quietly out of date.
+2.2.0 continues what 2.1.0 started. 2.1.0 fixed controls that silently did
+nothing; 2.2.0 fixes the same class one layer out — numbers that never left the
+process, shutdowns that discarded work while returning cleanly, configuration
+accepted and ignored, waits that never woke, and a transport that had never once
+connected.
+
+One item changes what MAPLE *is*: `FileBroker` makes it multi-process on one
+host.
 
 | Change | What it means |
 | --- | --- |
@@ -119,19 +125,22 @@ is, and a README that only described the last tag would be quietly out of date.
 | **Configuration is validated** ([ADR-164](docs/adr/164-configuration-is-validated-at-construction.md)) | Nine invalid configurations were accepted silently. It also closed a hole in ADR-157: `NATS://` and `nats:/` fell back to the in-process broker, so a typo defeated a fail-closed guarantee. |
 | **Waits end when their subject does** ([ADR-165](docs/adr/165-waits-end-when-the-thing-they-wait-for-does.md)) | A thread parked in `receive()` never woke after `stop()`. It now returns `AGENT_STOPPED`. |
 | **Delivery on a signal** ([ADR-166](docs/adr/166-deliver-on-a-signal-not-a-poll.md)) | The broker's 10 ms poll cost latency on every hop — p50 4.8 ms, now 0.33 ms. |
-| **`FileBroker`** ([ADR-167](docs/adr/167-file-broker-multi-process-on-one-host.md)) | **MAPLE is no longer a single-process runtime on `main`.** A file-backed transport carries messages between processes on one host, and it passes the broker conformance suite unchanged. |
+| **`FileBroker`** ([ADR-167](docs/adr/167-file-broker-multi-process-on-one-host.md)) | **MAPLE is no longer a single-process runtime.** A file-backed transport carries messages between processes on one host, and it passes the broker conformance suite unchanged. |
 
 ### What this does and does not change about the deployment shape
 
-**2.1.0, the released package, is an embedded single-process runtime.** Scopes
-isolate agent groups *within* one process; the in-memory broker does not survive
-a restart.
+**Through 2.1.0, MAPLE was an embedded single-process runtime.** Scopes isolate
+agent groups *within* one process, and the in-memory broker does not survive a
+restart — both still true of the in-memory broker in 2.2.0.
 
-On `main`, `FileBroker` adds **multi-process on one host** — and nothing more.
+`FileBroker` adds **multi-process on one host** — and nothing more.
 It is not a network transport, its latency is a poll interval rather than a
 signal, and it makes no durability, ordering, or exactly-once claim. Multi-*host*
 operation still needs a transport that satisfies the broker contract, which the
 bundled NATS adapter does not meet.
+
+Until 2.2.0 is published, `pip install maple-oss` gives you 2.1.0 and none of
+this.
 
 It now provides every contract *member*, but that is not conformance. The
 remaining gap is capability-shaped rather than method-shaped: a NATS publish is
@@ -807,6 +816,7 @@ QA and review records live under [docs/qa/](docs/qa/) and
 
 | Version | State |
 | --- | --- |
+| **2.2.0** | Prepared. Version carriers, changelog and release checklist are in place and the suite is green; **not yet published**. |
 | **2.1.0** | **Published** on PyPI as `maple_oss-2.1.0` (2026-09-02) and tagged as a GitHub Release. The release assets are byte-identical to the PyPI artifacts, verified by SHA-256, and a fresh-virtualenv install was checked before the tag was announced. |
 | **2.0.0** | Published on PyPI as `maple_oss-2.0.0` (uploaded 2026-08-31) and tagged as a GitHub Release with source and wheel artifacts. |
 
