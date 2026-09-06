@@ -8,6 +8,53 @@
 
 ## [Unreleased]
 
+### Fixed — `receive()` no longer races the handler loop (ADR-169)
+
+`Agent.receive()` and the background handler loop read the **same** queue, so
+on a started agent whichever polled first won and a caller got messages only
+sometimes.
+
+It was found while writing the ADR-165 tests: the loop ate the message and the
+test failed with `No handler found for message type HI`. The workaround then
+was to not start the agent — the race was documented in a test and left in the
+code.
+
+- A waiting `receive()` now takes precedence; the handler loop defers while any
+  receiver is blocked, and resumes the moment the last one returns.
+- **Deferring before the `get()` is not enough.** The loop may already be
+  blocked inside `get()` when a receiver arrives, and would consume the very
+  message it is waiting for — measured, the receiver timed out at 5s. So after
+  a successful `get()` the loop re-checks and **hands the message back**.
+- Refusing was implemented first and reverted: it removes a legitimate pattern
+  and makes ADR-165's parked-receiver wake unreachable. It broke six tests for
+  exactly that reason.
+
+Costs, stated: a receiver parked indefinitely holds handlers off (that is what
+pulling means, and ADR-165 ends the wait on shutdown), and a handed-back
+message goes to the back of the queue, so ordering around that narrow window
+can change.
+
+### Investigated — the flaky loopback tests are not understood yet
+
+A group of autonomy tests that start a real HTTP server fail intermittently on
+Windows under load with `ConnectionAbortedError [WinError 10053]`. Three
+hypotheses were tested and **all three were wrong**:
+
+- **A Windows `SO_REUSEADDR` port hijack.** Real and measured — on Windows a
+  second socket *can* bind a port already being listened on. But fixing it with
+  `SO_EXCLUSIVEADDRUSE` did not help, and the comparison that suggested it had
+  was confounded.
+- **Shutdown aborting in-flight responses.** Measured false: `server_close()`
+  returns without waiting, and the handler still completes and the client still
+  gets its response.
+- **Ephemeral port exhaustion.** Measured false: it failed with 94 sockets in
+  `TIME_WAIT` and passed with 319.
+
+No change was kept, because none was shown to help. The failure reproduces on
+code byte-identical to `main`, at roughly one or two per 88 tests. Recorded
+here so the next attempt starts from what has already been ruled out rather
+than repeating it.
+
 ### Fixed — version claims that shipped wrong in 2.2.0's PyPI description
 
 `README.md` is the PyPI `long_description`, and **a PyPI description is
