@@ -6,6 +6,45 @@
 
 **Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)**
 
+## [Unreleased]
+
+### Fixed — version claims that shipped wrong in 2.2.0's PyPI description
+
+`README.md` is the PyPI `long_description`, and **a PyPI description is
+immutable once uploaded**. Two lines written during release preparation were
+true when written and false the moment 2.2.0 was published, on 2.2.0's own
+page:
+
+```text
+| **2.2.0** | Prepared. ... the suite is green; **not yet published**. |
+Until 2.2.0 is published, `pip install maple-oss` gives you 2.1.0 and none of this.
+```
+
+No content was missing — the 2.2.0 feature sections, `FileBroker`, and the
+ADR-162–168 summaries all shipped correctly. What shipped wrong was a
+*status* claim about the release being released.
+
+This is the same defect the 2.1.0 → 2.2.0 work removed ("Not yet published"
+sitting on a published package), reintroduced one release later in the file
+that becomes the artifact.
+
+**The version badge was worse.** It read `version-2.1.0` on 2.2.0's PyPI
+page — the first thing anyone sees. The version carriers were bumped and the
+badge, which is a version claim like any other, was not.
+
+- All three lines corrected: the badge, the release-status row, and the
+  "until 2.2.0 is published" sentence.
+- Three guards in `tests/test_release_workflows.py`: the README must not
+  describe the current `VERSION` as prepared or unpublished, must not contain
+  "Until `<version>` is published", and **the version badge must match the
+  `VERSION` file**. Each was verified by reintroducing the exact text that
+  shipped and watching it fail.
+
+**2.2.0's PyPI page cannot be corrected** — a description is immutable once
+uploaded, and cutting a release only to fix documentation was not worth it.
+These corrections and their guards ship with the next version instead; the
+published 2.2.0 page keeps the wrong badge permanently.
+
 ## [2.2.0] - 2026-09-05
 
 ### Added — metrics leave the process (ADR-162)

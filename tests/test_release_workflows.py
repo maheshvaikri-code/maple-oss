@@ -235,3 +235,73 @@ def test_tag_push_grants_the_permissions_the_called_workflow_needs():
 
     # the grant has to cover what the called workflow actually asks for
     assert "contents: write" in publish
+
+
+class TestTheReadmeDoesNotShipAStaleStatus:
+    """README.md is the PyPI long_description (`readme = "README.md"`), and a
+    PyPI description is **immutable once uploaded**.
+
+    2.2.0 shipped saying `2.2.0 | Prepared ... not yet published` on its own
+    published page. The line was true when written and false the moment it
+    was released, and it could only be corrected by cutting another version.
+
+    Anything time-sensitive about *this* version must therefore not be written
+    into the file that becomes the artifact.
+    """
+
+    def _readme(self) -> str:
+        return (REPO / "README.md").read_text(encoding="utf-8")
+
+    def _version(self) -> str:
+        return (REPO / "VERSION").read_text(encoding="utf-8").strip()
+
+    def test_the_current_version_is_not_described_as_unpublished(self) -> None:
+        version = self._version()
+        offenders = [
+            line.strip()
+            for line in self._readme().splitlines()
+            if version in line
+            and any(
+                phrase in line.lower()
+                for phrase in ("not yet published", "prepared.", "unreleased")
+            )
+        ]
+        assert not offenders, (
+            f"README describes {version} as unpublished, and README.md is the "
+            "PyPI long_description - immutable once uploaded. The line would "
+            "sit on that version's own page contradicting itself, fixable "
+            "only by cutting another release: " + "; ".join(offenders)
+        )
+
+    def test_no_countdown_to_the_current_release(self) -> None:
+        """'Until X is published...' reads as false on X's own page."""
+        version = self._version()
+        needle = f"until {version} is published"
+        assert needle not in self._readme().lower(), (
+            f"README says {needle!r}; on the published page for {version} that "
+            "is self-contradicting"
+        )
+
+    def test_the_version_badge_matches_the_version_file(self) -> None:
+        """The badge is the first thing on the PyPI page.
+
+        It read `version-2.1.0` when 2.2.0 was published, because the version
+        carriers were bumped and the badge was not. It is a version claim like
+        any other and it is frozen into the artifact, so it is checked like
+        one.
+        """
+        import re
+
+        version = self._version()
+        badges = re.findall(
+            r"img\.shields\.io/badge/version-([0-9][^-)]*)-", self._readme()
+        )
+        assert badges, (
+            "the version badge is gone; if that is deliberate, "
+            "remove this test deliberately too"
+        )
+        wrong = [b for b in badges if b != version]
+        assert not wrong, (
+            f"version badge says {wrong} but VERSION says {version}; the badge "
+            "ships in the PyPI description and cannot be edited afterwards"
+        )

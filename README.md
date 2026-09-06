@@ -6,7 +6,7 @@
 
 **Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)**
 
-[![Version](https://img.shields.io/badge/version-2.1.0-brightgreen)](VERSION)
+[![Version](https://img.shields.io/badge/version-2.2.0-brightgreen)](VERSION)
 [![Python](https://img.shields.io/badge/Python-3.8%20%7C%203.9%20%7C%203.10%20%7C%203.11%20%7C%203.12-blue)](pyproject.toml)
 [![CI](https://github.com/maheshvaikri-code/maple-oss/actions/workflows/ci.yml/badge.svg)](https://github.com/maheshvaikri-code/maple-oss/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-AGPL%203.0-blue.svg)](LICENSE)
@@ -139,8 +139,7 @@ signal, and it makes no durability, ordering, or exactly-once claim. Multi-*host
 operation still needs a transport that satisfies the broker contract, which the
 bundled NATS adapter does not meet.
 
-Until 2.2.0 is published, `pip install maple-oss` gives you 2.1.0 and none of
-this.
+`pip install maple-oss` gives you this.
 
 It now provides every contract *member*, but that is not conformance. The
 remaining gap is capability-shaped rather than method-shaped: a NATS publish is
@@ -816,7 +815,7 @@ QA and review records live under [docs/qa/](docs/qa/) and
 
 | Version | State |
 | --- | --- |
-| **2.2.0** | Prepared. Version carriers, changelog and release checklist are in place and the suite is green; **not yet published**. |
+| **2.2.0** | **Published** on PyPI as `maple_oss-2.2.0` (2026-09-06) and tagged as a GitHub Release. |
 | **2.1.0** | **Published** on PyPI as `maple_oss-2.1.0` (2026-09-02) and tagged as a GitHub Release. The release assets are byte-identical to the PyPI artifacts, verified by SHA-256, and a fresh-virtualenv install was checked before the tag was announced. |
 | **2.0.0** | Published on PyPI as `maple_oss-2.0.0` (uploaded 2026-08-31) and tagged as a GitHub Release with source and wheel artifacts. |
 
