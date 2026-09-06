@@ -251,7 +251,10 @@ jobs:
         env:
           MAPLE_NATS_URL: nats://127.0.0.1:4222
         run: |
-          python -m pytest tests/integration -m nats -v --no-cov -p no:cacheprovider             --junitxml=nats-results.xml
+          # Both: the live probes AND the conformance suite parameterised
+          # over a real NATS broker. Running only tests/integration left
+          # the conformance claim unverified (ADR-170).
+          python -m pytest tests/integration tests/broker/test_broker_conformance.py \n            -m nats -v --no-cov -p no:cacheprovider \n            --junitxml=nats-results.xml
 
       - name: Fail if the suite skipped instead of running
         run: |
