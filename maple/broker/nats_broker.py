@@ -171,6 +171,9 @@ class NATSBroker:
         #: producing faster than it can hand off, not anything about the
         #: server's capacity.
         self._outbound: List[Message] = []
+        #: Subscriptions requested before the connection existed, replayed on
+        #: connect so wiring up an agent early does not lose them.
+        self._pending_subscriptions: Dict[str, Callable[[Message], None]] = {}
         performance = getattr(config, "performance", None)
         self.max_queue_size = int(
             getattr(performance, "max_queue_size", 10000) or 10000
@@ -210,6 +213,7 @@ class NATSBroker:
 
             self.running = True
             await self._start_presence()
+            await self._replay_subscriptions()
             # Sends made before connect() were queued, not lost.
             await self._drain_outbound()
             logger.info(f"Connected to NATS cluster: {self.nc.connected_url}")
@@ -238,6 +242,13 @@ class NATSBroker:
             logger.info("Disconnected from NATS cluster")
 
     # ------------------------------------------------------------ presence
+
+    async def _replay_subscriptions(self) -> None:
+        """Register subscriptions requested before the connection existed."""
+        for agent_id, handler in list(self._pending_subscriptions.items()):
+            if agent_id in self.subscriptions:
+                continue
+            await self.subscribe(agent_id, handler)
 
     async def _start_presence(self) -> None:
         """Watch every agent's beacons and start announcing our own.
@@ -568,14 +579,17 @@ class NATSBroker:
     async def subscribe(
         self, agent_id: str, handler: Callable[[Message], None]
     ) -> Result[None, Dict[str, Any]]:
-        """Subscribe an agent to receive messages via NATS."""
+        """Subscribe an agent to receive messages via NATS.
+
+        A subscription made **before** ``connect()`` is remembered and
+        replayed once the connection exists, rather than refused. The
+        conformance suite subscribes first and connects second, and so does
+        anyone wiring an agent up before starting it - refusing there loses
+        the subscription silently and nothing is ever delivered (ADR-170).
+        """
+        self._pending_subscriptions[agent_id] = handler
         if not self.nc or not self.nc.is_connected:
-            return Result.err(
-                {
-                    "errorType": "NATS_NOT_CONNECTED",
-                    "message": "NATS client is not connected",
-                }
-            )
+            return Result.ok(None)
 
         try:
             subject = f"maple.agent.{agent_id}"
@@ -819,14 +833,37 @@ class NATSBrokerSync:
         if thread is not None:
             thread.join(timeout=5.0)
 
+    @property
+    def running(self) -> bool:
+        """Whether the transport is connected.
+
+        The contract asserts ``broker.running`` after connect. The wrapper had
+        no such attribute, so the assertion raised AttributeError rather than
+        failing - it delegates to the client it wraps.
+        """
+        return bool(getattr(self.broker, "running", False))
+
     def connect(self) -> Result[None, Dict[str, Any]]:
-        """Connect to NATS cluster synchronously."""
+        """Connect to NATS cluster synchronously. Idempotent."""
+        if self.running:
+            return Result.ok(None)
         return self._await(self.broker.connect())
 
     def disconnect(self) -> None:
-        """Disconnect from NATS cluster synchronously."""
-        self._await(self.broker.disconnect())
-        self._stop_loop()
+        """Disconnect synchronously. Safe before connect, and idempotent.
+
+        A second call used to hand a coroutine to a loop that had already been
+        stopped, and waited the full call timeout for a result that could
+        never arrive - a TimeoutError on a teardown path that should be a
+        no-op.
+        """
+        loop = getattr(self, "loop", None)
+        if loop is None or not loop.is_running():
+            return
+        try:
+            self._await(self.broker.disconnect())
+        finally:
+            self._stop_loop()
 
     def send(self, message: Message) -> str:
         """Admit a message, returning its id or raising on refusal (ADR-170)."""

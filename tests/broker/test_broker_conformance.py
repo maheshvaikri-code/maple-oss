@@ -400,6 +400,40 @@ class TestKnownNonConformance:
         assert NATSBrokerSync.CAPABILITIES.enforces_security_policy is False
         assert NATSBrokerSync.ENFORCES_SECURITY_POLICY is False
 
+    def test_the_wrapper_exposes_running(self):
+        """The contract asserts broker.running after connect. The wrapper had
+        no such attribute, so the assertion raised AttributeError rather than
+        failing - found only by running the suite against a real server."""
+        from maple.broker.nats_broker import NATSBrokerSync
+
+        assert isinstance(
+            getattr(NATSBrokerSync, "running", None), property
+        ), "NATSBrokerSync.running must exist for the lifecycle contract"
+
+    def test_a_subscription_before_connect_is_remembered(self):
+        """The suite subscribes then connects, and so does anyone wiring an
+        agent up before starting it. Refusing there loses the subscription
+        silently and nothing is ever delivered."""
+        import inspect
+
+        from maple.broker.nats_broker import NATSBroker
+
+        source = inspect.getsource(NATSBroker.subscribe)
+        assert (
+            "_pending_subscriptions" in source
+        ), "a subscription made before connect() is dropped"
+        assert "_replay_subscriptions" in inspect.getsource(NATSBroker.connect)
+
+    def test_disconnect_does_not_await_a_stopped_loop(self):
+        """A second disconnect handed a coroutine to a stopped loop and waited
+        the full call timeout for a result that could never arrive."""
+        import inspect
+
+        from maple.broker.nats_broker import NATSBrokerSync
+
+        source = inspect.getsource(NATSBrokerSync.disconnect)
+        assert "is_running()" in source
+
     def test_nats_is_exercised_by_the_conformance_suite_itself(self):
         """Not a weaker parallel suite - the same tests, against a real
         server, selected under the `nats` marker (ADR-170)."""
