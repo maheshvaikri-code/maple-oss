@@ -231,10 +231,12 @@ class TestWhatTheTransportDoes:
             assert consumer.subscribe(subject, received.append).is_ok()
             time.sleep(0.5)  # let the subscription register server-side
 
-            result = producer.send(
+            message_id = producer.send(
                 Message(message_type="PING", receiver=subject, payload={"n": 1})
             )
-            assert result.is_ok(), result.unwrap_err()
+            assert (
+                isinstance(message_id, str) and message_id
+            ), "send() must return a message id (ADR-170)"
 
             deadline = time.time() + 15
             while not received and time.time() < deadline:
@@ -322,47 +324,42 @@ class TestWhatTheTransportDoesNotDo:
     against - not opinions about NATS, but what this client actually does.
     """
 
-    def test_there_is_no_backpressure(self, nats_available, subject):
-        """`max_queue_size` is not enforced: publish is fire-and-forget.
-
-        The conformance suite requires a full queue to raise
-        BrokerOverflowError. Nothing here can, because MAPLE holds no queue.
-        """
-        from maple.error.types import BrokerOverflowError
-
-        producer = make_broker(nats_available, "producer", max_queue_size=3)
-        assert producer.connect().is_ok()
-        try:
-            refused = 0
-            for i in range(50):
-                try:
-                    producer.send(
-                        Message(message_type="X", receiver=subject, payload={"i": i})
-                    )
-                except BrokerOverflowError:
-                    refused += 1
-
-            assert refused == 0, (
-                "backpressure appeared - if the transport now refuses, update "
-                "CAPABILITIES.applies_backpressure and reconsider "
-                "BROKER_FACTORIES"
-            )
-            assert producer.get_statistics()["refused"] == 0
-        finally:
-            producer.disconnect()
-
-    def test_an_oversized_payload_is_not_refused_by_maple(
+    def test_backpressure_refuses_once_the_outbound_queue_is_full(
         self, nats_available, subject
     ):
-        """The conformance suite requires MESSAGE_TOO_LARGE. NATS enforces its
-        own server-side limit instead, which is a different guarantee."""
+        """Was asserted impossible; a bounded outbound queue made it real
+        (ADR-170). The bound is MAPLE's own - core NATS publish has nothing to
+        be full - and it means this client is producing faster than it can
+        hand off."""
+        from maple.error.types import BrokerOverflowError
+
+        # not connected, so nothing drains and the queue actually fills
+        producer = make_broker(nats_available, "producer", max_queue_size=3)
+        try:
+            for i in range(3):
+                assert isinstance(
+                    producer.send(
+                        Message(message_type="X", receiver=subject, payload={"i": i})
+                    ),
+                    str,
+                ), "send() must return a message id, not a Result (ADR-170)"
+
+            with pytest.raises(BrokerOverflowError) as excinfo:
+                producer.send(Message(message_type="X", receiver=subject, payload={}))
+            assert excinfo.value.error["errorType"] == "QUEUE_FULL"
+            assert producer.get_statistics()["refused"] >= 1
+        finally:
+            producer._stop_loop()
+
+    def test_an_oversized_payload_is_refused_at_the_edge(self, nats_available, subject):
+        """Also flipped by ADR-170: a bounded count is no protection if one
+        message can be arbitrarily large."""
         from maple.error.types import BrokerOverflowError
 
         producer = make_broker(nats_available, "producer", max_message_bytes=512)
         assert producer.connect().is_ok()
         try:
-            raised = False
-            try:
+            with pytest.raises(BrokerOverflowError) as excinfo:
                 producer.send(
                     Message(
                         message_type="BIG",
@@ -370,13 +367,7 @@ class TestWhatTheTransportDoesNotDo:
                         payload={"blob": "z" * 4000},
                     )
                 )
-            except BrokerOverflowError:
-                raised = True
-
-            assert raised is False, (
-                "MAPLE-side size admission appeared on the NATS transport - "
-                "update the capability declaration"
-            )
+            assert excinfo.value.error["errorType"] == "MESSAGE_TOO_LARGE"
         finally:
             producer.disconnect()
 
@@ -454,6 +445,6 @@ class TestTheCapabilityDeclarationMatchesReality:
         assert caps.supports_routability_check is True
         # Still absent: core NATS publish holds no queue to be full, and the
         # contract wants a raise where this transport returns a Result.
-        assert caps.applies_backpressure is False
+        assert caps.applies_backpressure is True  # outbound queue, ADR-170
         assert caps.enforces_security_policy is False
         assert caps.cross_process is True

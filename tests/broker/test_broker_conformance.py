@@ -58,12 +58,43 @@ def _file_backed(**perf):
 _SPOOLS = []
 
 
+def _nats(**perf):
+    """A NATS-backed broker, connected to a real server (ADR-170).
+
+    Unlike the others this needs infrastructure, so it is selected only under
+    the `nats` marker - which the live CI job runs against a service
+    container. The tests are the same ones; a suite written to be passable
+    would prove nothing.
+    """
+    pytest.importorskip("nats", reason="nats-py is not installed")
+    import os
+
+    from maple.broker.nats_broker import NATSBrokerSync
+
+    url = os.environ.get("MAPLE_NATS_URL", "nats://127.0.0.1:4222")
+    config = Config(
+        agent_id="conformance",
+        broker_url=url,
+        performance=PerformanceConfig(**perf) if perf else None,
+    )
+    broker = NATSBrokerSync(config)
+    _NATS_BROKERS.append(broker)
+    return broker
+
+
+#: Live NATS brokers created during a run, torn down afterwards.
+_NATS_BROKERS = []
+
+
 #: Every transport that can be constructed without external infrastructure.
 #: A new transport is added here and must pass everything below unchanged.
 BROKER_FACTORIES = {
     "in-memory": _in_memory,
     "file": _file_backed,
 }
+
+#: Selected only under `-m nats`, where a real server exists.
+LIVE_BROKER_FACTORIES = {"nats": _nats}
 
 
 @pytest.fixture(autouse=True)
@@ -73,11 +104,27 @@ def reset_scopes():
     MessageBroker.reset_scopes()
     while _SPOOLS:
         shutil.rmtree(_SPOOLS.pop(), ignore_errors=True)
+    while _NATS_BROKERS:
+        try:
+            _NATS_BROKERS.pop().disconnect()
+        except Exception:
+            pass
 
 
-@pytest.fixture(params=sorted(BROKER_FACTORIES))
+def _factory_params():
+    """In-process transports run always; NATS runs under `-m nats`."""
+    params = [pytest.param(name, id=name) for name in sorted(BROKER_FACTORIES)]
+    params += [
+        pytest.param(name, id=name, marks=pytest.mark.nats)
+        for name in sorted(LIVE_BROKER_FACTORIES)
+    ]
+    return params
+
+
+@pytest.fixture(params=_factory_params())
 def factory(request):
-    return BROKER_FACTORIES[request.param]
+    both = {**BROKER_FACTORIES, **LIVE_BROKER_FACTORIES}
+    return both[request.param]
 
 
 class TestStructuralConformance:
@@ -302,14 +349,18 @@ def _nats_broker_without_a_server():
     broker._refused = 0
     broker._undeliverable = 0
     broker._presence = {}
+    broker._pending_subscriptions = {}
     broker._presence_sub = None
     broker._heartbeat_task = None
     return broker
 
 
 class TestKnownNonConformance:
-    """The NATS transport satisfies the contract *structurally* but not
-    *behaviourally*. Pinned, not ignored.
+    """What the NATS transport still does not do. Pinned, not ignored.
+
+    Once five members were missing (ADR-161), then three capabilities
+    (ADR-168), then one (ADR-170). What remains is security enforcement,
+    which is *refused* rather than faked.
 
     ADR-161 recorded five missing members; those now exist. What remains is
     harder and is not a matter of adding methods: NATS publish is
@@ -332,17 +383,86 @@ class TestKnownNonConformance:
         a deliberate edit made when it can actually pass."""
         assert "nats" not in BROKER_FACTORIES
 
-    def test_the_remaining_gap_is_backpressure(self):
-        """Presence closed two of the three (ADR-168). What is left needs a
-        MAPLE-side outbound queue or JetStream, *and* a breaking change to
-        send()'s signature - the contract wants a raise where this transport
-        returns a Result."""
+    def test_the_delivery_capabilities_are_all_closed_now(self):
+        """Presence closed routability and undeliverable (ADR-168); a bounded
+        outbound queue closed backpressure (ADR-170)."""
         from maple.broker.nats_broker import NATSBrokerSync
 
         caps = NATSBrokerSync.CAPABILITIES
         assert caps.reports_undeliverable is True
         assert caps.supports_routability_check is True
-        assert caps.applies_backpressure is False
+        assert caps.applies_backpressure is True
+
+    def test_security_enforcement_is_still_refused_not_faked(self):
+        """The one capability deliberately still absent. ADR-157: a control
+        that cannot run must refuse."""
+        from maple.broker.nats_broker import NATSBrokerSync
+
+        assert NATSBrokerSync.CAPABILITIES.enforces_security_policy is False
+        assert NATSBrokerSync.ENFORCES_SECURITY_POLICY is False
+
+    def test_the_wrapper_exposes_running(self):
+        """The contract asserts broker.running after connect. The wrapper had
+        no such attribute, so the assertion raised AttributeError rather than
+        failing - found only by running the suite against a real server."""
+        from maple.broker.nats_broker import NATSBrokerSync
+
+        assert isinstance(
+            getattr(NATSBrokerSync, "running", None), property
+        ), "NATSBrokerSync.running must exist for the lifecycle contract"
+
+    def test_a_subscription_before_connect_is_remembered(self):
+        """The suite subscribes then connects, and so does anyone wiring an
+        agent up before starting it. Refusing there loses the subscription
+        silently and nothing is ever delivered."""
+        import inspect
+
+        from maple.broker.nats_broker import NATSBroker
+
+        source = inspect.getsource(NATSBroker.subscribe)
+        assert (
+            "_pending_subscriptions" in source
+        ), "a subscription made before connect() is dropped"
+        assert "_replay_subscriptions" in inspect.getsource(NATSBroker.connect)
+
+    def test_unsubscribe_forgets_a_pending_subscription_too(self):
+        """Dropping only the live record left a pending one behind, so
+        connecting afterwards replayed a subscription already withdrawn and
+        delivery resumed."""
+        broker = _nats_broker_without_a_server()
+        broker._pending_subscriptions["alice"] = lambda m: None
+
+        broker.unsubscribe_local("alice")
+
+        assert broker._pending_subscriptions == {}
+        assert broker.is_routable("alice") is False
+
+    def test_a_pending_subscription_is_routable(self):
+        """The contract subscribes then asks, without connecting. A
+        subscription requested before the connection existed is still a
+        commitment to serve that agent."""
+        broker = _nats_broker_without_a_server()
+        broker._pending_subscriptions["alice"] = lambda m: None
+
+        assert broker.is_routable("alice") is True
+
+    def test_disconnect_does_not_await_a_stopped_loop(self):
+        """A second disconnect handed a coroutine to a stopped loop and waited
+        the full call timeout for a result that could never arrive."""
+        import inspect
+
+        from maple.broker.nats_broker import NATSBrokerSync
+
+        source = inspect.getsource(NATSBrokerSync.disconnect)
+        assert "is_running()" in source
+
+    def test_nats_is_exercised_by_the_conformance_suite_itself(self):
+        """Not a weaker parallel suite - the same tests, against a real
+        server, selected under the `nats` marker (ADR-170)."""
+        assert "nats" in LIVE_BROKER_FACTORIES
+        assert (
+            "nats" not in BROKER_FACTORIES
+        ), "the default suite must stay constructible without infrastructure"
 
     def test_a_policy_it_cannot_enforce_is_refused_not_accepted(self):
         """ADR-157: a control that cannot run must refuse. Accepting a
@@ -408,7 +528,7 @@ class TestKnownNonConformance:
 
         caps = NATSBrokerSync.CAPABILITIES
         assert caps.enforces_security_policy is False
-        assert caps.applies_backpressure is False
+        assert caps.applies_backpressure is True  # outbound queue, ADR-170
         assert caps.reports_undeliverable is True  # presence, ADR-168
         assert caps.cross_process is True
 

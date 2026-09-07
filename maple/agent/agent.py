@@ -25,11 +25,13 @@ import queue
 import threading
 import time
 import uuid
+from contextlib import contextmanager
 from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
     Dict,
+    Iterator,
     List,
     Optional,
     TypeVar,
@@ -80,6 +82,10 @@ class Agent:
         self.message_queue: queue.Queue[Message] = queue.Queue()
         self.handler_thread: Optional[threading.Thread] = None
         self._handling = False
+        #: Receivers currently waiting on message_queue. The handler loop
+        #: defers while this is non-zero (ADR-169).
+        self._receivers_waiting = 0
+        self._receiver_lock = threading.Lock()
         #: Set by stop(). A parked receive() checks it between slices, so
         #: shutting down wakes waiters instead of stranding them
         #: (ADR-165). Never set at construction: an agent that has not
@@ -528,6 +534,34 @@ class Agent:
     #: deadline - the call still blocks indefinitely while the agent runs.
     _WAIT_SLICE_SECONDS = 0.05
 
+    @contextmanager
+    def _receiving(self) -> Iterator[None]:
+        """Claim precedence over the handler loop for the duration of a wait.
+
+        ``receive()`` and ``_message_handler_loop`` read the **same** queue,
+        so on a started agent whichever polls first wins and a caller gets
+        messages only sometimes. Refusing was tried and is worse: it makes
+        pulling impossible on a started agent, and ADR-165's wake-on-shutdown
+        unreachable.
+
+        So the pull wins while it is waiting. The loop defers rather than
+        competing, which makes the outcome deterministic instead of a race
+        (ADR-169). A caller who parks a receiver indefinitely does hold the
+        loop off - that is what asking to pull means, and the wait still ends
+        when the agent stops.
+        """
+        with self._receiver_lock:
+            self._receivers_waiting += 1
+        try:
+            yield
+        finally:
+            with self._receiver_lock:
+                self._receivers_waiting -= 1
+
+    def _a_receiver_is_waiting(self) -> bool:
+        with self._receiver_lock:
+            return self._receivers_waiting > 0
+
     def _get_until_shutdown(self) -> Optional[Message]:
         """Block for a message until one arrives or the agent stops.
 
@@ -558,15 +592,20 @@ class Agent:
         }
 
     def receive(self, timeout: Optional[str] = None) -> Result[Message, Dict[str, Any]]:
-        """Receive a message from the queue."""
+        """Receive a message from the queue.
+
+        Takes precedence over the handler loop while it waits (ADR-169).
+        """
         try:
             if timeout:
                 from ..core.types import Duration
 
                 timeout_seconds = Duration.parse(timeout)
-                message = self.message_queue.get(timeout=timeout_seconds)
+                with self._receiving():
+                    message = self.message_queue.get(timeout=timeout_seconds)
             else:
-                pending = self._get_until_shutdown()
+                with self._receiving():
+                    pending = self._get_until_shutdown()
                 if pending is None:
                     return Result.err(self._stopped_error())
                 message = pending
@@ -585,7 +624,11 @@ class Agent:
         filter: Callable[[Message], bool],
         timeout: Optional[str] = None,
     ) -> Result[Message, Dict[str, Any]]:
-        """Receive a message that matches a filter."""
+        """Receive a message that matches a filter.
+
+        Takes precedence over the handler loop while it waits, as
+        ``receive()`` does (ADR-169).
+        """
         if timeout:
             from ..core.types import Duration
 
@@ -602,9 +645,11 @@ class Agent:
 
             try:
                 if remaining_time:
-                    message = self.message_queue.get(timeout=remaining_time)
+                    with self._receiving():
+                        message = self.message_queue.get(timeout=remaining_time)
                 else:
-                    pending = self._get_until_shutdown()
+                    with self._receiving():
+                        pending = self._get_until_shutdown()
                     if pending is None:
                         return Result.err(self._stopped_error())
                     message = pending
@@ -983,10 +1028,26 @@ class Agent:
 
         while self.running:
             try:
+                # Defer to an explicit receive(). Both read this queue, and
+                # competing would make delivery a coin flip (ADR-169).
+                if self._a_receiver_is_waiting():
+                    time.sleep(0.01)
+                    continue
+
                 # Get a message from the queue, blocking with timeout
                 try:
-                    message = self.message_queue.get(timeout=0.1)
+                    message = self.message_queue.get(timeout=0.05)
                 except queue.Empty:
+                    continue
+
+                # The check above cannot be enough on its own: the loop may
+                # already be blocked inside get() when a receiver arrives, and
+                # it would then swallow the very message the receiver is
+                # waiting for. Hand it back instead (ADR-169).
+                if self._a_receiver_is_waiting():
+                    self.message_queue.put(message)
+                    self.message_queue.task_done()
+                    time.sleep(0.005)
                     continue
 
                 # Process the message. The flag lets stop() distinguish an

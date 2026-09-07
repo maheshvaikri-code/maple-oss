@@ -6,6 +6,138 @@
 
 **Creator: Mahesh Vaijainthymala Krishnamoorthy (Mahesh Vaikri)**
 
+## [Unreleased]
+
+### Fixed — `Agent.send()` over NATS reported failures as successes (ADR-170)
+
+`NATSBrokerSync.send()` returned `Result`, but `Agent.send()` does
+`message_id = self.broker.send(message); return Result.ok(message_id)`.
+
+Over NATS that produced **`Result.ok(Result.ok("id"))`** — `unwrap()` gave a
+`Result`, not a message id. And when the transport failed, `Result.err(...)`
+was wrapped as **`Result.ok(...)`**: a failed send reported as a success. The
+fail-open class this series exists to close, undetected in the one transport
+nobody could execute.
+
+`send()` now returns `str` and raises, matching the in-memory broker and what
+`Agent` already expected. **Breaking for direct callers** of that transport.
+
+### Added — backpressure over NATS (ADR-170)
+
+The last delivery capability. Core NATS publish hands the message to the client
+and returns, so there is nothing to be full; MAPLE now holds a **bounded
+outbound queue** and drains it.
+
+- `QUEUE_FULL` once `max_queue_size` is reached, `MESSAGE_TOO_LARGE` above
+  `max_message_bytes` — refusing rather than growing, as ADR-159 settled for
+  the in-memory broker.
+- Admission order is fixed: **size, then policy, then presence, then
+  capacity**. Too-large is refused whatever the depth; a message nobody can
+  receive is dead-lettered rather than taking a slot.
+- The queue answers something else the suite asks: `send()` **before
+  `connect()`** is now accepted and drained on connect, instead of failing.
+- A message that cannot be published stays at the head, so a hiccup costs
+  latency rather than data.
+
+**The bound is MAPLE's, not the transport's.** A full queue means this client
+is producing faster than it can hand off; it says nothing about the server.
+JetStream would make "outstanding" real through acknowledgement and is the
+better long-term answer, but it requires server features and provisioned
+streams — not a library's decision to impose.
+
+**NATS now runs the conformance suite itself.** Not a weaker parallel suite:
+the same tests, parameterised over a live NATS factory selected under the
+`nats` marker, which the CI job runs against a real server. It stays out of the
+default `BROKER_FACTORIES`, which must remain constructible without
+infrastructure.
+
+What is still absent is **security enforcement**, and it is *refused* rather
+than faked (ADR-157).
+
+### Fixed — `receive()` no longer races the handler loop (ADR-169)
+
+`Agent.receive()` and the background handler loop read the **same** queue, so
+on a started agent whichever polled first won and a caller got messages only
+sometimes.
+
+It was found while writing the ADR-165 tests: the loop ate the message and the
+test failed with `No handler found for message type HI`. The workaround then
+was to not start the agent — the race was documented in a test and left in the
+code.
+
+- A waiting `receive()` now takes precedence; the handler loop defers while any
+  receiver is blocked, and resumes the moment the last one returns.
+- **Deferring before the `get()` is not enough.** The loop may already be
+  blocked inside `get()` when a receiver arrives, and would consume the very
+  message it is waiting for — measured, the receiver timed out at 5s. So after
+  a successful `get()` the loop re-checks and **hands the message back**.
+- Refusing was implemented first and reverted: it removes a legitimate pattern
+  and makes ADR-165's parked-receiver wake unreachable. It broke six tests for
+  exactly that reason.
+
+Costs, stated: a receiver parked indefinitely holds handlers off (that is what
+pulling means, and ADR-165 ends the wait on shutdown), and a handed-back
+message goes to the back of the queue, so ordering around that narrow window
+can change.
+
+### Investigated — the flaky loopback tests are not understood yet
+
+A group of autonomy tests that start a real HTTP server fail intermittently on
+Windows under load with `ConnectionAbortedError [WinError 10053]`. Three
+hypotheses were tested and **all three were wrong**:
+
+- **A Windows `SO_REUSEADDR` port hijack.** Real and measured — on Windows a
+  second socket *can* bind a port already being listened on. But fixing it with
+  `SO_EXCLUSIVEADDRUSE` did not help, and the comparison that suggested it had
+  was confounded.
+- **Shutdown aborting in-flight responses.** Measured false: `server_close()`
+  returns without waiting, and the handler still completes and the client still
+  gets its response.
+- **Ephemeral port exhaustion.** Measured false: it failed with 94 sockets in
+  `TIME_WAIT` and passed with 319.
+
+No change was kept, because none was shown to help. The failure reproduces on
+code byte-identical to `main`, at roughly one or two per 88 tests. Recorded
+here so the next attempt starts from what has already been ruled out rather
+than repeating it.
+
+### Fixed — version claims that shipped wrong in 2.2.0's PyPI description
+
+`README.md` is the PyPI `long_description`, and **a PyPI description is
+immutable once uploaded**. Two lines written during release preparation were
+true when written and false the moment 2.2.0 was published, on 2.2.0's own
+page:
+
+```text
+| **2.2.0** | Prepared. ... the suite is green; **not yet published**. |
+Until 2.2.0 is published, `pip install maple-oss` gives you 2.1.0 and none of this.
+```
+
+No content was missing — the 2.2.0 feature sections, `FileBroker`, and the
+ADR-162–168 summaries all shipped correctly. What shipped wrong was a
+*status* claim about the release being released.
+
+This is the same defect the 2.1.0 → 2.2.0 work removed ("Not yet published"
+sitting on a published package), reintroduced one release later in the file
+that becomes the artifact.
+
+**The version badge was worse.** It read `version-2.1.0` on 2.2.0's PyPI
+page — the first thing anyone sees. The version carriers were bumped and the
+badge, which is a version claim like any other, was not.
+
+- All three lines corrected: the badge, the release-status row, and the
+  "until 2.2.0 is published" sentence.
+- Three guards in `tests/test_release_workflows.py`: the README must not
+  describe the current `VERSION` as prepared or unpublished, must not contain
+  "Until `<version>` is published", and **the version badge must match the
+  `VERSION` file**. Each was verified by reintroducing the exact text that
+  shipped and watching it fail.
+
+**2.2.0's PyPI page cannot be corrected** — a description is immutable once
+uploaded, and cutting a release only to fix documentation was not worth it.
+These corrections and their guards ship with the next version instead; the
+published 2.2.0 page keeps the wrong badge permanently.
+
 ## [2.2.0] - 2026-09-05
 
 ### Added — metrics leave the process (ADR-162)
