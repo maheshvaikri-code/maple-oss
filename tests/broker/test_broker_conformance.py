@@ -349,6 +349,7 @@ def _nats_broker_without_a_server():
     broker._refused = 0
     broker._undeliverable = 0
     broker._presence = {}
+    broker._pending_subscriptions = {}
     broker._presence_sub = None
     broker._heartbeat_task = None
     return broker
@@ -423,6 +424,27 @@ class TestKnownNonConformance:
             "_pending_subscriptions" in source
         ), "a subscription made before connect() is dropped"
         assert "_replay_subscriptions" in inspect.getsource(NATSBroker.connect)
+
+    def test_unsubscribe_forgets_a_pending_subscription_too(self):
+        """Dropping only the live record left a pending one behind, so
+        connecting afterwards replayed a subscription already withdrawn and
+        delivery resumed."""
+        broker = _nats_broker_without_a_server()
+        broker._pending_subscriptions["alice"] = lambda m: None
+
+        broker.unsubscribe_local("alice")
+
+        assert broker._pending_subscriptions == {}
+        assert broker.is_routable("alice") is False
+
+    def test_a_pending_subscription_is_routable(self):
+        """The contract subscribes then asks, without connecting. A
+        subscription requested before the connection existed is still a
+        commitment to serve that agent."""
+        broker = _nats_broker_without_a_server()
+        broker._pending_subscriptions["alice"] = lambda m: None
+
+        assert broker.is_routable("alice") is True
 
     def test_disconnect_does_not_await_a_stopped_loop(self):
         """A second disconnect handed a coroutine to a stopped loop and waited

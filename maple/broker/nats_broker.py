@@ -320,7 +320,9 @@ class NATSBroker:
         An agent we serve ourselves is known directly - no cache lookup that
         cannot fail, and no liveness window for the single-process case.
         """
-        if agent_id in self.subscriptions:
+        if agent_id in self.subscriptions or agent_id in self._pending_subscriptions:
+            # Ours either way: a subscription requested before the connection
+            # existed is still a commitment to serve that agent.
             return True
         last_seen = self._presence.get(agent_id)
         if last_seen is None:
@@ -341,13 +343,19 @@ class NATSBroker:
                 logger.exception("Undeliverable handler raised")
 
     def unsubscribe_local(self, agent_id: str) -> None:
-        """Forget an agent's subscription record.
+        """Forget an agent's subscription, replayed or not.
+
+        Dropping only the live record left a *pending* subscription behind,
+        so connecting afterwards replayed a subscription that had already
+        been withdrawn and delivery resumed.
 
         The NATS-side unsubscribe is awaited by ``NATSBrokerSync.unsubscribe``;
         this is the bookkeeping half, kept separate so it is callable without
         an event loop.
         """
         self.subscriptions.pop(agent_id, None)
+        self._pending_subscriptions.pop(agent_id, None)
+        self._presence.pop(agent_id, None)
 
     def is_routable(self, agent_id: str) -> bool:
         """Whether any broker on the cluster is serving ``agent_id``.
